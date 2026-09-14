@@ -1,0 +1,41 @@
+name: A numbered list where nothing holds
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — `questions.html` is the obvious name —
+        and paste the section below into that page's `contents` with `data:` changed to match. Or
+        copy this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+        **Every entry here is equally open, so nothing is lit.** A list where some items are done is
+        a different thing and takes the `checklist` plugin beside this one; a list where none of
+        them is done has no status to read and the only mark is the number.
+
+        **The number is a CSS counter and is never typed.** It renumbers itself on an add, a delete
+        or a move, which a number written into the document does not — that one is right until the
+        moment the list changes and then quietly is not.
+
+        **This file is deliberately plain, and it is not a design.** The mark is a number here;
+        make it an open square, a dash or nothing at all in your own copy, by changing one rule.
+  - name: questions
+    data: index.html
+    parts:
+      lede: |
+        ## What is still open
+
+        Add one from the page or write one under `questions:`; both end in the same place, because
+        the page and the document hold the same array.
+      questions:
+        - |-
+          Does the number have to be a counter? It does if the list can change, which is every list
+          that has a control on it.
+        - |-
+          What decides whether a question belongs on a page at all? Recording one is cheaper than
+          answering it early and reasoning from the answer.
+        - |-
+          Where does the mark get decided? Here, in one rule, rather than in every file that has a
+          list on it.
+      note: |
+        Nothing on this page is real content; it is here so the file draws as something rather than
+        as an empty rectangle.

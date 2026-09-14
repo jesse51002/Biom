@@ -1,0 +1,183 @@
+/* The page list, the Config screen, and the one button the host's own screens
+   share. Lifted from the mock's content.css and chrome.css with the class names
+   kept identical, because a generated page is expected to reuse this vocabulary.
+   Nothing here sets a raw colour: every value resolves to a token.
+
+   THERE IS NO PAGE HERE ANY MORE. The host does not draw one: a page is a box
+   the runtime fills on the other side of an opaque origin, and the section
+   rules that used to live in this file — the grip, the inserter, the insert
+   tabs, the prose outline — dressed a page the host drew and went with it. The
+   box itself is dressed by `.plate[data-face="page"] iframe` in chrome.css, where
+   the plate that gives it the canvas already is.
+
+   THERE IS NO PAGE TITLE HERE EITHER. `.ptitle` was a heading the host drew
+   above every document; the page's first section owns the top of the sheet now,
+   and the page is named by the breadcrumb in the rail, dressed in chrome.css. */
+
+/* ---------- the one button ---------- */
+.btn{
+  padding:.35rem .75rem; border:1px solid var(--rule); background:var(--stock-hi);
+  color:var(--ink); border-radius:4px; cursor:pointer; flex:none; font-size:.875rem;
+  transition:background .12s ease;
+}
+.btn:hover{background:var(--field)}
+.btn[disabled]{opacity:.5; cursor:not-allowed}
+/* the one primary: filled, and blue rather than the agent's purple */
+.btn.primary, .btn.newprop{background:var(--cyan); border-color:var(--cyan); color:var(--on-spot); font-weight:500}
+.btn.primary:hover, .btn.newprop:hover{background:var(--cyan-t); border-color:var(--cyan-t)}
+.btn.ghost{background:none}
+
+/* ---------- the page list ---------- */
+.tree{list-style:none; margin:0; padding:0}
+/* A sibling of the link rather than a child of it: a button nested in an anchor
+   is a drag target and a tab stop that both belong to the wrong element. */
+.treerow{display:flex; align-items:center; position:relative; border-radius:4px; padding-right:.2rem}
+.treerow:hover{background:var(--field)}
+.treerow:has(> a[aria-current="page"]){background:var(--field)}
+.treerow > a{flex:1; min-width:0}
+.tree a{
+  display:flex; align-items:center; gap:.35rem;
+  /* 1.1rem a level: at less a nested page read as a slightly-off sibling
+     rather than as something inside something. */
+  padding:.25rem .35rem .25rem calc(.35rem + var(--depth, 0) * 1.1rem);
+  position:relative; border-radius:4px;
+  text-decoration:none; color:var(--room-ink-2); font-size:.875rem;
+}
+.tree a:hover{color:var(--ink)}
+.tree a[aria-current="page"]{color:var(--ink); font-weight:500}
+.tree .nm{display:flex; align-items:center; gap:.35rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.treenote{font-size:.8rem; color:var(--room-ink-3); padding:.3rem .5rem; margin:0}
+
+/* THE KIND, DRAWN. A page is a sheet, a table is a grid, the vault is a folder
+   and the design doc is a sheet with a rule struck through — all from borders
+   and gradients in currentColor, so the glyph is the row's own colour. Drawn
+   rather than typed for the reason the mock gives: a glyph that only exists in
+   a fallback font is not the same glyph on two machines. */
+.kindtag{
+  position:relative; flex:none; width:.85rem; height:.85rem; color:var(--room-ink-3);
+}
+.tree a[aria-current="page"] .kindtag{color:var(--ink-2)}
+.kindtag::before, .kindtag::after{content:""; position:absolute; box-sizing:border-box}
+/* a sheet: an outline with two lines of text inside */
+.kindtag[data-kind="page"]::before, .kindtag[data-kind="doc"]::before{
+  inset:0 1px; border:1.25px solid currentColor; border-radius:2px;
+}
+.kindtag[data-kind="page"]::after{
+  left:4px; right:4px; top:5px; height:4px;
+  background:linear-gradient(currentColor, currentColor) top / 100% 1px no-repeat,
+             linear-gradient(currentColor, currentColor) bottom / 70% 1px no-repeat;
+  background-position:top left, bottom left;
+}
+/* the design doc: a sheet with one rule across it */
+.kindtag[data-kind="doc"]::after{left:4px; right:4px; top:6px; height:1.25px; background:currentColor}
+/* design: a brush — a slanted handle and a head at its foot */
+.kindtag[data-kind="design"]::before{
+  left:6px; top:0; width:1.5px; height:8px; background:currentColor;
+  transform:rotate(38deg); transform-origin:bottom center; border-radius:1px;
+}
+.kindtag[data-kind="design"]::after{
+  left:1px; bottom:0; width:5.5px; height:4.5px; background:currentColor;
+  border-radius:1px 1px 2.5px 2.5px;
+}
+/* the map: a folded sheet — an outline with its two folds */
+.kindtag[data-kind="map"]::before{
+  inset:1px 0; border:1.25px solid currentColor; border-radius:1.5px;
+  background:linear-gradient(currentColor, currentColor) 33% 0 / 1px 100% no-repeat,
+             linear-gradient(currentColor, currentColor) 67% 0 / 1px 100% no-repeat;
+}
+.kindtag[data-kind="map"]::after{
+  left:5.5px; top:5px; width:2.5px; height:2.5px; border-radius:50%; background:currentColor;
+}
+/* leaving: a doorway with its opening on the far side, and the way out through
+   it. There is no Settings row for the sliders to belong to any more — the
+   picker inside the chrome went and `Close workspace` took its place, which is
+   an act rather than a screen. */
+.kindtag[data-kind="close"]::before{
+  left:0; top:0; bottom:0; width:6px;
+  border:1.25px solid currentColor; border-right:0; border-radius:2px 0 0 2px;
+}
+.kindtag[data-kind="close"]::after{
+  right:.5px; top:50%; width:4.5px; height:4.5px; margin-top:-2.25px;
+  border:1.25px solid currentColor; border-bottom:0; border-left:0;
+  transform:rotate(45deg); border-radius:0 1px 0 0;
+}
+/* a grid: an outline with a rule each way */
+.kindtag[data-kind="table"]::before{
+  inset:1px 0; border:1.25px solid currentColor; border-radius:2px;
+  background:linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat,
+             linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
+}
+/* a folder: a body and a tab */
+.kindtag[data-kind="dir"]::before{
+  inset:3px 0 1px; border:1.25px solid currentColor; border-radius:2px;
+}
+.kindtag[data-kind="dir"]::after{
+  left:2px; top:1px; width:5px; height:3px;
+  border:1.25px solid currentColor; border-bottom:0; border-radius:2px 2px 0 0;
+}
+
+.caret{
+  width:1rem; height:1rem; flex:none; display:inline-flex; align-items:center;
+  justify-content:center; cursor:pointer; border-radius:3px; color:var(--room-ink-3);
+}
+.caret:hover{background:var(--ink-wash); color:var(--ink)}
+.caret::before{
+  content:""; border-left:4px solid currentColor; border-top:3.5px solid transparent;
+  border-bottom:3.5px solid transparent; transition:transform .12s ease;
+}
+.caret.open::before{transform:rotate(90deg)}
+/* A row with nothing under it still holds the caret's place, so every name in
+   the list starts at the same x. `content:none` removes the triangle rather
+   than hiding it, so there is nothing to hover and nothing to read out. */
+.caret.bare{cursor:default}
+.caret.bare::before{content:none}
+
+/* the two controls a row has, both under the pointer only */
+.rowmore, .rowadd{
+  flex:none; width:1.35rem; height:1.35rem; display:grid; place-items:center;
+  opacity:0; background:none; border:0; cursor:pointer; border-radius:3px;
+  font-size:.9rem; line-height:1; color:var(--room-ink-3); padding:0;
+  transition:opacity .12s ease, background .12s ease;
+}
+.rowadd{font-weight:500}
+.treerow:hover .rowmore, .treerow:hover .rowadd, .rowmore:focus-visible, .rowadd:focus-visible{opacity:1}
+.rowmore:hover, .rowadd:hover{color:var(--ink); background:var(--ink-wash)}
+
+/* ---------- config ---------- */
+.ports h2{font-weight:700; font-size:1.75rem; margin:0 0 .25rem; letter-spacing:-.01em}
+.ports .sub{margin:0 0 1.75rem; font-size:.875rem; color:var(--ink-2)}
+.pgroup{margin-bottom:1.75rem}
+.pgroup > h3{
+  font-size:.75rem; font-weight:500; color:var(--ink-3);
+  margin:0 0 .5rem; display:flex; gap:.5rem; align-items:baseline;
+}
+.pgroup > h3 b{color:var(--ink-2); font-weight:400}
+table.ports-t{border-collapse:collapse; width:100%; font-size:.875rem}
+table.ports-t th{
+  text-align:left; font-weight:400; font-size:.75rem; color:var(--ink-3);
+  padding:0 .5rem .35rem; border-bottom:1px solid var(--rule);
+}
+table.ports-t td{padding:.4rem .5rem; border-bottom:1px solid var(--rule-soft); vertical-align:middle}
+table.ports-t .role{color:var(--ink)}
+table.ports-t .ty{color:var(--ink-3); font-size:.8rem}
+table.ports-t .arrow{color:var(--ink-3); text-align:center; width:1.6rem}
+table.ports-t .to{color:var(--cyan-t)}
+tr.unbound td{border-bottom-style:dashed}
+tr.unbound .to{color:var(--ink-3)}
+.confirm{
+  font-size:.75rem; padding:.15rem .5rem; border:1px solid var(--rule);
+  background:var(--stock-hi); color:var(--ink); border-radius:4px; cursor:pointer; white-space:nowrap;
+}
+.confirm:hover{background:var(--field)}
+.portsnote{margin:1rem 0 0; font-size:.8rem; color:var(--ink-3); max-width:34rem}
+
+/* the raw-YAML fallback: plain on purpose, and always available */
+.rawbox{margin:.9rem 0 0; display:grid; gap:.6rem}
+.rawyaml{
+  width:100%; resize:vertical; font-family:var(--mono-face); font-size:.8rem; line-height:1.6;
+  color:var(--ink); background:var(--stock-lo); border:1px solid var(--rule); border-radius:6px;
+  padding:.6rem .7rem; white-space:pre; tab-size:2;
+}
+.rawyaml:focus{border-color:var(--cyan); outline:none}
+.rawbox .row{display:flex; align-items:center; justify-content:space-between; gap:1rem}
+.rawbox .hint{font-size:.75rem; color:var(--ink-3)}

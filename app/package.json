@@ -1,0 +1,8 @@
+{
+  "name": "biom",
+  "productName": "Biom",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Biom — a workspace whose pages are folders, served by a local server this window spawned.",
+  "main": "main.js"
+}

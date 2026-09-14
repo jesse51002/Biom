@@ -1,0 +1,187 @@
+# THE ONLY WORKFLOW IN THIS REPOSITORY, and it stays that way.
+#
+# Two files each half-describing when this repository is green is two files that
+# disagree, and the one that fell behind is the one somebody would trust. So the
+# gates and the build are JOBS in here rather than a second file.
+#
+# WHAT IT PROVES IS THE THING A PERSON DOWNLOADS, in three halves. That it PASSES
+# ITS OWN GATES — the layering rule, the typecheck, the parse floor and the unit
+# suite. That it BUILDS on all three systems — the Windows runner types
+# `bun run app` rather than `make app`, which is the whole reason the build moved
+# out of the Makefile: a Windows shell has no make, and a build only two of three
+# systems can run is a build that cannot be released. And that it RUNS: the last
+# job starts the program on a screen and walks it, because every issue the first
+# release candidate turned up was invisible to the unit suite and obvious in the
+# first ten seconds of a real run.
+#
+# WHAT IT DOES NOT DO IS PUBLISH. The checks end at "it built": keeping the
+# bundle for a person to download is the signing and notarisation question
+# wearing different clothes, and that is out of scope for now.
+
+name: CI
+
+on: push
+
+jobs:
+  gates:
+    # THE THREE THINGS EVERY CHANGE HAS TO PASS, and they are the same three
+    # commands a contributor types. One system, because none of what they check
+    # is per-platform: the layering rule is a property of the import graph, the
+    # typecheck is tsc, and the unit suite touches no screen.
+    name: check and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      # `check` is layering, then types, then every client module parses. It
+      # writes an EMPTY manifest stub first, because the composition root imports
+      # the generated one and tsc follows an import the runtime does not.
+      - name: The gate
+        run: make check
+
+      - name: The unit suite
+        run: make test
+
+  app:
+    name: The application on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every system is reported, so one failing does not hide the other two.
+      #
+      # `--no-install` ON EVERY LEG, AND IT IS NOT AN OPTIMISATION. `make app`
+      # ends by INSTALLING what it built — the bundle into this machine's data
+      # directory, a launcher entry and an icon where the desktop reads them —
+      # because a build that stops at `dist/out/` is a build nothing on the
+      # machine knows about. A runner has no desktop and is deleted a minute
+      # later, so here the flag stops it at the bundle, which is also exactly
+      # what the pass condition below looks for.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build: make app ARGS=--no-install
+          - os: macos-latest
+            build: make app ARGS=--no-install
+          - os: windows-latest
+            # No make on this runner, and that is the point of `tools/app.ts`.
+            build: bun run app -- --no-install
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bun and git are the only two things a person installs by hand to build
+      # this, and the runner already has the second.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # THE THREE LEGS FETCH THE SAME THING. `make app` depends on `install`, so
+      # the two make runners would get their Electron and their packager for
+      # free; the Windows leg types `bun run app`, which is `tools/app.ts` on its
+      # own and reaches `@electron/packager` by a dynamic import that a clone
+      # with no `node_modules` cannot resolve. Naming the step here makes the
+      # three symmetric — and it costs the make legs nothing, because
+      # `bun install` on an installed tree does nothing.
+      - name: Install the build tooling
+        run: bun install
+
+      - name: Build the application
+        run: ${{ matrix.build }}
+
+      # THE PASS CONDITION IS THE BUNDLE. `make app` exits non-zero on a failed
+      # compile or a failed package, so this is the second half: that something
+      # was actually produced rather than a step quietly doing nothing.
+      - name: The bundle is there
+        shell: bash
+        run: |
+          out=dist/out
+          test -d "$out" || { echo "  nothing was packaged into $out" >&2; exit 1; }
+          ls -l "$out"
+          test -n "$(ls -A "$out")" || { echo "  $out is empty" >&2; exit 1; }
+
+  e2e:
+    # THE PROGRAM, ASSEMBLED, ON A SCREEN. The job above proves the application
+    # BUILDS on three systems; this one proves it RUNS.
+    #
+    # ONE SYSTEM, AND THAT IS ON PURPOSE. What this catches is the assembly —
+    # the picker, the live redraw, the bridge, the token, the production hide
+    # list — and none of it is per-platform. A matrix here would triple the
+    # minutes to re-prove the same thing, and the per-platform question the
+    # bundle actually raises is whether it builds, which is the job above.
+    name: The program on a screen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install the tooling and the browser
+        # `make browser` is `bunx playwright install chromium`, and `--with-deps`
+        # is the runner's half of it: a fresh Ubuntu image has none of the
+        # shared libraries Chromium links against.
+        run: |
+          bun install
+          bunx playwright install --with-deps chromium
+
+      # LAYER ONE RUNS ON EVERY PUSH AND NEEDS NOTHING BUILT. It is the server
+      # the way `make dev` runs it, in a headless Chromium, and it is where the
+      # vault flow, the live redraw and the markdown mirror are walked.
+      - name: The server, end to end
+        run: bun test ./tests/e2e/server.e2e.ts
+
+      # AND THE STARTUP HALF OF LAYER ONE: the same server against a workspace
+      # that has gone wrong, once per bad state, because every one of them is
+      # about what the process does on the way up.
+      - name: Starting up, end to end
+        run: bun test ./tests/e2e/startup.e2e.ts
+
+      # LAYER TWO NEEDS THE THING A PERSON DOWNLOADS, so the bundle is built
+      # first. Without this step `app.e2e.ts` skips itself with a named reason
+      # rather than failing — which is right on a developer's machine and wrong
+      # here, so the step that would make it skip is the step that is missing.
+      - name: Build the application
+        run: make app ARGS=--no-install
+
+      - name: The packaged application, end to end
+        # `xvfb-run` IS WHAT THE SUITE REACHES FOR ITSELF when it is on the path,
+        # so there is nothing to wrap here — installing it is the whole of it.
+        #
+        # AND A SCREEN IS NOT A DESKTOP. `Xvfb` is a frame buffer with nobody on
+        # it: maximise and full screen are hints a WINDOW MANAGER honours, so
+        # with none running the application asks, nobody answers, and the step
+        # that waits for the window's state to flip waits out its bound.
+        # `openbox` is the smallest thing that honours
+        # `_NET_WM_STATE_MAXIMIZED_*` and `_NET_WM_STATE_FULLSCREEN`, it starts
+        # in well under a second, and `tools/screen.sh` — which the suite puts
+        # between `xvfb-run` and the application — is what starts it on the
+        # display and waits for it to take the root window. `x11-utils` is
+        # `xprop`, which is how taking it is read. Without these the step does
+        # not fail here; it skips itself by name, which on a runner would be a
+        # green that proved nothing.
+        #
+        # `E2E_NO_SANDBOX` is the runner's other half: a GitHub container has no
+        # user namespaces for Chromium's sandbox to use, and the knob is off by
+        # default precisely so a developer's machine never runs it that way.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox x11-utils
+          E2E_NO_SANDBOX=1 bun test ./tests/e2e/app.e2e.ts
+
+      # THE PICTURES, FOR WHOEVER READS THE FAILURE. Every step takes one either
+      # side of itself and a failing step names its own path; on a runner that
+      # path is gone the moment the job ends unless it is kept.
+      - name: The screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: dist/e2e/
+          if-no-files-found: ignore

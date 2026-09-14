@@ -1,0 +1,30 @@
+{
+  "_": "The layer of a module is the directory it sits in. A module may import only from a strictly lower layer, plus layer 0. No sibling imports, ever. Enforced by tools/layers.mjs, run from `make check`. When two modules in a layer need each other, the shared thing moves DOWN a layer — that is the whole conflict-resolution procedure.",
+
+  "contracts": 0,
+
+  "server/platform": 1,
+  "server/domain": 2,
+  "server/workspace": 3,
+  "server/api": 4,
+  "server/main.ts": 5,
+
+  "client/platform": 6,
+  "client/transport": 7,
+  "client/widgets": 8,
+  "client/store": 9,
+  "client/bridge": 10,
+  "client/frame": 11,
+  "client/theme": 13,
+  "client/views": 14,
+  "client/shell": 15,
+  "client/boot.js": 16,
+
+  "guest": 99,
+
+  "_guest": "Layer 99 means NOT ON THE STACK AT ALL. These are classic scripts served into the sandboxed page box, where a module script cannot load and there is nothing to import — so they share a registry global instead of an import graph, and the layering gate has no edges to check. They are listed anyway so a file here resolves to a layer rather than to nothing.",
+  "guest/runtime": 99,
+  "guest/plugins": 99,
+  "guest/sections": 99,
+  "guest/pages": 99
+}

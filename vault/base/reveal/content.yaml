@@ -1,0 +1,38 @@
+name: A figure that plays once
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — `figure.html` is the obvious name — and
+        paste the section below into that page's `contents` with `data:` changed to match. Or copy
+        this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+        **The motion is in this file and the timing is not.** `reveal` adds one class the first
+        time the section comes into view and then disconnects its observer; what happens under that
+        class is the section's own `<style>`, which is where a drawing's motion belongs.
+
+        **Two things go wrong without it, and both are invisible until somebody notices the page is
+        tired.** An observer that never disconnects keeps firing for as long as the page is open and
+        outlives the section when it is redrawn. And an animation that starts at load plays the
+        whole choreography below the fold, so a reader who scrolls down arrives after it finished.
+
+        **`--motion` is the frame's reduced-motion switch** and it is already on the page — multiply
+        a duration or a delay by it and a reader who asked for less motion gets none.
+  - name: bars
+    data: index.html
+    parts:
+      lede: |
+        ## What the count actually is
+
+        Four bars, drawn from four entries. The figure says the same thing the prose says and adds
+        nothing the prose does not — a figure that says something new is an argument nobody can
+        check.
+      rows:
+        - One
+        - Two
+        - Three
+        - Four
+      note: |
+        Nothing on this page is real content; it is here so the file draws as something rather than
+        as an empty rectangle.

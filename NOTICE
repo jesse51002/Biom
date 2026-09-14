@@ -1,0 +1,37 @@
+Biom — Visual Workspace for AI Automations
+Copyright (C) 2026 Biom
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3, as published by
+the Free Software Foundation. The full text is in LICENSE, and every
+first-party source file carries `SPDX-License-Identifier: AGPL-3.0-only`.
+
+THIRD-PARTY CODE
+
+Everything under `vendor/` is somebody else's, served as it sits and never
+edited. One entry here per licence file in that directory; the full text of
+each is the file named beside it. `vendor/README.md` says which upstream build
+each one is and why that build.
+
+  markdown-it — MIT
+    Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
+    vendor/markdown-it.LICENSE
+
+  mermaid — MIT
+    Copyright (c) 2014 - 2022 Knut Sveidqvist
+    vendor/mermaid.LICENSE
+
+  three.js — MIT
+    Copyright (c) 2010-2025 three.js authors
+    vendor/three.LICENSE
+
+  yaml — ISC
+    Copyright Eemeli Aro <eemeli@gmail.com>
+    vendor/yaml.LICENSE
+
+THE DECLARATION FILES BESIDE THEM ARE OURS
+
+`vendor/markdown-it.d.ts` and `vendor/yaml.d.ts` are hand-written here and
+deliberately partial — they declare the part of each library this code uses and
+no more. They are first-party, under the AGPL-3.0 like the rest of this
+repository, and are not copies of any upstream declaration.

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biom</title>
+<!-- WHICH BUILD THIS IS, and the only channel that can carry it. The client has
+     no build step, ever — boot.js is served exactly as it sits on disk — so a
+     compile-time `--define` cannot reach it and the document it is handed can.
+     `server/main.ts` rewrites this one attribute on the way out; it writes
+     `development` in a development build, so what the development server returns
+     is byte-identical to this file and a raw copy opened off disk is honest.
+     `client/boot.js` reads it once and nothing else in the client ever does. -->
+<meta name="biom-env" content="development">
+<!-- Inline, so the browser never requests /favicon.ico. Without it every load
+     logs a 404, which is noise in the one signal worth watching during a
+     session: whether the console is clean. The image is the Biom logo, the leaf
+     B; the master and its sizes live in assets/logo/ at the repo root, and this is the
+     64px one. -->
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+
+<!-- No build step, deliberately. Every file below is served as it sits on disk,
+     so Claude Code writing one and this window drawing it is the whole loop.
+     Adding a transpile step between those two is breaking the instrument.
+
+     Order matters once: tokens declares the world, the content sheets dress the
+     views, and the chrome comes last so host furniture wins any tie against a
+     page. A page's own CSS is not here at all: it is inside the frame that draws
+     it, on the other side of an origin this document cannot reach. -->
+<!-- Vendored code, resolved by the browser rather than by a bundler. This is
+     what keeps `import MarkdownIt from "markdown-it"` a BARE specifier in
+     client/platform/markdown.js — which tools/layers.mjs already skips as a
+     package, so a third-party import adds no edge to the dependency graph and
+     needs no exception in layers.json. -->
+<script type="importmap">
+{ "imports": { "markdown-it": "/vendor/markdown-it.mjs" } }
+</script>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/page.css">
+<link rel="stylesheet" href="/css/table.css">
+<link rel="stylesheet" href="/css/chrome.css">
+<link rel="stylesheet" href="/css/panels.css">
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/js/boot.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!-- guest/sections/default.html — what a section with no `data:` resolves to.
+
+     ONE CENTRED SLOT NAMED `body`, at a reading measure.
+
+     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing
+     rather than tidy. A default that lived in the runtime would be the one
+     section shape nothing else could reach: it would need no HTML file, no
+     `data:` key and no slot declaration, and every other section would be the
+     exception to it. "The document" would be privileged all over again —
+     exactly what the deleted render layer kept collapsing into, where one
+     render owned the whole sheet and prose was one column at one measure
+     because there was nowhere else for it to be.
+
+     As a file it is the same mechanism every other section uses. It is read by
+     the server, sent inline in the `page.read` answer like any section's markup,
+     and drawn by the same code path. It is legible, it can be copied as the
+     starting point for a real section, and it can be replaced. A page that is
+     mostly defaults is an ordinary document. The runtime still marks one
+     `data-g-default` so the editor can tell a default section from an authored
+     one; no checker rule reads it.
+
+     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is
+     what makes a full-bleed section cost nothing: it simply does not carry this
+     file's `max-width`, and there is no sheet-level width for it to fight.
+
+     No colour is set here, deliberately. Every colour in this product resolves
+     to a token the palette rewrites at runtime, and a section that reached for
+     one would be the section that stopped theming. Type and colour are inherited
+     from what the shim declares on `:root` when the theme arrives. -->
+<style>
+  /* `:scope` is this section's own element. The runtime wraps everything in this
+     file in `@scope (#sec-<name>)`, so these rules cannot reach the section
+     above or the section below however ordinary the selectors look. */
+  :scope {
+    display: block;
+  }
+
+  .measure {
+    /* The workspace's own reading measure when its `markdown.yaml` names one,
+       and 34rem when it does not. The scale OFFERS the value on the page root
+       and imposes it nowhere: this file is the section that wants it, which is
+       what keeps a full-bleed section free of it. */
+    max-width: var(--md-measure, 34rem);
+    margin-inline: auto;
+    padding-block: 1.5rem;
+    padding-inline: 1.25rem;
+  }
+</style>
+
+<div class="measure">
+  <div data-g-part="body"></div>
+</div>

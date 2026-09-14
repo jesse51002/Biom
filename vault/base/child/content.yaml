@@ -1,0 +1,39 @@
+name: Child row
+plugin: doc
+contents:
+  - name: what-this-is
+    parts:
+      body: |
+        # Child row
+
+        `index.html` beside this file is not a section. It is a **`child.html`** — how a page looks
+        inside somebody else's, drawn wherever a parent holds this page as a child. Every page is
+        created with a copy of it already in its own directory.
+
+        **Edit the copy in the page** to change how that one page is summarised. **Edit this one** to
+        change what every page made afterwards starts from.
+
+        ## Where to put the change
+
+        **In the child's own directory — `child.html`.** How this page looks *wherever* it is held.
+        It travels with the page. Delete it and the built-in row comes back.
+
+        **On the parent — `@page-<segment>.html`.** How *this particular* list wants its rows. It is
+        an ordinary section file with ordinary slots, and it wins where both exist, because the
+        parent is looking at the arrangement and the child is not. The key is one segment and never
+        a path: `@page-notes`, never `@page-home/team/notes`.
+
+        ## Three things this file cannot do
+
+        - **It cannot run a script.** A `<script>` inserted as markup never executes, so it is
+          removed and reported. Behaviour belongs in the section holding the child.
+        - **It cannot name the child.** The child's own fields arrive as templates, spelled the way
+          `index.html` beside this file spells them. A name typed in by hand is wrong the moment
+          somebody renames the page, and nothing on screen would say so.
+        - **It cannot set a colour.** Every colour is a palette token, here as everywhere else.
+
+        What it does not have to do is handle the click: the row is opened either way, and a row you
+        cannot follow would not be a row.
+
+        The rest — the two layers, the derived key, how the keyboard reaches a row — is in
+        [.agents/skills/children/SKILL.md](../../skills/children/SKILL.md).

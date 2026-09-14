@@ -1,0 +1,141 @@
+/* The layers over the workspace: the side panels, the New-page dialog, the
+   prompt card the History panel hands out, and the one popover every menu in
+   the app is drawn with.
+
+   The class names came across from the deleted mock's panels.css and the popover
+   half of its content.css — `client/widgets/popover.js` says outright
+   that `.pop`, `.popitem`, `.popname`, `.popnote`, `.poptick`, `.poplabel`,
+   `.popsep`, `.popinput` and `.popback` are load-bearing, so renaming one is a
+   silent visual break rather than an error. The dress is the workspace's own
+   dark scheme, in the system's sans, like the chrome around them.
+
+   THE POPOVER RULES ARE HERE RATHER THAN IN table.css BY NECESSITY, NOT BY
+   TASTE. table.css carries `.popactions` and `.btn.popdone` and nothing else of
+   the menu, so every menu in the workspace was unstyled — a fixed-position
+   `div` with no background over a scrolling canvas. This is the sheet that owns
+   the layers above the workspace, and a menu is one. If the widget layer ever
+   gets a stylesheet of its own, this block moves there whole.
+
+   Nothing below names a colour. */
+
+/* ---------- side panels ---------- */
+
+.panel-side{
+  border-left:1px solid var(--stock-edge); background:var(--stock);
+  display:flex; flex-direction:column; min-height:0; overflow-y:auto;
+}
+.panel-h{
+  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+  padding:.6rem .75rem .6rem 1rem; border-bottom:1px solid var(--stock-edge);
+  font-size:.875rem; font-weight:500; color:var(--ink); position:sticky; top:0;
+  background:var(--stock);
+}
+.panel-h b{color:var(--ink-3); font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+.panel-body{padding:1rem; display:grid; gap:.75rem; align-content:start; font-size:.875rem}
+.panel-body p{margin:0; line-height:1.5; color:var(--ink-2)}
+.panel-body p.lead{color:var(--ink)}
+.panel-body h5{margin:.5rem 0 -.35rem; font-size:.75rem; font-weight:500; color:var(--ink-3)}
+
+/* the path the agent works in, and the line you would type. Selectable, because
+   the only useful thing to do with either is copy it. */
+.panel-body code.path{
+  display:block; padding:.5rem .65rem; background:var(--stock-lo);
+  border:1px solid var(--rule-soft); border-radius:6px; color:var(--ink);
+  font-family:var(--mono-face); font-size:.75rem; line-height:1.5; overflow-wrap:anywhere; user-select:all;
+}
+.panel-body ul.says{list-style:none; margin:0; padding:0; display:grid; gap:.35rem}
+.panel-body ul.says li{
+  padding:.4rem .65rem; border:1px solid var(--rule); border-radius:6px;
+  color:var(--ink); line-height:1.4;
+}
+/* what this panel is not. Said plainly rather than drawn as a disabled control:
+   a greyed-out Undo is a claim, and this build cannot back it. */
+.panel-body .notyet{
+  font-size:.75rem; line-height:1.5; color:var(--ink-3);
+  border-top:1px solid var(--rule-soft); padding-top:.65rem; margin-top:.25rem;
+}
+
+/* ---------- the prompt card ---------- */
+
+/* A sentence to hand the agent, and a button that copies it. It is a card
+   because it is the one thing on the panel meant to leave it. */
+.promptcard{
+  display:grid; gap:.6rem; padding:.75rem .85rem; border:1px solid var(--rule);
+  border-radius:6px; background:var(--stock-lo);
+}
+.promptcard h5{margin:0; font-size:.75rem; font-weight:500; color:var(--ink-3)}
+.promptbody{margin:0; font-size:.875rem; line-height:1.5; color:var(--ink)}
+.promptcard .full{
+  justify-self:start; padding:.3rem .7rem; font-size:.8rem;
+  border:1px solid var(--rule); background:var(--stock); color:var(--ink);
+  border-radius:4px; cursor:pointer;
+}
+.promptcard .full:hover{background:var(--field)}
+
+/* ---------- the dialog ---------- */
+
+.scrim{
+  position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:1.5rem;
+  background:var(--scrim);
+}
+.dialog{
+  width:min(28rem,100%); max-height:90vh; overflow-y:auto; background:var(--stock-hi);
+  border:1px solid var(--rule-soft); border-radius:8px; padding:1.25rem 1.25rem 1rem;
+  box-shadow:var(--lift);
+}
+.dialog h2{font-size:.95rem; font-weight:600; margin:0 0 .75rem; color:var(--ink)}
+.dialog .named{display:block; width:100%; box-sizing:border-box; margin:0 0 .75rem}
+.dialog .orfrom{font-size:.75rem; color:var(--ink-3); margin:.75rem 0 0}
+.dialog .kinds{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem}
+.dialog .kind{
+  display:grid; gap:.15rem; border:1px solid var(--rule); border-radius:6px; background:var(--stock-hi);
+  padding:.75rem; cursor:pointer; text-align:left; transition:background .12s ease;
+}
+.dialog .kind:hover:not([disabled]){background:var(--field)}
+.dialog .kind[disabled]{opacity:.5; cursor:progress}
+.dialog .kind b{display:block; font-weight:500; font-size:.875rem; color:var(--ink)}
+.dialog .kind span{display:block; font-size:.75rem; color:var(--ink-2); line-height:1.4}
+.dialog .foot{display:flex; align-items:center; justify-content:flex-end; gap:1rem; margin:.75rem 0 0}
+.dialog .said{margin:0; font-size:.75rem; color:var(--ink-3)}
+.dialog .said.bad{color:var(--yellow)}
+
+/* ---------- one popover for every menu ---------- */
+
+.pop{
+  position:fixed; z-index:60; min-width:11rem; max-height:min(24rem,70vh); overflow:auto;
+  padding:.25rem; background:var(--stock-hi); border:1px solid var(--rule);
+  border-radius:6px; box-shadow:var(--lift); font-size:.875rem;
+  animation:pop-in .13s cubic-bezier(.16,1,.3,1);
+}
+@keyframes pop-in{from{opacity:0; transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.pop{animation:none}}
+.poplabel{font-size:.75rem; color:var(--ink-3); padding:.35rem .5rem .25rem}
+.popsep{height:1px; background:var(--rule-soft); margin:.25rem 0}
+.poplist{max-height:13rem; overflow:auto}
+.popitem{
+  display:flex; align-items:center; gap:.45rem; width:100%; text-align:left;
+  color:var(--ink); padding:.3rem .5rem; background:none; border:0; border-radius:4px; cursor:pointer;
+}
+.popitem:hover:not([disabled]), .popitem:focus-visible{background:var(--field); outline:none}
+.popitem.on{background:var(--field)}
+.popitem[disabled]{color:var(--ink-3); cursor:default}
+.popname{flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.popnote{font-size:.75rem; color:var(--ink-3)}
+.poptick{width:.7rem; height:.6rem; color:var(--cyan-t); flex:none}
+.popitem.danger{color:var(--yellow)}
+.popitem.danger:hover:not([disabled]){background:var(--yellow-wash)}
+.popinput{
+  width:100%; font:inherit; color:var(--ink);
+  padding:.3rem .5rem; background:var(--stock); border:1px solid var(--rule);
+  border-radius:4px; outline:none;
+}
+.popinput:focus{border-color:var(--cyan)}
+.popempty{margin:0; padding:.4rem .5rem; font-size:.8rem; color:var(--ink-3)}
+.popback{
+  display:flex; align-items:center; gap:.35rem; width:100%; text-align:left;
+  font-size:.75rem; color:var(--ink-3); padding:.3rem .5rem; background:none; border:0;
+  border-radius:4px; cursor:pointer;
+}
+.popback:hover, .popback:focus-visible{background:var(--field); color:var(--ink); outline:none}
+.backarrow{width:.6rem; height:.7rem}

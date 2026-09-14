@@ -1,0 +1,63 @@
+# The markdown type scale for this workspace.
+#
+# Every page inherits this. A page that wants its own puts a `markdown.yaml`
+# beside its `content.yaml` and states ONLY what differs — the two are merged one
+# property at a time, so a page asking for bigger headings does not have to
+# restate the body text and then watch the two drift apart.
+#
+# WHY THIS FILE EXISTS. Almost every visible word on a page is a markdown part,
+# which is what makes a page editable: click a paragraph and type. The cost of
+# that is that "how big is a heading" stops being one section's business and
+# becomes the page's, and there was nowhere to say it except inside each
+# section's own CSS — sixteen sections, sixteen answers, no way to change your
+# mind once.
+#
+# WHAT IT CANNOT SAY, on purpose:
+#
+#   No colour. Colour resolves to a palette token and belongs to the workspace,
+#   not to a page. `theme.json` owns it.
+#
+#   No font name. `face:` takes a ROLE — sheet, furniture or gauge — which
+#   resolves through the palette, so a scale cannot pin a page to a font this
+#   workspace does not use.
+#
+#   No selectors. Anything this cannot express, a section's own `<style>` still
+#   can, and a section always wins: the scale is the default a markdown region
+#   starts from, never a ceiling on it.
+#
+# Anything unknown here is dropped rather than fatal — a typo in a type scale
+# must not be the reason a document stops opening. Run the checker and it will
+# tell you which line it threw away.
+#
+# Every property is optional. Delete a line and the browser's own default comes
+# back; delete the file and the workspace looks exactly as it did before.
+#
+# THE PROPERTIES
+#   size      a length      2rem, 18px, 1.0625rem
+#   leading   a number      1.5            (line height, unitless)
+#   tracking  a length      -0.02em        (letter spacing)
+#   above     a length      2rem           (space before)
+#   below     a length      1rem           (space after)
+#   weight    100-900, normal, bold
+#   style     normal, italic, oblique
+#   case      none, upper, lower, title
+#   face      sheet, furniture, gauge
+
+# The workspace's reading measure. It is OFFERED, not imposed: the shipped
+# default section reads it, and any section that wants it says
+# `max-width: var(--md-measure)`. Nothing is capped behind your back, because a
+# one-word label in a grid cell does not want a reading measure.
+measure: 34rem
+
+h1: { size: 2.25rem, weight: 600, leading: 1.08, tracking: -0.015em, above: 0, below: 1rem }
+h2: { size: 1.5rem,  weight: 600, leading: 1.15, above: 2.25rem, below: 0.75rem }
+h3: { size: 1.15rem, weight: 600, leading: 1.25, above: 1.75rem, below: 0.5rem }
+
+p:  { size: 1rem, leading: 1.6, below: 1rem }
+li: { size: 1rem, leading: 1.55 }
+
+blockquote: { size: 1.125rem, style: italic, leading: 1.5, above: 1.5rem, below: 1.5rem }
+
+# The gauge face is the one that lines up, which is what code is for.
+code: { face: gauge, size: 0.9em }
+pre:  { face: gauge, size: 0.875rem, leading: 1.5, above: 1.25rem, below: 1.25rem }

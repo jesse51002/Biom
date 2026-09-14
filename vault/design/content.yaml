@@ -1,0 +1,219 @@
+name: Design
+plugin: doc
+variables:
+  day:
+    - Mon
+    - Tue
+    - Wed
+    - Thu
+    - Fri
+  out:
+    - 3
+    - 6
+    - 2
+    - 4
+    - 1
+  newsSwatch:
+    - Stock
+    - Stock lo
+    - Rule
+    - Ink 2
+    - Ink
+    - Spot
+    - Spot 2
+  paperSwatch:
+    - Paper
+    - Shade
+    - Pencil
+    - Ink
+    - Blue
+    - Ochre
+  panelSwatch:
+    - STOCK
+    - PANEL
+    - RULE
+    - INK
+    - SPOT
+    - WARN
+contents:
+  - name: title
+    data: masthead.html
+    parts:
+      body: |
+        # Design
+
+        How this workspace looks is decided here. It ships in Biom's own colours — charcoal, cream and one sunflower — and to change it you tell your agent the feel you want, in your own words. Scroll: _these are three of them._
+  - name: default
+    data: default.html
+    parts:
+      label: |
+        The default
+
+        _as it ships_
+      specimen: |
+        ### Shipments
+
+        Nine went out on Tuesday. Two are still with the courier.
+      week: |-
+        This week
+      open: |
+        | Open | |
+        |---|---|
+        | Courier | 6 |
+        | Pickup | 2 |
+        | Post | 1 |
+  - name: news
+    data: news.html
+    variables:
+      stock: "#E9E4D8"
+      stockLo: "#E2DCCD"
+      ink: "#16161A"
+      ink2: "#44444C"
+      ink3: "#606068"
+      rule: "#16161A"
+      ruleSoft: "#BEB5A1"
+      spot: "#A81E12"
+      spot2: "#3A4C6B"
+    parts:
+      said: |-
+        "Set it like **a newspaper**."
+      edition: |-
+        Despatch — Week Thirty-Seven
+      desk: |-
+        Yard & Courier
+      headline: |
+        ## Nine Out by Tuesday, Two Still With the Courier
+
+        The week's run cleared the yard a day early. What is left is one pallet at the depot and a pickup nobody has come for.
+      body: |
+        Eleven consignments were booked for the week and nine of them were on a van before Tuesday closed, which is a day and a half earlier than the yard has managed since the spring. The gain came from the Tuesday double-run, which took six drops on one sheet instead of two.
+
+        > "A day and a half earlier than the spring, on one sheet instead of two."
+
+        What remains is plainer than it looks. One pallet sits at the depot awaiting a slot on Thursday's trunk, and a single pickup has been ready at the counter since Monday morning with nobody named against it.
+
+        Friday was left deliberately light. The yard holds one slot back for whatever the week puts in front of it, and this week it put nothing, so the slot goes unused and the run ends on twenty per cent.
+      chartlabel: |-
+        Despatches, by day
+      caption: |-
+        Tuesday carries the week. The red column is the double-run; the others are ordinary days.
+      table: |
+        ### Still open
+
+        | Route | Out | Left | |
+        |---|---|---|---|
+        | Courier, morning | 6 | 2 | **Running** |
+        | Counter pickup | 2 | 1 | Waiting |
+        | Post, second class | 1 | 0 | Cleared |
+        | Depot trunk | 0 | 1 | Thursday |
+  - name: paper
+    data: paper.html
+    variables:
+      stock: "#F5F0E6"
+      stockLo: "#EFE8DA"
+      ink: "#332E26"
+      ink2: "#5E564A"
+      ink3: "#6F675C"
+      rule: "#CFC4AE"
+      ruleSoft: "#E2D9C8"
+      spot: "#2E5E7E"
+      spot2: "#8A6027"
+    parts:
+      said: |-
+        "Make it feel like **a field notebook**."
+      headline: |-
+        ## What went out this week
+      body: |
+        Nine of the eleven were away before Tuesday closed. That is earlier than usual, and the reason is worth writing down while it is still true: **the Tuesday double-run took six drops on one sheet**, which the yard has not tried since the spring and will probably try again.
+
+        Two are still out. One pallet is waiting on Thursday's trunk at the depot, which is ordinary. The other is a counter pickup that has been ready since Monday with nobody's name against it, which is not.
+
+        > Worth checking
+        >
+        > Friday is light on purpose — one slot held back for whatever turns up. Nothing turned up. If that happens a third week running, the slot is not a reserve, it is a gap.
+      plotlabel: |-
+        Parcels leaving, Monday to Friday
+      table: |
+        ### Still out
+
+        | Route | Left | When |
+        |---|---|---|
+        | Courier, morning | 2 | **Today** |
+        | Counter pickup | 1 | Unclaimed |
+        | Depot trunk | 1 | Thursday |
+  - name: panel
+    data: panel.html
+    variables:
+      stock: "#0C0F0E"
+      stockLo: "#131817"
+      ink: "#D3DCD7"
+      ink2: "#8D9A94"
+      ink3: "#74847E"
+      rule: "#243029"
+      ruleSoft: "#1A211E"
+      spot: "#4FD08A"
+      spot2: "#E2A33C"
+    parts:
+      said: |-
+        "Make it **an instrument panel**."
+      headline: |-
+        ## Despatch
+      stamp: |-
+        WK37 · 11 BOOKED · **9 CLEARED** · 2 OPEN
+      sub: |-
+        Nine cleared the yard by Tuesday. Two remain: one pallet held for the Thursday trunk, one counter pickup unclaimed since Monday.
+      meterlabel: |-
+        Channel load — units per day
+      hold: |-
+        **Hold** Counter pickup unclaimed
+      held: |-
+        4d 02h
+      status: |
+        ### Route status
+
+        | Route | Out | Left | State |
+        |---|---|---|---|
+        | COURIER AM | 6 | 2 | RUNNING |
+        | COUNTER | 2 | 1 | HOLD |
+        | POST 2C | 1 | 0 | CLEAR |
+        | DEPOT TRUNK | 0 | 1 | THU 06:00 |
+  - name: brand
+    parts:
+      body: |
+        ## Brand
+
+        A working tool, not a dashboard. Plain over clever, specific over general. It should feel like something kept rather than something bought.
+  - name: voice
+    parts:
+      body: |
+        ## Voice
+
+        - A control says what it does. _Save quote to jobs_, not _Submit_.
+        - Errors name the problem and the fix. No apologies.
+        - No subtext under a heading that the heading already said.
+        - British spelling. Money to two decimals, right-aligned.
+  - name: patterns
+    parts:
+      body: |
+        ## Patterns
+
+        - **A block, not a new kind of page.** Asked for something interactive, the answer is a block on a doc that already exists. A page that takes the whole sheet has to argue for itself.
+        - **There is no folder.** Any page may hold other pages and tables, and a page that draws them is what a folder was. Never build a second kind.
+        - **Blocks, not layouts.** A page is a stack of sections that reorder. Anything new is a block.
+        - **Data lives in tables.** A page reads and writes them through its settings, never inline.
+        - **The render is a layer.** How a doc is drawn is swappable, one piece at a time, and separate from what it says.
+        - **No frames.** One border around the app. Blocks and lists are separated by space and rules.
+        - **Full canvas.** A page takes whatever the panels leave. Prose keeps a measure; nothing else does.
+        - **Always live.** Prose is editable where it sits, with no mode to turn on. The only switch is for the slots inside HTML.
+        - **Install before you invent.** Something from the market that nearly works, then adapted, beats a page written from nothing.
+        - **Say what changed.** Anything the agent does shows a receipt and an undo.
+  - name: density
+    parts:
+      body: |
+        ## Density
+
+        Closer to a spreadsheet than a marketing page. Small type is fine where it is reference; body text is not. A screen that needs scrolling to find one number is wrong.
+  - name: note
+    parts:
+      body: |
+        _Ships with the workspace and is an ordinary page — so it can show a pattern rather than describe it. It is a default, not a ruling: edit it, and everything generated here changes with it._

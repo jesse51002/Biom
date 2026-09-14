@@ -1,0 +1,124 @@
+<!-- base/figure/index.html — TWO SLOTS SIDE BY SIDE, ONE OF THEM A PICTURE.
+
+     THIS FILE IS DELIBERATELY PLAIN. It is here to show the FORMAT — two slots
+     in one section, an image that comes out of the document rather than out of
+     this markup, and the one thing a section can do that a document could not —
+     and it has no visual opinion at all: no box around the picture, no rule down
+     the quotation, no colour anywhere. A starter with a look is a look that
+     turns up in every page copied from it. Take the shape and design your own.
+
+     THE PICTURE STAYS PUT WHILE THE ARGUMENT SCROLLS PAST IT. That works because
+     the page's one frame fills the canvas and scrolls inside itself, so the box
+     is its own viewport and `position: sticky` has a scroller to stick against.
+
+     ITS LIMIT IS THE SECTION, AND THAT IS WHY THIS IS ONE SECTION AND NOT TWO.
+     Sticky only pins within its containing block, so the figure is released the
+     moment this section's box ends — it cannot stay held while the page scrolls
+     past the section below. A sequence choreographed across a scroll belongs in
+     ONE section for the same reason. What that costs is independent handles:
+     three sections would be three things a person can reorder and delete on
+     their own, and this is one. Choose per case and say which you chose.
+
+     THE FIGURE NAMES ITS FILE AND NOTHING ELSE — `kitchen.jpg`. Every frame is
+     given the workspace's `assets/` as its `<base>`, so a bare filename resolves
+     to this workspace's copy and the same filename works in prose. A path would
+     carry the workspace's absolute location on disk, which a page cannot know.
+
+     THE COLLAPSE IS A CONTAINER QUERY, which asks how wide THIS SECTION is. A
+     media query would ask how wide the whole canvas is and get the wrong answer
+     wherever the section is not the full width of it. Sticky survives
+     `container-type` — checked in a browser rather than reasoned about, because
+     the box is a sandboxed frame and several ordinary behaviours differ in it. -->
+<style>
+  /* THE SECTION IS THE CONTAINER, and it has to say so: `@container` matches
+     nothing until an ancestor declares `container-type`. Nothing declares it for
+     you. */
+  :scope { display: block; container-type: inline-size; padding-block: 2.5rem; }
+
+  .spread {
+    display: grid;
+    gap: 1.5rem 2.5rem;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    max-inline-size: 64rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    align-items: start;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.6;
+  }
+
+  /* A MEASURE ON THE PROSE, IN `rem`, so it tracks the reader's type size. The
+     sheet has no width of its own any more — this is the section's own choice,
+     and the band around it is free to go edge to edge. */
+  .say { max-inline-size: 34rem; }
+  .say > :first-child { margin-block-start: 0; }
+  .say > :last-child { margin-block-end: 0; }
+
+  /* THE HELD HALF. `top` is measured against the frame, which is the canvas the
+     host handed over — a viewport length in a section is an ordinary thing to
+     write here.
+
+     `margin: 0` BECAUSE THIS IS A `<figure>`, and the browser gives one 16px of
+     block margin and 40px on each side before anybody writes a rule. Measured:
+     in this two-column band the plate came out 261px wide inside a 341px track —
+     a quarter of the column gone to a margin nothing in this file asked for, and
+     nothing on screen to say where it went. */
+  .plate {
+    position: sticky;
+    top: 1.5rem;
+    margin: 0;
+    min-inline-size: 0;
+    display: grid;
+    gap: .5rem;
+  }
+
+  /* Reflow rather than a fixed width: the picture takes the column it is given
+     and keeps its own proportions. */
+  .plate :is(img, svg) {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    max-inline-size: 100%;
+  }
+
+  /* THE PICTURE ARRIVES INSIDE A PARAGRAPH. `![alt](file.jpg)` is markdown, and
+     markdown renders BLOCK-LEVEL — so the slot holds a `<p>` with the image in
+     it, carrying the paragraph margin the type scale gave it. Left alone that is
+     16px of unasked-for air above and below the picture, on top of this grid's
+     own gap. Every rule aimed at a markdown slot moves one level down like
+     this. */
+  .figure > :first-child { margin-block-start: 0; }
+  .figure > :last-child { margin-block-end: 0; }
+
+  /* Quieter and smaller than the argument, which is the whole of what a caption
+     has to be. Anything past that is a design decision and it is yours. */
+  .caption { font-size: .85rem; line-height: 1.45; color: var(--ink-3); }
+  .caption > :first-child { margin-block-start: 0; }
+  .caption > :last-child { margin-block-end: 0; }
+
+  /* NARROW: ONE COLUMN, with the picture moved ABOVE the prose rather than left
+     at the bottom of it. In `rem`, so the breakpoint tracks the reader's type
+     size rather than a device's pixels.
+
+     IT HAS TO COME LAST. It overrides `.spread` and `.plate` above it, and at
+     equal specificity the later rule wins — declared earlier it would lose and
+     the collapse would silently never happen. That is the failure mode to watch
+     for in this file: an earlier version wrote `@media (max-inline-size: …)`,
+     which is not a media feature at all, so the query matched nothing and looked
+     exactly like a rule that worked. R60 fails that now. */
+  @container (width <= 52rem) {
+    .spread { grid-template-columns: minmax(0, 1fr); }
+    .plate { position: static; order: -1; }
+  }
+</style>
+
+<div class="spread">
+  <!-- Divs and not `<p>`s: a markdown slot is filled with rendered prose, and
+       rendered prose is paragraphs. -->
+  <div class="say" data-g-part="body"></div>
+  <figure class="plate">
+    <div class="figure" data-g-part="figure"></div>
+    <figcaption class="caption" data-g-part="caption"></figcaption>
+  </figure>
+</div>

@@ -1,0 +1,466 @@
+<!-- base/diagram/index.html — A DIAGRAM DRAWN FROM THE DOCUMENT'S OWN WORDS.
+
+     THERE IS NO DIAGRAM LIBRARY HERE AND THAT IS THE POINT. A figure in this
+     format is an inline `<svg>` the section writes, on the palette's tokens,
+     animated once when it arrives — and a diagram of relationships is that same
+     figure with boxes and edges in it. Nothing is fetched, nothing is themed by
+     somebody else's stylesheet, and every line on screen is a line in this file.
+
+     THE WORDS ARE THE DIAGRAM. The boxes and the arrows are `variables` on the
+     section — `nodes`, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as parallel
+     lists sharing a stem and the same length — so editing the diagram is editing
+     the document, which is the same thing that made a fence worth having. A
+     variable is a scalar or a list of scalars and nothing else; anything tabular
+     is parallel lists, which is why the edges are four lists rather than one.
+
+     NOTHING IN HERE HOLDS A POSITION. The script lays the graph out: a node's ROW
+     is how far it is from a source — one more than the deepest thing pointing at
+     it — and its place across that row is the order it was written in. So adding
+     a node is adding a name, and the drawing rearranges itself around it. A
+     coordinate typed into a file is a coordinate somebody has to maintain.
+
+     TOP TO BOTTOM, because the reader scrolls down and never sideways. That is
+     the rule the layout enforces rather than asks for, and it is why an edge that
+     runs back up the page is drawn dashed: `.agents/skills/diagrams/` carries the
+     rest of the drawing rules — sibling-only edges, names not sentences, edges
+     labelled with the contract, and never colour alone.
+
+     THE EDGES DRAW THEMSELVES IN, ONCE, WHEN THE SECTION IS FIRST SEEN. The
+     `reveal` plugin adds `is-seen` and disconnects; everything under that class
+     is in the `<style>` below. Every duration is multiplied by `--motion`, which
+     the document declares as 1 and as 0 under `prefers-reduced-motion` — so a
+     reader who asked for stillness gets the finished diagram and no move at all,
+     with no second media query in here to keep in step.
+
+     THE VIEWBOX IS THE ONLY GEOMETRY. No `width` attribute and no pixel size
+     anywhere: the svg is 100% of its plate and the viewBox decides the rest, so
+     the drawing is crisp on a phone and on a projector.
+
+     THIS FILE IS DELIBERATELY PLAIN. One ink, one rule, no accent, no tint, no
+     box around the drawing — a starter's look is inherited by every page copied
+     from it, so the only safe amount of look in here is none. The SHAPE is what
+     to take; how it should be inked is yours, and `design/` decides that. -->
+<style>
+  /* THE SECTION IS THE CONTAINER, and it has to say so: `@container` matches
+     nothing until an ancestor declares `container-type`. Nothing declares it for
+     you. */
+  :scope {
+    display: block;
+    container-type: inline-size;
+    padding-block: 2.5rem;
+  }
+
+  .band {
+    display: grid;
+    gap: 1.75rem 2.5rem;
+    max-inline-size: 64rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.55;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas:
+      "head  head"
+      "plate say"
+      "note  note";
+    align-items: start;
+  }
+
+  .head { grid-area: head; max-inline-size: 34rem; }
+  .head > :first-child { margin-block-start: 0; }
+  .head > :last-child { margin-block-end: 0; }
+
+  /* THE DRAWING SCROLLS INSIDE ITS OWN BOX where it cannot fit, which is the one
+     rule in here that is not negotiable: the page's one frame IS the scroller for
+     the whole document, so a wide drawing left to widen the page would drag every
+     section on it sideways. The svg reflows to the plate, so this almost never
+     fires — it is here for the day somebody gives the drawing a minimum. */
+  .plate {
+    grid-area: plate;
+    min-inline-size: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  /* NO WIDTH, NO HEIGHT, NO PIXELS. The viewBox carries the proportions and the
+     plate carries the size. */
+  .plate svg {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    overflow: visible;
+  }
+
+  .box {
+    fill: none;
+    stroke: var(--rule);
+    stroke-width: 1;
+  }
+  .name {
+    fill: var(--ink);
+    font-family: var(--sheet-face);
+    font-size: 15px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+
+  /* SOLID IS A LIVE DEPENDENCY, DASHED IS EVERYTHING ELSE — a handoff, a build
+     step, an edge that runs back up the page. It is a rule about every diagram in
+     a workspace rather than about this one: the distinction stops carrying
+     information the moment two pages spell it differently. */
+  .edge {
+    fill: none;
+    stroke: var(--rule);
+    stroke-width: 1.5;
+  }
+
+  .tip { fill: var(--rule); }
+
+  /* THE EDGE'S OWN WORDS, over the line rather than beside it. `paint-order` puts
+     the stroke down first, so the halo is drawn UNDER the glyphs instead of over
+     them — written the other way round the label is a smear. */
+  .says {
+    fill: var(--ink-3);
+    font-family: var(--sheet-face);
+    font-size: 11px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: var(--stock);
+    stroke-width: 4;
+    stroke-linejoin: round;
+  }
+
+  /* BEFORE IT IS SEEN: the boxes are already there and the edges are not drawn
+     yet. The figure is legible at every frame of this, which is the bar — a
+     reveal that starts from nothing is a section that is blank while it plays. */
+  .edge, .tip, .says { opacity: 0; }
+  .edge { stroke-dasharray: 1; stroke-dashoffset: 1; }
+
+  /* AND THE CLASS THE `reveal` PLUGIN ADDS. `--i` is the edge's own index, set by
+     the script as a CUSTOM PROPERTY — the one thing a script may write onto an
+     element's style — so the stagger is a number the stylesheet decides what to
+     do with rather than a duration baked into the JavaScript. */
+  :scope.is-seen .edge {
+    animation: edge-in calc(520ms * var(--motion, 1)) ease-out both;
+    animation-delay: calc(var(--i, 0) * 90ms * var(--motion, 1));
+  }
+  :scope.is-seen .tip,
+  :scope.is-seen .says {
+    animation: mark-in calc(260ms * var(--motion, 1)) ease-out both;
+    animation-delay: calc((var(--i, 0) * 90ms + 380ms) * var(--motion, 1));
+  }
+  @keyframes edge-in {
+    from { stroke-dashoffset: 1; opacity: 1; }
+    to { stroke-dashoffset: 0; opacity: 1; }
+  }
+  @keyframes mark-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* THE EDGE THAT RUNS BACK UP THE PAGE IS DASHED, and it stays dashed while it
+     draws — so this comes after the block above, which sets a dasharray of its
+     own to animate with. */
+  :scope.is-seen .edge.is-back {
+    animation: none;
+    opacity: 1;
+    stroke-dasharray: 4 3;
+    stroke-dashoffset: 0;
+  }
+
+  /* A READER WHO ASKED FOR LESS MOTION GETS THE DIAGRAM AND NOT THE MOVE. The
+     durations are already nothing through `--motion`; this is the half a
+     multiplier cannot do, which is putting the ink back. */
+  @media (prefers-reduced-motion: reduce) {
+    .edge, .tip, .says { opacity: 1; }
+    .edge { stroke-dashoffset: 0; }
+  }
+
+  .say { grid-area: say; max-inline-size: 34rem; }
+  .say > :first-child { margin-block-start: 0; }
+  .say > :last-child { margin-block-end: 0; }
+
+  /* A DIV AND NOT A `<p>`, like every markdown slot here: the plugin fills the
+     node with rendered prose, and rendered prose is paragraphs — a `<p>` inside
+     a `<p>` is not nesting the browser keeps. */
+  .note { grid-area: note; font-size: .85rem; color: var(--ink-3); }
+  .note > :first-child { margin-block-start: 0; }
+  .note > :last-child { margin-block-end: 0; }
+
+  /* THE FAULT IS A SLOT LIKE EVERY OTHER WORD HERE, hidden until the script says
+     otherwise. A blank rectangle where a drawing was is indistinguishable from a
+     page that is still loading, and the person looking at it is usually the
+     person who could have fixed it if it had said anything. */
+  .fault { grid-area: plate; color: var(--ink-3); font-size: .9rem; display: none; }
+  :scope.is-fault .fault { display: block; }
+  :scope.is-fault .plate { display: none; }
+
+  /* NARROW: ONE COLUMN, in `rem` so the breakpoint tracks the reader's type size
+     rather than a device's pixels. IT HAS TO COME LAST — it overrides `.band`
+     above it, and at equal specificity the later rule wins. */
+  @container (width <= 52rem) {
+    .band {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "head" "plate" "say" "note";
+    }
+  }
+</style>
+
+<div class="band">
+  <div class="head" data-g-part="head"></div>
+  <div class="plate"></div>
+  <div class="fault" data-g-part="fault"></div>
+  <div class="say" data-g-part="argument"></div>
+  <div class="note" data-g-part="note"></div>
+  <!-- ONE CLASS, ONCE, ON THIS SECTION, and the observer disconnects after it.
+       `data-g-on` would narrow it to one element inside the section; with
+       nothing named it is the section itself, which is what the `<style>` above
+       hangs everything off. -->
+  <span data-g-plugin="reveal"></span>
+</div>
+<script>
+  /* THE LAYOUT, AND NOTHING ELSE. Everything this draws comes out of `ctx.vars`
+     — the page's variables and the section's, merged with the nearest last — so
+     the diagram is edited in `content.yaml` beside the prose that explains it,
+     and this file never has to be opened to move a box. */
+
+  const SVG = "http://www.w3.org/2000/svg";
+
+  /* THE VIEWBOX'S OWN UNITS, AND THEY ARE NOT PIXELS. The svg is 100% of the
+     plate and these decide the proportions, which is what lets one drawing be
+     right on a phone and on a projector.
+
+     WHAT THE NUMBER ITSELF DECIDES IS THE TYPE SIZE, which is the part that is
+     easy to get wrong: the whole drawing is scaled by the plate's width over
+     this one, so a viewBox twice as wide as the plate halves every label on the
+     way to the screen. At 960 against the band's own plate the names came out at
+     eight pixels — legible in the file and not on the page. This is set near
+     what the plate actually gets, so the drawing renders at about life size and
+     the `font-size` in the stylesheet above means what it says. */
+  const WIDE = 560;
+  const ROW = 150;
+  const BOX_H = 56;
+  const TOP = 14;
+  /* HOW FAR A BACKWARD EDGE BOWS OUT PAST THE BOXES. It cannot run up the
+     middle: with one node per row every box shares an x, so an edge drawn
+     straight back up the column lands exactly under the forward edges and is
+     invisible — measured, in the loop this starter ships with. */
+  const BOW = 70;
+
+  /** A variable that is a list, a lone scalar, or absent — all three arrive here
+   *  and leave as an array of strings. A one-item list is written as a scalar by
+   *  most people writing YAML, so reading only the list form would break the
+   *  smallest diagram somebody draws. */
+  function list(value) {
+    if (Array.isArray(value)) return value.map(function (v) { return String(v).trim(); });
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value).trim()];
+  }
+
+  const vars = ctx.vars || {};
+  const names = list(vars.nodes).filter(Boolean);
+  const from = list(vars.edgeFrom);
+  const to = list(vars.edgeTo);
+  const says = list(vars.edgeSays);
+  const kind = list(vars.edgeKind);
+
+  const plate = section.querySelector(".plate");
+
+  const at = {};
+  names.forEach(function (name, i) { at[name] = i; });
+
+  /* EVERY EDGE HAS TO NAME TWO NODES THAT EXIST. An edge pointing at a name
+     nobody wrote is a typo, and drawing the rest of the graph around the hole is
+     how a diagram quietly stops matching the argument beside it. */
+  const edges = [];
+  for (let i = 0; i < Math.max(from.length, to.length); i++) {
+    const a = at[from[i]];
+    const b = at[to[i]];
+    if (a === undefined || b === undefined || a === b) continue;
+    edges.push({ a: a, b: b, says: says[i] || "", dashed: (kind[i] || "solid") !== "solid" });
+  }
+
+  /* NO NODES IS NOT AN EMPTY DRAWING, it is a section whose words have not been
+     written yet — so it says so, in its own slot, rather than drawing a box with
+     nothing in it. */
+  if (names.length === 0) {
+    section.classList.add("is-fault");
+  } else {
+    /* A LOOP THAT CLOSES IS USUALLY THE POINT, so the first thing the layout does
+       is find the edges that close one and take them OUT of it. A cycle has no
+       "how far from a source" to compute — every node in it is behind every
+       other — and left in, the relaxation below just pushes the whole ring down
+       the page once per pass until the passes run out, which draws four boxes
+       over two thousand units of empty plate. Measured, in exactly the loop this
+       starter ships with.
+
+       A DEPTH-FIRST WALK IN THE ORDER THE NODES WERE WRITTEN is what decides
+       which edge closes it: an edge to a node that is still on the stack is
+       pointing back at an ancestor of itself. The edge is still DRAWN — dashed,
+       running back up the page, which is the rule — it simply does not get a say
+       in where its target sits. */
+    const kids = names.map(function () { return []; });
+    for (let i = 0; i < edges.length; i++) kids[edges[i].a].push(i);
+    const back = new Set();
+    const state = names.map(function () { return 0; }); // 0 unseen · 1 on the stack · 2 done
+    names.forEach(function (_name, start) {
+      if (state[start] !== 0) return;
+      /* An explicit stack rather than recursion: a graph written by hand is
+         small, but a page must not be able to blow the call stack. */
+      const stack = [{ at: start, next: 0 }];
+      state[start] = 1;
+      while (stack.length) {
+        const top = stack[stack.length - 1];
+        if (top.next >= kids[top.at].length) { state[top.at] = 2; stack.pop(); continue; }
+        const e = kids[top.at][top.next++];
+        const to = edges[e].b;
+        if (state[to] === 1) back.add(e);
+        else if (state[to] === 0) { state[to] = 1; stack.push({ at: to, next: 0 }); }
+      }
+    });
+
+    /* THE ROW A NODE SITS ON IS HOW FAR IT IS FROM A SOURCE — one more than the
+       deepest thing pointing at it. Relaxed rather than sorted, because relaxing
+       is four lines and says the same thing. With the closing edges gone this is
+       a graph that ends, so no node can be pushed past the last row and the pass
+       cap is a belt rather than the mechanism. */
+    const row = names.map(function () { return 0; });
+    for (let pass = 0; pass < names.length; pass++) {
+      let moved = false;
+      for (let i = 0; i < edges.length; i++) {
+        const e = edges[i];
+        if (back.has(i)) continue;
+        if (row[e.b] < row[e.a] + 1) { row[e.b] = row[e.a] + 1; moved = true; }
+      }
+      if (!moved) break;
+    }
+
+    /* AND ITS PLACE ACROSS THAT ROW IS THE ORDER IT WAS WRITTEN IN. Nothing
+       cleverer: a crossing-minimising sweep would reorder a row the day somebody
+       added an edge, and a diagram that rearranges itself under its own author is
+       worse than one with a crossing in it. */
+    const rows = [];
+    row.forEach(function (r, i) { (rows[r] = rows[r] || []).push(i); });
+
+    const place = [];
+    rows.forEach(function (members, r) {
+      const step = WIDE / members.length;
+      members.forEach(function (i, n) {
+        place[i] = { x: step * (n + 0.5), y: TOP + r * ROW };
+      });
+    });
+
+    const tall = TOP * 2 + (rows.length - 1) * ROW + BOX_H;
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 " + WIDE + " " + tall);
+    svg.setAttribute("role", "img");
+    /* THE DRAWING SAYS WHAT IT IS, to a reader who is not looking at it. The
+       words are the document's own — the node names, in the order they were
+       written — so there is nothing here for somebody to keep in step by hand. */
+    svg.setAttribute("aria-label", names.join(", "));
+
+    /* EVERY BOX'S WIDTH, WORKED OUT BEFORE ANY LINE IS DRAWN, because a backward
+       edge leaves and lands on a box's SIDE and has to know where that side is.
+       Each is sized from the LENGTH of its own name rather than from a
+       measurement, deliberately: measuring means waiting for the face to load,
+       and a diagram that waits is a section that is blank while it does. A node
+       label is a name and not a sentence — that is the drawing rule, not a
+       limitation of this arithmetic — so an estimate is right for every label
+       that belongs in one. */
+    const wide = names.map(function (name) { return Math.max(96, 26 + name.length * 8.4); });
+
+    /** One element, with its attributes, appended where it belongs. */
+    function add(parent, tag, attrs) {
+      const el = document.createElementNS(SVG, tag);
+      for (const key of Object.keys(attrs)) el.setAttribute(key, String(attrs[key]));
+      parent.appendChild(el);
+      return el;
+    }
+
+    /* THE EDGES FIRST, so a box is never drawn under a line.
+     *
+     * A FORWARD EDGE FALLS FROM ONE BOX'S FOOT TO THE NEXT BOX'S HEAD. A
+     * BACKWARD ONE LEAVES AND LANDS ON A SIDE and bows out past the boxes — it
+     * cannot run up the middle, because with one node per row every box shares
+     * an x and a line drawn straight back up the column is exactly under the
+     * forward edges. It leaves on whichever side has more room, so a drawing
+     * hard against the left of its plate does not bow off it. */
+    edges.forEach(function (e, n) {
+      const a = place[e.a];
+      const b = place[e.b];
+      const back = b.y < a.y;
+      const path = add(svg, "path", {
+        class: "edge" + (e.dashed || back ? " is-back" : ""),
+        /* `pathLength` NORMALISES EVERY EDGE TO 1, which is what lets one
+           `stroke-dasharray` in the stylesheet draw a short edge and a long one
+           at the same speed — and means nothing here has to measure a path. */
+        pathLength: 1,
+        d: "",
+      });
+      let tipD;
+      let sayAt;
+      if (back) {
+        /* Out to the right where the boxes sit left of centre, out to the left
+           where they sit right of it. */
+        const right = (a.x + b.x) / 2 < WIDE / 2;
+        const side = right ? 1 : -1;
+        const x1 = a.x + side * wide[e.a] / 2;
+        const x2 = b.x + side * wide[e.b] / 2;
+        const out = Math.max(x1 * side, x2 * side) + BOW;
+        const my = a.y + BOX_H / 2;
+        const ny = b.y + BOX_H / 2;
+        path.setAttribute("d", "M " + x1 + " " + my
+          + " C " + (side * out) + " " + my
+          + " " + (side * out) + " " + ny
+          + " " + x2 + " " + ny);
+        tipD = "M " + x2 + " " + ny
+          + " L " + (x2 + side * 9) + " " + (ny - 5)
+          + " L " + (x2 + side * 9) + " " + (ny + 5) + " Z";
+        sayAt = { x: side * (out - 4), y: (my + ny) / 2 };
+      } else {
+        const y1 = a.y + BOX_H;
+        const y2 = b.y;
+        const bend = Math.max(30, (y2 - y1) * 0.45);
+        path.setAttribute("d", "M " + a.x + " " + y1
+          + " C " + a.x + " " + (y1 + bend)
+          + " " + b.x + " " + (y2 - bend)
+          + " " + b.x + " " + y2);
+        tipD = "M " + b.x + " " + y2
+          + " L " + (b.x - 5) + " " + (y2 - 9)
+          + " L " + (b.x + 5) + " " + (y2 - 9) + " Z";
+        sayAt = { x: (a.x + b.x) / 2, y: (y1 + y2) / 2 };
+      }
+      /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM
+         PROPERTY. The stylesheet decides what the stagger does with it. */
+      path.style.setProperty("--i", String(n));
+
+      const tip = add(svg, "path", { class: "tip", d: tipD });
+      tip.style.setProperty("--i", String(n));
+
+      if (e.says) {
+        const label = add(svg, "text", { class: "says", x: sayAt.x, y: sayAt.y });
+        label.textContent = e.says;
+        label.style.setProperty("--i", String(n));
+      }
+    });
+
+    /* THEN THE BOXES, on the widths worked out above. */
+    names.forEach(function (name, i) {
+      const w = wide[i];
+      add(svg, "rect", {
+        class: "box",
+        x: place[i].x - w / 2,
+        y: place[i].y,
+        width: w,
+        height: BOX_H,
+        rx: 3,
+      });
+      const text = add(svg, "text", { class: "name", x: place[i].x, y: place[i].y + BOX_H / 2 });
+      text.textContent = name;
+    });
+
+    plate.replaceChildren(svg);
+  }
+</script>

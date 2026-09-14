@@ -1,0 +1,88 @@
+<!-- base/reveal/index.html — A FIGURE THAT PLAYS ONCE AND THEN RESTS.
+
+     THIS FILE IS DELIBERATELY PLAIN. One hairline, one ink, no accent, no card —
+     a starter's look turns up in every page copied from it. Take the mechanism.
+
+     THE OBSERVER IS A PLUGIN AND NOT FIVE LINES IN THIS FILE, and that is the
+     rule rather than a convenience: anything with even a small chance of being
+     wanted on another page is a plugin from the start. Those five lines were
+     written into 89 section files in one workspace, and the two ways they go
+     wrong — an observer that never disconnects, and an animation that starts at
+     load — are both invisible until somebody notices the page is tired.
+
+     `reveal` ADDS A CLASS AND NOTHING ELSE. `is-seen` lands on this section the
+     first time it comes into view, and the observer disconnects. Everything
+     under that class is below, which is where a drawing's motion belongs.
+
+     `--motion` IS THE FRAME'S SWITCH and is already on the page: the document
+     declares it as 1, and 0 under `prefers-reduced-motion`. A duration multiplied
+     by it is nothing when the reader has asked for less, which is why there is no
+     second media query in this file.
+
+     THE BARS ARE ONE SLOT HOLDING A LIST. A fifth bar is a fifth entry in
+     `content.yaml` and never an edit to this markup. -->
+<style>
+  :scope { display: block; container-type: inline-size; padding-block: 2.5rem; }
+
+  .wrap {
+    display: grid;
+    gap: 1.25rem;
+    max-inline-size: 60rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  .wrap > * > :first-child { margin-block-start: 0; }
+  .wrap > * > :last-child { margin-block-end: 0; }
+
+  [data-g-part="rows"] { display: grid; gap: .5rem; }
+
+  /* EACH ITEM IS A BAR. It starts at nothing and grows to its full width on
+     first sight. There is no stagger here, deliberately: a delay per item is a
+     design decision and this file has none of those. */
+  [data-g-part="rows"] > * {
+    padding-block: .35rem;
+    padding-inline-start: .6rem;
+    border-inline-start: 1px solid var(--rule);
+    transform-origin: left center;
+    transform: scaleX(.02);
+    opacity: 0;
+  }
+  [data-g-part="rows"] > * > :first-child { margin-block-start: 0; }
+  [data-g-part="rows"] > * > :last-child { margin-block-end: 0; }
+
+  /* THE CLASS THE PLUGIN ADDS, and everything that hangs off it. */
+  :scope.is-seen [data-g-part="rows"] > * {
+    animation: bar-in calc(420ms * var(--motion, 1)) cubic-bezier(.2, .8, .2, 1) both;
+    transform: none;
+    opacity: 1;
+  }
+  @keyframes bar-in {
+    from { transform: scaleX(.02); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+
+  /* A READER WHO ASKED FOR LESS MOTION GETS THE FIGURE AND NOT THE MOVE. The
+     duration is already nothing through `--motion`; this is the half a
+     multiplier cannot do, which is removing the transform outright. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-g-part="rows"] > * { transform: none; opacity: 1; }
+  }
+
+  [data-g-part="note"] { color: var(--ink-3); font-size: .88rem; }
+</style>
+
+<div class="wrap">
+  <div data-g-part="lede"></div>
+  <div data-g-part="rows"></div>
+  <!-- ONE CLASS, ONCE, ON THIS SECTION. `data-g-on` would narrow it to one
+       element inside the section; with nothing named it is the section itself. -->
+  <span data-g-plugin="reveal"></span>
+  <!-- AND THE LIST STAYS A LIST. A figure drawn from a slot is still a slot
+       somebody has to be able to add to and take from, or the bars are a picture
+       of a chart rather than a chart. -->
+  <span data-g-plugin="items" data-g-for="rows" data-g-add="＋ Another bar" data-g-blank="Five"></span>
+  <div data-g-part="note"></div>
+</div>

@@ -1,0 +1,439 @@
+<!-- design/news.html — the first of the three worlds: set like a newspaper.
+
+     A WORLD IS A BAND, AND A BAND CARRIES ITS OWN PALETTE. The ten values below
+     are this section's own variables, so they are edited in the page's settings
+     like any other value and nothing in this file spells a colour. They are
+     declared onto the SAME token names the workspace uses — `--ink`, `--rule`,
+     `--spot` — so every rule under here reads exactly as a rule anywhere else
+     in the vault does, and this block is the `theme.json` somebody would be
+     handed rather than a second way of writing CSS.
+
+     The type is the three ROLES this workspace has, combined differently:
+     the sheet face sets the page, the furniture face does every label, and the
+     gauge face is left for the figures. No face is named anywhere.
+
+     THE FIGURE IS THE SAME WEEK the band above and the two below draw, read
+     from the page's `day` and `out` variables. The red column is the tallest
+     one, found rather than typed. -->
+<style>
+  :scope {
+    display: block;
+    container-type: inline-size;
+
+    --stock: {{stock}};
+    --stock-lo: {{stockLo}};
+    --ink: {{ink}};
+    --ink-2: {{ink2}};
+    --ink-3: {{ink3}};
+    --rule: {{rule}};
+    --rule-soft: {{ruleSoft}};
+    --spot: {{spot}};
+    --spot-2: {{spot2}};
+
+    background: var(--stock);
+    color: var(--ink);
+  }
+
+  [data-g-part] { max-inline-size: none; }
+
+  .said {
+    padding: 1.15rem 3rem;
+    border-block-end: 1px solid var(--rule-soft);
+    font-family: var(--furniture-face);
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+  }
+
+  .said p { margin-block: 0; }
+  .said strong { color: var(--ink); font-weight: 400; }
+
+  .said p::before {
+    content: "";
+    display: inline-block;
+    inline-size: 0.9rem;
+    block-size: 2px;
+    margin-inline-end: 0.6rem;
+    vertical-align: 0.24em;
+    background: var(--spot);
+  }
+
+  .board { padding: 3.9rem 3rem 3.4rem; }
+
+  .kick {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block-end: 0.4rem;
+    margin-block-end: 0.7rem;
+    border-block-end: 1px solid var(--rule);
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-2);
+  }
+
+  .kick p { margin-block: 0; }
+
+  .head {
+    padding-block-end: 0.5rem;
+    margin-block-end: 0.55rem;
+    border-block-end: 3px solid var(--rule);
+  }
+
+  .headline h2 {
+    margin-block: 0 0.35rem;
+    max-inline-size: 22ch;
+    font-family: var(--sheet-face);
+    font-weight: 700;
+    font-size: 3.6rem;
+    line-height: 0.93;
+    letter-spacing: -0.028em;
+    color: var(--ink);
+  }
+
+  /* The deck is the paragraph under the headline, in the same part: markdown
+     already tells a heading from a paragraph, so cutting a second slot would
+     only have bought a class. */
+  .headline p {
+    margin-block: 0;
+    max-inline-size: 60ch;
+    font-family: var(--furniture-face);
+    font-size: 1.0625rem;
+    line-height: 1.3;
+    color: var(--ink-2);
+  }
+
+  .body {
+    column-count: 3;
+    column-gap: 1.9rem;
+    column-rule: 1px solid var(--rule-soft);
+    font-family: var(--sheet-face);
+    font-size: 0.8125rem;
+    line-height: 1.38;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  .body > p { margin-block: 0; }
+  .body > p + p { text-indent: 1.1em; }
+
+  /* The drop cap is the OPENING paragraph's, and a direct child so the pull
+     quote's own paragraph never takes one. */
+  .body > p:first-child::first-letter {
+    float: left;
+    font-size: 2.95em;
+    line-height: 0.82;
+    padding: 0.06em 0.1em 0 0;
+    font-weight: 700;
+  }
+
+  .body blockquote {
+    break-inside: avoid;
+    margin: 0.85rem 0;
+    padding-block: 0.5rem;
+    border-block: 1px solid var(--rule);
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 1.0625rem;
+    line-height: 1.22;
+    text-align: left;
+    text-indent: 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.9rem;
+    margin-block-start: 1rem;
+    padding-block-start: 0.7rem;
+    border-block-start: 1px solid var(--rule);
+  }
+
+  .lab p,
+  .tab h3 {
+    margin-block: 0 0.5rem;
+    padding-block-end: 0.3rem;
+    border-block-end: 1px solid var(--rule-soft);
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink);
+  }
+
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.5rem;
+    block-size: 6.6rem;
+    padding-block-end: 0.35rem;
+    border-block-end: 2px solid var(--rule);
+  }
+
+  .chart .col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.25rem;
+    block-size: 100%;
+  }
+
+  .chart .val {
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .chart .bar {
+    inline-size: 100%;
+    block-size: calc(var(--at, 0) * 100%);
+    border: 1px solid var(--ink);
+    background: repeating-linear-gradient(-45deg, var(--ink) 0 1.5px, transparent 1.5px 4.5px);
+    transform-origin: bottom;
+  }
+
+  .chart .col.hot .bar { background: var(--spot); border-color: var(--spot); }
+  .chart .col.hot .val { color: var(--spot); }
+
+  .days { display: flex; gap: 1.5rem; margin-block-start: 0.3rem; }
+
+  .days span {
+    flex: 1;
+    text-align: center;
+    font-family: var(--furniture-face);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  .cap p {
+    margin-block: 0.55rem 0;
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--ink-2);
+  }
+
+  .tab { overflow-x: auto; }
+
+  .tab table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-family: var(--sheet-face);
+    font-size: 0.8125rem;
+    color: var(--ink);
+  }
+
+  .tab th {
+    padding-block: 0 0.3rem;
+    text-align: left;
+    border-block-end: 1px solid var(--rule);
+    font-family: var(--furniture-face);
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-2);
+  }
+
+  .tab td {
+    padding-block: 0.26rem;
+    border-block-end: 1px solid var(--rule-soft);
+  }
+
+  .tab tr:last-child td { border-block-end: 2px solid var(--rule); }
+
+  .tab td:nth-child(2),
+  .tab td:nth-child(3),
+  .tab th:nth-child(2),
+  .tab th:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .tab td:last-child,
+  .tab th:last-child {
+    text-align: right;
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--ink-2);
+  }
+
+  .tab td strong { color: var(--spot); }
+
+  /* THE PALETTE, NAMED. The chips are the tokens above in the order they are
+     declared in; the words beside them are the document's, so a world can be
+     renamed without this file being opened. */
+  .sw { display: flex; margin-block-start: 1.3rem; border: 1px solid var(--rule); }
+
+  .sw .chip {
+    position: relative;
+    flex: 1;
+    block-size: 2.1rem;
+    background: var(--c);
+    border-inline-end: 1px solid var(--rule);
+  }
+
+  .sw .chip:last-child { border-inline-end: 0; }
+  .sw .chip:nth-child(1) { --c: var(--stock); }
+  .sw .chip:nth-child(2) { --c: var(--stock-lo); }
+  .sw .chip:nth-child(3) { --c: var(--rule-soft); }
+  .sw .chip:nth-child(4) { --c: var(--ink-2); }
+  .sw .chip:nth-child(5) { --c: var(--ink); }
+  .sw .chip:nth-child(6) { --c: var(--spot); }
+  .sw .chip:nth-child(7) { --c: var(--spot-2); }
+
+  .sw .nm {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: calc(100% + 0.3rem);
+    font-family: var(--furniture-face);
+    font-size: 0.5625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    color: var(--ink-2);
+  }
+
+  .swwrap { padding-block-end: 1.1rem; }
+
+  @container (width <= 62rem) {
+    .board { padding-inline: 1.5rem; }
+    .said { padding-inline: 1.5rem; }
+    .body { column-count: 1; }
+    .headline h2 { font-size: 2.4rem; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* THE BAND SETS ITSELF once, when it is reached. Everything that moves is
+     declared in here, so under reduced motion there is no transition to skip
+     and the band is simply already set. */
+  @media (prefers-reduced-motion: no-preference) {
+    .rise {
+      opacity: 0;
+      transform: translateY(0.55rem);
+      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);
+    }
+
+    :scope.set .rise { opacity: 1; transform: none; }
+
+    .headline h2 {
+      opacity: 0;
+      letter-spacing: 0.34em;
+      filter: blur(0.9px);
+      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;
+    }
+
+    :scope.set .headline h2 { opacity: 1; letter-spacing: -0.028em; filter: none; }
+
+    .headline p {
+      opacity: 0;
+      transform: translateY(0.55rem);
+      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) .16s, transform .62s cubic-bezier(.16, 1, .3, 1) .16s;
+    }
+
+    :scope.set .headline p { opacity: 1; transform: none; }
+
+    .chart .bar {
+      transform: scaleY(0);
+      transition: transform .75s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);
+    }
+
+    :scope.set .chart .bar { transform: scaleY(1); }
+  }
+</style>
+
+<div class="said" data-g-part="said"></div>
+<div class="board">
+  <div class="kick rise">
+    <div data-g-part="edition"></div>
+    <div data-g-part="desk"></div>
+  </div>
+
+  <div class="head">
+    <div class="headline" data-g-part="headline"></div>
+  </div>
+
+  <div class="body rise" data-g-part="body"></div>
+
+  <div class="grid">
+    <div>
+      <div class="lab rise" data-g-part="chartlabel"></div>
+      <div class="chart"></div>
+      <div class="days"></div>
+      <div class="cap rise" data-g-part="caption"></div>
+    </div>
+    <div>
+      <div class="tab rise" data-g-part="table"></div>
+      <div class="swwrap"><div class="sw rise"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* THE WEEK, drawn as columns. The numbers and the day names are the page's own
+     variables, so the figure changes when the document does and there is no
+     second copy of the week anywhere in this file. */
+  var days = ctx.vars.day || [];
+  var out = (ctx.vars.out || []).map(Number);
+  var top = Math.max.apply(null, out.concat([1]));
+
+  var chart = section.querySelector(".chart");
+  var axis = section.querySelector(".days");
+
+  out.forEach(function (n, i) {
+    var col = document.createElement("div");
+    col.className = "col" + (n === top ? " hot" : "");
+
+    var val = document.createElement("span");
+    val.className = "val rise";
+    val.textContent = String(n);
+    val.style.setProperty("--d", (0.3 + i * 0.06) + "s");
+
+    var bar = document.createElement("i");
+    bar.className = "bar";
+    bar.style.setProperty("--at", String(n / top));
+    bar.style.setProperty("--d", (0.3 + i * 0.06) + "s");
+
+    col.appendChild(val);
+    col.appendChild(bar);
+    chart.appendChild(col);
+
+    var day = document.createElement("span");
+    day.textContent = String(days[i] === undefined ? "" : days[i]);
+    axis.appendChild(day);
+  });
+
+  /* The swatch strip: one chip per name, the colour coming from the tokens at
+     the top of this file rather than from a second list. */
+  var strip = section.querySelector(".sw");
+  (ctx.vars.newsSwatch || []).forEach(function (name) {
+    var chip = document.createElement("i");
+    chip.className = "chip";
+    var nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = String(name);
+    chip.appendChild(nm);
+    strip.appendChild(chip);
+  });
+
+  /* ONCE, ON FIRST SIGHT. `root: document` is the box's own scroller: an
+     observer with no root has an opaque origin above it and never applies a
+     margin or reports a root. */
+  var io = new IntersectionObserver(function (rows) {
+    rows.forEach(function (row) {
+      if (!row.isIntersecting) return;
+      section.classList.add("set");
+      io.disconnect();
+    });
+  }, { root: document, threshold: 0.12 });
+
+  io.observe(section);
+  onTeardown(function () { io.disconnect(); });
+</script>

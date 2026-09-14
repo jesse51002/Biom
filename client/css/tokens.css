@@ -1,0 +1,163 @@
+/* The world the workspace is dressed in, as tokens. Lift this file and the rest
+   of the CSS follows.
+
+   **Nothing outside `client/theme/palettes.js` may name a colour.** The `:root`
+   block between the palette markers below is the one exception and it is not a
+   second source of truth: `tests/theme.test.js` asserts it is character-for-
+   character the palette in `DEFAULT_THEME`, so the two cannot drift.
+
+   THIS IS THE SCHEME PAINTED BEFORE THE VAULT ANSWERS, NOT THE ONE THE CHROME
+   KEEPS. `client/theme/theme.js` writes the open vault's palette and its
+   furniture face over every token below the moment `theme.get` comes back, so a
+   folder that ships cream pages is a cream workspace to the edges of the window.
+   The block is still load-bearing: it is the first frame, it is the fallback for
+   anything a `theme.json` does not name, and the test holds it byte-equal to
+   `DEFAULT_THEME`. Two of the tokens are set from the vault and CANNOT be
+   written here — `--paper` and `--shadow`, both below, both explained where they
+   are declared.
+
+   Everything under the palette block is derived with `color-mix`, so a change to
+   the block carries through — and so does the vault's, because the palette
+   arrives as inline properties on the root and a `color-mix` re-resolves. Several
+   of the mock's washes were the palette's own inks retyped as three numbers and
+   an alpha; that is why the washes and the shadows are tokens here rather than
+   literals in four other stylesheets. */
+
+/* The shipped faces, for THIS origin. The block between the markers is written
+   from `client/theme/faces.js` — `faceCss("../fonts/")` byte-for-byte, held by
+   `tests/theme.test.js` — because the artifact box needs the same faces declared
+   a second time, on its own opaque origin, and two hand-kept lists drift. The
+   chrome itself is set in the system's own sans; a page asks for a face by ROLE. */
+/* faces:start — faceCss("../fonts/") in client/theme/faces.js, checked by tests/theme.test.js */
+@font-face{font-family:"Workbench";src:url("../fonts/workbench.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Silkscreen";src:url("../fonts/silkscreen.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Silkscreen";src:url("../fonts/silkscreen-bold.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Atkinson Hyperlegible Next";src:url("../fonts/atkinson.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
+@font-face{font-family:"Atkinson Hyperlegible Next";src:url("../fonts/atkinson-italic.woff2") format("woff2");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:"Sheet";src:url("../fonts/c059.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Sheet";src:url("../fonts/c059-bold.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Sheet";src:url("../fonts/c059-italic.woff2") format("woff2");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:"Furniture";src:url("../fonts/narrow.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Furniture";src:url("../fonts/narrow-bold.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Gauge";src:url("../fonts/mono.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+/* faces:end */
+
+/* palette:start — DEFAULT_THEME.palette in client/theme/palettes.js, checked by tests/theme.test.js */
+:root{
+  --stock:#0E0F11;
+  --stock-hi:#16181B;
+  --stock-lo:#0A0B0C;
+  --stock-edge:#3A3F47;
+  --field:#1D2024;
+  --ink:#EDE6D6;
+  --ink-2:#B9B3A5;
+  --ink-3:#8F8A7C;
+  --rule:#2C3036;
+  --rule-soft:#23262B;
+  --cyan:#FFB020;
+  --magenta:#7AB4FF;
+  --yellow:#FFB020;
+  --cyan-t:#FFC759;
+  --magenta-t:#A9CEFF;
+  --nonrepro:#3A3F47;
+  --nonrepro-t:#6C7682;
+  --room:#121316;
+  --room-2:#0A0B0C;
+  --room-rule:#2C3036;
+  --room-ink:#EDE6D6;
+  --room-ink-2:#B9B3A5;
+  --room-ink-3:#8F8A7C;
+  --on-spot:#16181B;
+}
+/* palette:end */
+
+:root{
+  /* Washes: a hover row, a proposed binding, a chip, a scrim. */
+  --ink-wash:color-mix(in srgb, var(--ink) 8%, transparent);
+  --cyan-wash:color-mix(in srgb, var(--cyan) 12%, transparent);
+  --magenta-wash:color-mix(in srgb, var(--magenta) 14%, transparent);
+  --yellow-wash:color-mix(in srgb, var(--yellow) 22%, transparent);
+  --nonrepro-wash:color-mix(in srgb, var(--nonrepro) 30%, transparent);
+  --scrim:color-mix(in srgb, var(--shadow) 60%, transparent);
+
+  /* THE PAGE'S PAPER, which is not the canvas. The box paints no background and
+     the frame is transparent, so what shows under a page is whatever the canvas
+     is — and a page sits on the palette's LIGHTEST stock rather than on its
+     workspace one, so the sheet reads as a sheet laid on the desk. `boot.js`
+     sets this from the vault's palette the moment it answers, and chrome.css
+     paints the box with it. Until then, the canvas. */
+  --paper:var(--stock);
+
+  /* THE PALETTE'S DARK END, whichever end that is, and the second token the
+     vault writes rather than declares. Depth is an offset and a soft blur of the
+     canvas's own black — which holds only while the canvas IS black. A light
+     workspace mixes the same shadow out of near-white stock and gets a haze, so
+     `theme.js` answers whichever of the stock and the ink is darker and the two
+     rules that need a shadow reach for that instead. */
+  --shadow:var(--stock);
+  --lift:0 1px 2px color-mix(in srgb, var(--shadow) 60%, transparent),
+         0 8px 24px -6px color-mix(in srgb, var(--shadow) 90%, transparent);
+
+  /* THE CHROME'S OWN TYPE. The mono is the system's and stays that way: a vault
+     is free to name a serif as its `gauge` role, and `code`, `kbd` and the vault
+     picker's filesystem paths would render in it. The sans is the system's until
+     the vault answers, and then it is the vault's FURNITURE role — the workspace
+     wears the type the workspace chose, the way it wears the palette. */
+  --ui-face:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono-face:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  /* Three roles a PAGE may ask for, filled from the face list in palettes.js.
+     Declared so `var(--sheet-face)` resolves on this origin. The chrome names
+     none of them directly — it takes the furniture role through `--ui-face`
+     above, so the token a rule reaches for still says whose type it is. */
+  --sheet-face:"Sheet",Georgia,"Times New Roman",serif;
+  --furniture-face:"Furniture","Helvetica Neue",Arial,sans-serif;
+  --gauge-face:"Gauge",ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  /* THE WINDOW'S OWN TITLE BAR, in the built application only. Shorter than the
+     rail because it carries no reading — a mark, a name and four controls — and
+     because the two bars stacked are the whole of the chrome above the page.
+     32px at the 16px root below, which is the height every desktop that draws
+     its own bar settles on. */
+  --title-h:2rem;
+  --rail-h:2.75rem;
+  /* The rail's width, and the ONLY thing that moves it. `client/shell/rack.js`
+     rewrites this property inline on `.app` — from the width the user dragged
+     to, or from the width the rows actually need — so the value here is what
+     paints the first frame before any of that has run, and nothing else. It is
+     `RACK_BASE` in that file: 16.375rem is 262px at the 16px root set below. */
+  --rack-w:16.375rem;
+  /* How wide a target the grip presents. The hairline it draws is 1px; the rest
+     is reach, and it is pulled back out of the layout by its own margin so the
+     rail is exactly as wide as it says it is. */
+  --grip-w:11px;
+  --panel-w:20rem;
+}
+
+*{box-sizing:border-box}
+/* One dial for the whole interface — every size below is in rem. The SCHEME is
+   the vault's: `theme.js` sets `color-scheme` on this element from how light the
+   palette's stock is, so the browser stops tinting the chrome's own scrollbars
+   and native controls dark under a light workspace. What is written here is the
+   first frame, the same as the palette block. */
+html{font-size:16px; color-scheme:dark}
+html,body{height:100%}
+body{
+  margin:0; background:var(--stock); color:var(--ink);
+  font-family:var(--ui-face); font-size:.875rem; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:color-mix(in srgb, var(--cyan) 30%, transparent)}
+:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+button{font:inherit; color:inherit}
+/* A LINK'S COLOUR COMES FROM THE PALETTE, and this one line is why there is no
+   exception to that. An anchor nobody wrote a rule for is not uncoloured: the
+   browser paints it its own link blue, chosen from `color-scheme` and from
+   nothing in this file — which is how a single `<a>` on the start page came to
+   be the one thing on that screen the workspace's palette did not decide. Every
+   anchor that means to be something else already says so and still wins on
+   specificity; this is what the rest get. */
+a{color:var(--cyan-t)}
+code,kbd{font-family:var(--mono-face); font-size:.85em}
+
+#root{position:relative; height:100%}

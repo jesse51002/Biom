@@ -1,0 +1,73 @@
+<!-- base/child/index.html — HOW THIS PAGE LOOKS INSIDE SOMEBODY ELSE'S.
+
+     This is the one file in `base/` that is not a section. Every page is created
+     with a copy of it in its own directory as `child.html`, and the `child`
+     plugin mounts it wherever a parent draws this page as a child. Delete it and
+     the built-in row comes back, which is a supported act rather than a broken
+     page.
+
+     IT IS MARKUP AND NOT A PROGRAM. A `<script>` in here is removed and
+     reported: a script inserted as markup never runs, so leaving one would be
+     dead code that looks live. The child says how it LOOKS; the section holding
+     it says how the page BEHAVES.
+
+     NO NAME IS WRITTEN INTO IT. `{{name}}`, `{{kind}}`, `{{id}}` and `{{rows}}`
+     are this child's own fields and they are the nearest scope, which is what
+     lets one file sit in every page directory: renaming the page renames the
+     row, where a name copied in here would be wrong the moment somebody did that
+     and nothing on screen would say so.
+
+     NOTHING IN HERE IS FOCUSABLE, ON PURPOSE. The plugin wires the click either
+     way; with no control of its own in the markup it makes the whole drawing the
+     control — role, tab stop, Enter and Space, and an aria-label from the name.
+     Put ONE `<a href>` or `<button type="button">` in here instead if the row
+     wants a real control, and never both: a control inside a thing pretending to
+     be a control is two tab stops for one row.
+
+     Its `<style>` is scoped to the slot by the plugin, so these selectors cannot
+     reach the section above or below.
+
+     THIS FILE IS DELIBERATELY PLAIN. It is a row, and it carries a name, a count
+     and a kind — no dot, no tint on hover, no accent. A starter with a look is a
+     look that turns up in every page copied from it, and this one is copied into
+     EVERY page in the workspace, which makes it the most contagious file here. -->
+<style>
+  .kid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: .55rem;
+    padding: .5rem .65rem;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink);
+    font-family: var(--sheet-face);
+    line-height: 1.4;
+  }
+
+  .kid-name { min-inline-size: 0; overflow-wrap: anywhere; }
+
+  /* A COUNT THAT HIDES ITSELF. `{{rows}}` is a table's row count and is EMPTY
+     for a page — the markup cannot branch, so the empty element is what carries
+     the difference, and `:empty` is what reads it.
+
+     THE NUMBER STANDS ALONE, and that is the same fact seen once more. A
+     `::after { content: " rows" }` would read "1 rows" beside every one-row
+     table, on every page this file is copied into, with no way to spell the
+     other case — the markup cannot branch, so it cannot pluralise either. The
+     `{{kind}}` beside it already says what is being counted. */
+  .kid-count { font-size: .8rem; color: var(--ink-3); }
+  .kid-count:empty { display: none; }
+
+  .kid-kind {
+    font-size: .7rem;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+</style>
+
+<div class="kid">
+  <span class="kid-name">{{name}}</span>
+  <span class="kid-count">{{rows}}</span>
+  <span class="kid-kind">{{kind}}</span>
+</div>

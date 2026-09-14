@@ -1,0 +1,32 @@
+node_modules/
+
+# A vault that used to be served from here, and no longer is. NOTHING IS
+# WRITTEN BESIDE THE INSTALL any more — the default vault lives in the per-user
+# data directory (`dataHome()` in server/workspace/vault.ts) — so this line is
+# kept only so an older clone that still has the folder does not start tracking
+# a git repo inside this one.
+#
+# ANCHORED, and the leading slash is load-bearing: an unanchored `workspace/`
+# matches a directory of that name at ANY depth, which silently excluded
+# `server/workspace/` — the whole layer-3 module, 911 lines, never once tracked
+# and invisible in every `git status` that should have shown it.
+/workspace/
+
+# Where `make up` puts the detached server's log. One machine's running state,
+# nothing the repo wants, and `make down` does not clean it up on purpose — the
+# log of a server that failed to start is the whole reason to keep it.
+.run/
+
+# Which vault was last opened, and the ones before it. It moved to the per-user
+# data directory with the default vault — it is about vaults, so it cannot live
+# inside one, and it is this machine's rather than this install's, so it cannot
+# live beside the program either. Kept here for an older clone that still has it.
+.vaults.json
+
+# THE BUILD. `make app` writes all of it: the generated embedded-file manifest,
+# the compiled server, the staging directory the Electron bundle is made from,
+# and the bundle itself. Generated, large, and per-target — the manifest alone is
+# a hundred import lines that change the first time anybody adds a file, which is
+# exactly why it is walked rather than written down and why a committed copy
+# would be wrong within a day.
+/dist/

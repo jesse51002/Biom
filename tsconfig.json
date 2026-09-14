@@ -1,0 +1,69 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // The browser resolves `markdown-it` through the import map in
+    // client/index.html; bun and tsc resolve it here. Both point at the same
+    // vendored file, so there is ONE copy on disk and no bundler between the
+    // two. It is not a dependency in package.json on purpose — the framework has
+    // no runtime dependencies at all, only build and test tooling — and a bare
+    // specifier is also
+    // what keeps tools/layers.mjs treating it as a package, so a third-party
+    // import adds no edge to the dependency graph.
+    // EXTENSIONLESS on purpose. Naming the .mjs exactly makes TypeScript load
+    // the minified bundle and typecheck 800 lines of somebody else's code;
+    // without the extension it resolves normally and finds the declaration file
+    // beside it, which is the whole reason that file exists.
+    // `yaml` is the same arrangement with one half missing: ONLY THE SERVER
+    // PARSES — the client is handed `Page` as JSON and never sees YAML — so
+    // there is no import map entry and no browser build to keep in step. bun
+    // resolves it here at runtime and tsc resolves it here to typecheck, which
+    // is the whole of it.
+    // ITS DECLARATION IS `vendor/yaml.d.ts` AND NOT `.d.mts`, WHICH IS LOAD-
+    // BEARING. An extensionless specifier gives TypeScript exactly five
+    // candidates — .ts, .tsx, .d.ts, .js, .jsx — and `.d.mts` is not among
+    // them, so a `.d.mts` beside the bundle is never found and the import goes
+    // unresolved. From a .js file that is silent; from a .ts file it is TS2307.
+    // `markdown-it.d.mts` has this exact problem today and gets away with it
+    // because its only importer is client/platform/markdown.js.
+    // The two extensions have to disagree: bun's own candidate list has .mjs
+    // and not .d.ts, so bun reaches the bundle by the same bare name.
+    "paths": {
+      "markdown-it": ["./vendor/markdown-it"],
+      "yaml": ["./vendor/yaml"]
+    }
+  },
+  // `tools/` is deliberately absent: it is bun-run build tooling that speaks
+  // node APIs, and typing it would mean pulling in @types/node for a gate that
+  // is itself the gate. It is still covered by `make parse`.
+  // `skill/` is in here because it was NOT, and that was a hole rather than an
+  // omission: `skill/check.ts` is the one command every vault's AGENTS.md tells
+  // an agent to run, and nothing checked it. It carried `import type { PageKind }`
+  // for the whole of a rewrite that deleted `PageKind`, and no gate said a word.
+  // A file that ships into every workspace is the last one that should be
+  // unchecked.
+  "include": ["contracts", "server", "client", "guest", "skill"],
+  // `vendor/` is third-party code served verbatim with its licence. It is never
+  // edited and never typechecked — checking it would mean either annotating
+  // somebody else's minified bundle or loosening the config for our own code.
+  // `vendor/markdown-it.d.mts` is how it stays typed anyway: hand-written,
+  // deliberately partial, and read INSTEAD of the .mjs beside it.
+  "exclude": ["node_modules", "workspace", "tests", "vendor"]
+}

@@ -1,0 +1,66 @@
+name: Diagram drawn from its own words
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — call it `shape.html`, or whatever the
+        drawing is about — and paste the section below into that page's `contents` with `data:`
+        changed to match. Or copy this whole directory into `pages/<parent>/children/<name>/` and it
+        draws as it stands.
+
+        **The diagram is the `variables` on the section, not the markup.** `nodes` is every box, in
+        the order they should read across a row; `edgeFrom`, `edgeTo`, `edgeSays` and `edgeKind` are
+        parallel lists, one entry each per arrow. Add a name to `nodes`, add a pair to the edge
+        lists, and the drawing rearranges itself around them — nothing in the html file holds a
+        position, and there is nothing to keep in step.
+
+        **It is an inline `<svg>`, drawn in place and animated once when it is first seen.** No
+        library is fetched and no stylesheet but this page's own decides what it looks like: every
+        line takes `--rule`, every label takes `--ink`, so the whole drawing repaints when the
+        palette does. The edges draw themselves in behind `--motion`, which means a reader who asked
+        for less motion gets the finished diagram and no move at all.
+  - name: how-it-fits
+    data: index.html
+    variables:
+      nodes:
+        - Somebody asks
+        - Claude writes the file
+        - The window redraws
+        - The page is the workspace
+      edgeFrom:
+        - Somebody asks
+        - Claude writes the file
+        - The window redraws
+        - The page is the workspace
+      edgeTo:
+        - Claude writes the file
+        - The window redraws
+        - The page is the workspace
+        - Somebody asks
+      edgeSays:
+        - in a sentence
+        - one commit per write
+        - no build step
+        - and asks again
+      edgeKind:
+        - solid
+        - solid
+        - solid
+        - dashed
+    parts:
+      head: |
+        ## How a page gets made
+
+        There is no build step between asking and seeing.
+      argument: |
+        The loop closes because **the file is the product**. Nothing is exported, nothing is
+        published, and the page a person is looking at is the same file the agent just wrote.
+
+        What that costs is a redraw from disk rather than a hot swap, and what it buys is that every
+        change is a readable diff in a git history nobody has to touch.
+      note: |
+        The workflow drawn here is invented and represents nothing real. Replace it.
+      fault: |
+        This diagram has no `nodes` yet. Add them to the section's `variables` — one name per box —
+        and the drawing appears.

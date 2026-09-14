@@ -1,0 +1,149 @@
+<!-- base/list/index.html — A SLOT THAT HOLDS A LIST.
+
+     THIS FILE IS DELIBERATELY PLAIN, and that is the most important thing about
+     it. It is here to show the FORMAT and nothing else: what a section file is,
+     how a slot is filled, and what a list slot lets a reader do. One hairline,
+     one typeface, one ink, no accent and no card — because a starter with a look
+     is a look that turns up in every page copied from it. Measured: three pages
+     in the reference workspace inherited a class name and a card border from an
+     earlier version of this file, and nobody chose either. Take the mechanism
+     from here and design your own section around it.
+
+     THERE IS NO NUMBER IN THIS FILE, AND THAT IS THE POINT. The items are ONE
+     slot holding a LIST, so a fourth item is a fourth entry in `content.yaml` —
+     or the button this section draws for itself — and never an edit to this
+     markup. A section that named `one`, `two` and `three` as three slots could
+     hold three things forever, at a number nobody chose, and every page copied
+     from it inherited the ceiling.
+
+     AN ITEM IS AN ELEMENT, so there is nothing to parse and nothing to agree
+     about. The runtime draws one element per item into the slot, in order, each
+     one a `<div data-g-item="0">`, `…="1">` and so on holding that item's own
+     rendered markdown — which is why the layout below is written as `> *`.
+
+     ADD AND REMOVE ARE THE `items` PLUGIN AND NOT A SCRIPT IN THIS FILE, and
+     that is the rule rather than a convenience: a drawing with even a small
+     chance of being wanted on another page is a plugin from the start. This one
+     was written into 88 section files in one workspace, in eleven different
+     shapes. There is nothing in it but array work — read, splice, write the
+     whole array back — so the page redraws itself from what was stored and
+     nothing re-renders an item it just changed.
+
+     REORDERING IS NOT THERE EITHER, and nothing else draws it: the runtime puts
+     no grip on an item, because nothing is drawn over a page. Moving one is the
+     same splice through the same door, so a list that wants it adds the control
+     in its own section script.
+
+     NOTHING IS STYLED BY A CLASS THIS FILE INVENTED. The slots are styled
+     through `data-g-part`, which is the name the document already uses, so there
+     is no second vocabulary to learn, nothing to keep in step, and nothing
+     arbitrary for the next page to copy. -->
+<style>
+  :scope { display: block; padding-block: 2.5rem; }
+
+  .wrap {
+    display: grid;
+    gap: 1.25rem;
+    max-inline-size: 60rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  .wrap > * > :first-child { margin-block-start: 0; }
+  .wrap > * > :last-child { margin-block-end: 0; }
+
+  /* THE SLOT IS THE GRID AND ITS CHILDREN ARE THE ITEMS. `> *` is every item
+     there will ever be, so the layout never has to know how many that is — and
+     there is no class to keep in step with a script, because the element the
+     rule paints is the element the runtime drew.
+
+     `min()` ON THE FLOOR, or the track cannot shrink below 14rem and the grid
+     overflows a narrow canvas instead of collapsing to one column. `auto-fit`
+     removes empty tracks; it does not let a full one get smaller than its
+     minimum. Hit by an agent building on this file. */
+  [data-g-part="items"] {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    align-items: start;
+  }
+
+  /* ONE HAIRLINE, and it is structure rather than decoration: without some mark
+     a reader cannot tell where one item ends and the next begins. Anything more
+     than this — a background, a box, an accent, a rule that inks every third one
+     differently — is a design decision, and it is yours to make in your own file
+     rather than to inherit from this one. */
+  [data-g-part="items"] > * {
+    display: grid;
+    gap: .4rem;
+    align-content: start;
+    min-inline-size: 0;
+    padding-block-start: .6rem;
+    border-block-start: 1px solid var(--rule);
+  }
+  [data-g-part="items"] > * > :first-child { margin-block-start: 0; }
+  [data-g-part="items"] > * > :last-child { margin-block-end: 0; }
+  /* THE CONTROL BAR IS APPENDED LAST, so `:last-child` above lands on it rather
+     than on the words. The one before it is the one to flatten. */
+  [data-g-part="items"] > *:has(> .bar) > :nth-last-child(2) { margin-block-end: 0; }
+
+  /* Anything wide inside an item scrolls in its own box rather than pushing the
+     item out — a long unbroken string is the ordinary case. */
+  [data-g-part="items"] :is(pre, table) { max-inline-size: 100%; overflow-x: auto; }
+
+  [data-g-part="note"] { color: var(--ink-3); font-size: .88rem; }
+
+  /* AN ITEM'S CONTROLS ARE QUIET BY CSS AND NOT BY SCRIPT, so nothing has to be
+     told when the pointer moves. They HOLD THEIR SPACE — the item does not jump
+     when they appear — and `visibility` rather than `opacity` alone is what
+     stops an invisible ✕ from taking a click. `:focus-within` keeps them
+     reachable by tab, and a touch screen has no hover at all, so there they
+     simply stay up.
+
+     `flex-end` puts them at the item's far edge, away from the words they sit
+     beside. */
+  .bar {
+    display: flex; justify-content: flex-end; margin: 0;
+    visibility: hidden; opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  [data-g-part="items"] > *:hover .bar,
+  [data-g-part="items"] > *:focus-within .bar { visibility: visible; opacity: 1; }
+  @media (hover: none) { .bar { visibility: visible; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
+
+  /* ADD NEVER HIDES. It is the one control that is not about an item that
+     already exists, so there is nothing for it to appear over — and somewhere to
+     write next is the thing a page should never make you hunt for.
+
+     THE LOOK IS THIS FILE'S AND THE BEHAVIOUR IS THE PLUGIN'S. `items` inserts
+     `.add`, `.bar` and `.btn` and inks none of them, so every rule about how
+     they look is here, where a section can disagree with it. */
+  .add-here { display: block; }
+  .btn, .add {
+    font-family: var(--furniture-face);
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .btn { padding: 0 .35rem; font-size: .7rem; line-height: 1.6; }
+  .add { justify-self: start; padding: .3rem .8rem; font-size: .72rem; }
+  .btn:hover, .add:hover { color: var(--ink); border-color: var(--ink-3); }
+</style>
+
+<div class="wrap">
+  <div data-g-part="lede"></div>
+  <!-- ONE SLOT, AND NO ITEM INSIDE IT. Every item this section will ever hold is
+       an entry in the list behind this one id. -->
+  <div data-g-part="items"></div>
+  <!-- THE HARNESS IS A PLUGIN AND NOT A SCRIPT IN THIS FILE. `plugins/items.js`
+       reads the array, splices it and writes it whole, and puts the controls back
+       after a redraw — the same code every list in every workspace needs, with no
+       design content in it at all. The ADD control is drawn into THIS node, so
+       where the node sits is where the button sits. -->
+  <span class="add-here" data-g-plugin="items" data-g-for="items" data-g-add="＋ Another item"></span>
+  <div data-g-part="note"></div>
+</div>

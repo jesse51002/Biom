@@ -1,0 +1,47 @@
+name: A list where some items are done
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — name it for what the list holds — and
+        paste the section below into that page's `contents` with `data:` changed to match. Or copy
+        this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+        **The word is yours and the plugin holds none of its own.** `data-g-done="Built"` is what
+        this copy says; a list of invoices says `Paid`, a list of questions says `Answered`, a
+        backlog says `Shipped`. Change that one attribute and the whole section changes with it.
+
+        **A status is a WORD IN THE DOCUMENT and never a marker.** An item that is done ends with
+        that word on a line of its own, so the markdown mirror and anything reading it say exactly
+        what the page draws. Ticking appends the word; unticking trims it.
+
+        **This file is deliberately plain, and it is not a design.** The plugin sets `data-status`
+        on the item and inks nothing at all, so every rule about how a done item looks is here.
+  - name: ideas
+    data: index.html
+    parts:
+      lede: |
+        ## What is left to build
+
+        Tick one and it wears the word and sinks to the bottom. Untick it and it comes back to the
+        foot of the live list, which is where you would look for it.
+      ideas:
+        - |-
+          ### One
+
+          An item is one entry in the list and one element on screen. Nothing here says how many
+          there are, so a fourth is a fourth entry and never an edit to the markup.
+        - |-
+          ### Two
+
+          Click it to edit all of its markdown at once.
+        - |-
+          ### Three
+
+          This one is done, and the word on its own last line is the whole of that fact.
+
+          Built
+      note: |
+        Nothing on this page is real content; it is here so the file draws as something rather than
+        as an empty rectangle.

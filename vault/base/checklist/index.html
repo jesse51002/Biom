@@ -1,0 +1,124 @@
+<!-- base/checklist/index.html — A LIST WHERE SOME ITEMS ARE DONE.
+
+     THIS FILE IS DELIBERATELY PLAIN. It carries the MECHANISM and no visual
+     opinion — one hairline, one ink, no accent, no card — because a starter's
+     look turns up in every page copied from it. Take the shape and design your
+     own section around it.
+
+     THE VOCABULARY IS IN THE MARKUP AND NOT IN THE PLUGIN. `data-g-done="Built"`
+     below is this copy's word; a list of invoices says `Paid` and a list of
+     questions says `Answered`. The plugin reads that attribute, matches it
+     against each item's own last line, and writes it when somebody ticks — so
+     the status lives in the document and not in a marker beside it.
+
+     THREE PLUGINS, ONE CONCERN EACH, AND THE SECTION DECIDES WHICH IT WANTS.
+     `checklist` sets `data-status` on the item — the matched word, lowercased,
+     so a list with two vocabularies can be styled per word — inserts one `.dot`
+     switch and draws the tally into its own node. `open-list` numbers the list
+     and, by composing on `items`, brings the add and the per-item delete with
+     it. A section that wants the status and no delete simply does not place the
+     second node.
+
+     ALL THREE INK NOTHING. Everything below is what their controls look like
+     HERE, and a section that wants something else writes something else.
+
+     NOTHING DEPENDS ON WHICH PLUGIN MOUNTED FIRST. Both insert at the head of an
+     item, so the columns below are stated with `grid-column` rather than left to
+     the order the nodes happen to be in.
+
+     THE NUMBER IS A CSS COUNTER AND IS NEVER TYPED, so it renumbers itself when
+     an item is added, deleted or moved. A number written into the document is
+     right until the moment the list changes.
+
+     THE TALLY IS DRAWN INTO THE PLUGIN'S OWN NODE. Where that node sits is where
+     the count sits. -->
+<style>
+  :scope { display: block; padding-block: 2.5rem; }
+
+  .wrap {
+    display: grid;
+    gap: 1.25rem;
+    max-inline-size: 60rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  .wrap > * > :first-child { margin-block-start: 0; }
+  .wrap > * > :last-child { margin-block-end: 0; }
+
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+  .count { font-size: .85rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* THE SLOT IS THE LIST AND ITS CHILDREN ARE THE ITEMS. `> *` is every item
+     there will ever be, so nothing here has to know how many that is. */
+  [data-g-part="ideas"] { display: grid; counter-reset: idea; }
+
+  [data-g-part="ideas"] > * {
+    display: grid;
+    grid-template-columns: 1.1rem 2rem minmax(0, 1fr) auto;
+    column-gap: .75rem;
+    align-items: baseline;
+    counter-increment: idea;
+    padding-block: .7rem;
+    border-block-start: 1px solid var(--rule);
+  }
+  [data-g-part="ideas"] > * > :first-child { margin-block-start: 0; }
+  [data-g-part="ideas"] > *:has(> .bar) > :nth-last-child(2) { margin-block-end: 0; }
+  /* The words are the third column and everything the plugin inserted is beside
+     them, so an item's markdown never has to know it is in a checklist. */
+  [data-g-part="ideas"] > * > .dot { grid-column: 1; }
+  [data-g-part="ideas"] > * > .ord { grid-column: 2; }
+  [data-g-part="ideas"] > * > .bar { grid-column: 4; }
+  [data-g-part="ideas"] > * > :not(.dot):not(.ord):not(.bar) { grid-column: 3; }
+
+  .ord::before { content: counter(idea, decimal-leading-zero); }
+  [data-g-part="ideas"] .ord { font-size: .78rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* A DONE ITEM IS QUIETER AND SINKS, and the sinking is the plugin's — it
+     splices the entry to the end of the array — so this only has to say what
+     quieter means. */
+  [data-g-part="ideas"] > *[data-status] { color: var(--ink-3); }
+
+  .dot {
+    inline-size: .8rem; block-size: .8rem; align-self: center;
+    padding: 0; border: 1px solid var(--ink-3); border-radius: 50%;
+    background: transparent; cursor: pointer;
+  }
+  .dot[aria-checked="true"] { background: var(--ink-3); }
+
+  .bar { display: flex; justify-content: flex-end; margin: 0; visibility: hidden; }
+  [data-g-part="ideas"] > *:hover .bar,
+  [data-g-part="ideas"] > *:focus-within .bar { visibility: visible; }
+  @media (hover: none) { .bar { visibility: visible; } }
+
+  .btn, .add {
+    font-family: var(--furniture-face);
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .btn { padding: 0 .35rem; font-size: .7rem; line-height: 1.6; }
+  .add { justify-self: start; padding: .3rem .8rem; font-size: .72rem; }
+  .btn:hover, .add:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  [data-g-part="note"] { color: var(--ink-3); font-size: .88rem; }
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <div data-g-part="lede"></div>
+    <!-- THE TALLY, drawn into this node by the plugin. `data-g-done` is the word
+         an item wears when it is done, and it is the only thing that has to
+         change to make this list about something else. -->
+    <span class="count" data-g-plugin="checklist" data-g-for="ideas" data-g-done="Built"></span>
+  </div>
+  <div data-g-part="ideas"></div>
+  <!-- THE NUMBER, THE ADD AND THE DELETE. `open-list` composes on `items`, so
+       one node brings all three: an `.ord` per item for the counter above to
+       fill, a `.bar` with a delete in it, and the add button drawn here. -->
+  <span data-g-plugin="open-list" data-g-for="ideas" data-g-add="＋ Another idea"></span>
+  <div data-g-part="note"></div>
+</div>

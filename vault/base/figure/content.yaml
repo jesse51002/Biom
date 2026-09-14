@@ -1,0 +1,41 @@
+name: Figure beside prose
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — `figure.html` is the obvious name — and
+        paste the section below into that page's `contents` with `data:` changed to match. Or copy
+        this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+        The picture is held while the prose scrolls past it, and it is released where this section
+        ends: sticky only pins inside its own containing block. That is why the figure and the
+        argument are ONE section rather than two.
+
+        **This file is deliberately plain, and it is not a design.** It carries the shape and no
+        visual opinion — no box around the picture, no rule down the quotation, no colour — because
+        a starter with a look is a look that turns up in every page copied from it.
+  - name: spread
+    data: index.html
+    parts:
+      body: |
+        ## What the section can do that the document could not
+
+        A section is a div. It is full width, it owns its layout entirely, and the reading measure
+        lives inside the default section's own file rather than on the sheet — so a band that goes
+        edge to edge costs nothing, and a column that wants 34rem of measure asks for it here.
+
+        > Prose still wants a measure. A page that is edge to edge everywhere is exactly as
+        > monotonous as one that is 34rem everywhere.
+
+        The freedom is to choose per section. Two columns where a picture earns its place beside the
+        argument; one column where the words are the whole of it; a grid where things are being
+        compared. A page that chooses the same shape every time has not used any of it.
+
+        Swap this slot's prose for the real argument, and put the picture that belongs to it in
+        `assets/`.
+      figure: |
+        ![A photograph that is not in this workspace yet](kitchen.jpg)
+      caption: |
+        _`kitchen.jpg` is a placeholder and there is no such file here yet. Put a real picture in
+        `assets/` and name it — the filename alone, never a path._

@@ -1,0 +1,40 @@
+<!-- design/masthead.html — the page's own opening.
+
+     It is one slot and it earns a file for one reason: the page under it is a
+     stack of full-bleed bands, so the opening has to sit on the same left margin
+     the bands do. The shipped default section is a centred column at a reading
+     measure, which would set the title apart from everything below it. -->
+<style>
+  :scope {
+    display: block;
+    /* Nothing declares a container for you, and the query at the foot needs one. */
+    container-type: inline-size;
+  }
+
+  .masthead {
+    padding: 3.25rem 3rem 2.5rem;
+    /* The measure the frame puts on every slot is a default, not a ceiling: the
+       heading wants the band's own margin and the prose keeps a measure of its
+       own, below. */
+    max-inline-size: none;
+  }
+
+  .masthead h1 {
+    margin-block: 0 0.7rem;
+  }
+
+  .masthead p {
+    margin-block: 0;
+    max-inline-size: 44rem;
+    font-family: var(--sheet-face);
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+
+  @container (width <= 44rem) {
+    .masthead { padding-inline: 1.5rem; }
+  }
+</style>
+
+<div class="masthead" data-g-part="body"></div>

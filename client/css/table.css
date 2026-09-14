@@ -1,0 +1,327 @@
+/* The grid: toolbar, chips, properties, cells.
+   Lifted from the deleted mock's content.css with the class vocabulary intact —
+   views/table.js builds these exact names, and so does anything generated that
+   wants to look like the workspace it is sitting in.
+
+   The dress is the workspace's own: the system's sans at the body size, a
+   hairline grid, no zebra, headers in the tertiary grey, the row's controls
+   under the pointer only, and one filled button — New property — above the
+   grid where a person who has used Notion looks for it.
+
+   Nothing below sets a raw colour. The mock's three literals in this half —
+   the zebra rgba, the selected-row rgba and the white tick — are the reason the
+   rule exists: a palette change left every one of them behind. They are
+   color-mix over a token here. */
+
+/* ---------- the table's own top ---------- */
+
+.tbl-top{margin-bottom:1rem}
+.tbl-top h2{margin:0 0 .25rem; font-size:1.75rem; font-weight:700; letter-spacing:-.01em}
+
+/* which pages use this table, derived from the pages themselves */
+.usedby{display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; margin:0; font-size:.75rem; color:var(--ink-3)}
+.usedby.none{font-size:.75rem; color:var(--ink-3)}
+.usedlab{font-size:.75rem; color:var(--ink-3)}
+.usepill{
+  display:inline-flex; align-items:baseline; gap:.3rem; padding:.05rem .45rem;
+  background:var(--field); border:1px solid transparent; border-radius:3px; cursor:pointer;
+  transition:background .12s ease;
+}
+.usepill:hover{background:var(--rule)}
+.usepill:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+.usepill b{font-weight:500; font-size:.75rem; color:var(--ink-2)}
+.usepill span{font-size:.7rem; color:var(--ink-3)}
+
+/* the one line this view says anything in: an import landed, a write did not */
+.tsay{margin:0 0 .6rem; font-size:.75rem; color:var(--ink-3)}
+.tsay[hidden]{display:none}
+.tsay.bad{color:var(--yellow)}
+.tsay.inpop{padding:.4rem .5rem; margin:0; font-size:.8rem}
+
+/* ---------- toolbar ---------- */
+
+.tbar{display:flex; align-items:center; gap:.25rem; margin:0 0 .4rem}
+.tsearchwrap{position:relative; display:flex; align-items:center}
+.tsearchwrap .glass{position:absolute; left:.5rem; width:.85rem; height:.85rem;
+  color:var(--ink-3); pointer-events:none}
+.tsearch{
+  font:inherit; font-size:.875rem; color:var(--ink);
+  padding:.3rem .5rem .3rem 1.7rem; width:13rem;
+  background:var(--stock); border:1px solid var(--rule); border-radius:4px; outline:none;
+  transition:border-color .12s ease;
+}
+.tsearch:hover{background:var(--stock-hi)}
+.tsearch:focus{border-color:var(--cyan)}
+.tsearch::placeholder{color:var(--ink-3)}
+.tsearch::-webkit-search-cancel-button{filter:grayscale(1) opacity(.5)}
+.tsp{flex:1}
+.tcount{font-size:.75rem; color:var(--ink-3); white-space:nowrap; margin-right:.25rem}
+.tbtn{
+  font-size:.875rem; color:var(--ink-2);
+  padding:.3rem .55rem; background:none; border:1px solid transparent; border-radius:4px;
+  cursor:pointer; transition:background .12s ease, color .12s ease;
+}
+.tbtn:hover{background:var(--field); color:var(--ink)}
+.tbtn:focus-visible{border-color:var(--cyan)}
+.tbtn[aria-expanded="true"]{background:var(--field); color:var(--ink)}
+.tbtn.more{padding:.3rem .4rem}
+.tbtn .dots{width:.8rem; height:1rem; color:currentColor}
+
+/* New property is a primary action above the grid, never a + at the end of the
+   columns — a person who has used Notion looks here for it. It is the one
+   filled button on the screen; page.css paints it. */
+.btn.newprop{margin-left:.4rem; padding:.3rem .7rem; font-size:.875rem; flex:none}
+
+/* ---------- filter chips ---------- */
+
+.tchips{display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; margin:0 0 .6rem}
+.tchip{
+  display:inline-flex; align-items:center; gap:.35rem;
+  font-size:.8rem; color:var(--cyan-t);
+  padding:.15rem .6rem; border-radius:99px; cursor:pointer;
+  background:var(--cyan-wash);
+  border:1px solid color-mix(in srgb,var(--cyan) 35%,transparent);
+  transition:background .12s ease;
+}
+.tchip:hover{background:color-mix(in srgb,var(--cyan) 20%,transparent)}
+.tchip .x{font-size:.9rem; line-height:.7; opacity:.7}
+/* always the last thing in the row, so adding one is where the others are */
+.tchip.addfilter{background:none; border:1px dashed var(--rule); color:var(--ink-3)}
+.tchip.addfilter:hover{border-style:solid; border-color:var(--ink-3); color:var(--ink); background:var(--field)}
+
+/* over, under, between — the questions a number or a date can actually answer */
+.ops{display:flex; gap:.2rem; padding:.15rem .1rem .3rem}
+.op{flex:1; font-size:.75rem; color:var(--ink-2); padding:.25rem .1rem; background:none;
+  border:1px solid var(--rule); border-radius:4px; cursor:pointer}
+.op:hover{border-color:var(--ink-3); color:var(--ink)}
+.op.on{background:var(--cyan); border-color:var(--cyan); color:var(--on-spot)}
+.cmpfields{display:grid; gap:.25rem; padding:0 .1rem .2rem}
+.cmpval{font-size:.8rem}
+.popactions{display:flex; justify-content:flex-end; padding:.25rem .1rem .1rem}
+.btn.popdone{padding:.25rem .8rem; font-size:.8rem}
+.btn.popdone[disabled]{background:var(--stock-lo); border-color:var(--rule); color:var(--ink-3); cursor:not-allowed}
+
+/* what the filters are keeping from you, and one way out */
+.tfoot{margin-top:.5rem}
+.tfoot[hidden]{display:none}
+.tfootbtn{display:flex; align-items:center; gap:.5rem; width:100%; padding:.45rem .6rem;
+  background:none; border:1px dashed var(--rule); border-radius:4px; cursor:pointer; text-align:left}
+.tfootbtn:hover{border-style:solid; border-color:var(--ink-3); background:var(--field)}
+.tfootbtn b{font-weight:500; font-size:.8rem; color:var(--ink-2)}
+.tfootbtn span{font-size:.75rem; color:var(--cyan-t)}
+
+/* what you can do to the rows you picked */
+.selbar{display:flex; align-items:center; gap:.5rem; margin:0 0 .6rem; padding:.4rem .6rem;
+  background:var(--cyan-wash); border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent); border-radius:6px}
+.selbar[hidden]{display:none}
+.selbar b{font-weight:500; font-size:.8rem; color:var(--cyan-t)}
+.selsp{flex:1}
+.selact{font-size:.8rem; color:var(--ink-2);
+  padding:.2rem .5rem; background:none; border:1px solid transparent; border-radius:4px; cursor:pointer}
+.selact:hover{background:var(--field); color:var(--ink)}
+.selact.danger{color:var(--yellow)}
+.selact.danger:hover{background:var(--yellow-wash)}
+
+/* ---------- the grid ---------- */
+
+/* A WIDE TABLE SCROLLS SIDEWAYS, AND ITS SCROLLBAR IS ALWAYS DRAWN.
+   A wheel emits a vertical delta only, so no browser ever offers one to a
+   container that overflows sideways — which leaves the scrollbar as the gesture,
+   and an overlay bar that fades out leaves a table whose only clue that it
+   continues is a column cut off at the edge. It is the answer every grid gives:
+   Sheets, Airtable and Notion all keep a persistent horizontal bar rather than
+   letting the table be dragged, because dragging a table means selecting its
+   cells. Shift and a wheel still works, and still nobody has been told about it.
+   `overscroll-behavior-x` keeps a sideways flick inside the table rather than
+   letting it become a browser back-gesture. */
+.tbl{display:flex; flex-direction:column; min-height:0; padding:2.5rem 3.5rem 0}
+.grid-wrap{flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior-x:contain;
+  scrollbar-width:thin; scrollbar-color:var(--rule) transparent}
+.grid-wrap::-webkit-scrollbar{height:.6rem}
+.grid-wrap::-webkit-scrollbar-track{background:transparent}
+.grid-wrap::-webkit-scrollbar-thumb{background:var(--rule); border-radius:999px;
+  border:3px solid transparent; background-clip:content-box}
+.grid-wrap::-webkit-scrollbar-thumb:hover{background:var(--ink-3); background-clip:content-box}
+table.grid{border-collapse:collapse; width:100%; font-size:.875rem}
+table.grid th, table.grid td{border-bottom:1px solid var(--rule); padding:.4rem .6rem;
+  text-align:left; vertical-align:middle}
+table.grid th + th, table.grid td + td{border-left:1px solid var(--rule-soft)}
+table.grid thead th{border-top:1px solid var(--rule); color:var(--ink-3); font-weight:400; font-size:.8rem; white-space:nowrap}
+table.grid thead .ty{display:block; font-size:.7rem; color:var(--ink-3); margin-top:.05rem}
+table.grid td.num{text-align:right; font-variant-numeric:tabular-nums}
+/* no zebra: a hover fill says which row, and the hairlines say where */
+table.grid tbody tr:hover td{background:var(--ink-wash)}
+
+/* fixed widths, because a column you can drag has to hold what you set. A th or
+   td that goes display:flex leaves table layout and leaves a stray box per row,
+   so everything that needs a row of controls wraps in a div instead. */
+.grid.sized{table-layout:fixed}
+.grid.sized td, .grid.sized th{overflow:hidden}
+
+/* The gutter is not a column. It holds the row's controls and they only appear
+   under the pointer, so drawing borders around them left a narrow empty column
+   ruled down the side of every table — furniture for something that is
+   invisible most of the time. It keeps its width and loses its edges. */
+.grid th.rowgrip, .grid td.rowgrip{
+  padding:0; border:0; background:transparent !important;
+}
+.gutter{display:flex; align-items:center; gap:.05rem; padding-left:.1rem}
+.rowpick{
+  width:.85rem; height:.85rem; flex:none; border:1px solid var(--ink-3); border-radius:3px;
+  background:var(--stock); cursor:pointer; opacity:0; position:relative;
+  transition:opacity .12s ease;
+}
+.grid tbody tr:hover .rowpick, .rowpick:focus-visible, .rowpick.on{opacity:1}
+.rowpick.on{background:var(--cyan); border-color:var(--cyan)}
+.rowpick.on::after{content:""; position:absolute; left:.24rem; top:.03rem; width:.2rem; height:.42rem;
+  border:solid var(--on-spot); border-width:0 1.5px 1.5px 0; transform:rotate(42deg)}
+.grid tbody tr.picked td{background:var(--cyan-wash)}
+
+.grab{
+  display:flex; padding:.15rem; background:none; border:0; border-radius:3px;
+  cursor:grab; opacity:0; transition:opacity .12s ease;
+}
+.grid tbody tr:hover .grab, .grab:focus-visible{opacity:.7}
+.grab:hover{opacity:1; background:var(--ink-wash)}
+.grab .dots{width:.7rem; height:.9rem; color:var(--ink-3)}
+
+/* a header opens a property menu, drags to reorder, resizes from its right edge */
+.grid th.prop{cursor:pointer; user-select:none; position:relative; transition:background .12s ease}
+.grid th.prop:hover{background:var(--field)}
+.grid th.prop[aria-expanded="true"]{background:var(--field)}
+.grid th.prop:focus-visible{outline:2px solid var(--cyan); outline-offset:-2px}
+.propinner{display:flex; align-items:center; gap:.3rem}
+.propmeta{flex:1; min-width:0}
+.propname{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.grid th.prop.dragging{opacity:.4}
+.grid th.prop.dropcol{box-shadow:inset 2px 0 0 -0.5px var(--cyan)}
+
+/* three states, and only a sorted column keeps its arrow on show */
+.sortbtn{
+  display:flex; padding:.1rem; background:none; border:0; border-radius:3px;
+  color:var(--ink-3); cursor:pointer; opacity:0; transition:opacity .12s ease;
+}
+.grid th.prop:hover .sortbtn, .sortbtn:focus-visible{opacity:.8}
+.sortbtn:hover{color:var(--ink); background:var(--ink-wash); opacity:1}
+.sortbtn.on{opacity:1; color:var(--cyan-t)}
+.sortarrow{width:.75rem; height:.75rem; transition:transform .15s ease}
+.sortbtn[data-dir="down"] .sortarrow{transform:rotate(180deg)}
+
+.colsize{position:absolute; right:-3px; top:0; bottom:0; width:7px; z-index:2;
+  cursor:col-resize; touch-action:none}
+.colsize::after{content:""; position:absolute; left:3px; top:.3rem; bottom:.3rem; width:1px;
+  background:var(--cyan); opacity:0; transition:opacity .12s ease}
+.colsize:hover::after, .colsize.sizing::after{opacity:1}
+
+.tempty td{color:var(--ink-3); padding:1.2rem .5rem; text-align:center}
+.newrow td{color:var(--ink-3); cursor:pointer}
+.newrow:hover td{color:var(--ink); background:var(--ink-wash)}
+.linkish{font-family:inherit; font-size:inherit; color:var(--cyan-t); background:none; border:0;
+  padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px}
+
+/* ---------- cells ---------- */
+
+.cell{display:block; min-width:2rem; min-height:1.25em; outline:none; border-radius:3px;
+  padding:.05rem .15rem; margin:-.05rem -.15rem}
+.cell:hover{background:var(--ink-wash)}
+.cell:focus{background:var(--stock-hi); box-shadow:0 0 0 1.5px var(--cyan)}
+.cell.linky{color:var(--cyan-t); text-decoration:underline; text-underline-offset:2px}
+.tdate{
+  font:inherit; font-size:.8rem; color:var(--ink); width:100%;
+  padding:.1rem .2rem; background:none; border:1px solid transparent; border-radius:3px;
+}
+.tdate:hover{background:var(--field)}
+.tdate:focus{background:var(--stock-hi); border-color:var(--cyan); outline:none}
+
+.tick{display:inline-block; width:14px; height:14px; border:1px solid var(--ink-3); border-radius:3px;
+  position:relative; background:var(--stock); cursor:pointer; vertical-align:-2px}
+.tick.on{background:var(--cyan); border-color:var(--cyan)}
+.tick.on::after{content:""; position:absolute; left:4px; top:1px; width:4px; height:8px;
+  border:solid var(--on-spot); border-width:0 1.5px 1.5px 0; transform:rotate(42deg)}
+
+/* a value you pick: a person, a row in another table, a page in this workspace */
+.pillwrap{display:inline-flex; align-items:center; gap:.2rem; max-width:100%}
+.pill{
+  display:inline-flex; align-items:center; gap:.25rem; max-width:100%;
+  font-size:.8rem; color:var(--ink);
+  padding:.05rem .4rem; background:var(--field); border:1px solid transparent;
+  border-radius:3px; cursor:pointer;
+}
+.pill span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pill:hover{border-color:var(--rule)}
+.pill:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+.pill.empty{background:none; color:var(--ink-3)}
+.pill.person{background:var(--magenta-wash); color:var(--magenta-t)}
+.pill.link{background:none; color:var(--cyan-t); text-decoration:underline;
+  text-underline-offset:2px; border-color:transparent}
+.pill.page{background:var(--cyan-wash); color:var(--cyan-t)}
+.av{display:inline-grid; place-items:center; width:1.05rem; height:1.05rem; flex:none;
+  border-radius:50%; background:var(--magenta); color:var(--on-spot); font-size:.6rem}
+.pg{display:inline-block; width:.55rem; height:.7rem; flex:none;
+  border:1px solid currentColor; border-radius:1px}
+.goto{display:inline-flex; padding:.1rem; background:none; border:0; cursor:pointer;
+  color:var(--ink-3); opacity:0; transition:opacity .12s ease}
+.grid tbody tr:hover .goto, .goto:focus-visible{opacity:1}
+.goto:hover{color:var(--cyan-t)}
+.goto .arrow{width:.8rem; height:.8rem}
+
+/* ---------- categories: one type, any number of values, colour-coded ----------
+   These are .tag/.tags/.tagrow rather than .cat because another sheet in this
+   client once carried a `.cat` of its own and won by source order — a chip that
+   silently filled its cell, with no error anywhere to find it by. That sheet is
+   gone and the name is free again; these keep theirs, because the failure it
+   caused is one nothing reports. Grep before naming. */
+.tags{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start;
+  gap:.25rem; width:100%; padding:.1rem; background:none; border:1px solid transparent;
+  border-radius:3px; cursor:pointer; text-align:left}
+.tags > *{flex:0 0 auto; max-width:100%}
+.tags:hover{border-color:var(--rule)}
+.tags:focus-visible{outline:2px solid var(--cyan); outline-offset:1px}
+.tags[disabled]{cursor:default}
+/* a tag's own colour, mixed toward the scheme so it sits on a dark ground:
+   a wash of it behind, and the colour itself lightened for the text */
+.tag{
+  display:inline-block; font-size:.75rem;
+  padding:.1rem .45rem; border-radius:3px; white-space:nowrap;
+  background:color-mix(in srgb,var(--c) 22%,transparent);
+  color:color-mix(in srgb,var(--c) 55%,var(--ink));
+}
+.tagrow{display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:.2rem}
+.tagpick{display:flex; align-items:center; padding:.25rem .4rem; background:none; border:0;
+  border-radius:4px; cursor:pointer; min-width:0}
+.tagpick:hover, .tagpick:focus-visible{background:var(--field); outline:none}
+.tagpick.on{background:var(--field)}
+.tagpick.on .tag{box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 70%,transparent)}
+.tagcolour{width:.85rem; height:.85rem; flex:none; border-radius:50%; cursor:pointer;
+  background:var(--c); border:1px solid color-mix(in srgb,var(--ink) 25%,transparent)}
+.tagdrop{display:flex; padding:.2rem; background:none; border:0; cursor:pointer; color:var(--ink-3)}
+.tagdrop:hover{color:var(--yellow)}
+.xmark{width:.6rem; height:.6rem}
+
+/* ---------- the type picker is a board, not a list ---------- */
+
+.typegrid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.3rem; padding:.15rem}
+.typecard{
+  display:grid; gap:.15rem; padding:.5rem .55rem; text-align:left; cursor:pointer;
+  background:var(--stock-hi); border:1px solid var(--rule-soft); border-radius:6px;
+  transition:border-color .13s ease, background .13s ease;
+}
+.typecard:hover, .typecard:focus-visible{border-color:var(--rule); background:var(--field); outline:none}
+.typecard.on{border-color:var(--cyan); box-shadow:inset 0 0 0 1px var(--cyan)}
+.typecard b{font-weight:500; font-size:.8rem; color:var(--ink)}
+.typehint{font-size:.7rem; line-height:1.35; color:var(--ink-3)}
+.typesample{display:flex; align-items:center; gap:.2rem; height:1.4rem; margin-bottom:.15rem;
+  overflow:hidden}
+.sm-text{font-size:.8rem; color:var(--ink-2)}
+.sm-num{font-size:.8rem; color:var(--ink-2); font-variant-numeric:tabular-nums}
+.sm-date{font-size:.75rem; color:var(--ink-2); border:1px solid var(--rule); border-radius:3px; padding:.05rem .25rem}
+.sm-check{display:flex; align-items:center}
+.sm-tags{display:flex; gap:.15rem}
+.sm-person{display:flex; align-items:center; gap:.25rem; font-size:.75rem; color:var(--magenta-t)}
+.sm-link{font-size:.75rem; color:var(--cyan-t); text-decoration:underline; text-underline-offset:2px}
+.sm-rowlink{font-size:.75rem; color:var(--cyan-t); background:var(--cyan-wash); padding:.1rem .3rem; border-radius:3px}
+.sm-pagelink{display:flex; align-items:center; gap:.25rem; font-size:.75rem; color:var(--cyan-t)}
+
+@media (prefers-reduced-motion:reduce){
+  .rowpick, .grab, .sortbtn, .goto, .colsize::after, .sortarrow, .typecard, .tchip, .tbtn, .usepill{transition:none}
+}

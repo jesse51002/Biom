@@ -1,0 +1,51 @@
+name: A list slot
+plugin: doc
+contents:
+  - name: how-to-use-this
+    parts:
+      body: |
+        Copy `index.html` beside a page's `content.yaml` — name it for what it holds — and paste the
+        section below into that page's `contents` with `data:` changed to match. Or copy this whole
+        directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+        **This file is deliberately plain, and it is not a design.** It carries one mechanism and no
+        visual opinion, because a starter with a look is a look that turns up in every page copied
+        from it. Take the shape; decide how it should look in your own file.
+
+        **The items are one slot holding a LIST, not one slot each.** Every entry under `items:` is
+        an item and the section draws one element per entry, so replacing the three below with five
+        is writing five entries — and the `items` plugin draws the add and delete so a person
+        can do it without you. Reordering is not drawn by anything — nothing is drawn over a page —
+        so a list that wants it adds the control in its own script.
+
+        Keep the slot ids (`lede`, `items`, `note`) when you copy. A slot's id is its key in `parts`
+        and the name its markup is styled by, and renaming one orphans an edit somebody already made
+        in the app.
+  - name: items
+    data: index.html
+    parts:
+      lede: |
+        ## What a list slot is
+
+        Three items here, and nothing anywhere says three. Add a fourth from the page, or write a
+        fourth entry under `items:`; both end in the same place, because the page and the document
+        hold the same array.
+      items:
+        - |-
+          ### One
+
+          An item is one entry in the list and one element on screen. It holds markdown, so it can
+          be a heading and a paragraph, or a sentence, or a table.
+        - |-
+          ### Two
+
+          Click it to edit all of its markdown at once. There are no boundaries inside an item —
+          it is one region, exactly as the file it is stored in is.
+        - |-
+          ### Three
+
+          Delete it with the control that appears when you point at it, and add another with the
+          button under the list. Both write the whole array back.
+      note: |
+        Nothing on this page is real content; it is here so the file draws as something rather than
+        as an empty rectangle.
