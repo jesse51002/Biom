@@ -1093,10 +1093,11 @@ test("the REAL checker runs over every starter, and every section starter is cle
     });
     const said = new TextDecoder().decode(ran.stdout) + new TextDecoder().decode(ran.stderr);
     expect([id, said]).toEqual([id, expect.stringContaining("0 fail")]);
-    // `base/child/` is markup for a slot rather than a section, so nothing names
-    // its `index.html` until somebody copies it into a page — that is R42 being
-    // right about a starter being a starter. Every other one reports nothing.
-    if (id !== CHILD) expect([id, said]).toEqual([id, expect.stringContaining("0 warn")]);
+    // EVERY ONE OF THEM REPORTS NOTHING, `base/child/` included: it is markup for
+    // a slot rather than a section, and nothing in its document names its
+    // `index.html`, but R42 exempts that name because a file called `index.html`
+    // IS the page rather than something a document has to point at.
+    expect([id, said]).toEqual([id, expect.stringContaining("0 warn")]);
   }
 
   rmSync(vault, { recursive: true, force: true });

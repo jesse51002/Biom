@@ -126,9 +126,10 @@ the wrong moment wherever the section is not the full width of the page.
 **Run the checker on a starter and it reports the starter, not your page** —
 `bun run .agents/skills/check.ts base/<name>`. Every section starter here is clean, and a
 test in the framework runs the real checker over every one of them, so a starter
-cannot quietly stop matching the format it is here to teach.
-`base/child/` still reports R42, and that is the starter being a starter:
-nothing names its `index.html` because you have not copied it into a page yet.
+cannot quietly stop matching the format it is here to teach. `base/child/` is
+clean too: nothing in its document names its `index.html`, and R42 exempts that
+name because a file called `index.html` IS the page rather than something a
+document has to point at.
 
 **One of these is not only an example.** `child/index.html` is the file every new
 page is created with, copied into it as `child.html`: how that page draws when
