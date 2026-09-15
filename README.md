@@ -56,7 +56,7 @@ Biom appears in your applications menu, on macOS in `~/Applications`, on Windows
 
 Everything in this repository runs on your machine, free, with any agent. The paid plans are not out yet. What they add is what a folder on one machine cannot do:
 
-- **Collaboration.** One workspace worked by several people and their agents at once, every page live for all of them, and a page shared as it is rather than as a snapshot.
+- **Collaboration.** One workspace worked by several people and their agents at once, every page live for all of them.
 - **Every platform.** Your workspace on your phone, on the web and on every machine you use, in sync.
 - **Agents run by us, 24/7.** Biom agents working on your workspace around the clock, hosted, with the model included and one-click connections to GitHub, Gmail, Drive, Calendar, Slack and Stripe, so a digest, a scraper or a watcher runs without your laptop being open.
 
