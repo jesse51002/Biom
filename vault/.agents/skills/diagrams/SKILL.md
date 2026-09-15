@@ -1,13 +1,13 @@
 ---
 name: biom-diagrams
-description: "WHEN A DRAWING IS WORTH MAKING, and what shape it takes when it is. A diagram here is a CUSTOM drawing and never a library's: an inline `<svg>` of boxes and edges in the section's own markup, with the boxes and the arrows held as `variables` in `content.yaml` and turned into geometry by the section's own `<script>` — so editing the words edits the diagram, and nothing in the markup holds a coordinate somebody has to maintain. `base/diagram/` is that written out and is what to copy. Use whenever the task is to draw a flow, a hierarchy, an architecture, a sequence, a state machine, a timeline, or anything else where the answer might be a picture of relationships. Leads with the shape that works and the section it sits in, then the test for whether the subject earns a drawing at all (and when a table or a list beats one), then the layout the script computes and the rules that keep a drawing readable: top to bottom, sibling-only edges, names not sentences, edges labelled with the contract, solid versus dashed, and never colour alone. Carries how the edges draw themselves in behind `--motion`, palette tokens only (R30), no pixel width on the svg (R25), the labels inside the drawing that are R56's one exception, when a drawing becomes a `plugins/<id>.js` rather than a script in one section, the `-->`-in-a-comment trap, and the FENCE MECHANISM — a fenced block whose info string names a plugin this workspace carries is handed to that plugin, which is how a vault that wants a diagram LANGUAGE gets one without the framework picking it."
+description: "WHEN A DRAWING IS WORTH MAKING, and what shape it takes when it is. A diagram here is a CUSTOM drawing and never a library's: HTML elements in the section's own markup, with the boxes and the arrows held as parallel `variables` in `content.yaml` and laid out by the section's own `<script>` — so editing the words edits the diagram, and nothing in the markup holds a position somebody has to maintain. `base/diagram/` is that written out and is what to copy. Use whenever the task is to draw a flow, a hierarchy, an architecture, a sequence, a state machine, a timeline, or anything else where the answer might be a picture of relationships. Leads with the shape that works and the section it sits in, then the test for whether the subject earns a drawing at all (and when a table or a list beats one), then the layout the script computes and the rules that keep a drawing readable: top to bottom, sibling-only edges, names not sentences, edges labelled with the contract, solid versus dashed, and never colour alone. Carries how a drawing arrives behind `--motion`, palette tokens only (R30), reflow rather than pixels (R25), when a drawing becomes a `plugins/<id>.js` rather than a script in one section, the `-->`-in-a-comment trap, and the FENCE MECHANISM — a fenced block whose info string names a plugin this workspace carries is handed to that plugin, which is how a vault that wants a diagram LANGUAGE gets one without the framework picking it."
 ---
 
 # Diagrams
 
 **This file settles when a drawing is worth making, and what it looks like when it is.**
 
-**A diagram is a drawing this workspace makes, not one a library makes for it.** An inline `<svg>` in the section's own markup, on the palette's tokens, drawn in when it arrives — which is what every other figure on a page already is. **Nothing ships a diagram language**, and that is the decision rather than an omission: a picture of relationships is the case a custom drawing is best at, and a page whose diagram came out of somebody else's renderer is a page whose one picture does not look like the rest of it.
+**A diagram is a drawing this workspace makes, not one a library makes for it.** HTML elements in the section's own markup, on the palette's tokens, drawn in when it arrives — which is what every other figure on a page already is. **Nothing ships a diagram language**, and that is the decision rather than an omission: a picture of relationships is the case a custom drawing is best at, and a page whose diagram came out of somebody else's renderer is a page whose one picture does not look like the rest of it.
 
 **The words are the diagram.** The boxes and the arrows are `variables` on the section, in `content.yaml` beside the prose that explains them, and the section's `<script>` turns them into geometry. So moving a box is editing the document, a new node is a new name, and the html file never has to be opened to change what the picture says.
 
@@ -53,11 +53,10 @@ contents:
     color: var(--ink);
   }
   .head  { grid-area: head; }
+  /* NO PIXEL WIDTHS ANYWHERE. The drawing takes the column it is given and the
+     type sizes what is in it — R25, and what makes one drawing right on a phone
+     and on a projector. */
   .plate { grid-area: plate; min-inline-size: 0; overflow-x: auto; overscroll-behavior-x: contain; }
-  /* NO WIDTH AND NO HEIGHT. The viewBox carries the proportions, the plate
-     carries the size — R25, and what makes one drawing right on a phone and on
-     a projector. */
-  .plate svg { display: block; inline-size: 100%; block-size: auto; }
   .say   { grid-area: say; }
   /* One column when there is no room for two. Last in the file, so it wins. */
   @container (width <= 52rem) {
@@ -99,13 +98,13 @@ contents:
 
 ## The layout is computed, never typed
 
-**No coordinate belongs in a file.** A `transform="translate(…)"` written by hand is a number somebody has to maintain, and the day a node is added every one of them is wrong — which is how a drawing quietly stops matching the argument beside it.
+**No position belongs in a file.** A row and a column written by hand are numbers somebody has to maintain, and the day a node is added every one of them is wrong — which is how a drawing quietly stops matching the argument beside it. The script places the boxes; where it has to tell the stylesheet where something goes, it writes a custom property and the stylesheet decides what to do with it.
 
 **A node's ROW is how far it is from a source** — one more than the deepest thing pointing at it — **and its place across that row is the order it was written in.** That is the whole of the layout in the starter, and it is deliberately not cleverer than that:
 
 - **Relaxed rather than sorted.** A cycle is an ordinary thing to draw — a loop that closes is usually the point — and a topological sort has nothing to say about one. Cap the passes at the number of nodes and a cycle settles instead of spinning.
 - **No crossing-minimising sweep.** It would reorder a row the day somebody added an edge, and a diagram that rearranges itself under its own author is worse than one with a crossing in it.
-- **Box widths are estimated from the label's LENGTH, not measured.** Measuring means waiting for the face to load, and a drawing that waits is a section that is blank while it does.
+- **Nothing is measured.** A box is as wide as its own name makes it, which is a thing the browser already does — a script that reads a box back to decide where to put the next one is a drawing that waits for the face to load and a section that is blank while it does.
 
 **An edge naming a node nobody wrote is dropped rather than drawn around.** And a section with no nodes yet says so in a slot of its own: a blank rectangle where a drawing was is indistinguishable from a page still loading, and the person looking at it is usually the person who could have fixed it.
 
@@ -117,7 +116,7 @@ contents:
 
 **Only connect boxes that share a parent.** An arrow from inside one group to inside another is the single most common way a diagram becomes a hairball. Draw the relationship at the level where both boxes are siblings, and put the detail on the label. **Where the crossing edge IS the point** — a deliberate exception, a back channel — draw it and say in the prose that it is one, so it reads as an argument rather than as an accident.
 
-**A node label is a name, not an explanation.** A couple of words. When a node needs a sentence to be understood, the sentence belongs in the prose beside it and the node keeps the name. A diagram whose boxes have grown into paragraphs has stopped being scannable — and the arithmetic that sizes a box without measuring it is right for every label that belongs in one.
+**A node label is a name, not an explanation.** A couple of words. When a node needs a sentence to be understood, the sentence belongs in the prose beside it and the node keeps the name. A diagram whose boxes have grown into paragraphs has stopped being scannable, and a row of them has nowhere left to go on a phone.
 
 **Label the edges with the contract**, not with a verb. `writes the rows`, `GET /things/{id}`, `one commit per write` — each says more than `uses`. An edge that carries nothing worth naming can be left bare.
 
@@ -125,7 +124,7 @@ contents:
 
 **Never let colour carry the meaning on its own.** Every colour comes from the workspace palette, so a hue cannot be chosen to mean something. Where two kinds of node have to be told apart, tell them apart by SHAPE or by stroke — and **say what the distinction is in the prose beside the picture**, which is also what makes the drawing readable to somebody who cannot tell two tokens apart.
 
-**The labels inside the `<svg>` are the one text the markup may carry**, and they are R56's artwork exception — but they are labels rather than prose, and in the starter they are not in the markup at all: they are the node names out of `variables`, set as `textContent` by the script. Nothing else in the file says a word.
+**The markup says not one word of it.** Every name in the drawing is a value out of `variables`, set as `textContent` by the script — which is what makes editing the document editing the picture, and what keeps R56 quiet without an exception being spent on it.
 
 ---
 
@@ -136,7 +135,6 @@ contents:
 - **`<span data-g-plugin="reveal">` adds `is-seen` to the section and disconnects.** Everything the reveal does is in the section's own `<style>`, hung off `:scope.is-seen`.
 - **Every duration is multiplied by `--motion`**, which the document declares as 1 and as 0 under `prefers-reduced-motion`. A reader who asked for stillness gets the finished drawing and no move at all, with no second media query to keep in step.
 - **The figure is legible at every frame.** The boxes are already there and the edges draw in over them; a reveal that starts from nothing is a section that is blank while it plays.
-- **`pathLength="1"` normalises every edge**, so one `stroke-dasharray` in the stylesheet draws a short edge and a long one at the same speed and nothing has to measure a path.
 - **The stagger is a custom property.** The script sets `--i` to the edge's index — a custom property is the one thing a script may write onto an element's style — and the stylesheet decides what the delay does with it.
 - **A reveal, never a loop.** Motion that decorates is the same ornament as a figure that says nothing.
 
@@ -172,7 +170,7 @@ contents:
 
 **R30 — nothing sets a raw colour.** Every line takes `--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. A hex written into a drawing is the one thing on screen that stops matching the morning somebody changes the scheme. **A colour inside a fence in `content.yaml` is the checker's blind spot** — it reads section files, not prose — so nothing will tell you. R30 itself is in [`../design/SKILL.md`](../design/SKILL.md).
 
-**R25 — no pixel width on the `<svg>`.** `inline-size: 100%` and a `viewBox`; the moment a `width` attribute goes on, the drawing has stopped reflowing.
+**R25 — nothing in the drawing has a width in pixels.** The boxes take the column they are given and the lanes between them are `rem`; the moment a pixel width goes on, the drawing has stopped reflowing.
 
 **`-->` ends an HTML comment.** A section file explaining its own edges in a `<!-- -->` banner and writing an example arrow inside it terminates the comment there, and every line after it draws on the page as stray text. Write `==>` inside a comment.
 

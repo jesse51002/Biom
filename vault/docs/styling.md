@@ -54,7 +54,7 @@ kebab-cased**: `stockHi` becomes `--stock-hi`, `ink3` becomes `--ink-3`.
 
 **Where a custom property cannot be read at all** — a `<canvas>`, a shader, a
 library that writes literal fills into its own output — `biom.theme()` hands back
-the raw values. A drawing made of ordinary SVG elements is not one of those cases
+the raw values. A drawing made of ordinary HTML elements is not one of those cases
 and takes the tokens like everything else.
 
 ### The three type roles

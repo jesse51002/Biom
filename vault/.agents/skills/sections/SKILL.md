@@ -31,7 +31,7 @@ The second half is what this file is organised around. Everything below is eithe
 
 **Before the moves, the two rules this workspace's `AGENTS.md` puts at the top, because both of them are decided here.**
 
-**A page is DRAWN and not merely written.** We are not a plain markdown framework, for a reason: a section exists so a page can carry a drawing, a board, a figure, a live table. So a doc page gets its figures without being asked, wherever the content has a shape — a count, a sequence, a flow, a comparison, a boundary, a cycle — chosen deliberately for that subject and never decorative. **And drawn means an inline `<svg>` that animates on reveal** — vector, on the palette's tokens (R30 holds on a `fill` as it holds in CSS), with no pixel width on the `<svg>` itself (R25), its labels inside the drawing (R56's one exception), and its motion behind `--motion` so stillness is one switch away. A picture pasted in is not a figure, and a figure that only sits there has spent its one chance to read faster than the sentence beside it.
+**A page is DRAWN and not merely written.** We are not a plain markdown framework, for a reason: a section exists so a page can carry a drawing, a board, a figure, a live table. So a doc page gets its figures without being asked, wherever the content has a shape — a count, a sequence, a flow, a comparison, a boundary, a cycle — chosen deliberately for that subject and never decorative. **And drawn means HTML that animates on reveal** — elements in this file, laid out with grid and flex, inked with borders and backgrounds on the palette's tokens (R30), reflowing rather than sized in pixels (R25), its words out of the section's `variables`, and its motion behind `--motion` so stillness is one switch away. A picture pasted in is not a figure, and a figure that only sits there has spent its one chance to read faster than the sentence beside it.
 
 **And a drawing with even a small chance of being wanted on a second page is a PLUGIN, not a section script.** A section's `<script>` is for a drawing that is genuinely about this one section's own content. Everything else goes in `plugins/<id>.js` from the start — see [`../plugins/SKILL.md`](../plugins/SKILL.md) §3 — because the alternative is measured: one drawing became eighty-eight copies in eleven shapes in a workspace whose agents had this file open.
 
@@ -715,7 +715,7 @@ recoverable one.
 to your file** — the `@scope` wrapper around your `<style>`, the `@keyframes`
 family hoisted back out of it, the markup interpolated as text before it is
 parsed, and the one id space the whole page shares. **Read it before you write a
-`<style>` or an `<svg>`**: two of those four are traps that fail silently.
+`<style>` or a drawing**: two of those four are traps that fail silently.
 
 ---
 

@@ -150,7 +150,7 @@ For real design work — a surface being shaped, a redesign, a critique — use 
 
 **In a plugin it is worse by exactly the number of pages in the workspace.** A seeded plugin that inks a face has done it for every page in every vault, for people who never saw the decision. A plugin sets a `data-*` attribute and inserts controls; what any of it LOOKS like is the section's.
 
-**Where it does not apply: something that cannot read a custom property at all** — a canvas, a shader, a library that writes literal fills into its own output. `biom.theme()` hands back the raw values for exactly those. A diagram here is ordinary SVG and is NOT one of them — every line takes `--rule` and every label `--ink`, so the drawing repaints when the palette does; see [`../diagrams/SKILL.md`](../diagrams/SKILL.md). Reach for it when the thing you are painting has no CSS to read, and **never as a way around the rule.**
+**Where it does not apply: something that cannot read a custom property at all** — a canvas, a shader, a library that writes literal fills into its own output. `biom.theme()` hands back the raw values for exactly those. A figure here is ordinary HTML and is NOT one of them — every line takes `--rule` and every label `--ink`, so the drawing repaints when the palette does; see [`../diagrams/SKILL.md`](../diagrams/SKILL.md). Reach for it when the thing you are painting has no CSS to read, and **never as a way around the rule.**
 
 ---
 

@@ -225,8 +225,8 @@ is drawn by your `plugins/flow.js`, with nothing else to wire up.
   no stored Part of its own: it lives inside somebody else's prose. That is the
   same bargain a `data-g-plugin` node makes.
 
-**Nothing ships that draws a diagram from a fence.** A diagram here is an inline
-`<svg>` a section draws for itself, which is what
+**Nothing ships that draws a diagram from a fence.** A diagram here is HTML a
+section draws for itself, which is what
 [`.agents/skills/diagrams/`](../.agents/skills/diagrams/SKILL.md) is about; the
 hand-off above is for a workspace that genuinely wants a diagram language and
 brings its own.
