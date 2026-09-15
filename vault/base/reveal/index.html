@@ -1,7 +1,24 @@
-<!-- base/reveal/index.html — A FIGURE THAT PLAYS ONCE AND THEN RESTS.
+<!-- base/reveal/index.html — A FIGURE THAT ARRIVES, ONCE, AND THEN RESTS.
 
-     THIS FILE IS DELIBERATELY PLAIN. One hairline, one ink, no accent, no card —
-     a starter's look turns up in every page copied from it. Take the mechanism.
+     WHAT IT DRAWS. A run of stages: a line that draws across to where the work
+     has actually got to, a mark per stage lighting one after another as it
+     passes, the stage it reached ringed in the one hot colour, and a count
+     beside it. All of it HTML and CSS on the palette's tokens — no library, no
+     picture, nothing fetched — because that is what a figure is in this format.
+
+     WHERE THE WORDS LIVE. In `content.yaml`. The prose is markdown parts; the
+     FIGURE's own words are the section's `variables` — `stageName`, one entry
+     per mark, and `reached`, which names the one the run has got to. So editing
+     the document edits the drawing, and a sixth stage is a sixth name.
+
+     WHAT TO CHANGE FIRST: `stageName` and `reached`, then the lede beside them.
+     A figure's values are variables rather than a list SLOT, and that is the
+     rule rather than this file's preference: a slot holds markdown, so reading a
+     figure back out of a slot is parsing, and a list slot a reader can DRAG
+     would put mark 3 under stage 2 with nothing on screen to say so. Variables
+     are edited on the page's own config screen, which the note says on the page
+     rather than leaving somebody to find out. `base/list/` is the other half of
+     that answer, for the things a reader really should be able to add to.
 
      THE OBSERVER IS A PLUGIN AND NOT FIVE LINES IN THIS FILE, and that is the
      rule rather than a convenience: anything with even a small chance of being
@@ -15,12 +32,19 @@
      under that class is below, which is where a drawing's motion belongs.
 
      `--motion` IS THE FRAME'S SWITCH and is already on the page: the document
-     declares it as 1, and 0 under `prefers-reduced-motion`. A duration multiplied
-     by it is nothing when the reader has asked for less, which is why there is no
-     second media query in this file.
+     declares it as 1, and 0 under `prefers-reduced-motion`. A duration
+     multiplied by it is nothing when the reader has asked for less — and the
+     `@media` block at the foot is the half a multiplier cannot do, which is
+     putting the ink and the line back so stillness is the FINISHED figure.
 
-     THE BARS ARE ONE SLOT HOLDING A LIST. A fifth bar is a fifth entry in
-     `content.yaml` and never an edit to this markup. -->
+     THE STAGGER IS A CUSTOM PROPERTY. The script sets `--i` to a mark's own
+     index — the one thing a script may write onto an element's style — and the
+     stylesheet decides what the delay does with it, so the timing is readable in
+     one place rather than spread through the JavaScript.
+
+     THE FIGURE IS LEGIBLE AT EVERY FRAME. The rail, the names and the count are
+     there before anything moves; what arrives is the line and the marks. A
+     reveal that starts from nothing is a section that is blank while it plays. -->
 <style>
   :scope { display: block; container-type: inline-size; padding-block: 2.5rem; }
 
@@ -37,52 +61,171 @@
   .wrap > * > :first-child { margin-block-start: 0; }
   .wrap > * > :last-child { margin-block-end: 0; }
 
-  [data-g-part="rows"] { display: grid; gap: .5rem; }
+  .figure {
+    display: grid;
+    gap: 1.1rem;
+    padding: 1rem 1.15rem 1.15rem;
+    border: 1px solid var(--rule);
+    background: color-mix(in srgb, var(--stock-hi) 65%, transparent);
+  }
 
-  /* EACH ITEM IS A BAR. It starts at nothing and grows to its full width on
-     first sight. There is no stagger here, deliberately: a delay per item is a
-     design decision and this file has none of those. */
-  [data-g-part="rows"] > * {
-    padding-block: .35rem;
-    padding-inline-start: .6rem;
-    border-inline-start: 1px solid var(--rule);
+  /* THE COUNT, in the gauge role with tabular figures, because a number that
+     shifts as it counts is a number nobody can read twice. */
+  .gauge { display: flex; align-items: baseline; gap: .3rem; font-family: var(--gauge-face); font-variant-numeric: tabular-nums; }
+  .gauge .now { font-size: 1.6rem; line-height: 1; color: var(--cyan-t); }
+  .gauge .of { font-size: 1.05rem; color: var(--ink-3); }
+
+  /* THE TRACK. The rail runs behind the marks at the height of their centres, so
+     the line and the stages on it are one object rather than two rows. */
+  .track { position: relative; }
+  .rail {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: .45rem;
+    block-size: 1px;
+    background: var(--rule);
+  }
+  /* THE LINE THAT DRAWS ACROSS. It is as long as the run has got — a percentage
+     the script computes — and it grows into that length from the left. */
+  .fill {
+    display: block;
+    block-size: 100%;
+    inline-size: var(--at, 0%);
+    background: var(--cyan);
     transform-origin: left center;
-    transform: scaleX(.02);
+    transform: scaleX(0);
+    transition: transform calc(760ms * var(--motion, 1)) cubic-bezier(.4, 0, .2, 1);
+  }
+
+  /* A ROW OF MARKS, sharing the track equally. Nothing here names how many. */
+  .marks { position: relative; display: flex; }
+  .stage { flex: 1 1 0; min-inline-size: 0; display: grid; justify-items: center; gap: .5rem; }
+  .dot {
+    inline-size: .9rem;
+    block-size: .9rem;
+    border: 1px solid var(--rule);
+    border-radius: 50%;
+    background: var(--stock);
+    transform: scale(.3);
     opacity: 0;
+    transition: transform calc(300ms * var(--motion, 1)) cubic-bezier(.16, 1, .3, 1),
+                opacity calc(240ms * var(--motion, 1)) ease;
+    transition-delay: calc((260ms + var(--i, 0) * 150ms) * var(--motion, 1));
   }
-  [data-g-part="rows"] > * > :first-child { margin-block-start: 0; }
-  [data-g-part="rows"] > * > :last-child { margin-block-end: 0; }
+  /* ONE HOT COLOUR, AND THE STAGE THE RUN IS AT WEARS IT LOUDEST. Everything
+     behind it is filled and everything ahead of it is an outline — a figure
+     where everything is lit has lit nothing. */
+  .stage.is-done .dot { background: var(--cyan); border-color: var(--cyan); }
+  .stage.is-here .dot { box-shadow: 0 0 0 .22rem color-mix(in srgb, var(--cyan) 22%, transparent); }
+  .name { font-size: .72rem; line-height: 1.25; color: var(--ink-3); text-align: center; }
+  .stage.is-here .name { color: var(--ink); }
 
-  /* THE CLASS THE PLUGIN ADDS, and everything that hangs off it. */
-  :scope.is-seen [data-g-part="rows"] > * {
-    animation: bar-in calc(420ms * var(--motion, 1)) cubic-bezier(.2, .8, .2, 1) both;
-    transform: none;
-    opacity: 1;
-  }
-  @keyframes bar-in {
-    from { transform: scaleX(.02); opacity: 0; }
-    to { transform: none; opacity: 1; }
-  }
+  /* AND THE CLASS THE `reveal` PLUGIN ADDS. It is already on the section by the
+     time a stage added later is drawn, so a mark that arrives after the reveal
+     has fired arrives finished rather than invisible. */
+  :scope.is-seen .fill { transform: none; }
+  :scope.is-seen .dot { transform: none; opacity: 1; }
 
-  /* A READER WHO ASKED FOR LESS MOTION GETS THE FIGURE AND NOT THE MOVE. The
-     duration is already nothing through `--motion`; this is the half a
-     multiplier cannot do, which is removing the transform outright. */
   @media (prefers-reduced-motion: reduce) {
-    [data-g-part="rows"] > * { transform: none; opacity: 1; }
+    .fill { transform: none; }
+    .dot { transform: none; opacity: 1; }
   }
 
-  [data-g-part="note"] { color: var(--ink-3); font-size: .88rem; }
+  .note { color: var(--ink-3); font-size: .88rem; }
+
+  /* THE FAULT IS A SLOT LIKE EVERY OTHER WORD HERE. A blank rectangle where a
+     drawing was is indistinguishable from a page that is still loading. */
+  .fault { display: none; color: var(--ink-3); font-size: .9rem; }
+  :scope.is-fault .fault { display: block; }
+  :scope.is-fault .figure { display: none; }
+
+  /* NARROW: the names give up first, because a phone has room for the run or
+     for the words under it and not both — and the last thing to go is the name
+     of the stage the run is actually at, which is the one fact the figure is
+     for. It has to come last, because at equal specificity the later rule
+     wins. */
+  @container (width <= 34rem) {
+    .name { font-size: .64rem; }
+  }
+  @container (width <= 26rem) {
+    .stage:not(.is-here) .name { display: none; }
+    .stage.is-here .name { font-size: .72rem; }
+  }
 </style>
 
 <div class="wrap">
   <div data-g-part="lede"></div>
-  <div data-g-part="rows"></div>
+  <div class="figure">
+    <div class="gauge"></div>
+    <div class="track">
+      <div class="rail"><span class="fill"></span></div>
+      <div class="marks"></div>
+    </div>
+  </div>
+  <div class="fault" data-g-part="fault"></div>
   <!-- ONE CLASS, ONCE, ON THIS SECTION. `data-g-on` would narrow it to one
        element inside the section; with nothing named it is the section itself. -->
   <span data-g-plugin="reveal"></span>
-  <!-- AND THE LIST STAYS A LIST. A figure drawn from a slot is still a slot
-       somebody has to be able to add to and take from, or the bars are a picture
-       of a chart rather than a chart. -->
-  <span data-g-plugin="items" data-g-for="rows" data-g-add="＋ Another bar" data-g-blank="Five"></span>
-  <div data-g-part="note"></div>
+  <div class="note" data-g-part="note"></div>
 </div>
+<script>
+  /* THE DRAWING, AND NOTHING ELSE. Every word in it comes out of `ctx.vars` —
+     the page's variables and the section's, merged with the nearest last. */
+
+  /** A variable that is a list, a lone scalar, or absent — all three arrive here
+   *  and leave as an array of strings. A one-item list is written as a scalar by
+   *  most people writing YAML. */
+  function list(value) {
+    if (Array.isArray(value)) return value.map(function (v) { return String(v).trim(); });
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value).trim()];
+  }
+
+  /** One element, with its class, appended where it belongs. */
+  function add(parent, tag, cls) {
+    const el = document.createElement(tag);
+    if (cls) el.setAttribute("class", cls);
+    parent.appendChild(el);
+    return el;
+  }
+
+  const vars = ctx.vars || {};
+  const names = list(vars.stageName).filter(Boolean);
+  const reached = String(vars.reached === undefined || vars.reached === null ? "" : vars.reached).trim();
+
+  /* THE STAGE REACHED IS NAMED, NOT NUMBERED. An index typed into a second
+     variable is a number that is wrong the moment a stage is added in front of
+     it, and nothing on screen would say so. A name that matches nothing leaves
+     the run at the start, which is the honest drawing of a typo. */
+  const here = names.indexOf(reached);
+
+  if (names.length === 0) {
+    section.classList.add("is-fault");
+  } else {
+    const marks = section.querySelector(".marks");
+    const gauge = section.querySelector(".gauge");
+    const fill = section.querySelector(".fill");
+
+    add(gauge, "span", "now").textContent = String(here + 1);
+    add(gauge, "span", "of").textContent = "/ " + names.length;
+
+    /* HOW FAR THE LINE GOES is the middle of the mark it stops at, because every
+       stage sits at the centre of its own share of the track. */
+    const at = names.length > 1 ? ((here + 0.5) / names.length) * 100 : 100;
+    fill.style.setProperty("--at", Math.max(0, at) + "%");
+
+    /* THE DRAWING SAYS WHAT IT IS to a reader who is not looking at it, in the
+       document's own words. */
+    marks.setAttribute("role", "img");
+    marks.setAttribute("aria-label", names.join(", "));
+
+    names.forEach(function (name, i) {
+      const stage = add(marks, "div", "stage" + (i <= here ? " is-done" : "") + (i === here ? " is-here" : ""));
+      /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM
+         PROPERTY. The stylesheet decides what the stagger does with it. */
+      const dot = add(stage, "span", "dot");
+      dot.style.setProperty("--i", String(i));
+      add(stage, "span", "name").textContent = name;
+    });
+  }
+</script>
