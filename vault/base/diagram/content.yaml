@@ -10,17 +10,22 @@ contents:
         draws as it stands.
 
         **The diagram is the `variables` on the section, not the markup.** `nodes` is every box, in
-        the order they should read across a row; `edgeFrom`, `edgeTo`, `edgeSays` and `edgeKind` are
-        parallel lists, one entry each per arrow. Add a name to `nodes`, add a pair to the edge
-        lists, and the drawing rearranges itself around them — nothing in the html file holds a
-        position, and there is nothing to keep in step.
+        the order they should read across a row; `nodeIcon` is the mark each one wears; `edgeFrom`,
+        `edgeTo`, `edgeSays` and `edgeKind` are parallel lists, one entry each per arrow. Add a name
+        to `nodes`, add a pair to the edge lists, and the drawing rearranges itself around them —
+        nothing in the html file holds a position, and there is nothing to keep in step.
 
         **It is HTML, drawn in place and animated once when it is first seen.** No library is
         fetched and no stylesheet but this page's own decides what it looks like: every border takes
         `--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. The
-        boxes are a grid, each edge is one element with three borders running down a lane beside
-        them, and the edges draw themselves in behind `--motion` — which means a reader who asked for
-        less motion gets the finished diagram and no move at all.
+        boxes are a grid, each station's mark is CSS rather than a picture, each edge is one element
+        with three borders running down a lane beside them, and the edges draw themselves in behind
+        `--motion` — which means a reader who asked for less motion gets the finished diagram and no
+        move at all.
+
+        **The reveal walks the loop once.** One station at a time takes the hot colour and gives it
+        back, in the order the layout put them in, because what this drawing is about is the loop
+        going round rather than a state one box is in.
   - name: how-it-fits
     data: index.html
     variables:
@@ -29,6 +34,11 @@ contents:
         - Claude writes the file
         - The window redraws
         - The page is the workspace
+      nodeIcon:
+        - ask
+        - file
+        - window
+        - folder
       edgeFrom:
         - Somebody asks
         - Claude writes the file

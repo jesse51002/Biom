@@ -7,12 +7,23 @@
      Nothing is fetched, nothing is themed by somebody else's stylesheet, and
      every line on screen is a line in this file.
 
-     THE WORDS ARE THE DIAGRAM. The boxes and the arrows are `variables` on the
-     section — `nodes`, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as parallel
-     lists sharing a stem and the same length — so editing the diagram is editing
-     the document. A variable is a scalar or a list of scalars and nothing else;
-     anything tabular is parallel lists, which is why the edges are four lists
-     rather than one.
+     WHAT IT DRAWS. Four stations round a loop, each with a mark of its own drawn
+     in CSS — somebody asking, a file being written, a window redrawing, a folder
+     — with the edges bracketed down a lane beside them, and a walk that goes
+     round once when the section arrives, lighting one station at a time in the
+     one hot colour and leaving it as it found it.
+
+     WHERE THE WORDS LIVE. All of them in `content.yaml`. The prose is markdown
+     parts; the DIAGRAM is `variables` on the section — `nodes` and `nodeIcon`,
+     one entry each per box, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as
+     parallel lists sharing a stem and the same length — so editing the diagram
+     is editing the document. A variable is a scalar or a list of scalars and
+     nothing else; anything tabular is parallel lists, which is why the edges are
+     four lists rather than one.
+
+     WHAT TO CHANGE FIRST: `nodes`, then the edge lists, then the prose beside
+     them. `nodeIcon` takes `ask`, `file`, `window` or `folder`, and anything
+     else — a typo, a missing entry — draws a plain mark rather than nothing.
 
      NOTHING IN HERE HOLDS A POSITION. The script lays the graph out: a node's ROW
      is how far it is from a source — one more than the deepest thing pointing at
@@ -48,10 +59,16 @@
      wraps, and the lanes are in `rem` — so the drawing is right on a phone and on
      a projector and nothing in here was measured to make it so.
 
-     THIS FILE IS DELIBERATELY PLAIN. One ink, one rule, no accent, no tint, no
-     box around the drawing — a starter's look is inherited by every page copied
-     from it, so the only safe amount of look in here is none. The SHAPE is what
-     to take; how it should be inked is yours, and `design/` decides that. -->
+     ONE HOT COLOUR, SPENT ON ONE STATION AT A TIME. Everything else on the
+     drawing is `--ink` and `--rule`, because a figure where every box is
+     coloured has coloured nothing — and `--cyan` is a role rather than a hue, so
+     the whole drawing repaints when the workspace changes its palette.
+
+     WHAT TO KEEP AND WHAT TO REPLACE. The MECHANISM is the part to keep: the
+     words in the document, the layout computed, the reveal behind `--motion`,
+     nothing measured and no colour spelled. Everything about how it LOOKS is
+     yours — the icon set is four shapes this loop happened to need, the lit
+     colour is the palette's, and `design/` is whose taste decides both. -->
 <style>
   /* THE SECTION IS THE CONTAINER, and it has to say so: `@container` matches
      nothing until an ancestor declares `container-type`. Nothing declares it for
@@ -116,14 +133,81 @@
     margin-block: .45rem;
   }
 
+  /* A STATION IS ITS MARK AND ITS NAME. `row-reverse` puts the drawn icon in
+     front of the words while leaving the NAME as the box's own text node, which
+     is what keeps the layout test able to read a row off the drawing. */
   .node {
     flex: 1 1 auto;
     min-inline-size: 0;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
     padding: .55rem .85rem;
     border: 1px solid var(--rule);
     border-radius: 3px;
+    color: var(--ink);
     text-align: center;
   }
+
+  /* THE MARK, DRAWN HERE. A border and two pseudo-elements each — no picture
+     file, no icon font, no vector geometry — so it takes the palette like
+     everything else does and it is
+     one more thing the page can repaint by changing `theme.json`. Everything
+     inside one is `currentColor`, which is what lets the walk below light the
+     whole station, pseudo-elements included, by animating one property.
+
+     A LENGTH IN `rem` RATHER THAN A PERCENTAGE, because an icon's size is fixed
+     by what it IS rather than by the column it is drawn in — the one case R25
+     makes room for. */
+  .ico {
+    position: relative;
+    flex: 0 0 auto;
+    inline-size: .95rem;
+    block-size: .8rem;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+  }
+  .ico::before,
+  .ico::after { content: ""; position: absolute; }
+
+  /* SOMEBODY ASKING — a bubble with a tail. */
+  .ico.is-ask { border-radius: 3px; }
+  .ico.is-ask::after {
+    inset-block-start: 100%;
+    inset-inline-start: .18rem;
+    inline-size: 0;
+    block-size: 0;
+    border-inline: .16rem solid transparent;
+    border-block-start: .2rem solid currentColor;
+  }
+
+  /* A FILE BEING WRITTEN — a sheet, portrait, with two lines on it. */
+  .ico.is-file { inline-size: .72rem; block-size: .92rem; border-radius: 1px; }
+  .ico.is-file::before { inset-block-start: .22rem; inset-inline: .15rem; block-size: 1px; background: currentColor; }
+  .ico.is-file::after { inset-block-end: .22rem; inset-inline: .15rem .3rem; block-size: 1px; background: currentColor; }
+
+  /* A WINDOW REDRAWING — a frame with its bar across the top. */
+  .ico.is-window::before { inset-block-start: 0; inset-inline: 0; block-size: .18rem; background: currentColor; }
+  .ico.is-window::after { inset-block-end: .16rem; inset-inline-start: .16rem; inline-size: .38rem; block-size: 1px; background: currentColor; }
+
+  /* A FOLDER — a box with a tab on its leading corner. */
+  .ico.is-folder { border-start-start-radius: 0; }
+  .ico.is-folder::before {
+    inset-block-end: 100%;
+    inset-inline-start: -1px;
+    inline-size: .42rem;
+    block-size: .2rem;
+    border: 1px solid currentColor;
+    border-block-end: 0;
+    border-start-start-radius: 2px;
+    border-start-end-radius: 2px;
+  }
+
+  /* AND ANYTHING ELSE — a plain mark, so a station whose `nodeIcon` is absent or
+     misspelled still has one rather than a broken shape. */
+  .ico.is-dot { inline-size: .5rem; block-size: .5rem; border-radius: 50%; }
 
   /* AN EDGE IS ITS LABEL AND ITS BRACKET, right-aligned against the boxes. */
   .link {
@@ -206,6 +290,24 @@
     animation: mark-in calc(260ms * var(--motion, 1)) ease-out both;
     animation-delay: calc((var(--i, 0) * 90ms + 380ms) * var(--motion, 1));
   }
+  /* AND THE WALK. The reveal goes round the loop once, lighting one station at a
+     time in the one hot colour and leaving it as it found it — `--n` is the
+     station's own index, written by the script, so the order is the order the
+     graph was laid out in and nothing here counts anything.
+
+     ONE PROPERTY CARRIES THE WHOLE STATION, because a keyframe on the box cannot
+     reach the icon inside it: everything the icon is drawn with is
+     `currentColor`, so animating `color` lights the mark, its two
+     pseudo-elements and the name together.
+
+     LIT AND THEN RELEASED, rather than lit and left on. A figure where every box
+     ends up coloured has coloured nothing, and the thing being shown here is the
+     loop going round rather than a state one station is in. */
+  :scope.is-seen .node {
+    animation: station-lit calc(1100ms * var(--motion, 1)) ease-out both;
+    animation-delay: calc(var(--n, 0) * 320ms * var(--motion, 1));
+  }
+
   @keyframes line-in {
     from { transform: scaleY(0); }
     to { transform: scaleY(1); }
@@ -214,6 +316,12 @@
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  @keyframes station-lit {
+    0% { color: var(--ink); border-color: var(--rule); background-color: transparent; }
+    22%,
+    46% { color: var(--cyan-t); border-color: var(--cyan); background-color: color-mix(in srgb, var(--cyan) 12%, transparent); }
+    100% { color: var(--ink); border-color: var(--rule); background-color: transparent; }
+  }
 
   /* A READER WHO ASKED FOR LESS MOTION GETS THE DIAGRAM AND NOT THE MOVE. The
      durations are already nothing through `--motion`; this is the half a
@@ -221,6 +329,9 @@
   @media (prefers-reduced-motion: reduce) {
     .line { transform: none; }
     .says { opacity: 1; }
+    /* The walk's last keyframe IS the station at rest, so a zero duration
+       already ends there; this says so rather than leaving it to be inferred. */
+    :scope.is-seen .node { animation: none; }
   }
 
   .say { grid-area: say; max-inline-size: 34rem; }
@@ -294,6 +405,13 @@
 
   const vars = ctx.vars || {};
   const names = list(vars.nodes).filter(Boolean);
+  /* ONE MARK PER STATION, NAMED IN THE DOCUMENT. A list parallel to `nodes`, so
+     a station's icon is a word somebody can change beside its name rather than a
+     class typed into this file. A name this file has no shape for — or a list
+     that stops short — falls back to a plain mark, because a misspelling should
+     cost a nicer icon and never the drawing. */
+  const ICONS = ["ask", "file", "window", "folder"];
+  const icons = list(vars.nodeIcon);
   const from = list(vars.edgeFrom);
   const to = list(vars.edgeTo);
   const says = list(vars.edgeSays);
@@ -392,7 +510,17 @@
       const rowEl = add(plot, "div", "row");
       rowEl.style.setProperty("--row", String(2 * r + 1));
       members.forEach(function (i) {
-        add(rowEl, "div", "node").textContent = names[i];
+        const box = add(rowEl, "div", "node");
+        /* THE NAME IS THE BOX'S OWN TEXT and the mark is a child after it, which
+           `row-reverse` draws in front — set the other way round, the text would
+           replace the icon. */
+        box.textContent = names[i];
+        /* THE WALK'S ORDER IS THE LAYOUT'S ORDER, as a custom property: the one
+           thing a script may write onto an element's style, with the stylesheet
+           deciding what the delay does with it. */
+        box.style.setProperty("--n", String(i));
+        const mark = ICONS.indexOf(icons[i]) >= 0 ? icons[i] : "dot";
+        add(box, "i", "ico is-" + mark).setAttribute("aria-hidden", "true");
       });
     });
 

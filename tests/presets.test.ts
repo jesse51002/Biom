@@ -730,6 +730,29 @@ test("base/diagram is a CUSTOM drawing — HTML laid out from the document's own
   const lengths = new Set(stems.map((stem) => (vars[stem] as unknown[]).length));
   expect([...lengths]).toHaveLength(1);
 
+  // AND SO IS THE MARK EACH STATION WEARS. `nodeIcon` is one entry per node, in
+  // the document beside the name, rather than a class typed into the markup —
+  // the icon is part of what the diagram SAYS, so it is edited where the rest of
+  // the diagram is. Every entry names a shape this file actually draws; a starter
+  // whose own example fell through to the fallback mark would be teaching the
+  // fallback.
+  const marks = vars["nodeIcon"];
+  expect(Array.isArray(marks)).toBe(true);
+  expect((marks as unknown[]).length).toBe((nodes as unknown[]).length);
+  for (const mark of marks as string[]) {
+    expect([mark, html.includes(".ico.is-" + mark)]).toEqual([mark, true]);
+  }
+  // THE MARKS ARE DRAWN AND NOT FETCHED — a border and two pseudo-elements, on
+  // the palette's tokens like everything else, so there is no picture file and no
+  // icon font to go missing.
+  expect(html).toContain(".ico::before");
+  expect(html).not.toMatch(/<img\b|url\(/);
+
+  // AND THE REVEAL WALKS THE LOOP. One station lit at a time, off the same
+  // `--motion` switch the edges use, so stillness is still the finished drawing.
+  expect(html).toContain("station-lit");
+  expect(html).toContain("var(--n, 0)");
+
   // NOTHING IN THE MARKUP HOLDS A POSITION. The script lays the graph out from
   // the edges, so adding a node is adding a name — a row or a lane typed into a
   // file is a number somebody has to maintain. Every one of them reaches the
