@@ -15,11 +15,12 @@ contents:
         lists, and the drawing rearranges itself around them — nothing in the html file holds a
         position, and there is nothing to keep in step.
 
-        **It is an inline `<svg>`, drawn in place and animated once when it is first seen.** No
-        library is fetched and no stylesheet but this page's own decides what it looks like: every
-        line takes `--rule`, every label takes `--ink`, so the whole drawing repaints when the
-        palette does. The edges draw themselves in behind `--motion`, which means a reader who asked
-        for less motion gets the finished diagram and no move at all.
+        **It is HTML, drawn in place and animated once when it is first seen.** No library is
+        fetched and no stylesheet but this page's own decides what it looks like: every border takes
+        `--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. The
+        boxes are a grid, each edge is one element with three borders running down a lane beside
+        them, and the edges draw themselves in behind `--motion` — which means a reader who asked for
+        less motion gets the finished diagram and no move at all.
   - name: how-it-fits
     data: index.html
     variables:

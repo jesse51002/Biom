@@ -697,11 +697,11 @@ test("a starter section declares its slots, and its document fills every one", (
   }
 });
 
-test("base/diagram is a CUSTOM drawing — an inline svg laid out from the document's own words", () => {
+test("base/diagram is a CUSTOM drawing — HTML laid out from the document's own words", () => {
   // THE DECISION THIS STARTER IS THE WORKED EXAMPLE OF. Mermaid is not shipped:
-  // the whole point of the format is a custom drawing, so a diagram here is an
-  // inline `<svg>` the section writes, on the palette's tokens, drawn in on
-  // reveal — exactly what every other figure in a workspace is.
+  // the whole point of the format is a custom drawing, so a diagram here is HTML
+  // the section writes, on the palette's tokens, drawn in on reveal — exactly
+  // what every other figure in a workspace is.
   const html = readFileSync(join(BASE_DIR, "diagram", "index.html"), "utf8");
   const doc = parse(readFileSync(join(BASE_DIR, "diagram", "content.yaml"), "utf8"));
   const section = doc.contents.find((c) => c.data === "index.html");
@@ -710,7 +710,13 @@ test("base/diagram is a CUSTOM drawing — an inline svg laid out from the docum
   // No library, no fence, and no language named anywhere in the file.
   expect(html).not.toContain("mermaid");
   expect(html).not.toContain("/vendor/");
-  expect(html).toContain("createElementNS");
+  expect(html).toContain("createElement(");
+  // AND IT IS HTML RATHER THAN VECTOR GEOMETRY. A figure is elements, grid and
+  // flex, borders and backgrounds on the palette's tokens — which is the half of
+  // the rule a shape test can actually hold.
+  expect(html).not.toContain("<svg");
+  expect(html).not.toContain("createElementNS");
+  expect(html).toContain("display: grid");
 
   // THE WORDS ARE THE DIAGRAM. Boxes and arrows are the section's own variables
   // — parallel lists sharing a stem and the same length — so editing the drawing
@@ -725,12 +731,16 @@ test("base/diagram is a CUSTOM drawing — an inline svg laid out from the docum
   expect([...lengths]).toHaveLength(1);
 
   // NOTHING IN THE MARKUP HOLDS A POSITION. The script lays the graph out from
-  // the edges, so adding a node is adding a name — a coordinate typed into a
-  // file is a coordinate somebody has to maintain.
-  expect(html).not.toMatch(/\btransform\s*=\s*"translate/);
-  // And the svg has no size of its own: the viewBox carries the proportions.
-  expect(html).toContain("viewBox");
-  expect(html).not.toMatch(/<svg[^>]*\swidth\s*=/);
+  // the edges, so adding a node is adding a name — a row or a lane typed into a
+  // file is a number somebody has to maintain. Every one of them reaches the
+  // stylesheet as a custom property instead.
+  expect(html).not.toMatch(/grid-(?:row|column)\s*:\s*\d+\s*\//);
+  expect(html).toContain("grid-row: var(--from, 1) / var(--to, 2)");
+  expect(html).toContain("var(--lane, 0)");
+  // And nothing in it has a width in pixels: the boxes take the column they are
+  // given and the lanes are in rem.
+  expect(html).not.toMatch(/(?:^|[;{\s])(?:min-)?width\s*:\s*\d/m);
+  expect(html).not.toMatch(/inline-size:\s*\d+px/);
 
   // IT MOVES WHEN IT ARRIVES, ONCE, BEHIND THE FRAME'S SWITCH. `reveal` adds the
   // class and disconnects; every duration is multiplied by `--motion`, so a
@@ -917,29 +927,33 @@ test("the seeded root draws itself, and asks where the workspace is", async () =
  *  it. There is no DOM in `bun test` and the layout is the half of that starter
  *  that has been wrong twice, so this is the cheapest honest way to hold it. */
 function drawDiagram(vars: Record<string, unknown>): {
-  svg: Record<string, string>;
-  boxes: { x: number; y: number; width: number }[];
-  edges: { back: boolean; d: string }[];
+  rows: string[][];
+  rowLines: number[];
+  links: { from: number; to: number; lane: number; back: boolean; dash: boolean; says: string }[];
   labels: string[];
   fault: boolean;
+  plot: Record<string, string>;
 } {
   const html = readFileSync(join(BASE_DIR, "diagram", "index.html"), "utf8");
   const src = /<script>([\s\S]*)<\/script>/.exec(html);
   if (!src) throw new Error("base/diagram/index.html has no section script");
 
-  interface El { tag: string; attrs: Record<string, string>; kids: El[]; text: string }
-  const made: El[] = [];
+  interface El {
+    tag: string; attrs: Record<string, string>; props: Record<string, string>; kids: El[]; text: string;
+  }
   const el = (tag: string): El => {
     const node: El = {
-      tag, attrs: {}, kids: [], text: "",
+      tag, attrs: {}, props: {}, kids: [], text: "",
       setAttribute(k: string, v: string) { node.attrs[k] = String(v); },
       getAttribute: (k: string) => node.attrs[k],
       appendChild(kid: El) { node.kids.push(kid); },
-      style: { setProperty() {} },
+      // THE CUSTOM PROPERTIES ARE THE LAYOUT NOW, so the fake has to keep them:
+      // a row's grid line, an edge's span, its lane and its place in the stagger
+      // are the whole of what this script tells the stylesheet.
+      style: { setProperty(k: string, v: string) { node.props[k] = String(v); } },
       set textContent(v: string) { node.text = String(v); },
       get textContent() { return node.text; },
     } as unknown as El;
-    made.push(node);
     return node;
   };
   let drawn: El | null = null;
@@ -948,33 +962,47 @@ function drawDiagram(vars: Record<string, unknown>): {
   const section = { querySelector: () => plate, classList: { add: (c: string) => classes.add(c) } };
 
   new Function("section", "ctx", "onTeardown", "document", src[1])(
-    section, { vars }, () => {}, { createElementNS: (_ns: string, tag: string) => el(tag) },
+    section, { vars }, () => {}, { createElement: (tag: string) => el(tag) },
   );
 
-  const svg = drawn as El | null;
-  const kids: El[] = svg ? svg.kids : [];
+  const plot = drawn as El | null;
+  const kids: El[] = plot ? plot.kids : [];
+  const rowEls = kids.filter((k) => k.attrs.class === "row");
+  const links = kids.filter((k) => k.attrs.class === "link");
+  const lineOf = (link: El) => link.kids.find((k) => (k.attrs.class || "").startsWith("line"));
   return {
-    svg: svg ? svg.attrs : {},
-    boxes: kids.filter((k) => k.attrs.class === "box").map((k) => ({ x: Number(k.attrs.x), y: Number(k.attrs.y), width: Number(k.attrs.width) })),
-    edges: kids.filter((k) => (k.attrs.class || "").startsWith("edge")).map((k) => ({ back: k.attrs.class.includes("is-back"), d: k.attrs.d })),
-    labels: kids.filter((k) => k.attrs.class === "name").map((k) => k.text),
+    rows: rowEls.map((r) => r.kids.map((n) => n.text)),
+    rowLines: rowEls.map((r) => Number(r.props["--row"])),
+    links: links.map((link) => {
+      const line = lineOf(link)!;
+      return {
+        from: Number(link.props["--from"]),
+        to: Number(link.props["--to"]),
+        lane: Number(link.props["--lane"]),
+        back: (line.attrs.class || "").includes("is-back"),
+        dash: (line.attrs.class || "").includes("is-dash"),
+        says: link.kids.find((k) => k.attrs.class === "says")?.text ?? "",
+      };
+    }),
+    labels: rowEls.flatMap((r) => r.kids.map((n) => n.text)),
     fault: classes.has("is-fault"),
+    plot: plot ? plot.attrs : {},
   };
 }
 
-test("base/diagram lays a LOOP out in one row per node, and bows the closing edge past the boxes", () => {
+test("base/diagram lays a LOOP out in one row per node, and runs the closing edge back up its own lane", () => {
   // BOTH HALVES OF THIS WERE MEASURED FAULTS in the loop this starter ships
   // with, and neither is visible to a test about the file's shape.
   //
   // The rows: an edge that closes a cycle has no "how far from a source" to
   // contribute, and left in the relaxation it pushed the whole ring one row
-  // further down the page on every pass — four boxes over two and a half
-  // thousand units of empty plate. The closing edge is found by a depth-first
-  // walk and taken out of the layout; it is still drawn.
+  // further down the page on every pass. The closing edge is found by a
+  // depth-first walk and taken out of the layout; it is still drawn.
   //
-  // The bow: with one node per row every box shares an x, so a backward edge
-  // drawn straight up the middle lands exactly under the forward ones and is
-  // invisible. It leaves a box's SIDE and bows out past them.
+  // The lanes: the closing edge crosses every row the forward ones do, so it
+  // cannot share a lane with any of them — it would be drawn straight over them
+  // and be invisible. It takes the next lane out, and the three forward edges,
+  // which cross nothing of each other's, all sit in the first.
   const loop = ["Somebody asks", "Claude writes the file", "The window redraws", "The page is the workspace"];
   const drew = drawDiagram({
     nodes: loop,
@@ -985,18 +1013,25 @@ test("base/diagram lays a LOOP out in one row per node, and bows the closing edg
   });
 
   expect(drew.labels).toEqual(loop);
-  // One row per node and no row is shared, which is what a cycle cost before.
-  const ys = drew.boxes.map((b) => b.y);
-  expect(new Set(ys).size).toBe(loop.length);
-  const tall = Number((drew.svg.viewBox || "").split(" ")[3]);
-  expect(tall).toBeLessThan(600);
+  // One row per node, in order, and two grid rows each so a bracket can start
+  // and end halfway down a box rather than at its corner.
+  expect(drew.rows).toEqual(loop.map((name) => [name]));
+  expect(drew.rowLines).toEqual([1, 3, 5, 7]);
 
-  // And the closing edge is drawn, dashed, OUTSIDE the column the boxes sit in.
-  const back = drew.edges.filter((e) => e.back);
+  // Every forward edge spans one row, carries its own words, and is in the lane
+  // nearest the boxes.
+  const forward = drew.links.filter((l) => !l.back);
+  expect(forward.map((l) => [l.from, l.to])).toEqual([[2, 4], [4, 6], [6, 8]]);
+  expect(forward.every((l) => l.lane === 0)).toBe(true);
+  expect(forward.map((l) => l.says)).toEqual(["in a sentence", "one commit per write", "no build step"]);
+
+  // And the closing edge is drawn, dashed, spanning the whole loop, in a lane of
+  // its own outside every forward edge.
+  const back = drew.links.filter((l) => l.back);
   expect(back).toHaveLength(1);
-  const left = Math.min(...drew.boxes.map((b) => b.x));
-  const xs = (back[0]!.d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number).filter((_n, i) => i % 2 === 0);
-  expect(Math.min(...xs)).toBeLessThan(left);
+  expect([back[0]!.from, back[0]!.to]).toEqual([2, 8]);
+  expect(back[0]!.dash).toBe(true);
+  expect(back[0]!.lane).toBeGreaterThan(0);
 });
 
 test("base/diagram says so in its own slot when there is nothing to draw yet", () => {
@@ -1004,7 +1039,7 @@ test("base/diagram says so in its own slot when there is nothing to draw yet", (
   // person looking at one is usually the person who could have fixed it.
   const drew = drawDiagram({ nodes: [], edgeFrom: [], edgeTo: [] });
   expect(drew.fault).toBe(true);
-  expect(drew.boxes).toHaveLength(0);
+  expect(drew.rows).toHaveLength(0);
 });
 
 test("base/diagram takes a lone node written as a scalar, and drops an edge naming nobody", () => {
@@ -1014,7 +1049,7 @@ test("base/diagram takes a lone node written as a scalar, and drops an edge nami
   // hole is how a diagram quietly stops matching the argument beside it.
   const drew = drawDiagram({ nodes: "Only one", edgeFrom: "Only one", edgeTo: "A name nobody wrote" });
   expect(drew.labels).toEqual(["Only one"]);
-  expect(drew.edges).toHaveLength(0);
+  expect(drew.links).toHaveLength(0);
 });
 
 test("the REAL checker runs over every starter, and every section starter is clean", async () => {

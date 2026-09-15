@@ -6,7 +6,7 @@
 //
 //   · `mermaid.min.js` is SERVED BUT NOT SHIPPED. No plugin in `guest/plugins/`
 //     draws a mermaid fence any more and a fresh vault gets none — a diagram in
-//     this format is a custom drawing, an inline `<svg>` the section writes. The
+//     this format is a custom drawing, HTML the section writes. The
 //     ROUTE stays, because a workspace carrying its own `plugins/mermaid.js`
 //     reaches this file exactly as any section reaches `three`, and deleting it
 //     would break those vaults silently.
@@ -47,8 +47,8 @@ test("both libraries are vendored, with their licences beside them", () => {
 
 test("NOTHING SHIPPED REACHES MERMAID — a new vault has no diagram library on it", () => {
   // THE DECISION THIS FILE HAS TO HOLD. The whole point of the format is a
-  // custom drawing: a figure is an inline `<svg>` a section writes, and a
-  // diagram of relationships is that same drawing. So the shipped plugin set
+  // custom drawing: a figure is HTML a section writes, and a diagram of
+  // relationships is that same drawing. So the shipped plugin set
   // draws with the platform and nothing else, and mermaid is a workspace's own
   // choice made in its own `plugins/mermaid.js`.
   const plugins = join(HERE, "guest", "plugins");
