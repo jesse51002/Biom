@@ -2,6 +2,8 @@
 
 Visual Workspace for AI Automations: point an agent at a folder, and what you ask for appears as real pages, drawn.
 
+**[biom.dev](https://biom.dev)** · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
+
 ## Get started
 
 ### 1. Install Bun
@@ -50,6 +52,20 @@ Biom appears in your applications menu, on macOS in `~/Applications`, on Windows
 - **Your team's brain.** Ask for the launch plan or the investor update and it is written from everything you have decided and learned.
 - **Humans and agents working together.** One document, worked at once by people and agents.
 
+## The paid plans
+
+Everything in this repository is the Free plan: the whole workspace, on your machine, with any agent. The paid plans are not out yet. When they are, they add what a folder on one machine cannot do on its own:
+
+- **Plus**: more of the workspace. Unlimited pages and data, unlimited history and uploads, and a page shared live rather than as a snapshot.
+- **Agents**: the AI and the hosting, run by us. Biom agents working 24/7, hosting, the model included, one-click connections to GitHub, Gmail, Drive, Calendar, Slack and Stripe, and creating from your phone.
+- **Max**: for the heavy solo. Everything in Agents, at five times the usage.
+
+The prices are on [biom.dev/pricing](https://biom.dev/pricing.html). To hear the day they open, [leave your email](https://biom.dev/waitlist.html).
+
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the gates and the rules. Licensed under the [AGPL-3.0](LICENSE).
+
+---
+
+[biom.dev](https://biom.dev) · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
