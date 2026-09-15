@@ -54,11 +54,11 @@ Biom appears in your applications menu, on macOS in `~/Applications`, on Windows
 
 ## The paid plans
 
-Everything in this repository is the Free plan: the whole workspace, on your machine, with any agent. The paid plans are not out yet. When they are, they add what a folder on one machine cannot do on its own:
+Everything in this repository runs on your machine, free, with any agent. The paid plans are not out yet. What they add is what a folder on one machine cannot do:
 
-- **Plus**: more of the workspace. Unlimited pages and data, unlimited history and uploads, and a page shared live rather than as a snapshot.
-- **Agents**: the AI and the hosting, run by us. Biom agents working 24/7, hosting, the model included, one-click connections to GitHub, Gmail, Drive, Calendar, Slack and Stripe, and creating from your phone.
-- **Max**: for the heavy solo. Everything in Agents, at five times the usage.
+- **Collaboration.** One workspace worked by several people and their agents at once, every page live for all of them, and a page shared as it is rather than as a snapshot.
+- **Every platform.** Your workspace on your phone, on the web and on every machine you use, in sync.
+- **Agents run by us, 24/7.** Biom agents working on your workspace around the clock, hosted, with the model included and one-click connections to GitHub, Gmail, Drive, Calendar, Slack and Stripe, so a digest, a scraper or a watcher runs without your laptop being open.
 
 The prices are on [biom.dev/pricing](https://biom.dev/pricing.html). To hear the day they open, [leave your email](https://biom.dev/waitlist.html).
 
