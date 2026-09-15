@@ -16,8 +16,10 @@ contents:
         or a move, which a number written into the document does not — that one is right until the
         moment the list changes and then quietly is not.
 
-        **This file is deliberately plain, and it is not a design.** The mark is a number here;
-        make it an open square, a dash or nothing at all in your own copy, by changing one rule.
+        **The mark is a number in a drawn medallion, and the one at the head is lit**, because the
+        top of a list a reader can drag is the one they said was next. Make the mark an open square,
+        a dash or nothing at all in your own copy by changing one rule; the counter under it is the
+        part to keep.
   - name: questions
     data: index.html
     parts:

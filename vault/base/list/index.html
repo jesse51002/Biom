@@ -1,13 +1,20 @@
 <!-- base/list/index.html — A SLOT THAT HOLDS A LIST.
 
-     THIS FILE IS DELIBERATELY PLAIN, and that is the most important thing about
-     it. It is here to show the FORMAT and nothing else: what a section file is,
-     how a slot is filled, and what a list slot lets a reader do. One hairline,
-     one typeface, one ink, no accent and no card — because a starter with a look
-     is a look that turns up in every page copied from it. Measured: three pages
-     in the reference workspace inherited a class name and a card border from an
-     earlier version of this file, and nobody chose either. Take the mechanism
-     from here and design your own section around it.
+     WHAT IT DRAWS. A row of cards a reader can add to, delete from and drag
+     around: each one on its own plate with a drawn mark at its head, the mark
+     and the plate's leading edge lighting in the one hot colour under the
+     pointer or the keyboard, and the whole row arriving once when the section is
+     first seen.
+
+     WHERE THE WORDS LIVE. Every one of them in `content.yaml`. `items` is ONE
+     slot holding a LIST — one entry per card, markdown each — and `lede` and
+     `note` are the prose around it. Nothing in this file is a sentence.
+
+     WHAT TO CHANGE FIRST: the entries under `items:`, and then the look. The
+     MECHANISM is the part to keep when you copy — one slot, one element per
+     entry, the harness that writes the array back — and the plate, the mark and
+     the lit edge are a DESIGN, which is yours the moment this is your file.
+     `design/` is whose taste decides that, not this one.
 
      THERE IS NO NUMBER IN THIS FILE, AND THAT IS THE POINT. The items are ONE
      slot holding a LIST, so a fourth item is a fourth entry in `content.yaml` —
@@ -70,18 +77,63 @@
     align-items: start;
   }
 
-  /* ONE HAIRLINE, and it is structure rather than decoration: without some mark
-     a reader cannot tell where one item ends and the next begins. Anything more
-     than this — a background, a box, an accent, a rule that inks every third one
-     differently — is a design decision, and it is yours to make in your own file
-     rather than to inherit from this one. */
+  /* AN ITEM IS A PLATE WITH A MARK ON IT. The mark is drawn — a small square
+     turned on its corner, in the palette's own ink — and it is positioned rather
+     than laid out, so it never takes a row of the item's own grid and the words
+     inside an item stay ordinary markdown that knows nothing about being in a
+     list.
+
+     IT ARRIVES WITH THE ROW AND IT LIGHTS UNDER THE POINTER. Everything about
+     how that looks is here; what is NOT negotiable is that the item is `> *` and
+     nothing in this file knows how many there are. */
   [data-g-part="items"] > * {
+    position: relative;
     display: grid;
     gap: .4rem;
     align-content: start;
     min-inline-size: 0;
-    padding-block-start: .6rem;
-    border-block-start: 1px solid var(--rule);
+    padding: .75rem .9rem .8rem 1.6rem;
+    border: 1px solid var(--rule);
+    border-inline-start: 2px solid var(--rule);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--stock-hi) 55%, transparent);
+    opacity: 0;
+    translate: 0 .6rem;
+    transition: opacity calc(420ms * var(--motion, 1)) ease,
+                translate calc(480ms * var(--motion, 1)) cubic-bezier(.16, 1, .3, 1),
+                border-color calc(160ms * var(--motion, 1)) ease;
+  }
+
+  /* THE MARK. Two lengths and a rotation, so there is no picture file and no
+     icon font — and it takes `--ink-3` until the item is reached, which is the
+     one hot colour spent on the one item somebody is looking at. */
+  [data-g-part="items"] > *::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 1.05rem;
+    inset-inline-start: .72rem;
+    inline-size: .4rem;
+    block-size: .4rem;
+    background: var(--ink-3);
+    rotate: 45deg;
+    transition: background calc(160ms * var(--motion, 1)) ease;
+  }
+  [data-g-part="items"] > *:hover,
+  [data-g-part="items"] > *:focus-within { border-inline-start-color: var(--cyan); }
+  [data-g-part="items"] > *:hover::before,
+  [data-g-part="items"] > *:focus-within::before { background: var(--cyan); }
+
+  /* AND THE CLASS THE `reveal` PLUGIN ADDS. It is already on the section by the
+     time a card added from the page is drawn, so a new item arrives finished
+     rather than invisible — which is the whole reason the resting state is
+     written here and the arrival is written under `is-seen`. */
+  :scope.is-seen [data-g-part="items"] > * { opacity: 1; translate: none; }
+
+  /* A READER WHO ASKED FOR LESS MOTION GETS THE LIST AND NOT THE MOVE. The
+     durations are already nothing through `--motion`; this is the half a
+     multiplier cannot do, which is putting the ink back. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-g-part="items"] > * { opacity: 1; translate: none; }
   }
   [data-g-part="items"] > * > :first-child { margin-block-start: 0; }
   [data-g-part="items"] > * > :last-child { margin-block-end: 0; }
@@ -105,6 +157,11 @@
      `flex-end` puts them at the item's far edge, away from the words they sit
      beside. */
   .bar {
+    /* ON THE ITEM'S TOP CORNER, where it cannot cover the item's first words —
+       which is what the item's own `position: relative` above is for. */
+    position: absolute;
+    inset-block-start: .3rem;
+    inset-inline-end: .3rem;
     display: flex; justify-content: flex-end; margin: 0;
     visibility: hidden; opacity: 0;
     transition: opacity 120ms ease;
@@ -129,8 +186,20 @@
     color: var(--ink-3);
     cursor: pointer;
   }
-  .btn { padding: 0 .35rem; font-size: .7rem; line-height: 1.6; }
-  .add { justify-self: start; padding: .3rem .8rem; font-size: .72rem; }
+  .btn { padding: 0 .35rem; font-size: .7rem; line-height: 1.6; border-radius: 2px; background: var(--stock-hi); }
+  /* THE ADD IS A REAL CONTROL AND LOOKS LIKE ONE: the furniture role, in the
+     workspace's own chrome, because it is the one thing on the section a reader
+     has to find without being told it is there. */
+  .add {
+    justify-self: start;
+    padding: .4rem .85rem;
+    border-radius: 3px;
+    background: var(--stock-hi);
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
   .btn:hover, .add:hover { color: var(--ink); border-color: var(--ink-3); }
 </style>
 
@@ -145,5 +214,10 @@
        design content in it at all. The ADD control is drawn into THIS node, so
        where the node sits is where the button sits. -->
   <span class="add-here" data-g-plugin="items" data-g-for="items" data-g-add="＋ Another item"></span>
+  <!-- ONE CLASS, ONCE, ON THIS SECTION, and the observer disconnects after it.
+       The row arrives when it is first seen rather than at load, so a reader who
+       scrolls down to this section watches it arrive instead of finding it
+       already still. -->
+  <span data-g-plugin="reveal"></span>
   <div data-g-part="note"></div>
 </div>
