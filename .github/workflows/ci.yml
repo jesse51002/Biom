@@ -22,6 +22,14 @@ name: CI
 
 on: push
 
+env:
+  # THE RUNNERS NEVER COUNT AS A LAUNCH. The last job starts the packaged
+  # application on a screen, and a production build asks biom.dev once per
+  # start whether a newer version is out — the request whose log line is the
+  # count of the program being started by people. Set here, for every job,
+  # so a CI run is never mistaken for a person.
+  BIOM_NO_UPDATE_CHECK: "1"
+
 jobs:
   gates:
     # THE THREE THINGS EVERY CHANGE HAS TO PASS, and they are the same three
