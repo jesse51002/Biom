@@ -1,6 +1,6 @@
 ---
 name: animations
-description: Give a page its moving figures, or brief an agent to build one. Use whenever a passage argues something that happens over time or has a shape, whenever a page's figures are being reviewed, or whenever an agent is briefed to draw. The default is a scene that plays the passage through on a loop; a still figure is the exception and still has to move in one way that says the one thing it is for. Carries what makes a scene clear, the loop and its one cycle, the icon rule, the verdict rule for the lights, the caption strip, the lean rule, the reduced-motion frame, the checks a scene passes before it is done, and the traps each of those cost.
+description: Give a page its moving figures, or brief an agent to build one. Use whenever a passage argues something that happens over time or has a shape, whenever a page's figures are being reviewed, or whenever an agent is briefed to draw. The default is a scene that plays the passage through on a loop; a still figure is the exception and still has to move in one way that says the one thing it is for. Carries what makes a scene clear, the loop and its one cycle, in view or paused, the icon rule, the verdict rule for the lights, the caption strip, the lean rule, the reduced-motion frame, the checks a scene passes before it is done, and the traps each of those cost.
 ---
 
 # Animations
@@ -22,6 +22,7 @@ description: Give a page its moving figures, or brief an agent to build one. Use
 9. **Words are part of the picture.** Every caption states something true about that beat, in the page's own terms, and a wrong word in a caption is a wrong scene. One caption visible at a time.
 10. **Text never overlaps.** Measure every label against its panel and its row before it is placed; labels that share a column get their own rows; nothing sits on a rail, a wall or another label. Checked at the plate's width, wide and narrow, by looking.
 11. **A wall is solid; a rail is dotted.** A place where something stops must look different from a path it travels, or the stop reads as one more path.
+12. **It plays only while it is in view.** A loop off-screen costs the machine and shows nobody anything. Every scene pauses its cycle while it is out of view and picks it up when it comes back, through the `inview` plugin and one rule, so a page of many loops costs only the ones a reader is looking at.
 
 ## The lights
 
@@ -32,6 +33,8 @@ description: Give a page its moving figures, or brief an agent to build one. Use
 **Every colour is a token.** No hex, no named colour, no `rgb()`, in the CSS or on an SVG attribute. The palette's roles are the vocabulary; a scene never invents a colour of its own.
 
 ## How a scene is built
+
+**In view, or paused.** The section places `<span data-g-plugin="inview">` once, on a node that costs the layout nothing, and its style says `.run { animation-play-state: paused; }` with `:scope.in-view .run { animation-play-state: running; }`. The plugin keeps the class honest while the section is on screen and disconnects on teardown; the scene never carries an observer of its own.
 
 **One cycle, in CSS, with no script for the motion.** A `.run` rule carries the duration as `calc(<ms> * var(--motion))`, infinite iterations, `both` fill, linear timing; each element names its own keyframes and states its beats as percentages of that one cycle. Offsets between siblings are negative delays, not separate durations. Under reduced motion `--motion` is 0, every duration is 0, and every element rests on its last keyframe, so **the last keyframe of every element is the frame that tells the story on its own**: the verdicts shown, the last caption up.
 
