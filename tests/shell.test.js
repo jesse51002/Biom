@@ -1284,6 +1284,42 @@ test("every page row can start a page inside it; a table row cannot", async () =
   expect(g.ui.get().expanded.has("home/Notes")).toBe(true);
 });
 
+// EVERY OPEN PAGE ENDS IN A PLUS: the last row under its children is a way to
+// make one there, at the children's own depth. The hover-only plus on the row
+// itself was found by nobody, and a control nobody finds is a control that is
+// not there.
+test("an open page ends in a New page row at its children's depth; a shut one does not", async () => {
+  const shut = tree();
+  expect(findAll(shut.draw(), (el) => has(el, "addrow"))).toHaveLength(0);
+
+  const g = tree({
+    home: [
+      { kind: "page", id: "home/Notes", name: "Notes" },
+      { kind: "page", id: "home/Board", name: "Job board" },
+    ],
+    "home/Notes": [
+      { kind: "page", id: "home/Notes/Rates", name: "Rates" },
+      { kind: "page", id: "home/Notes/Sites", name: "Sites" },
+    ],
+    "home/Notes/Rates": [{ kind: "page", id: "home/Notes/Rates/Old", name: "Old" }],
+  }, { expanded: ["home/Notes", "home/Notes/Rates"] });
+  const root = g.draw();
+  // Read top to bottom: the plus for Rates closes Rates' children, BEFORE
+  // Sites, and the plus for Notes comes after everything Notes holds.
+  const order = findAll(root, (el) => el.tagName === "A" || has(el, "rowaddin"))
+    .map((el) => (has(el, "rowaddin") ? "+" + el.attrs["aria-label"] : flat(el)));
+  expect(order).toEqual([
+    "Notes", "Rates", "Old", "+New page inside Rates", "Sites", "+New page inside Notes", "Job board",
+  ]);
+  const adds = findAll(root, (el) => has(el, "rowaddin"));
+  expect(adds.map((el) => el.style["--depth"])).toEqual(["2", "1"]);
+
+  adds[1].fire("click", { preventDefault() {}, stopPropagation() {} });
+  await tick();
+  expect(g.ui.get().dialog).toBe(true);
+  expect(g.ui.get().dialogParent).toBe("home/Notes");
+});
+
 // A NEW TABLE NEEDS A NAME NOBODY HOLDS. The server refuses a duplicate, so a
 // plus pressed twice in a row would fail the second time on a name we chose.
 test("a new table takes the first free name", () => {

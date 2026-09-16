@@ -322,7 +322,7 @@ test("every kind only the workspace UI may say is refused on BOTH ports", async 
   const { ws, transport, calls } = doubles();
   const bridge = makeBridge(ws, transport);
   for (const kind of [
-    "page.list", "page.create", "page.remove", "page.writeFile", "page.move",
+    "page.list", "page.create", "page.remove", "page.writeFile", "page.move", "page.rename",
     "doc.raw", "doc.writeRaw",
     "table.create", "table.alter", "table.remove", "table.setParent", "table.importCsv",
     "theme.set",
