@@ -1,0 +1,253 @@
+/* The terminal dock, and the grid that places it beside the workspace.
+
+   THE WORKSPACE AND THE DOCK ARE TWO FIXED CHILDREN OF `.work`, and which edge
+   the dock is on is a grid template rather than a DOM order — so docking left,
+   right, top or bottom, hiding and filling the window never move either element,
+   and the page's frame is never reloaded by it. `client/shell/dock.js` writes the
+   class and `--dock-size`; this sheet is the whole of what those mean.
+
+   Nothing below names a colour. */
+
+.work{
+  display:grid; min-height:0; min-width:0; position:relative;
+  grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr);
+  grid-template-areas:"bed";
+}
+.work > .bed{grid-area:bed; min-width:0}
+.work > .dock{grid-area:dock}
+
+.work.dock-bottom{grid-template-rows:minmax(0,1fr) var(--dock-size); grid-template-areas:"bed" "dock"}
+.work.dock-top{grid-template-rows:var(--dock-size) minmax(0,1fr); grid-template-areas:"dock" "bed"}
+.work.dock-left{grid-template-columns:var(--dock-size) minmax(0,1fr); grid-template-areas:"dock bed"}
+.work.dock-right{grid-template-columns:minmax(0,1fr) var(--dock-size); grid-template-areas:"bed dock"}
+
+/* FULL SCREEN COVERS THE WORKSPACE AND KEEPS IT MOUNTED. The bed stays in its
+   cell underneath; the dock is laid over the same cell. The rail and the strip
+   go with their grid rows, and the title bar of the built application stays. */
+.work.full{grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); grid-template-areas:"bed"}
+.work.full > .dock{grid-area:bed; z-index:6; border:0}
+.app.tfull{grid-template-rows:minmax(0,1fr)}
+.app.framed.tfull{grid-template-rows:var(--title-h) minmax(0,1fr)}
+.app.tfull .rail, .app.tfull .strip{display:none}
+
+/* ---------- the dock ---------- */
+
+.dock{
+  position:relative; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+  min-width:0; min-height:0; background:var(--stock-lo); color:var(--ink);
+  border:0 solid var(--stock-edge);
+}
+.dock[hidden]{display:none}
+.dock[data-side="bottom"]{border-top-width:1px}
+.dock[data-side="top"]{border-bottom-width:1px}
+.dock[data-side="left"]{border-right-width:1px}
+.dock[data-side="right"]{border-left-width:1px}
+
+.dockhead{
+  display:flex; align-items:center; gap:.25rem; min-width:0;
+  padding:.25rem .4rem; border-bottom:1px solid var(--rule); background:var(--stock);
+}
+.dockhandle{
+  display:flex; align-items:center; justify-content:center; flex:none;
+  width:1.5rem; height:1.5rem; padding:0; background:none;
+  border:1px solid transparent; border-radius:4px; color:var(--ink-3);
+  cursor:grab; touch-action:none;
+}
+.dockhandle:hover, .dockhandle:focus-visible{background:var(--field); color:var(--ink); outline:none}
+.dock.dragging .dockhandle{cursor:grabbing; border-color:var(--cyan); color:var(--ink)}
+
+/* ---------- the icons ----------
+
+   DRAWN HERE, for the reason the window controls in chrome.css are: the dock is
+   built through `h()`, which makes HTML elements, and an <svg> made that way is
+   not an SVG. Each is one span and its two pseudo-elements in `currentColor`, so
+   they follow hover, disabled and the palette without a second rule. The
+   accessible name is always the button's `aria-label` — nothing here has to be
+   understood as a picture to be usable. */
+
+.dglyph{position:relative; display:block; width:12px; height:12px; flex:none}
+
+/* The grip: the dots every dock in every editor is dragged by. */
+.dglyph.grip{
+  width:.5rem; height:.85rem;
+  background:radial-gradient(circle, currentColor 1px, transparent 1.3px) 0 0 / .25rem .25rem;
+}
+
+/* New terminal: a plus. */
+.dglyph.add::before, .dglyph.add::after{content:""; position:absolute; background:currentColor}
+.dglyph.add::before{left:1px; right:1px; top:50%; height:1px}
+.dglyph.add::after{top:1px; bottom:1px; left:50%; width:1px}
+
+/* Text size: the same letter twice, small and large. A plus and a minus would
+   say MORE and LESS of something unnamed, and the plus is already New terminal. */
+.dglyph.zoomout::before, .dglyph.zoomin::before{
+  content:"A"; position:absolute; inset:0;
+  display:grid; place-items:center; line-height:1; font-family:var(--ui-face);
+}
+.dglyph.zoomout::before{font-size:8px}
+.dglyph.zoomin::before{font-size:12px}
+
+/* Help. */
+.dglyph.help::before{
+  content:"?"; position:absolute; inset:0;
+  display:grid; place-items:center; line-height:1; font-size:12px; font-family:var(--ui-face);
+}
+
+/* Full screen: two corners pointing OUT; leaving it, the same two pointing IN —
+   the pair the title bar already draws. Styled off the BUTTON, because that is
+   what flips when the state does. */
+.docktool.full .dglyph::before, .docktool.full .dglyph::after,
+.docktool.unfull .dglyph::before, .docktool.unfull .dglyph::after{
+  content:""; position:absolute; width:5px; height:5px;
+}
+.docktool.full .dglyph::before{top:1px; left:1px; border-top:1px solid currentColor; border-left:1px solid currentColor}
+.docktool.full .dglyph::after{bottom:1px; right:1px; border-bottom:1px solid currentColor; border-right:1px solid currentColor}
+.docktool.unfull .dglyph::before{top:1px; left:1px; border-bottom:1px solid currentColor; border-right:1px solid currentColor}
+.docktool.unfull .dglyph::after{bottom:1px; right:1px; border-top:1px solid currentColor; border-left:1px solid currentColor}
+
+/* Hide: a chevron pointing AT THE EDGE THE DOCK SITS ON, which is where it goes. */
+.dglyph.hide::before{
+  content:""; position:absolute; left:50%; top:50%; width:6px; height:6px;
+  border-right:1px solid currentColor; border-bottom:1px solid currentColor;
+  transform:translate(-50%,-70%) rotate(45deg);
+}
+.dock[data-side="top"] .dglyph.hide{transform:rotate(180deg)}
+.dock[data-side="left"] .dglyph.hide{transform:rotate(90deg)}
+.dock[data-side="right"] .dglyph.hide{transform:rotate(-90deg)}
+
+/* A tab: a prompt. */
+.dglyph.prompt{width:10px; height:10px}
+.dglyph.prompt::before{
+  content:""; position:absolute; left:1px; top:50%; width:4px; height:4px;
+  border-top:1px solid currentColor; border-right:1px solid currentColor;
+  transform:translateY(-70%) rotate(45deg);
+}
+.dglyph.prompt::after{content:""; position:absolute; right:0; bottom:1px; width:4px; height:1px; background:currentColor}
+
+.docktabs{
+  display:flex; align-items:stretch; gap:.15rem; min-width:0; flex:1 1 auto;
+  overflow-x:auto; scrollbar-width:thin;
+}
+.tabwrap{display:flex; align-items:center; flex:none; border-radius:4px; background:transparent}
+.tabwrap[data-selected="true"]{background:var(--field)}
+.docktab{
+  display:flex; align-items:center; gap:.35rem; max-width:15rem;
+  padding:.25rem .15rem .25rem .45rem; background:none; border:0; color:var(--ink-2);
+  font:inherit; font-size:.8rem; cursor:pointer; white-space:nowrap;
+}
+/* A DEFAULT LABEL IS ITS NUMBER — see `tabText` in dock.js — so the text beside
+   the prompt is usually one character and the bar holds six tabs rather than two. */
+.docktab .tablabel{min-width:.6rem; text-align:left}
+.tabwrap[data-selected="true"] .docktab{color:var(--ink)}
+.docktab:focus-visible{outline:1px solid var(--cyan); outline-offset:-1px; border-radius:4px}
+.tablabel{overflow:hidden; text-overflow:ellipsis}
+.tabtitle{overflow:hidden; text-overflow:ellipsis; color:var(--ink-3); max-width:8rem}
+.tabdot{width:.45rem; height:.45rem; border-radius:50%; flex:none; background:var(--ink-3)}
+.docktab[data-state="running"] .tabdot{background:var(--cyan)}
+.docktab[data-state="ending"] .tabdot, .docktab[data-state="starting"] .tabdot{background:var(--magenta)}
+.docktab[data-state="disconnected"] .tabdot{background:transparent; box-shadow:inset 0 0 0 1px var(--ink-3)}
+.docktab[data-state="failed"] .tabdot{background:var(--yellow)}
+.tabmark{width:.35rem; height:.35rem; border-radius:50%; flex:none; background:var(--magenta)}
+.tabmark.bell{background:var(--yellow)}
+.tabclose{
+  width:1.35rem; height:1.35rem; margin-right:.15rem; flex:none; display:grid; place-items:center;
+  background:none; border:0; border-radius:3px; color:var(--ink-3); font-size:.95rem; line-height:1; cursor:pointer;
+}
+.tabclose:hover, .tabclose:focus-visible{background:var(--stock-hi); color:var(--ink); outline:none}
+.tabrename{
+  width:10rem; padding:.2rem .4rem; font:inherit; font-size:.8rem;
+  background:var(--stock-lo); color:var(--ink); border:1px solid var(--cyan); border-radius:4px;
+}
+
+.docktool{
+  flex:none; display:inline-flex; align-items:center; justify-content:center;
+  width:1.5rem; height:1.5rem; padding:0; background:none; border:0; border-radius:4px;
+  color:var(--ink-2); cursor:pointer;
+}
+.docktool:hover:not([disabled]), .docktool:focus-visible{background:var(--field); color:var(--ink); outline:none}
+.docktool[disabled]{opacity:.35; cursor:default}
+.docktool[aria-pressed="true"]{color:var(--cyan-t)}
+.dockacts{display:flex; align-items:center; gap:.1rem; flex:none; margin-left:auto}
+
+.dockbody{position:relative; min-height:0; min-width:0}
+.termstage{position:absolute; inset:0; padding:.35rem 0 .15rem .5rem}
+.termpane{position:absolute; inset:.35rem 0 .15rem .5rem}
+.termhost{position:absolute; inset:0}
+.termhost .xterm{height:100%}
+.termlatest{
+  position:absolute; right:1.25rem; bottom:.75rem; z-index:2;
+  padding:.3rem .65rem; font:inherit; font-size:.75rem;
+  background:var(--stock-hi); color:var(--ink); border:1px solid var(--rule); border-radius:999px;
+  box-shadow:var(--lift); cursor:pointer;
+}
+.termlatest:hover{border-color:var(--cyan)}
+
+.docknotes{position:absolute; left:.5rem; right:1rem; top:.5rem; z-index:3; display:grid; gap:.4rem; pointer-events:none}
+.docknotes > *{pointer-events:auto}
+.docknote, .dockconfirm{
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem;
+  padding:.45rem .6rem; font-size:.8rem; line-height:1.4;
+  background:var(--stock-hi); border:1px solid var(--rule); border-left-width:3px; border-radius:4px; box-shadow:var(--lift);
+}
+.docknote p, .dockconfirm p{margin:0; color:var(--ink-2); flex:1 1 16rem}
+.docknote[data-kind="warn"]{border-left-color:var(--magenta)}
+.docknote[data-kind="fail"]{border-left-color:var(--yellow)}
+.docknote[data-kind="info"]{border-left-color:var(--rule)}
+.dockconfirm{border-left-color:var(--yellow)}
+.dockconfirm p{color:var(--ink)}
+.dockbtns{display:flex; gap:.35rem; flex:none}
+.dockbtns .btn, .dockempty .btn{padding:.2rem .6rem; font-size:.8rem}
+.btn.danger{border-color:var(--yellow); color:var(--yellow)}
+.btn.danger:hover{background:var(--yellow-wash)}
+.dockempty{
+  display:grid; justify-items:start; gap:.5rem; margin:1rem .5rem; padding:1rem;
+  background:var(--stock); border:1px dashed var(--rule); border-radius:6px; font-size:.85rem;
+}
+.dockempty p{margin:0; color:var(--ink-2)}
+.dockhint{color:var(--ink-3)!important; font-size:.78rem}
+
+.dockfoot{
+  padding:.2rem .6rem; border-top:1px solid var(--rule-soft);
+  font-family:var(--mono-face); font-size:.7rem; letter-spacing:.04em; color:var(--ink-3);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ---------- the grip, on the edge that faces the workspace ---------- */
+
+.dockgrip{position:absolute; z-index:4; touch-action:none; background:transparent}
+.dockgrip:hover, .dockgrip:focus-visible, .dock.sizing .dockgrip{background:var(--cyan-wash); outline:none}
+.dock[data-side="bottom"] .dockgrip{left:0; right:0; top:-4px; height:8px; cursor:row-resize}
+.dock[data-side="top"] .dockgrip{left:0; right:0; bottom:-4px; height:8px; cursor:row-resize}
+.dock[data-side="left"] .dockgrip{top:0; bottom:0; right:-4px; width:8px; cursor:col-resize}
+.dock[data-side="right"] .dockgrip{top:0; bottom:0; left:-4px; width:8px; cursor:col-resize}
+/* A frame under the pointer swallows its moves; nothing under a drag may be one. */
+.dock.sizing ~ *, .work:has(.dock.sizing) iframe, .work:has(.dock.dragging) iframe{pointer-events:none}
+
+/* ---------- where it can be dropped ---------- */
+
+.dockdrop{position:absolute; inset:0; z-index:20; pointer-events:none}
+.dropzone{
+  position:absolute; display:grid; place-items:center;
+  background:var(--ink-wash); border:1px dashed var(--rule);
+  font-size:.75rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+}
+.dropzone[data-side="left"]{left:0; top:30%; bottom:30%; width:3.5rem; border-radius:0 6px 6px 0}
+.dropzone[data-side="right"]{right:0; top:30%; bottom:30%; width:3.5rem; border-radius:6px 0 0 6px}
+.dropzone[data-side="top"]{top:0; left:30%; right:30%; height:3rem; border-radius:0 0 6px 6px}
+.dropzone[data-side="bottom"]{bottom:0; left:30%; right:30%; height:3rem; border-radius:6px 6px 0 0}
+.dropzone.on{background:var(--cyan-wash); border-color:var(--cyan); color:var(--ink)}
+.droppreview{position:absolute; background:var(--cyan-wash); border:2px solid var(--cyan); border-radius:4px}
+.drophint{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); margin:0;
+  padding:.4rem .75rem; background:var(--stock-hi); border:1px solid var(--rule); border-radius:4px;
+  font-size:.8rem; color:var(--ink-2);
+}
+
+/* ---------- the help card ---------- */
+
+.termhelp{padding:.25rem .5rem .5rem; font-size:.82rem; line-height:1.45; color:var(--ink-2)}
+.termhelp p{margin:.35rem 0}
+.termhelp ul{margin:.25rem 0; padding-left:1.1rem}
+.termhelp b{color:var(--ink); font-weight:500}
+
+@media (prefers-reduced-motion:reduce){.dockhandle, .dropzone{transition:none}}

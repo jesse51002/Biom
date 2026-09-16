@@ -58,6 +58,9 @@ import {
   seeded,
   usable,
 } from "./workspace/vault.ts";
+import { spawnPty } from "./platform/pty.ts";
+import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
+import type { Attachment } from "./workspace/terminals.ts";
 import { mirrored, route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
@@ -86,9 +89,36 @@ declare const Bun: {
   serve(options: {
     port: number;
     idleTimeout: number;
-    fetch: (request: Request) => Promise<Response> | Response;
-  }): { port: number };
+    // `undefined` is what a handler answers after it has upgraded the request
+    // to a WebSocket: the socket IS the response.
+    fetch: (request: Request, server: BunServer) => Promise<Response | undefined> | Response | undefined;
+    websocket?: {
+      maxPayloadLength?: number;
+      backpressureLimit?: number;
+      closeOnBackpressureLimit?: boolean;
+      open?(ws: TerminalSocket): void;
+      message?(ws: TerminalSocket, message: string | Uint8Array): void;
+      drain?(ws: TerminalSocket): void;
+      close?(ws: TerminalSocket): void;
+    };
+  }): BunServer;
 };
+interface BunServer {
+  port: number;
+  upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
+  requestIP(request: Request): { address: string } | null;
+}
+/** What a terminal socket carries from the upgrade to its handlers. */
+interface TerminalSocketData {
+  vault: string;
+  attachment: Attachment | null;
+}
+interface TerminalSocket {
+  data: TerminalSocketData;
+  send(data: string | Uint8Array): number;
+  getBufferedAmount(): number;
+  close(): void;
+}
 // READ FOR EXACTLY ONE KEY, and the expression below is the whole mechanism. A
 // compiled build substitutes that member expression at compile time with
 // `--define`, so the binary carries a string literal there and consults no
@@ -97,7 +127,13 @@ declare const Bun: {
 // the server may name the key.
 // `exit` is beside it because the one thing this process does about a parent
 // that has gone is stop being a process.
-declare const process: { env: Record<string, string | undefined>; exit(code: number): never };
+// `on` is beside them because a shell this process started must not outlive it:
+// the exit handler is where every terminal tree is killed.
+declare const process: {
+  env: Record<string, string | undefined>;
+  exit(code: number): never;
+  on(event: string, listener: () => void): void;
+};
 
 /* ── which build this is ────────────────────────────────────────────────── */
 
@@ -1548,9 +1584,15 @@ let TROUBLE: () => string | null = () => null;
  *  than by which url arrived: `locate` answers the root document for a bare `/`
  *  and for a deep link into a vault alike, and both have to carry which build
  *  this is. */
-async function serveStatic(pathname: string): Promise<Response> {
+async function serveStatic(pathname: string, grant?: string): Promise<Response> {
   const key = locate(pathname);
-  return await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
+  const response = await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
+  // THE TERMINAL CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE —
+  // a cookie rather than a third meta tag, because a script on the page never
+  // needs to read it and an HttpOnly cookie is one no script can. See
+  // `terminalRefusal`.
+  if (key === INDEX && grant !== undefined && response.status === 200) response.headers.append("set-cookie", grant);
+  return response;
 }
 
 /**
@@ -1659,6 +1701,89 @@ const mintToken = (): string => crypto.randomUUID().replaceAll("-", "");
 export function tokenOk(expected: string | null, url: URL): boolean {
   if (expected === null) return true;
   return url.searchParams.get(TOKEN_PARAM) === expected;
+}
+
+/* ── the terminal, and who may open one ─────────────────────────────────── */
+
+/** THE TERMINAL IS LOCAL COMMAND EXECUTION, AND IT IS GUARDED LIKE IT. The API
+ *  route above is open in a source run because what it reaches is a workspace;
+ *  what `/v/<vault>/terminal` reaches is a shell running as the person, so no
+ *  build answers it without every check below — a development server that
+ *  became an unauthenticated terminal service would be a remote shell for
+ *  anybody on the same network, because `Bun.serve` listens on every interface.
+ *
+ *  FIVE CHECKS, AND EACH STOPS SOMETHING THE OTHERS DO NOT:
+ *
+ *    · A WEBSOCKET UPGRADE. The page proxy (`proxy` in `server/api/routes.ts`)
+ *      is a `fetch`, and a fetch cannot upgrade — so no page can reach this
+ *      through the one way out it has.
+ *    · THE LAUNCH TOKEN, in the built application, exactly as the API route
+ *      takes it: the window has it in its address and nothing else does.
+ *    · LOOPBACK, by the socket's own peer address rather than any header, so a
+ *      machine on the same network is refused before a header is read.
+ *    · HOST AND ORIGIN. The Host must be a loopback name on this server's port —
+ *      which is what defeats a DNS-rebinding page that resolves its own name to
+ *      127.0.0.1 — and the Origin must be that same address. A page in the box
+ *      has an opaque origin and its browser sends `Origin: null`; a site in
+ *      another tab sends its own. Both are refused here, and a browser never
+ *      lets a page forge either.
+ *    · THE CAPABILITY COOKIE. Minted once per launch, set `HttpOnly` and
+ *      `SameSite=Strict` on the document this server composes, and only for a
+ *      loopback request. A sandboxed frame's requests are cross-site, so a
+ *      Strict cookie is never sent from inside the box, and no script on any
+ *      page can read an HttpOnly one.
+ *
+ *  WHAT THIS DOES NOT STOP, SAID PLAINLY: another program on this machine, as
+ *  this user or another, can fetch `/`, take the cookie and forge the headers —
+ *  in a source run, where there is no launch token. A process that can already
+ *  do that as the same user can already run any command it likes; a DIFFERENT
+ *  local user on a shared machine is the case this leaves open in development,
+ *  and the built application's token closes it there.
+ *
+ *  Pure, and exported: the refusal is a sentence for the log and a test, and the
+ *  socket itself is never told which check failed. */
+export const TERMINAL_COOKIE = "biom-terminal";
+
+/** Named per port, because a cookie ignores the port and two servers on one
+ *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
+ *  other's. */
+export const terminalCookie = (port: number): string => `${TERMINAL_COOKIE}-${port}`;
+
+const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+export function isLoopback(address: string | null | undefined): boolean {
+  if (!address) return false;
+  const a = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+  return a === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+}
+
+/** One cookie's value out of a `Cookie` header, or null. */
+export function cookieValue(header: string | null, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const at = part.indexOf("=");
+    if (at < 0) continue;
+    if (part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return null;
+}
+
+export function terminalRefusal(
+  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
+  if (!asked.tokenOk) return "this launch's token is missing";
+  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
+  const host = asked.host ?? "";
+  const cut = host.lastIndexOf(":");
+  const name = cut < 0 ? host : host.slice(0, cut);
+  const port = cut < 0 ? "" : host.slice(cut + 1);
+  if (!LOOPBACK_NAMES.has(name.toLowerCase()) || port !== String(expected.port)) return "the Host is not this server on this machine";
+  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
+  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
+  return null;
 }
 
 /* ── the live stream ────────────────────────────────────────────────────── */
@@ -1873,13 +1998,34 @@ if (import.meta.main) {
   // a step in it.
   const TOKEN = STANDALONE ? mintToken() : null;
 
+  // THE TERMINAL'S CAPABILITY, minted in EVERY build — unlike the token above —
+  // because the terminal is guarded in every build. See `terminalRefusal`.
+  const TERMINAL_CAP = mintToken();
+  // Every workspace's terminal sessions. Constructed here like everything else,
+  // handed the one capability it spawns with and the environment it scrubs.
+  const terminals = makeTerminals({ spawn: spawnPty, env: process.env });
+  // A SHELL NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the one
+  // place every ending passes through — the window closing, the parent pipe
+  // reaching end of file, Ctrl-C in `make dev` — so every tree is killed there,
+  // synchronously, because no timer runs after it. The two signals are turned
+  // into an exit so that handler runs; without one a signal ends the process and
+  // runs nothing of ours. SIGHUP is deliberately left alone: `make up` starts
+  // this under `nohup`, and a handler here would undo that.
+  process.on("exit", () => terminals.killAll());
+  process.on("SIGINT", () => process.exit(130));
+  process.on("SIGTERM", () => process.exit(143));
+
   const server = Bun.serve({
     port: PORT,
     // See KEEPALIVE: the default is ten seconds and a live stream says nothing
     // most of the time.
     idleTimeout: IDLE,
-    async fetch(request) {
+    async fetch(request, server) {
       const url = new URL(request.url);
+      /** The terminal capability, for a document served to this machine only. */
+      const grant = isLoopback(server.requestIP(request)?.address)
+        ? `${terminalCookie(server.port)}=${TERMINAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
+        : undefined;
       // WHICH FOLDER, read off the front of the path. `null` means the request
       // named none, which is legal: the picker has to be reachable before
       // anything has been chosen, and `vault.browse`, `vault.open` and
@@ -1906,6 +2052,39 @@ if (import.meta.main) {
         // refuses with the mount's own sentence and still answers the kinds that
         // are about vaults — so there is nothing left to catch here.
         return await route(request, await host.deps(named === null ? undefined : named.path));
+      }
+
+      // THE TERMINAL, and nothing about it is reachable without every check in
+      // `terminalRefusal`. The refusal goes to the log and never to the socket:
+      // telling a caller which check failed is telling it which to forge next.
+      if (rest === TERMINAL_ROUTE) {
+        if (named === null) return new Response("This request names no workspace", { status: 404 });
+        const refused = terminalRefusal(
+          {
+            upgrade: request.headers.get("upgrade"),
+            tokenOk: tokenOk(TOKEN, url),
+            address: server.requestIP(request)?.address ?? null,
+            host: request.headers.get("host"),
+            origin: request.headers.get("origin"),
+            cookie: cookieValue(request.headers.get("cookie"), terminalCookie(server.port)),
+          },
+          { port: server.port, capability: TERMINAL_CAP },
+        );
+        if (refused !== null) {
+          console.warn(`terminal refused   →  ${refused}`);
+          return new Response("Forbidden", { status: 403 });
+        }
+        // THE FOLDER A SHELL STARTS IN IS THE MOUNT'S OWN PATH, resolved here and
+        // never defaulted: a workspace that will not open is a refusal, not a
+        // terminal in the home directory.
+        let cwd: string;
+        try {
+          cwd = (await (await host.deps(named.path)).vault.info()).path;
+        } catch {
+          return new Response("That workspace is not open", { status: 404 });
+        }
+        if (server.upgrade(request, { data: { vault: cwd, attachment: null } })) return undefined;
+        return new Response("Expected a WebSocket", { status: 400 });
       }
 
       if (request.method !== "GET") return new Response("Use GET", { status: 405, headers: { allow: "GET" } });
@@ -1941,10 +2120,37 @@ if (import.meta.main) {
         // rather than a 404 they cannot navigate out of — and `serveStatic` is
         // what composes the root document, so a deep link into a vault carries
         // which build this is by the same path a bare `/` does.
-        return await serveStatic(rel);
+        return await serveStatic(rel, grant);
       }
 
-      return await serveStatic(decodeURIComponent(url.pathname));
+      return await serveStatic(decodeURIComponent(url.pathname), grant);
+    },
+    // ONE SOCKET PER WINDOW PER WORKSPACE, and all it does is hand bytes to the
+    // registry and back. Every decision about a session is in
+    // `server/workspace/terminals.ts`; this is the wire.
+    websocket: {
+      // Above the registry's own input limit, so an oversized paste is refused
+      // with a sentence rather than by the socket closing under the person.
+      maxPayloadLength: 4 * 1024 * 1024,
+      backpressureLimit: 16 * 1024 * 1024,
+      closeOnBackpressureLimit: false,
+      open(ws) {
+        ws.data.attachment = terminals.attach(ws.data.vault, {
+          send: (text) => void ws.send(text),
+          sendBinary: (bytes) => void ws.send(bytes),
+          buffered: () => ws.getBufferedAmount(),
+        });
+      },
+      message(ws, message) {
+        ws.data.attachment?.receive(message);
+      },
+      drain(ws) {
+        ws.data.attachment?.drained();
+      },
+      close(ws) {
+        ws.data.attachment?.detach();
+        ws.data.attachment = null;
+      },
     },
   });
 

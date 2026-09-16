@@ -753,7 +753,11 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
       signal: AbortSignal.timeout(20000),
     });
     const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => { headers[k] = v; });
+    // NO COOKIE CROSSES BACK TO A PAGE. A page has no cookie jar to put one in,
+    // and the one this server sets on its own document is the terminal's
+    // capability — a page asking this proxy for `http://localhost:<port>/` must
+    // not be able to read it off the answer.
+    res.headers.forEach((v, k) => { if (k !== "set-cookie") headers[k] = v; });
     const value: HostFetchResult = { status: res.status, headers, body: await res.text() };
     return ok(id, value);
   } catch (e) {
