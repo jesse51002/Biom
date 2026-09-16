@@ -42,6 +42,8 @@ bun run app
 
 Biom appears in your applications menu, on macOS in `~/Applications`, on Windows in the Start menu. Open it, create a vault, start your agent in that folder, and tell it what you want. Running `bun run app` again replaces what is installed.
 
+Once per launch the built application fetches `https://biom.dev/version.json` and says so in the status strip when a newer version is out. The request carries the version and the platform in its user agent and nothing else — no id, nothing about your vault. Set `BIOM_NO_UPDATE_CHECK=1` to turn it off.
+
 ## What it is
 
 - **Works with any agent.** Claude Code, OpenClaw, Codex, Hermes, anything that can write a file.
