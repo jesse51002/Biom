@@ -786,7 +786,20 @@ export type HostEvent =
    *  every slot, so prose and children stay current for free. A plugin that
    *  draws from a table has to redraw, and registers `biom.onRefresh` to
    *  do it. */
-  | { kind: "refresh"; change: Change };
+  | { kind: "refresh"; change: Change }
+  /** WHERE TO PUT THE BOX'S SCROLL, in pixels from the top, after a redraw.
+   *
+   *  A redraw is cold — the realm is torn down and built again from disk — so
+   *  the position the reader was at dies with the old realm unless the host
+   *  carries it across. The host cannot read it: it holds the last `position`
+   *  notice the old realm sent, and hands it to the new realm on its `ready`.
+   *  The shim clamps it to the new document's run, so a page that got shorter
+   *  lands at its foot rather than past it, and applies it INSTANTLY, one frame
+   *  after `ready` and once more after a short bounded delay for a layout that
+   *  was still settling — never on a loop. It is sent only across a redraw the
+   *  shell asked for (`FrameHost.keep`), so a page opened afresh starts at the
+   *  top as it always did. */
+  | { kind: "place"; top: number };
 
 /** guest → host, unprompted. A null-origin frame's DOM cannot be read by the
  *  host, so everything the host needs to know arrives here.
@@ -822,7 +835,15 @@ export type GuestNotice =
    *  was removed or is about to be reloaded. The host closes both ports and
    *  forgets the token. A session also dies with its parent, so this is the
    *  polite path and not the only one. */
-  | { kind: "unembed"; g: number; embed: string };
+  | { kind: "unembed"; g: number; embed: string }
+  /** WHERE THE BOX IS SCROLLED TO, in pixels from the top. The shim reports it
+   *  as the reader scrolls, coalesced to one per frame, and the host keeps only
+   *  the latest — so that a redraw, which tears the realm down, can hand it
+   *  back to the realm that replaces it as a `place` event. It is the box's own
+   *  viewport and nothing about its content: a height is still never reported,
+   *  and the clamp to the new run happens in the box, which is the only side
+   *  that can measure it. */
+  | { kind: "position"; g: number; top: number };
 
 /* ── the wire: what the SECTION RUNTIME may say ────────────────────────── */
 
@@ -1360,6 +1381,13 @@ export interface FrameHost {
   refresh(change: Change): void;
   /** Self-reported by the shim — the host cannot read a null-origin DOM. */
   compliance(key: string): { sections: number } | null;
+  /** KEEP THE READER'S PLACE THROUGH THE REBUILD THAT FOLLOWS. The shell says
+   *  this just before a redraw — the Reload button, or the watcher pressing it
+   *  — and the box keyed `key` is put back where it was scrolled to, clamped,
+   *  once the new realm says `ready`. Said before nothing, nothing is restored:
+   *  a page opened afresh, or come back to, starts at the top as it always
+   *  did. */
+  keep(key: string): void;
 }
 
 /* ── the vault on disk ─────────────────────────────────────────────────── */

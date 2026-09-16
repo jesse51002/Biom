@@ -157,6 +157,24 @@ until `CALL_TIMEOUT` and then render nothing, with no error a person could act
 on. **Writing a module script with a top-level `await` is an entirely ordinary
 thing to do**, so the contract accommodates it rather than forbidding it.
 
+**A redraw keeps the reader's place, and `ready` is when it is put back.** The
+box scrolls inside itself and the host cannot read where to, so the shim of a
+box of its own reports it — `{ kind: "position", g, top }` on the ordinary port,
+pixels from the top, coalesced to one per frame — and the mount keeps the
+latest. The shell says `frameHost.keep(key)` just before a redraw (the Reload
+button, or the watcher pressing it), which copies that position aside; the
+next realm's `ready` on the runtime port is the one moment the host knows it
+has drawn, so that is when it goes back as `{ kind: "place", top }`, once, and
+is cleared. The box clamps it to ITS run — a page that got shorter lands at its
+foot, not past it — and applies it instantly, one frame on and once more after
+a bounded settle, never on a loop, with scroll anchoring off for exactly that
+window (measured: the fonts land between the two and the browser otherwise
+moves the box to keep the visible anchor still — 52 px, every time). Said by nothing but a redraw: the mount
+outlives its realm either way, so without `keep` a page come back to from the
+rail would land where the reader last left it, and it does not. A `position` is
+recorded and never dispatched to the shell, so a scroll never repaints the
+strip; it is still not a height, and `GuestNotice` still has no `size`.
+
 A `hello` from a box that already holds ports **revokes them and takes new
 ones**. That is not politeness: assigning `srcdoc` while the previous realm is
 still loading means the old realm's `hello` can arrive *after* the rebuild, take
@@ -192,7 +210,7 @@ entry narrows with its own guard. A branch there that read `msg.kind` and decide
 would be a second copy of the judgement, and two copies of a judgement are two
 things to get out of step.
 
-**Both ports hear every `HostEvent`.** `edit`, `theme` and `refresh` go to both.
+**Both ports hear every `HostEvent`.** `edit`, `theme`, `refresh` and `place` go to both.
 A host event is an announcement, not a capability: **the asymmetry is entirely in
 what may be SENT.** Inventing a second asymmetry in what may be HEARD would only
 give one side a stale picture.
@@ -408,7 +426,7 @@ page)` is that relay, written once in the shim.
   by id, bound to the port it was asked on (§8) — a grant delivered over
   `window` would need a token and a second listener racing the shim's own.
 
-**One more thing travels over `window` between the box and its nested frame, and it is not data.** The `ports` message a box relays carries `embedded: true`, and a realm told that reports its scroll position to `window.parent` as `{ kind: "scrolled", at }` — a fraction of its run — and takes `{ kind: "scroll", at }` back from it. Neither reaches the host: a top-level box's parent is the host and it is never told it is embedded, so it never says either. The host's own `hello` listener would ignore them anyway, because neither is a `GuestNotice`.
+**One more thing travels over `window` between the box and its nested frame, and it is not data.** The `ports` message a box relays carries `embedded: true`, and a realm told that reports its scroll position to `window.parent` as `{ kind: "scrolled", at }` — a fraction of its run — and takes `{ kind: "scroll", at }` back from it. Neither reaches the host: a top-level box's parent is the host and it is never told it is embedded, so it never says either. The host's own `hello` listener would ignore them anyway, because neither is a `GuestNotice`. **They are not the redraw's pair** (§3): a box of its own says `position` in pixels over the PORT and takes `place` back, and a nested realm says neither — its embedder holds it level in fractions over `window`, and an embedded session is minted afresh on every grant, so there is no mount for it to keep a place on.
 
 A session **dies with its parent**: `shut` closes a realm's embeds before its
 own ports, so a re-hello, a changed document and `drop` all take the nested
@@ -477,7 +495,7 @@ locally.
 
 - **The box, and everything DOM-shaped about the boundary:**
   `client/frame/frame.js` — `makeFrameHost(bridge, assets, faces)` (`for` /
-  `drop` / `broadcast` / `refresh` / `compliance`), the `hello` listener and the
+  `drop` / `broadcast` / `refresh` / `compliance` / `keep`), the `hello` listener and the
   two-port grant, `fromGuest` (port → bridge entry, answers dropped on a port
   that moved), `grant` / `closeEmbed` and the `Session` typedef (§9),
   `weave(shim, html, assets, faces)` (the `<base>`, the box's

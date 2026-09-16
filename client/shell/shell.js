@@ -965,8 +965,16 @@ export function makeShell(deps) {
     try {
       // The tree first is wrong and the page first is right: `reloadPage` drops
       // the cached page and emits, which is what tears every frame on it down.
-      if (route.view === "page" && route.id) await ws.reloadPage(route.id);
-      else if (route.view === "table" && route.id) await ws.loadTable(route.id);
+      //
+      // AND THE READER'S PLACE SURVIVES THE TEARDOWN. `keep` goes first, while
+      // the realm that reported where it was scrolled to is still the one on
+      // the mount; the new realm is put back there on its `ready`, clamped to
+      // whatever the page is now. It is said here and nowhere else, so a page
+      // navigated to starts at the top and only a redraw keeps its place.
+      if (route.view === "page" && route.id) {
+        frameHost.keep(route.id);
+        await ws.reloadPage(route.id);
+      } else if (route.view === "table" && route.id) await ws.loadTable(route.id);
       await ws.loadTree();
     } catch (err) {
       troubled = message(err);

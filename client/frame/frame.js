@@ -55,6 +55,14 @@
 // is typing in — the difference between a working demo and one that flickers on
 // every keystroke. Only a changed html, `drop` and `reloadPage` tear one down.
 //
+// A REDRAW KEEPS THE READER'S PLACE, AND THE MOUNT IS WHAT CARRIES IT. The box
+// scrolls inside itself and the host cannot read where to, so the shim reports
+// it — a `position` notice, the latest kept on the mount — and the mount
+// outlives the realm a redraw tears down. The shell says `keep(key)` before it
+// reloads, `ready` from the new realm is when it is handed back as a `place`
+// event, and the box clamps it to its new run. Nothing is measured here and
+// nothing loops: one notice per frame while scrolling, one event per redraw.
+//
 // A BOX MAY DRAW ANOTHER PAGE INSIDE ITSELF, and the session for that is minted
 // here too. `page.embed` on the guest port is answered by the bridge with the
 // target page's woven document; this file reads that answer, opens two fresh
@@ -195,6 +203,14 @@ export function makeFrameHost(bridge, assets, faces) {
    *   wraps, and everything a section may say.
    * @property {number | null} sections self-reported by the runtime; null until
    *   it says. The host cannot count them — it cannot read the box's DOM.
+   * @property {number | null} scroll where the box is scrolled to, in pixels,
+   *   as its shim last reported it — self-reported for the same reason the
+   *   count is. Kept through `shut`, because the realm that reported it is the
+   *   one a redraw is about to replace, and null until a realm says.
+   * @property {number | null} restore the `scroll` the shell asked to keep
+   *   through the rebuild that follows (`keep`); handed to the next realm on its
+   *   `ready` as a `place` event and cleared. Null means the next realm starts
+   *   at the top, which is what a page opened afresh does.
    * @property {HostEvent[]} queued    events posted before the ports opened
    * @property {number} depth 0 for a box; one more for each nesting
    * @property {Map<string, Session>} embeds the sessions this realm opened,
@@ -235,7 +251,8 @@ export function makeFrameHost(bridge, assets, faces) {
   /** BOTH PORTS SEE EVERY HOST EVENT. `edit` reaches the runtime, which owns
    *  editing a section's prose, AND the guest port, where a plugin that draws
    *  something richer than text takes it over. `theme` and `refresh` are wanted
-   *  by both for the same reason. A host event is an announcement, not a
+   *  by both for the same reason, and `place` goes the same way — the shim acts
+   *  on it and the runtime lets it pass. A host event is an announcement, not a
    *  capability: the asymmetry between the ports is entirely in what may be
    *  SENT, and inventing a second asymmetry in what may be HEARD would only
    *  give one side a stale picture.
@@ -282,7 +299,22 @@ export function makeFrameHost(bridge, assets, faces) {
       // runtime's alone: it carries the number of sections it drew, which is the
       // one fact about the box the host wants and cannot see. A `ready` on the
       // guest port is a section claiming to be the runtime, and is ignored.
-      if (msg.kind === "ready" && which === "runtime") m.sections = msg.sections;
+      if (msg.kind === "ready" && which === "runtime") {
+        m.sections = msg.sections;
+        // THE READER'S PLACE, HANDED TO THE REALM THAT REPLACED THE ONE THAT
+        // HAD IT. Only when the shell asked (`keep`), only once, and only now:
+        // `ready` is the one moment the host knows the new realm has drawn,
+        // and a `place` posted before it would land on a document with no run
+        // to clamp against. The box does the clamping and the settling.
+        if (m.restore !== null) {
+          send(m, { kind: "place", top: m.restore });
+          m.restore = null;
+        }
+      }
+      // Where the box is scrolled to. The latest is all that is kept: the one
+      // use of it is the redraw that follows, and that wants where the reader
+      // IS, not where they have been.
+      if (msg.kind === "position") { m.scroll = msg.top; return; }
       // A realm letting go of a page it embedded. Only its own: the token is
       // looked up in this session's map, so a box cannot close a sibling's.
       if (msg.kind === "unembed") { closeEmbed(m, msg.embed); return; }
@@ -354,6 +386,10 @@ export function makeFrameHost(bridge, assets, faces) {
       runtime: runtime.port1,
       guest: guest.port1,
       sections: null,
+      // A nested realm never reports a position and is never asked to keep
+      // one: its embedder holds it level over `window`, in fractions (§9).
+      scroll: null,
+      restore: null,
       queued: [],
       depth: parent.depth + 1,
       embeds: new Map(),
@@ -457,6 +493,8 @@ export function makeFrameHost(bridge, assets, faces) {
     m.guest = null;
     m.sections = null;
     m.queued.length = 0;
+    // `scroll` and `restore` deliberately survive: the realm going away is
+    // exactly the one whose place a redraw is about to put back.
   }
 
   return {
@@ -510,6 +548,8 @@ export function makeFrameHost(bridge, assets, faces) {
         runtime: null,
         guest: null,
         sections: null,
+        scroll: null,
+        restore: null,
         queued: [],
         depth: 0,
         embeds: new Map(),
@@ -576,6 +616,17 @@ export function makeFrameHost(bridge, assets, faces) {
     compliance(key) {
       const m = mounts.get(key);
       return m && m.sections !== null ? { sections: m.sections } : null;
+    },
+
+    keep(key) {
+      // Said by the shell just before a redraw, and it is the whole of what
+      // makes the restore a REDRAW's and not a navigation's: the mount outlives
+      // its realm either way, so without this a page come back to from the
+      // rail would land where the reader last left it rather than at the top.
+      // A box that never reported a position has nothing to keep, and the
+      // next realm starts at the top.
+      const m = mounts.get(key);
+      if (m) m.restore = m.scroll;
     },
   };
 }
