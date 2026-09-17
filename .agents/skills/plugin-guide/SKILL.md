@@ -126,8 +126,8 @@ which the editor draws as gaps of its own, so a person's blank lines come back a
 they left them. It is re-read on every keystroke, which is how typing `# ` in
 front of a paragraph makes it a heading as you type.
 
-**`markdown`, `html`, `table` and `child` are spoken for by the format itself**,
-because a slot's plugin is named by its part's `kind`. That is not a special case
+**`markdown`, `html`, `table`, `child` and `grid` are spoken for by the format
+itself**, because a slot's plugin is named by its part's `kind`. That is not a special case
 in the runtime: `fillSlots` looks up `rt.plugins.get(content.kind)` exactly as it
 looks up a `data-g-plugin` node's id, and a part kind nothing draws fails inside
 that node with a sentence saying so.
@@ -234,8 +234,8 @@ a copy in the person's hands is the whole promise — and it took the old rule's
 teeth with it.
 
 **What it must not take is the case the rule was written for.** `markdown`,
-`html`, `table` and `child` are not plugins the framework happens to ship: they
-are the **part kinds**, and a slot's plugin is named by its part's `kind`. A
+`html`, `table`, `child` and `grid` are not plugins the framework happens to
+ship: they are the **part kinds**, and a slot's plugin is named by its part's `kind`. A
 second file registering `markdown` does not add a plugin — it replaces the
 drawing of every markdown slot in the workspace, on every page, including pages
 its author never opened.

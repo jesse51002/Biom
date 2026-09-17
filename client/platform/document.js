@@ -64,8 +64,8 @@ const RUNTIME = [
  *  changes.
  *
  *  THE PART KINDS ARE UNAFFECTED BY THE ORDER, and that is a property of the
- *  registry rather than of this list. `markdown`, `html`, `table` and `child`
- *  are drawn by `plugins/<kind>.js` and by no other file — the vault's own copy,
+ *  registry rather than of this list. `markdown`, `html`, `table`, `child` and
+ *  `grid` are drawn by `plugins/<kind>.js` and by no other file — the vault's own copy,
  *  or the person's edit of it — so a file named to sort first cannot take one.
  *  A second file claiming the name is refused in a sentence that says so. */
 

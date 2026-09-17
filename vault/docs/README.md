@@ -32,7 +32,7 @@ SQLite, holding the rows of every table, owned by the server. See
 | | |
 |---|---|
 | [`pages.md`](./pages.md) | **Where is my page?** The tree, a page as a directory, `content.yaml`, children, ids, and what sits beside `pages/` |
-| [`sections.md`](./sections.md) | **What draws it?** `plugin:`, `contents` as the order, a section and its markup file, slots, the four part types |
+| [`sections.md`](./sections.md) | **What draws it?** `plugin:`, `contents` as the order, a section and its markup file, slots, the five part types |
 | [`variables.md`](./variables.md) | **Where do the numbers go?** `variables:`, the three scopes, `{{name}}`, the name grammar, parallel lists |
 | [`code.md`](./code.md) | **What can a page's own code do?** A section's `<script>`, `ctx`, the `biom.*` calls, and what the box cannot do |
 | [`plugins.md`](./plugins.md) | **Where does a plugin come from?** The resolution order, the plugins in your `plugins/` folder, `data-g-plugin`, `page:` |

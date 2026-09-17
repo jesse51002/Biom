@@ -400,6 +400,28 @@ reordering, duplicating and removing because they are one edit to one list —
 
 Again: that is a closure, not a guarantee, and it says so in the file.
 
+**The doc document itself reaches it, and that is the one caller outside
+`guest/runtime/`.** `guest/plugins/doc/index.html` is the page the runtime
+draws INTO, not a section drawn on it, and its second script is the conversion
+of a markdown table into a grid section: on every `onDraw` it reads
+`sections()`, finds a `markdown` part holding a table, writes the prose before
+back into that slot with `write` and rewrites the list with `order` — the prose
+before under the section's own name, the rows as a `grid` part in
+`<name>-table`, the prose after in `<name>-after`. The `order` comes back as a
+change to the page's shape and the page is drawn again, three sections where
+there was one; a page with no table in any prose part is left exactly as it was.
+The pure half — finding the tables, planning the rewrite — is `rt.convert`, so
+`tests/grid.test.ts` drives it with a stand-in `rt.page` and no DOM.
+
+**A grid's write goes down the same port and redraws nothing.** `rt.page.write`
+takes `string[][]` beside `string | string[]`; `edit.write` sends rows whole
+and does NOT ask for a redraw, because the grid plugin drew the cell, the row or
+the column it changed before it asked, and a redraw would only replace the board
+under the pointer with an identical one and cost the next click. `patchHeld`
+takes the rows into the drawn copy so the projection that follows reads the
+table as it now is. A list write, by contrast, still redraws — a region is an
+element, and adding one changes how many there are.
+
 ---
 
 ## 11. The edit wave: there is no mode, and nothing is drawn over the page
@@ -591,6 +613,10 @@ announced the change and so nothing redrew.
 - **The registry:** `guest/runtime/registry.js` — the lookup that stands
   in for an import graph. Owned by `plugin-guide`; the runtime consumes it
   through `rt.plugins`.
+- **The grid plugin:** `guest/plugins/grid.js` — the board, the cell edit,
+  the four controls and the refusal; `edit: false` because it does its own
+  editing through `ctx.write`. `fillSlots` marks every filled slot with
+  `data-g-kind`, which is what lets `default.html` widen for one.
 - **The shipped default section:** `guest/sections/default.html` — one
   centred slot named `body`. Read by `server/main.ts` and handed to `makePages`
   and `makeDesign` as a string, because nothing may import `guest/` and both

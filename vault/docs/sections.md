@@ -150,7 +150,7 @@ how the editor reorders it, how the runtime redraws it and how every finding abo
 it is addressed. The one other shape a section name takes is a child key,
 `@page-<segment>` — see [`pages.md`](./pages.md).
 
-## The four part types
+## The five part types
 
 **A bare string is markdown. A map is a full part. A list is a list of items.**
 
@@ -159,6 +159,12 @@ parts:
   body:    "The base rate is {{rate}} an hour."   # markdown, the short way
   figures: { type: table, data: jobs }            # the grid for the jobs table
   calc:    { type: html,  data: calc.html }       # markup inside one slot
+  sizes:                                          # the document's own table
+    type: grid
+    rows:
+      - [Size, Width, Note]
+      - [Small, 12mm, "the one most people want"]
+      - [Large, 20mm, ""]
 ```
 
 | `type` | what `data` is |
@@ -167,6 +173,7 @@ parts:
 | `html` | a **filename** beside `content.yaml`, or one inside `_assets/`. Markup for one slot, where a whole section would be too much |
 | `table` | a **table's name**, drawn inline as a grid |
 | `child` | a **direct child**. You do not write one — see below |
+| `grid` | **nothing** — a grid carries `rows` instead, the document's own table. See below |
 
 **A `child` part is not a part you write.** It appears only inside a section whose
 *name* is a child's key — `@page-notes`, `@table-jobs` — and the server puts it
@@ -178,6 +185,45 @@ no child and the slot simply does not draw. See [`pages.md`](./pages.md).
 The long spelling carries `type`, `data` and the part's own `variables`, and
 nothing else. There is **no `name`**, because the key it sits under already stated
 the id.
+
+### A grid
+
+**A `grid` part is a table that belongs to the document.** Its value is `rows`,
+a list of lists of markdown strings, one list per row and one string per cell;
+`head` says whether the first row is the header and is true when left out,
+because every markdown table has one and that is where a grid comes from. It
+carries no `data` — the parser refuses one — and `rows` on any other type is
+refused the same way. A row shorter than the widest is padded with empty cells
+on the right when the page is read, so a column is a column all the way down;
+write every row the same length and the file says what the page shows.
+
+It is drawn by the `grid` plugin as a board, and **edited a cell at a time**:
+click a cell and it opens as its raw markdown, Enter or leaving it writes the
+rows back, Escape puts it back. A row or a column is added or removed from the
+gutter outside the board — *Delete row* beside each row, *Delete column* over
+each column, *Add row* under the last row, *Add column* beside the last — and
+the header stays when the last row under it goes; the last column is refused
+in words. A pipe typed into a cell is kept as a character; nothing splits a
+cell on anything. A write from the board does not redraw the page, because the
+board drew what it changed before it asked.
+
+**It is not a `table` part.** A `table` names rows the server holds in
+`workspace.db`, shared by every page that names it and edited in the app's own
+grid; a grid holds its own rows in the document, so they travel with the page,
+are edited on it, and are projected into the mirror as a markdown table. Which
+to reach for is [`tables.md`](./tables.md).
+
+**A markdown table in a prose part becomes one.** When the doc plugin draws a
+page and finds a markdown table inside a `markdown` part — the run of pipes
+that draws as a thin strip of wrapped sentences — it cuts the table out and
+rewrites the document, once, in place: the prose before keeps the section's
+name and its file, the table becomes a section of its own with no file whose
+`body` is a `grid`, and the prose after gets a section of its own. So write a
+table as a grid from the start, or write the pipes and let the next draw
+convert them; what is never worth doing is styling the pipes. The rewrite
+happens only when that page is drawn, so a document nobody opens is never
+touched, and a document with no table in any prose part is left exactly as it
+was.
 
 **There is no diagram type and no diagram file.** A diagram is a drawing the
 section makes — HTML over boxes and edges held in the section's own
@@ -191,7 +237,7 @@ rows of a ledger. The document holds an array, one entry per item, and the runti
 draws one element per entry into that one slot, in order. The section's CSS lays
 them out with `.cards > *` and **nothing anywhere names a number.**
 
-An entry in a list is any of the four types, read exactly the same way, so a list
+An entry in a list is any of the five types, read exactly the same way, so a list
 of markdown is the ordinary case and a list of anything else needs no second
 spelling. Each entry is its own editable region: clicking one opens exactly that
 entry's markdown, and the runtime numbers them with `data-g-item`.

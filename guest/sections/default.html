@@ -23,7 +23,16 @@
      what makes a full-bleed section cost nothing: it simply does not carry this
      file's `max-width`, and there is no sheet-level width for it to fight.
 
-     No colour is set here, deliberately. Every colour in this product resolves
+     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the
+     document's own table, which the doc plugin makes out of every markdown
+     table it finds in a paragraph and puts in a section of its own with no
+     file of its own, which is this one — the section widens to the figure
+     frame's width and the grid takes it, scrolling sideways inside its own box
+     only past that. The runtime says what a slot holds on the slot, as
+     `data-g-kind`, so this file can size by it without knowing what any
+     plugin draws; a section with a file of its own says its own width. -->
+
+<!-- No colour is set here, deliberately. Every colour in this product resolves
      to a token the palette rewrites at runtime, and a section that reached for
      one would be the section that stopped theming. Type and colour are inherited
      from what the shim declares on `:root` when the theme arrives. -->
@@ -45,6 +54,14 @@
     padding-block: 1.5rem;
     padding-inline: 1.25rem;
   }
+
+  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the
+     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside
+     it lets go of the reading measure the frame holds every slot to. An
+     unlayered rule here beats the frame's layered one by existing, which is
+     the frame's own bargain. */
+  .measure:has(> [data-g-kind="grid"]) { max-width: 64rem; }
+  [data-g-kind="grid"] { max-inline-size: none; }
 </style>
 
 <div class="measure">

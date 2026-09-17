@@ -29,6 +29,22 @@ else's save — so it does not parse yet — leaves the drawn page alone **and**
 the baseline where it was, so the completed write reads as changed on the next
 notification.
 
+## A markdown table in a paragraph is rewritten on the next draw
+
+**One change a page makes to itself.** When a doc page is drawn and one of its
+prose parts holds a markdown table — the run of pipes — the doc plugin cuts the
+table out and rewrites `content.yaml`, once, in place: the prose before keeps the
+section's name, the table becomes a section of its own named `<section>-table`
+whose slot is a `grid` part, and the prose after becomes `<section>-after`. The
+page is then drawn again as those three. It happens only when that page is
+drawn, so a document nobody opens is never touched, and a document with no
+table in any prose part is never rewritten. What a grid is, and what it looks
+like on disk, is [`tables.md`](./tables.md).
+
+**A grid's own edits redraw nothing.** Writing a cell, adding a row or deleting
+a column writes the rows back and the board draws what it changed; the page is
+not drawn again for it, so the next cell opens on the next click.
+
 ## The Reload button is still there
 
 It re-reads the page on demand and does exactly what the watcher's redraw does,

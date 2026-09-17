@@ -243,7 +243,7 @@
    *  `guest/runtime/registry.js`, said again here because the box has no import
    *  graph to reach it through.
    *  @type {Set<string>} */
-  const PART_KINDS = new Set(["markdown", "html", "table", "child"]);
+  const PART_KINDS = new Set(["markdown", "html", "table", "child", "grid"]);
 
   /** A FENCE THAT NAMES A REGISTERED PLUGIN IS HANDED TO IT, and stops being a
    *  code block here.

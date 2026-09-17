@@ -111,8 +111,8 @@ differ in what they are *given* and not in what they may *do*.
 | `ctx.vars` | the three variable scopes already merged, nearest last |
 | `ctx.options` | this node's `data-g-*` attributes, camel-cased with the `g` taken off. `data-g-max-rows` reads as `options.maxRows` |
 | `ctx.text(s)` | resolve `{{name}}` in a string against this mount's scopes |
-| `ctx.read(part)` | the stored markdown of one of **this** section's slots, braces unresolved |
-| `ctx.write(part, value)` | replace it, redraw, and save |
+| `ctx.read(part)` | the stored markdown of one of **this** section's slots, braces unresolved; a list slot's array; a grid slot's rows |
+| `ctx.write(part, value)` | replace it and save — redrawing the slot, the page, or nothing, by what the slot holds |
 | `ctx.call(kind, params)` | one request over the guest port |
 | `ctx.has(id)` / `ctx.use(id)` | is a plugin registered, and reach it. See [`plugins.md`](./plugins.md) |
 | `ctx.onTeardown(fn)` | run `fn` when this section is redrawn or removed |
@@ -131,24 +131,34 @@ ctx.write("standfirst", src + " Revised.");
 const items = ctx.read("cards");
 items.push("### Another\n\nSomething worth saying.");
 ctx.write("cards", items);
+
+// A GRID SLOT: an ARRAY OF ARRAYS in and out — one list per row, one string
+// per cell. A row or a column is a splice on that.
+const rows = ctx.read("pieces");
+rows.push(rows[0].map(() => ""));
+ctx.write("pieces", rows);
 ```
 
 **`ctx.read` answers what is on disk** — the raw markdown, `{{name}}` unresolved,
 because that is what an edit has to write back. **A list slot answers an array in
-item order; a single-value slot answers a string. A slot with nothing in it
-answers `""` either way**, so normalise before you push to it.
+item order; a grid slot answers its rows, an array of arrays, as a copy; a
+single-value slot answers a string. A slot with nothing in it answers `""`**,
+so normalise before you push to it.
 
 **`ctx.write` takes back whatever `ctx.read` gave you.** A string replaces the
 slot's markdown and redraws that slot immediately, saving on the same debounce a
 person typing gets. **An array replaces the whole list and the page redraws
 itself** — adding or removing changes how many elements the slot has, so there is
-nothing for the section to re-render by hand. It answers `false` and says so in
-the console if the part is not one of this section's own.
+nothing for the section to re-render by hand. **An array of arrays replaces a
+grid's rows and redraws NOTHING**: the grid plugin draws what it changed before
+it asks, and a section writing rows of its own draws them itself. It answers
+`false` and says so in the console if the part is not one of this section's own.
 
-**It is scoped to this section's own slots, by name, and reaches only the slots
-the editor took over** — every part whose plugin declares itself editable, which
-in practice is markdown. A read of a table slot, a child slot or an `html` slot
-answers the empty string, and so does a read of a name no slot on this section has.
+**It is scoped to this section's own slots, by name, and reaches the slots the
+editor took over and the grid slots** — every part whose plugin declares itself
+editable, which in practice is markdown, and a grid, which edits itself. A read
+of a table slot, a child slot or an `html` slot answers the empty string, and so
+does a read of a name no slot on this section has.
 
 **Nothing here is a new capability.** The person reading the page can already type
 any of it. What it removes is the ceiling: a section no longer has to declare its

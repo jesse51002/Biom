@@ -33,8 +33,8 @@
  * its text edited says so and the runtime does the writing.
  *
  * THE PART KINDS ARE SPOKEN FOR BY THE FORMAT, AND ONE FILE EACH DRAWS THEM.
- * `markdown`, `html`, `table` and `child` are not plugins the framework happens
- * to ship: they are the PART KINDS, and a slot's plugin is named by its part's
+ * `markdown`, `html`, `table`, `child` and `grid` are not plugins the framework
+ * happens to ship: they are the PART KINDS, and a slot's plugin is named by its part's
  * kind. So a second file registering `markdown` does not add a plugin — it
  * replaces the drawing of every markdown slot in the workspace, on every page,
  * including pages its author never opened. That is refused in a sentence naming
@@ -82,8 +82,8 @@
   /**
    * @typedef {object} GPlugin
    * @property {string} id lowercase, `^[a-z][a-z0-9-]*$`. A slot's plugin is
-   *   named by its part's kind, so `markdown`, `html`, `table` and `child` are
-   *   spoken for by the format itself.
+   *   named by its part's kind, so `markdown`, `html`, `table`, `child` and
+   *   `grid` are spoken for by the format itself.
    * @property {(node: Element, content: any, ctx: any) => (void | (() => void))} mount
    *   Fill this one node. Return a teardown, or call `ctx.onTeardown` — both
    *   are honoured, because a plugin that composes several children finds the
@@ -107,7 +107,7 @@
   /** THE FORMAT'S PART KINDS — `PartKind` in `contracts/types.ts`. Held equal to
    *  it by a test; see the header. `reveal` is deliberately NOT here: it is a
    *  plugin a vault happens to ship, not a kind a slot can be. */
-  const PART_KINDS = new Set(["markdown", "html", "table", "child"]);
+  const PART_KINDS = new Set(["markdown", "html", "table", "child", "grid"]);
 
   /** Report a refusal. Late-bound rather than captured, because `rt.report`
    *  belongs to boot.js and boot.js may not have loaded yet — a plugin script

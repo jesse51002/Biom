@@ -51,6 +51,19 @@ export function isRowInput(v) {
   return isObj(v) && Object.values(v).every(isScalar);
 }
 
+/**
+ * A grid's rows: a list of lists of strings. An empty list is a grid with no
+ * rows, which is what a grid holds before the first row is added — the same
+ * reason an empty list slot is kept. One row that is not a list, or one cell
+ * that is not a string, is refused whole.
+ * @param {unknown} v
+ * @returns {v is string[][]}
+ */
+export function isRows(v) {
+  return Array.isArray(v) &&
+    v.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === "string"));
+}
+
 /** Every kind an artifact may send. The bridge switches on this and refuses
  *  anything absent, so adding a capability is one line here and one there. */
 const HOST_KINDS = new Set([
@@ -193,9 +206,11 @@ function wellFormed(v, allowed) {
         (v.section === null || (typeof v.section === "string" && v.section !== "")) &&
         typeof v.part === "string" && v.part !== "" &&
         // A slot's markdown, or the whole ARRAY of it when the slot holds a
-        // list. Every item is checked, because one number in a list of strings
-        // reaches the writer as a value it has no case for.
-        (typeof v.data === "string" ||
+        // list, or the whole ARRAY OF ARRAYS when it holds a grid. Every item
+        // is checked, because one number in a list of strings reaches the
+        // writer as a value it has no case for — and a grid is every row a list
+        // and every cell a string, never a mix of rows and strings.
+        (typeof v.data === "string" || isRows(v.data) ||
           (Array.isArray(v.data) && v.data.every((one) => typeof one === "string")));
     case "page.projection":
       // The markdown may be empty — a page with no words has an honest empty

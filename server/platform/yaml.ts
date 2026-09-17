@@ -135,8 +135,11 @@ const PAGE_KEYS = new Set(["name", "plugin", "variables", "contents", "input"]);
  *  a section is the only thing `contents` can hold and a key that distinguishes
  *  nothing is a key that can be written wrong. */
 const SECTION_KEYS = new Set(["name", "data", "parts", "variables"]);
-/** A slot's long spelling. No `name`: the key in `parts` is the slot's id. */
-const CONTENT_KEYS = new Set(["type", "data", "variables"]);
+/** A slot's long spelling. No `name`: the key in `parts` is the slot's id.
+ *  `rows` and `head` are a grid's and nothing else's — read for a grid, refused
+ *  on anything else, because a `rows` on a markdown slot is a key nothing
+ *  draws. */
+const CONTENT_KEYS = new Set(["type", "data", "variables", "rows", "head"]);
 
 /** The keys a page used to have and does not, each with the sentence that says
  *  what replaced it. Named one by one so a file written for an older format is
@@ -152,8 +155,9 @@ const RETIRED: ReadonlyMap<string, string> = new Map([
 
 /** No `diagram`. A diagram in a doc is a drawing in a section's own markup, or
  *  a fence a workspace's own plugin upgrades in place — the file type was a
- *  mechanism invented for a case that already had one. */
-const CONTENT_TYPES = new Set<string>(["markdown", "html", "table", "child"]);
+ *  mechanism invented for a case that already had one. `grid` is the document's
+ *  own table: its value is `rows`, not `data`. */
+const CONTENT_TYPES = new Set<string>(["markdown", "html", "table", "child", "grid"]);
 
 /** Assigning it would rewrite the prototype rather than add a key, and every
  *  key here comes off disk or out of an artifact. */
@@ -344,13 +348,63 @@ function asPart(v: unknown, section: string, slot: string): string | Content {
 
   const type = map["type"];
   if (typeof type !== "string" || !CONTENT_TYPES.has(type)) {
-    throw new FlatnessError(where + " has type " + describe(type) + " — it is markdown, html, table or child");
+    throw new FlatnessError(where + " has type " + describe(type) + " — it is markdown, html, table, child or grid");
   }
+
+  // A GRID HOLDS ROWS AND NOT DATA. `rows` on any other type is a key nothing
+  // draws, and `data` on a grid is a string nothing reads; both are refused by
+  // name rather than dropped, on the rule that a page that is not a page is a
+  // broken page and not a quiet one.
+  if (type === "grid") {
+    if (map["data"] !== undefined && map["data"] !== null && map["data"] !== "") {
+      throw new FlatnessError(where + " is a grid, and a grid holds rows rather than data");
+    }
+    const content: Content = { type: "grid", data: "", rows: asRows(map["rows"], where), head: asHead(map["head"], where) };
+    const variables = asVariables(map["variables"], where);
+    if (Object.keys(variables).length > 0) content.variables = variables;
+    return content;
+  }
+  if (map["rows"] !== undefined) throw new FlatnessError(where + " has rows, and only a grid holds rows");
+  if (map["head"] !== undefined) throw new FlatnessError(where + " has head, and only a grid has one");
 
   const content: Content = { type: type as ContentType, data: asData(map["data"], slot) };
   const variables = asVariables(map["variables"], where);
   if (Object.keys(variables).length > 0) content.variables = variables;
   return content;
+}
+
+/** A GRID'S ROWS: a list of lists of cells, every cell a string. A cell that is
+ *  a number or a boolean is prose YAML read as a value — `- [2026, done]` — and
+ *  reads back as its own text, the way a slot does. A row that is not a list, or
+ *  a cell that is a map or a list, is refused: a cell is markdown and never a
+ *  structure. An absent `rows` is an empty grid, which is what one holds before
+ *  the first row is added. Every row is padded to the widest, so what the
+ *  reader hands on is square and a column is a column all the way down. */
+function asRows(v: unknown, where: string): string[][] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw new FlatnessError("the rows of " + where + " are a list — one list per row");
+  const rows: string[][] = v.map((row, at) => {
+    if (!Array.isArray(row)) {
+      throw new FlatnessError("row " + String(at + 1) + " of " + where + " is " + describe(row) + " — a row is a list of cells");
+    }
+    return row.map((cell, c) => {
+      if (cell === undefined || cell === null) return "";
+      if (typeof cell === "string") return cell;
+      if (typeof cell === "number" || typeof cell === "boolean") return String(cell);
+      throw new FlatnessError("cell " + String(c + 1) + " of row " + String(at + 1) + " of " + where + " is " + describe(cell) + " — a cell is text");
+    });
+  });
+  const width = rows.reduce((w, row) => Math.max(w, row.length), 0);
+  for (const row of rows) while (row.length < width) row.push("");
+  return rows;
+}
+
+/** Whether the first row is the header. Absent is true, because a grid comes
+ *  from a markdown table and every markdown table has one. */
+function asHead(v: unknown, where: string): boolean {
+  if (v === undefined || v === null) return true;
+  if (typeof v === "boolean") return v;
+  throw new FlatnessError("the head of " + where + " is true or false — whether the first row is the header");
 }
 
 function asData(v: unknown, name: string): string {
@@ -456,7 +510,10 @@ function describe(v: unknown): string {
  *  `nullStr: "null"` rather than the empty string, because a variable somebody
  *  deliberately cleared should read as cleared rather than as a key that forgot
  *  to say anything. */
-const WRITE = { lineWidth: 0, indent: 2, nullStr: "null", singleQuote: false, blockQuote: true } as const;
+/** `flowCollectionPadding: false` is for the one flow collection this writer
+ *  makes — a grid's row, `[Piece, Where]` rather than `[ Piece, Where ]` — and
+ *  touches nothing else, because everything else is written in block style. */
+const WRITE = { lineWidth: 0, indent: 2, nullStr: "null", singleQuote: false, blockQuote: true, flowCollectionPadding: false } as const;
 
 /** Key order in the file, fixed. What the page IS, then what it says.
  *  `plugin` second because it decides how everything under it is read, and
@@ -526,6 +583,7 @@ function write(doc: PageDoc, blocks: boolean): string {
 
   const out = new Document(orderKeys(shape, PAGE_ORDER), { version: "1.2" });
   if (blocks) markBlockScalars(out);
+  markGridRows(out);
   return out.toString(WRITE);
 }
 
@@ -558,6 +616,16 @@ function partShape(part: PartValue): unknown {
   const content = partOf(part);
   if (content.type === "markdown" && Object.keys(content.variables ?? {}).length === 0) {
     return content.data;
+  }
+  // A GRID IS WRITTEN AS ROWS AND NO DATA. `head` is written only when it is
+  // false, because true is what absent means and a key that says the default
+  // on every grid is furniture.
+  if (content.type === "grid") {
+    const shape: Record<string, unknown> = { type: "grid" };
+    if (content.head === false) shape["head"] = false;
+    shape["rows"] = (content.rows ?? []).map((row) => row.slice());
+    if (Object.keys(content.variables ?? {}).length > 0) shape["variables"] = content.variables;
+    return shape;
   }
   const shape: Record<string, unknown> = { type: content.type, data: content.data };
   if (Object.keys(content.variables ?? {}).length > 0) shape["variables"] = content.variables;
@@ -605,6 +673,48 @@ function markBlockScalars(out: Document): void {
       if (!isScalar(value)) continue;
       const text: unknown = value.value;
       if (typeof text === "string" && blockSafe(text)) value.type = Scalar.BLOCK_LITERAL;
+    }
+  }
+}
+
+/** A GRID'S ROWS ARE WRITTEN ONE ROW PER LINE, `- [Piece, Where, What changes]`,
+ *  so the file reads as the table it is: a column is a column down the page and
+ *  a row is a line a person can read across. Block style would put every cell
+ *  on a line of its own and lose the shape. A cell holding a newline or a
+ *  comma is quoted by the writer inside the flow row, which `format` still
+ *  verifies reads back exactly. Only a `rows` under a `type: grid` map is
+ *  touched; a list slot of the same name is somebody's list. */
+function markGridRows(out: Document): void {
+  const contents = out.get("contents", true);
+  if (!isSeq(contents)) return;
+
+  for (const item of contents.items) {
+    if (!isMap(item)) continue;
+    const parts = item.get("parts", true);
+    if (!isMap(parts)) continue;
+
+    for (const pair of parts.items as { value?: unknown }[]) {
+      const value = pair.value;
+      // A slot is one grid or a list of contents; a grid inside a list is
+      // walked too, because a list of grids is a legal thing to hold.
+      const held = isSeq(value) ? value.items : [value];
+      for (const one of held) {
+        if (!isMap(one)) continue;
+        const type = one.get("type", true);
+        if (!isScalar(type) || type.value !== "grid") continue;
+        const rows = one.get("rows", true);
+        if (!isSeq(rows)) continue;
+        for (const row of rows.items) {
+          if (!isSeq(row)) continue;
+          row.flow = true;
+          // A cell with a line break in it is double-quoted, `"two\nlines"`, so
+          // the row stays one line. Left to the writer it folds the plain
+          // scalar across three lines and the row stops reading as a row.
+          for (const cell of row.items) {
+            if (isScalar(cell) && typeof cell.value === "string" && /[\r\n]/.test(cell.value)) cell.type = Scalar.QUOTE_DOUBLE;
+          }
+        }
+      }
     }
   }
 }
@@ -677,7 +787,24 @@ function sameDoc(a: PageDoc | null, b: PageDoc): boolean {
 function samePart(a: string | Content, b: string | Content): boolean {
   const x = partOf(a);
   const y = partOf(b);
-  return x.type === y.type && x.data === y.data && sameVariables(x.variables, y.variables);
+  // A grid handed in with no `data` at all — off the wire, or built by hand —
+  // is the grid read back with `data: ""`, because a grid has no data.
+  return x.type === y.type && (x.data ?? "") === (y.data ?? "") && sameVariables(x.variables, y.variables) && sameRows(x, y);
+}
+
+/** A grid is the same grid when its rows are, cell for cell, and its head is.
+ *  Anything that is not a grid has no rows to differ on. Absent `head` and
+ *  `true` are one answer, because that is what the reader makes of absence. */
+function sameRows(x: Content, y: Content): boolean {
+  if (x.type !== "grid") return true;
+  if ((x.head ?? true) !== (y.head ?? true)) return false;
+  const a = x.rows ?? [];
+  const b = y.rows ?? [];
+  if (a.length !== b.length) return false;
+  return a.every((row, i) => {
+    const other = b[i];
+    return other !== undefined && row.length === other.length && row.every((cell, c) => cell === other[c]);
+  });
 }
 
 function sameParts(
@@ -703,10 +830,7 @@ function sameParts(
       if (!mine.every((item, at) => samePart(item, held[at] ?? ""))) return false;
       continue;
     }
-    const x = partOf(mine);
-    const y = partOf(held);
-    if (x.type !== y.type || x.data !== y.data) return false;
-    if (!sameVariables(x.variables, y.variables)) return false;
+    if (!samePart(mine, held)) return false;
   }
   return true;
 }

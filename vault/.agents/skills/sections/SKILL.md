@@ -723,8 +723,11 @@ parsed, and the one id space the whole page shares. **Read it before you write a
 ## Slots
 
 **[`../../../docs/sections.md`](../../../docs/sections.md) is the mechanism** — a
-`data-g-part` and its key in `parts`, the four part types, a list slot, and
-`data-g-plugin` for a node with no stored content. **[`../../../docs/styling.md`](../../../docs/styling.md)
+`data-g-part` and its key in `parts`, the five part types, a list slot, and
+`data-g-plugin` for a node with no stored content. A slot holding a `grid` —
+the document's own table — answers `ctx.read(part)` as an array of arrays and
+takes `ctx.write(part, rows)` the same way, and the page is not redrawn for
+that write; the board is [`../tables/SKILL.md`](../tables/SKILL.md). **[`../../../docs/styling.md`](../../../docs/styling.md)
 is what every doc page already declares for you** — `--motion`, `.wrap`, the
 margin flatten and the reading measure — **so do not write any of them again.**
 They were being re-declared by hand at the top of almost every section that drew

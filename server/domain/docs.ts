@@ -156,7 +156,7 @@ function checkParts(value: unknown): void {
     if (!isPartName(slot)) throw bad("bad_request", "a slot name is lowercase, as it is in the html");
     const content = contentOf(held);
     if (content === null) {
-      throw bad("bad_request", "a slot holds markdown as text, or a map saying markdown, html, table or child");
+      throw bad("bad_request", "a slot holds markdown as text, or a map saying markdown, html, table, child or grid");
     }
     // A child key names ONE SEGMENT of a direct child. A path here is a page
     // reaching past its own children, which the format does not have.

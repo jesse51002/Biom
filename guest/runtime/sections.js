@@ -275,8 +275,9 @@
        *
        *  A LIST SLOT ANSWERS AN ARRAY, one entry per item. That is the shape a
        *  section works in: adding is a push, removing is a splice, reordering is
-       *  a move, and none of them needs a separator to be agreed about.
-       *  @param {string} part @returns {string | string[]} */
+       *  a move, and none of them needs a separator to be agreed about. A GRID
+       *  SLOT ANSWERS ITS ROWS, an array of arrays, one string per cell.
+       *  @param {string} part @returns {string | string[] | string[][]} */
       read(part) {
         if (spec.section === null || !rt.edit) return "";
         return rt.edit.read(spec.section, part);
@@ -293,7 +294,11 @@
        *  It reaches this section's slots and no other's. That is a closure
        *  rather than a browser guarantee, as everything inside the box is, and
        *  it grants nothing a person typing into the page could not already do.
-       *  @param {string} part @param {string | string[]} markdown
+       *
+       *  A GRID'S ROWS ARE WRITTEN THE SAME WAY, as an array of arrays, and
+       *  the page is not redrawn for them: the grid plugin draws what it
+       *  changed and the write is the record of it.
+       *  @param {string} part @param {string | string[] | string[][]} markdown
        *  @returns {boolean} */
       write(part, markdown) {
         if (spec.section === null || !rt.edit) return false;
@@ -534,6 +539,11 @@
         fail(node, 'nothing draws a "' + String(content.kind) + '" part — the plugin for it is not registered');
         continue;
       }
+      // WHAT KIND OF THING THE SLOT HOLDS, said on the slot, so a section's own
+      // stylesheet can size a slot by what is in it — the default section widens
+      // for a grid and stays at the reading measure for prose — without the
+      // section knowing what any plugin draws.
+      node.setAttribute("data-g-kind", String(content.kind));
       mountWith(
         def,
         node,
