@@ -9,6 +9,33 @@ Third-party code, served as it sits and never edited.
 | `three.min.js` | 0.180.0 | BUILT here — upstream ships no classic build any more |
 | `yaml.mjs` | 2.9.0 | `browser/` — a TREE upstream, bundled here into one file |
 | `yaml.d.ts` | — | ours, hand-written, deliberately partial. `.d.ts`, NOT `.d.mts` |
+| `xterm.mjs` | 6.0.0 | `@xterm/xterm` `lib/xterm.mjs` — the self-contained ESM build, for the HOST |
+| `xterm.css` | 6.0.0 | `@xterm/xterm` `css/xterm.css`, verbatim |
+| `xterm.d.ts` | — | ours, hand-written, deliberately partial |
+| `addon-fit.mjs` | 0.11.0 | `@xterm/addon-fit` `lib/addon-fit.mjs` — the self-contained ESM build |
+| `addon-fit.d.ts` | — | ours, hand-written, deliberately partial |
+
+**xterm.js is the agent terminal's emulator, and it runs in the HOST, never in a
+box.** `client/boot.js` imports it through the import map in `client/index.html`
+and hands the constructor to `client/views/terminal.js`, so no other module
+names it. It is emulation only — the shell, the PTY and every process decision
+are the server's (`server/platform/pty.ts`, `server/workspace/terminals.ts`).
+Both builds are upstream's own single-file ESM with one `export` and no
+`import`, copied as they sit; the `sourceMappingURL` comment at the foot of each
+names a `.map` that is deliberately not vendored, so an open DevTools reports
+one missing file and nothing else does. No addon that opens links or reads the
+clipboard is vendored, on the emulator's own security guidance.
+
+```
+npm pack @xterm/xterm@6.0.0 @xterm/addon-fit@0.11.0
+sha256  lib/xterm.mjs          b336ec65a086c056d4804b3d4c2347da5663d3f23c3f25be866467bd8857ad59
+sha256  css/xterm.css          854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6
+sha256  lib/addon-fit.mjs      2d87e1bddc73be9111de8beee5370c3bb7aac9c94e18e6f245f02ca741ef1769
+```
+
+**Upstream's `typings/*.d.ts` are ambient `declare module` blocks**, which
+`tsconfig` `paths` cannot resolve to as a module — so the declarations beside
+the bundles are ours and partial, for the same reason `markdown-it.d.ts` is.
 
 **`three` ships no classic build at all, so this one was built rather than copied.**
 Upstream dropped its UMD bundle years ago and now publishes ESM and CJS only —

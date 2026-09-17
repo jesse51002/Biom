@@ -6,7 +6,7 @@ This is the framework — the development framework whose developers are agents.
 
 **Its public surface is the part expected to outlive any given implementation; the rest is still expected to change freely, and that stays true.** The host-to-guest contract — `client/frame/frame.js`, `client/bridge/bridge.js` and `guest/biom.js` — and the vault format are that surface, because a contract is expensive to change once artifacts exist in the wild. Everything else here is written to be replaced.
 
-**The mechanics live in guides now, not in this file.** `.agents/skills/*-guide/` holds one guide per subsystem — the boundary, the section runtime, the page format, plugins — each the single source of truth for its own, each ending in a Key files map, and each updated in the same change as the code it describes. This file keeps the CONVENTIONS: how to work here, what the gates are, and the rules that bind every subsystem at once. When you need to know how something works rather than how to work on it, the guide is the answer and this file is not.
+**The mechanics live in guides now, not in this file.** `.agents/skills/*-guide/` holds one guide per subsystem — the boundary, the section runtime, the page format, plugins, the terminal — each the single source of truth for its own, each ending in a Key files map, and each updated in the same change as the code it describes. This file keeps the CONVENTIONS: how to work here, what the gates are, and the rules that bind every subsystem at once. When you need to know how something works rather than how to work on it, the guide is the answer and this file is not.
 
 ```
 make dev      # http://localhost:4400
@@ -220,20 +220,20 @@ app/                 the Electron shell. Not on the stack: neither server nor cl
 dist/                everything `make app` writes. Generated, gitignored, and reached
                      only by the composition root's one dynamic import
 contracts/           0 · the frozen types, the wire constants, guards, emitter
-server/platform/     1 · files · db · yaml · watch · shipped     raw capability, no vocabulary
+server/platform/     1 · files · db · yaml · watch · pty · shipped     raw capability, no vocabulary
 server/domain/       2 · pages · docs · design · tables    one concept each
-server/workspace/    3 · presets · vault · migrate (the format gate) · framework (what the framework owns in a vault, kept current on open: the skills, the plugin mirror, the sweep)
+server/workspace/    3 · presets · vault · migrate (the format gate) · terminals (who owns a shell) · framework (what the framework owns in a vault, kept current on open: the guide, the docs, the skills, the plugin mirror, the sweeps)
 server/api/          4 · one POST route
 server/main.ts       5 · composition root
 client/platform/     6 · dom · markdown · document (the box's document, shared by the view and the bridge)
-client/transport/    7 · one ApiRequest over fetch · the live stream  (host → server)
+client/transport/    7 · one ApiRequest over fetch · the live stream · the terminal socket  (host → server)
 client/widgets/      8 · popover
-client/store/        9 · workspace · ui
+client/store/        9 · workspace · ui · terminals (sessions mirrored, the dock this window's)
 client/bridge/      10 · the biom.* chokepoint. DOM-free by lint
 client/frame/       11 · the sandboxed iframe
 client/theme/       13 · the palette onto the root and as data for the box; the one file that names a colour
-client/views/       14 · page (a mount point) · table · tree · config · vault
-client/shell/       15 · chrome · title bar · panels · routing
+client/views/       14 · page (a mount point) · table · tree · config · vault · terminal (the emulators)
+client/shell/       15 · chrome · title bar · panels · routing · dock (the terminal's furniture)
 client/boot.js      16 · composition root
 guest/                   the box's realm: the shim, the runtime, and
                          sections/default.html. Imports nothing; nothing imports it
@@ -260,6 +260,8 @@ tests/e2e/               `make e2e`. The program on a screen: the server in a he
 **A vendored file is verified in a browser, not in a test runner.** The Node build of markdown-it was vendored here once by mistake; it passed `tsc` and every unit test and could not be loaded by any browser, because those two resolve through `paths` and the browser resolves through the import map. Different mechanisms, and only one of them is the product.
 
 **An artifact may load a classic script from `/vendor/`, and only from there.** A sandboxed frame has an opaque origin: a classic `<script src>` loads, while `fetch` and a **module** script are both blocked — measured, not assumed. So the frame can RUN host-served code without being able to READ anything back, and the chokepoint, which is about data, still holds. R35 in `vault/.agents/skills/biom-sections/SKILL.md` carries the rule and `vault/docs/code.md` carries the measurement behind it; `three` is 706KB, so a library is fetched on the branch that genuinely needs it and never otherwise. **Nothing in `guest/plugins/` reaches `/vendor/` any more** — the shipped set draws with the platform and nothing else, and a heavy library is a workspace's own choice made in its own plugin file.
+
+**THE AGENT TERMINAL IS A SHELL THE SERVER OWNS, BESIDE THE PAGE AND NEVER INSIDE IT.** A person runs their own agent CLI in the vault's folder in a real PTY (`Bun.spawn` with `terminal`), drawn by xterm.js in the HOST — no page contract gains a kind, `contracts/` is untouched, and the wire is spelled twice (`server/workspace/terminals.ts`, `client/transport/terminal.js`) with a test holding the two equal. **Visibility is not lifetime**: hiding, docking to another edge, full screen, switching page or tab and reloading send nothing, so none of them can stop a process; `end`, the shell exiting, the server going and the orphan rule (no client for two minutes) are the only endings, and every tree is killed in the server's `exit` handler. **The route is guarded in every build, source runs included**, because it is command execution and `Bun.serve` listens on every interface: WebSocket upgrade, launch token, loopback peer, loopback Host with a matching Origin, and a per-launch `HttpOnly; SameSite=Strict` capability cookie set only on the composed document — `terminalRefusal` in `server/main.ts` — and the page proxy strips `set-cookie`. **The dock never moves the page**: `.work` holds the bed and the dock as two fixed children and the edge is a grid template on it, exactly because moving an iframe reloads it. The Agent Terminal row is in every build — it is not a diagnostic. `.agents/skills/terminal-guide/` is the mechanism, the limits and what is deliberately not built.
 
 **The rail's foot holds the workspace's own screens, and one of them is a plugin page with no directory at all.** The Map row draws the whole workspace with the `mindmap` plugin — the vault's own copy of it, like every other plugin — mounted on `MAP_PAGE` (`@map`, beside `DESIGN_PAGE` in `contracts/wire.js`): `page.read` answers it as a bare plugin page — no sections, no variables, `input.rail` set, the document read live out of `<vault>/plugins/mindmap/` — so the runtime draws nothing over the plugin and nothing is ever written for it. A page that wants a map of its own says `plugin: mindmap` and is an ordinary page whose settings live in its variables. Adding the route widened `ViewName` in `contracts/types.ts` by one member; that was the one contracts edit, and it is recorded here because the file is otherwise frozen.
 

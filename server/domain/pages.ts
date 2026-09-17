@@ -114,7 +114,7 @@
 // goes looking for.
 
 import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec } from "../../contracts/types.ts";
-import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, childKey, segmentOf } from "../../contracts/types.ts";
+import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
@@ -1539,6 +1539,55 @@ export function makePages(
       await copyTree(from, to);
       await files.remove(from);
       return next;
+    },
+
+    /** RENAME A PAGE, WHICH IS A MOVE WITH THE NAME WRITTEN FIRST. A page's
+     *  last segment is spelled from its name when it is made, so a page called
+     *  "Field notes" that still lives at `Notes/` has an id that says something
+     *  the rail no longer does — the URL, the folder and the mirror file would
+     *  all go on naming a page by a name it had. So the directory follows the
+     *  name, by the same `slug` `create` used and with the same `-2` when a
+     *  sibling already holds the segment, and the same cascade a move pays: every
+     *  id beneath it changes, nothing forwards, and the answer is the new id.
+     *
+     *  A name that spells the segment the page already has is a rename of the
+     *  name alone, and answers the same id — including a change of case, which
+     *  the filesystem may not be able to tell apart. The ROOT keeps its id
+     *  whatever it is called, because `ROOT_PAGE` is a constant every other id
+     *  starts with. */
+    async rename(id: PageId, name: string): Promise<PageId> {
+      if (id === DESIGN_PAGE) throw bad("bad_request", "the design doc cannot be renamed");
+      if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be renamed");
+      const next = name.trim();
+      if (next === "") throw bad("bad_request", "a page needs a name");
+      const found = await readDoc(id);
+      if (found === null) throw bad("not_found", "no such page");
+      // A page whose document will not parse has words in it somebody wants
+      // back, and rewriting the file from a document this could not read would
+      // be how they are lost. The raw fallback is the way to repair it.
+      if ("broken" in found) throw bad("flatness", "the page's document does not parse");
+
+      const parent = parentOf(id);
+      const segment = segmentOf(id);
+      const from = dirOf(id);
+      let to = id;
+      if (parent !== null && foldId(slug(next)) !== foldId(segment)) {
+        // The same folded check `create` and `move` make: a sibling that
+        // differs only in case is the same directory on some machines.
+        const taken = new Set((await dirsIn(`${dirOf(parent)}/${CHILDREN}`)).map(foldId));
+        taken.delete(foldId(segment));
+        const base = slug(next);
+        let seg = base;
+        for (let n = 2; taken.has(foldId(seg)); n++) seg = `${base}-${n}`;
+        to = `${parent}/${seg}`;
+      }
+
+      await files.commit("Before renaming a page");
+      await writeDoc(id, { ...found.doc, name: next });
+      if (to === id) return id;
+      await copyTree(from, dirOf(to));
+      await files.remove(from);
+      return to;
     },
   };
 }

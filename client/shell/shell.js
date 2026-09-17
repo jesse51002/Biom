@@ -51,6 +51,8 @@
 /** @import { FrameHost, Page, PageId, TableView,
  *            UiState, UiStore, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { TerminalStore } from "../store/terminals.js" */
+/** @import { TerminalView } from "../views/terminal.js" */
 
 import { remember } from "../platform/dom.js";
 import { closePopover, popover, popItem } from "../widgets/popover.js";
@@ -63,6 +65,7 @@ import { closeHref } from "../views/vault.js";
 import { makePanels } from "./panels.js";
 import { makeDialog } from "./dialog.js";
 import { makeRack } from "./rack.js";
+import { makeDock } from "./dock.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 /** @typedef {(el: HTMLElement, ...content: any[]) => HTMLElement} Fill */
@@ -91,6 +94,12 @@ import { makeRack } from "./rack.js";
  * @property {UiStore} ui
  * @property {FrameHost} frameHost
  * @property {ShellViews} views
+ * @property {string} [newerVersion] A NEWER RELEASE THAN THIS ONE, by name, or
+ *   absent. The server learned it from biom.dev on the way up and the document
+ *   carried it here; the strip says it in one line and links the install steps,
+ *   because a person who built from the repository has no other way to hear a
+ *   tag was cut. It is a fact about the launch, so it goes on the end of the
+ *   strip whatever the route, the way the versions line does.
  * @property {boolean} [production] WHICH BUILD THIS IS, and the only thing the
  *   chrome knows about it: whether a row is put in the list it returns. Nothing
  *   here is deleted in production and nothing becomes a second code path — every
@@ -107,6 +116,10 @@ import { makeRack } from "./rack.js";
  * @property {string} [search] THE QUERY THIS WINDOW WAS OPENED WITH, which the
  *   rail's `Close workspace` row carries forward minus the folder. Defaults to
  *   the real one, and to "" where there is no window at all.
+ * @property {{ store: TerminalStore, view: TerminalView }} [terminal]
+ *   THE AGENT TERMINAL, when this window has a workspace to run one in. Absent,
+ *   no dock is built, no `.work` wraps the bed, and the rail offers no Terminal
+ *   row — which is a tab with no folder, and every test that is not about it.
  */
 
 /** The route vocabulary, so a hash somebody typed cannot invent a view.
@@ -173,6 +186,7 @@ function windowBridge() {
 export function makeShell(deps) {
   const { h, fill, ws, ui, frameHost, views, events } = deps;
   const production = deps.production === true;
+  const newerVersion = typeof deps.newerVersion === "string" ? deps.newerVersion.trim() : "";
 
   /** WHICH PANEL THIS BUILD WILL SHOW, and the one answer everything asks.
    *
@@ -215,6 +229,18 @@ export function makeShell(deps) {
   const bed = h("div.bed", rack, canvas, sizer.grip);
   const strip = h("div.strip");
 
+  /** THE TERMINAL DOCK, beside the whole workspace — rail-side navigation and
+   *  page alike — on whichever edge it was dragged to. `.work` holds the bed and
+   *  the dock as two fixed children for the life of the window, and which edge
+   *  is a grid template on it: see the header of `dock.js` for why nothing here
+   *  may ever reparent either. No terminal, no wrapper, and the bed is the row
+   *  it always was. */
+  const terminal = deps.terminal ?? null;
+  const dock = terminal === null ? null : makeDock({ h, terms: terminal.store, view: terminal.view });
+  const work = dock === null ? null : h("div.work", bed, dock.el);
+  if (dock !== null && work !== null) dock.attach(work);
+  const middle = work ?? bed;
+
   /** The window's own bar, or null in a browser. Read once: see `windowBridge`.
    *  The double-click is here rather than on a control because the whole bar is
    *  a drag region and a drag region on Linux has no window manager behind it
@@ -229,8 +255,8 @@ export function makeShell(deps) {
   // skeleton: with no bridge the element is not built and nothing about the
   // page below it changes by a pixel.
   const app = titlebar === null
-    ? h("div.app", rail, bed, strip)
-    : h("div.app.framed", titlebar, rail, bed, strip);
+    ? h("div.app", rail, middle, strip)
+    : h("div.app.framed", titlebar, rail, middle, strip);
 
   /** What the body was last built from. Identity, not equality. @type {unknown[]} */
   let built = [Symbol("nothing")];
@@ -544,21 +570,48 @@ export function makeShell(deps) {
     // A document you have to unlock before you can type in it reads as a demo of
     // a document.
 
-    if (page) {
-      // MODIFY PAGE IS A DEVELOPER'S PANEL TOO, and the owner decided on
-      // 2026-09-14 that a built application does not offer it. What it draws is
-      // a path to `cd` into and a prompt to paste into a coding agent running
-      // in a terminal beside this window — an instruction written for whoever
-      // has one open, at the exact moment a stranger is deciding what this
-      // program is. The panel is not deleted and nothing here becomes a second
-      // code path: the row is not put in the list, and the paint below declines
-      // to build it — both of them asking `offered`, the way a typed route asks
-      // `PRODUCTION_VIEWS`.
-      if (offered("agent")) {
-        tools.push(tool("Modify page", () => ui.set({ panel: panel === "agent" ? null : "agent" }),
-          panel === "agent", "spot"));
-      }
+    // MODIFY PAGE IS A DEVELOPER'S PANEL TOO, and the owner decided on
+    // 2026-09-14 that a built application does not offer it. What it draws is
+    // a path to `cd` into and a prompt to paste into a coding agent running
+    // in a terminal beside this window — an instruction written for whoever
+    // has one open, at the exact moment a stranger is deciding what this
+    // program is. The panel is not deleted and nothing here becomes a second
+    // code path: the row is not put in the list, and the paint below declines
+    // to build it — both of them asking `offered`, the way a typed route asks
+    // `PRODUCTION_VIEWS`.
+    if (page && offered("agent")) {
+      tools.push(tool("Modify page", () => ui.set({ panel: panel === "agent" ? null : "agent" }),
+        panel === "agent", "spot"));
+    }
 
+    // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND THE LAST ACTION
+    // before the page's menu. It is not a developer's diagnostic — it is where
+    // a person runs their own agent beside the page — so it is not on any hide
+    // list, and in a built application it is the one action on the bar that
+    // does something rather than shows something, so it takes `prime`, the
+    // bar's fill in the palette's primary accent — not `spot`, which is the
+    // second accent and Modify page's. It sits after every other action so it
+    // is in the same place on every page, whatever the page adds before it;
+    // the menu below stays at the very end because a menu at the end of a bar
+    // is where a menu is. It names how many sessions are still running while
+    // the dock is put away, because Hide stops nothing and the person is
+    // entitled to see that it did not.
+    if (terminal !== null) {
+      const st = terminal.store.get();
+      const running = terminal.store.live();
+      const shown = st.dock.visible;
+      tools.push(h("button.tool.prime.termtoggle", {
+        type: "button",
+        "aria-pressed": String(shown),
+        title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
+        onclick: () => {
+          terminal.store.toggle();
+          if (!shown) terminal.view.focus();
+        },
+      }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
+    }
+
+    if (page) {
       // Config is a screen about the page rather than a way of looking at it,
       // so it is behind the page's own menu rather than a tab beside the name.
       // One item today; the menu is where the next page-level thing goes.
@@ -862,7 +915,26 @@ export function makeShell(deps) {
           // `closeHref`, is the other direction of the same move, and it keeps
           // the per-launch token for the same reason. Middle-click opens the
           // start page in a second tab and this file does nothing to arrange it.
-          h("li.treerow", h("a", { href: closeHref(search) },
+          //
+          // LEAVING WITH TERMINALS RUNNING ASKS FIRST. A workspace's sessions do
+          // not follow the window to the start page — no session silently changes
+          // workspace — so closing it ends them, and only once the person has
+          // said so. Cancel keeps everything where it is.
+          h("li.treerow", h("a", {
+            href: closeHref(search),
+            onclick: (/** @type {Event} */ e) => {
+              if (terminal === null) return;
+              const running = terminal.store.live();
+              if (running === 0) return;
+              e.preventDefault();
+              const href = closeHref(search);
+              const ok = typeof confirm === "function" && confirm(
+                `${running === 1 ? "A terminal session is" : `${running} terminal sessions are`} still running in this workspace. ` +
+                "Closing it ends them. Close the workspace?");
+              if (!ok) return;
+              void terminal.store.endAll().then(() => { location.href = href; });
+            },
+          },
             h("span.kindtag", { "data-kind": "close", "aria-hidden": "true" }),
             h("span.nm", "Close workspace"))))),
     ];
@@ -926,7 +998,13 @@ export function makeShell(deps) {
     // first paint, and silence is the right answer then too — an absent fact is
     // not a negative one.
     if (vault !== null && vault.history === false) items.push(["Versions", "are not being kept"]);
-    return h("span.status", ...items.map(([k, v]) => h("span", k, " ", h("b", v))));
+    const drawn = items.map(([k, v]) => h("span", k, " ", h("b", v)));
+    // THE ONE ITEM THAT IS A LINK, and the last: a newer version exists, and the
+    // steps to get it are the same three the person already ran once.
+    if (newerVersion !== "") {
+      drawn.push(h("span", "Update ", h("a", { href: "https://biom.dev/get-started.html", target: "_blank", rel: "noopener" }, h("b", `${newerVersion} is out`))));
+    }
+    return h("span.status", ...drawn);
   }
 
   /* ── the two things the chrome does ────────────────────────────────────── */
@@ -1068,7 +1146,9 @@ export function makeShell(deps) {
     // a `#/vault` somebody typed with a folder open, and the way out of a
     // workspace that did not open at all.
     const bare = u.route.view === "vault";
-    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "");
+    // The dock first, because whether it fills the window decides the grid.
+    if (dock !== null) dock.sync(bare);
+    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "") + (dock !== null && dock.full() ? " tfull" : "");
 
     if (titlebar !== null) fill(titlebar, ...titleParts());
     fill(rail, ...(bare ? [] : railParts()));
@@ -1181,9 +1261,15 @@ export function makeShell(deps) {
         }
       }
 
+      if (dock !== null) dock.mount();
+
       if (typeof document !== "undefined" && document.addEventListener) {
         document.addEventListener("keydown", (ev) => {
           if (ev.key !== "Escape") return;
+          // ESCAPE INSIDE THE TERMINAL IS THE PROGRAM'S. Vim leaves insert mode
+          // on it and an agent cancels on it; a panel of ours closing instead
+          // would be the host stealing a key the person pressed for the shell.
+          if (dock !== null && dock.holds(ev.target)) return;
           const u = ui.get();
           if (u.dialog) ui.set({ dialog: false });
           else if (u.inserting !== null) ui.set({ inserting: null });

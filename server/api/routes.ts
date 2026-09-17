@@ -315,6 +315,31 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         await mirrored(follow(deps.mirror, req.page, true));
         return ok(id, null);
 
+      case "page.rename":
+        // A RENAME IS A MOVE: the last segment of an id is spelled from the
+        // name, so the directory follows it and the answer is the NEW id. So
+        // everything `page.move` does for the ids beneath a page is done here
+        // too — the tables re-pointed, the mirror carried — and the one parent
+        // is re-projected because it lists its children by name.
+        try {
+          const to = await deps.pages.rename(req.page, req.name);
+          if (to !== req.page) restack(deps, req.page, to);
+          if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
+          await mirrored(follow(deps.mirror, to, true));
+          return ok(id, to);
+        } catch (e) {
+          console.error("page.rename", e);
+          const code = codeOf(e, "internal");
+          const said = e instanceof Error && e.message !== "" ? e.message : "";
+          return err(
+            id,
+            code,
+            code === "not_found" ? "no such page"
+              : said !== "" ? said
+              : "that page could not be renamed",
+          );
+        }
+
       case "page.writeFile":
         // The agent seam. Claude Code writes into the vault directly today and
         // this route exists for the day it does not; the markdown editor and the
@@ -753,7 +778,11 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
       signal: AbortSignal.timeout(20000),
     });
     const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => { headers[k] = v; });
+    // NO COOKIE CROSSES BACK TO A PAGE. A page has no cookie jar to put one in,
+    // and the one this server sets on its own document is the terminal's
+    // capability — a page asking this proxy for `http://localhost:<port>/` must
+    // not be able to read it off the answer.
+    res.headers.forEach((v, k) => { if (k !== "set-cookie") headers[k] = v; });
     const value: HostFetchResult = { status: res.status, headers, body: await res.text() };
     return ok(id, value);
   } catch (e) {

@@ -46,7 +46,7 @@
 // reported rather than failed.
 
 import { mkdir, readdir, readFile, rm, writeFile, copyFile, chmod } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -278,6 +278,22 @@ async function run(cmd: string[], cwd = HERE): Promise<void> {
   }
 }
 
+/** WHICH VERSION THIS BUILD IS, from the tag the checkout sits at: `v0.1.1`
+ *  exactly on a tag, `v0.1.1-2-gf8759a0` between tags, with `-dirty` when the
+ *  tree has edits. It is the second and last thing the compiled server knows
+ *  about its own build, and its reader is the update check in `server/main.ts`,
+ *  which compares it to `biom.dev/version.json` and says nothing unless that
+ *  file names something newer. A checkout with no git history — a downloaded
+ *  archive — falls back to `package.json`'s version so the compare still has a
+ *  number to work with. */
+function buildVersion(): string {
+  const described = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"], { cwd: HERE, stdout: "pipe", stderr: "ignore" });
+  const tag = described.exitCode === 0 ? described.stdout.toString().trim() : "";
+  if (/^v?\d+\.\d+\.\d+/.test(tag)) return tag;
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { version?: string };
+  return `v${pkg.version ?? "0.0.0"}`;
+}
+
 /** The version of electron the bundle is built around, read from the one place
  *  it is declared. Passed to the packager explicitly because the staging
  *  directory it packages has no dependencies of its own — the shell is one file
@@ -351,6 +367,9 @@ async function main(): Promise<void> {
     // shipped as development by accident.
     "--define",
     'process.env.BIOM_ENV="production"',
+    // And which version, read by the update check. See `buildVersion`.
+    "--define",
+    `process.env.BIOM_VERSION=${JSON.stringify(buildVersion())}`,
     ...(hideConsole ? ["--windows-hide-console"] : []),
     join(HERE, "server", "main.ts"),
     "--outfile",

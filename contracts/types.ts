@@ -950,6 +950,15 @@ export type ApiRequest =
          *  `not_found` rather than somebody else's page, and the client re-routes
          *  on what comes back. */
         | { kind: "page.move"; page: PageId; parent: PageId }
+        /** RENAME A PAGE, which is writing its `name` AND moving its directory.
+         *  A page's id is where it sits and its last segment is spelled from
+         *  its name, so a new name is a new segment: `home/Notes` called
+         *  "Field notes" becomes `home/Field-notes`, and every id beneath it
+         *  changes with it, exactly as a move does. The answer is the NEW id
+         *  for the same reason `page.move` answers one — the caller is holding
+         *  an id that has just stopped existing, and nothing forwards. A name
+         *  whose segment is the one the page already has answers the same id. */
+        | { kind: "page.rename"; page: PageId; name: string }
         | { kind: "page.writeFile"; page: PageId; file: string; text: string }
         /** The whole document as text, for the fallback that opens a page whose
          *  YAML will not parse. It matters MORE than it did: the prose is in
@@ -1103,6 +1112,9 @@ export interface Pages {
    *  beneath it moves with it and is renamed with it — the price of the folder
    *  being the hierarchy rather than a mirror of one. */
   move(id: PageId, parent: PageId): Promise<PageId>;
+  /** Write the name and move the directory to the segment it spells, answering
+   *  the page's NEW id. The root keeps its id, because its id is a constant. */
+  rename(id: PageId, name: string): Promise<PageId>;
 }
 
 /** server/domain/design.ts — the design doc, which is ONE page living at
@@ -1244,6 +1256,9 @@ export interface WorkspaceStore {
   reloadPage(id: PageId): Promise<Page | null>;
   createPage(init: PageInit): Promise<PageRef>;
   removePage(id: PageId): Promise<void>;
+  /** A new name for a page, and the NEW ID it took: the last segment of an id
+   *  is spelled from the name, so renaming is moving. */
+  renamePage(id: PageId, name: string): Promise<PageId>;
   /** ADDING, REORDERING AND DUPLICATING: one write, because `contents` IS the
    *  order and there is no second place for a name to sit.
    *

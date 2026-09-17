@@ -193,6 +193,18 @@
 }
 .tool.spot:hover, .tool.spot[aria-pressed="true"]{background:var(--magenta-t); color:var(--on-spot)}
 
+/* THE PRIMARY CONTROL ON THE BAR, in the palette's primary accent — `cyan` is
+   the fill the picker's Open and Make, a table's `.op.on` and `.tick.on` all
+   take, and `spot` above is deliberately the SECOND accent so that a page pill
+   and a person pill never share a colour. Agent Terminal is the one action on
+   the bar in a built application that starts something, so it is the one
+   drawn this way. */
+.tool.prime{
+  background:var(--cyan); color:var(--on-spot); margin-left:.35rem;
+  padding:.3rem .65rem; font-weight:500;
+}
+.tool.prime:hover, .tool.prime[aria-pressed="true"]{background:var(--cyan-t); color:var(--on-spot)}
+
 /* ---------- the bed ---------- */
 
 /* `position:relative` for the grip, which hangs off the rail's right edge and is

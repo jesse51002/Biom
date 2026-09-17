@@ -143,6 +143,28 @@
 .treerow:hover .rowmore, .treerow:hover .rowadd, .rowmore:focus-visible, .rowadd:focus-visible{opacity:1}
 .rowmore:hover, .rowadd:hover{color:var(--ink); background:var(--ink-wash)}
 
+/* THE PLUS AT THE FOOT OF AN OPEN PAGE: the last row under its children, at
+   their depth, always visible — the hover-only plus on the row above was found
+   by nobody. Drawn like the New page button under the whole tree, because it
+   is the same act one level down, and quieter, because there is one per open
+   page rather than one per rail. */
+.addrow{padding-right:0}
+.rowaddin{
+  display:flex; align-items:center; gap:.35rem; flex:1; min-width:0; text-align:left;
+  padding:.2rem .35rem .2rem calc(.35rem + var(--depth, 0) * 1.1rem);
+  background:none; border:0; border-radius:4px; cursor:pointer;
+  color:var(--room-ink-3); font-size:.8125rem; font-family:inherit;
+}
+/* The plus sits where the row above draws its kind glyph — past the caret's
+   1rem and its gap — so "New page" lines up with the names over it. */
+.rowaddin::before{
+  content:""; width:.85rem; height:.85rem; flex:none; margin-left:1.35rem;
+  background:
+    linear-gradient(currentColor, currentColor) center / 65% 1.5px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.5px 65% no-repeat;
+}
+.rowaddin:hover, .rowaddin:focus-visible{color:var(--ink)}
+
 /* ---------- config ---------- */
 .ports h2{font-weight:700; font-size:1.75rem; margin:0 0 .25rem; letter-spacing:-.01em}
 .ports .sub{margin:0 0 1.75rem; font-size:.875rem; color:var(--ink-2)}
