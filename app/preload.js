@@ -59,6 +59,7 @@ const CLOSE = "biom:window-close";
 const STATE = "biom:window-state";
 /** The only channel carrying something the page did not ask for. */
 const CHANGED = "biom:window-changed";
+const CLOSING = "biom:window-closing";
 
 /** DOES THE PLATFORM DRAW THE WINDOW'S OWN CONTROLS. macOS does: the window is
  *  made `hiddenInset`, so the traffic lights are still there, sitting inside
@@ -97,9 +98,13 @@ contextBridge.exposeInMainWorld("biomShell", {
     /** @returns {Promise<void>} */
     toggleFullScreen: () => ipcRenderer.invoke(FULLSCREEN),
     /** `close`, not destroy: it goes through the same path the desktop's own
-     *  button went through, so the server is stopped with the window.
+     *  button went through, so the server is stopped with the window. THE
+     *  CLOSE IS HELD while an automation is running — `onClosing` below says
+     *  so — and `force` is the page's yes: close anyway, and every run ends
+     *  with the server.
+     *  @param {boolean} [force]
      *  @returns {Promise<void>} */
-    close: () => ipcRenderer.invoke(CLOSE),
+    close: (force) => ipcRenderer.invoke(CLOSE, force === true),
     /** Which of those the window currently is.
      *  @returns {Promise<{ maximized: boolean, fullScreen: boolean }>} */
     state: () => ipcRenderer.invoke(STATE),
@@ -112,6 +117,17 @@ contextBridge.exposeInMainWorld("biomShell", {
       const on = (/** @type {unknown} */ _event, /** @type {any} */ state) => hear(state);
       ipcRenderer.on(CHANGED, on);
       return () => ipcRenderer.removeListener(CHANGED, on);
+    },
+    /** THE WINDOW WAS ASKED TO CLOSE OVER A LIVE RUN, and the main process
+     *  held it. `hear` gets how many runs are alive; the page draws the
+     *  question, and answers yes with `close(true)` or no by doing nothing.
+     *  Answers the way to stop listening.
+     *  @param {(alive: number) => void} hear
+     *  @returns {() => void} */
+    onClosing: (hear) => {
+      const on = (/** @type {unknown} */ _event, /** @type {number} */ alive) => hear(alive);
+      ipcRenderer.on(CLOSING, on);
+      return () => ipcRenderer.removeListener(CLOSING, on);
     },
     /** True where the platform draws close, minimise and zoom itself, which is
      *  macOS and only macOS. The bar draws those three where this is false,

@@ -182,6 +182,14 @@ function windowBridge() {
   return bridge && bridge.windowControls ? bridge : null;
 }
 
+/** What the bar says when a close is held over a live run. Spelled once, so
+ *  the end-to-end suite can find the strip by its words. */
+export const CLOSE_WORDS = Object.freeze({
+  alive: (/** @type {number} */ n) => n === 1 ? "1 automation is running. Closing ends it." : `${n} automations are running. Closing ends them.`,
+  yes: "End them and close",
+  no: "Keep them running",
+});
+
 /**
  * @param {ShellDeps} deps
  */
@@ -270,6 +278,9 @@ export function makeShell(deps) {
   let again = false;
   /** Set by boot when the workspace could not be read at all. @type {string} */
   let troubled = "";
+  /** HOW MANY RUNS THE WINDOW WAS ASKED TO CLOSE OVER, or 0 when it was not.
+   *  Set by the shell's push, cleared by either answer. @type {number} */
+  let closing = 0;
   /** One outstanding read, so a repaint mid-fetch does not fire a second. */
   let awaiting = "";
   /** Which folder the workspace is, for the rail's foot. `WorkspaceSnapshot` is
@@ -523,10 +534,18 @@ export function makeShell(deps) {
       : ctl("full", "Full screen", () => void wc.toggleFullScreen()));
     if (!wc.lights) acts.push(ctl("close", "Close", () => void wc.close()));
 
+    // THE QUESTION, in the bar itself, where the close was pressed: how many
+    // runs are alive, that closing ends them, and the two answers. Yes closes
+    // for real; no puts the bar back and keeps every run.
+    const ask = closing > 0 ? [h("span.closeask", { role: "alertdialog", "aria-live": "assertive" },
+      h("span.closeword", CLOSE_WORDS.alive(closing)),
+      h("button.closeyes", { type: "button", onclick: () => { closing = 0; paint(); void wc.close(true); } }, CLOSE_WORDS.yes),
+      h("button.closeno", { type: "button", onclick: () => { closing = 0; paint(); } }, CLOSE_WORDS.no))] : [];
     return [
       h("span.titleid", { style: { "--title-inset": String(wc.inset || 0) + "px" } },
         mark ? h("img.titlemark", { src: mark, alt: "" }) : null,
         h("span.titlename", name)),
+      ...ask,
       h("span.titleacts", ...acts),
     ];
   }
@@ -1238,6 +1257,18 @@ export function makeShell(deps) {
           fullScreen = now.fullScreen === true;
           paint();
         });
+        // THE CLOSE HELD OVER A LIVE RUN. The main process asked the server,
+        // found something alive, held the window and said how many; the
+        // question is drawn here, in the application's own chrome, and yes is
+        // `close(true)` — which ends every run with the server — while no is
+        // the strip going away and nothing else. A bridge built before this
+        // existed has no `onClosing` and the window simply closes.
+        if (typeof wc.onClosing === "function") {
+          wc.onClosing((/** @type {number} */ alive) => {
+            closing = typeof alive === "number" && alive > 0 ? alive : 1;
+            paint();
+          });
+        }
         if (typeof bridge.logo === "function") {
           bridge.logo().then((/** @type {string} */ url) => {
             if (typeof url !== "string" || !url) return;

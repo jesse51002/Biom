@@ -74,6 +74,18 @@
    everything inside it undraggable-to-the-pointer in the ordinary sense — which
    is why the controls take it back with `no-drag` below. A bar without it is a
    window that cannot be moved at all, because the desktop's bar is gone. */
+/* THE CLOSE HELD OVER A LIVE RUN: a strip in the bar with the count, what
+   closing does, and the two answers. It takes the bar back from the drag region
+   so its buttons take a click, like the controls do. */
+.closeask{
+  display:inline-flex; align-items:center; gap:.6rem; margin-left:auto; padding:0 .8rem;
+  font-size:.8rem; color:var(--ink); -webkit-app-region:no-drag;
+}
+.closeask .closeword{color:var(--yellow)}
+.closeask button{font:inherit; font-size:.75rem; padding:.2rem .6rem; border-radius:4px; cursor:pointer; border:1px solid var(--rule); background:var(--stock-hi); color:var(--ink)}
+.closeask .closeyes{border-color:var(--magenta); color:var(--magenta)}
+.closeask .closeyes:hover{background:var(--magenta); color:var(--on-spot)}
+.closeask .closeno:hover{background:var(--field)}
 .titlebar{
   display:flex; align-items:stretch; justify-content:space-between;
   background:var(--stock); border-bottom:1px solid var(--stock-edge);

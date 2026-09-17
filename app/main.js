@@ -74,6 +74,12 @@ const STATE = "biom:window-state";
  *  double-click on our bar, the desktop's own keyboard shortcut, a tiling
  *  manager — so the icon that says which it is has to flip. */
 const CHANGED = "biom:window-changed";
+/** THE OTHER THING IT SAYS UNASKED: the window was asked to close while an
+ *  automation is running. The main process holds the close, says how many are
+ *  alive, and the page draws the question in the application's own chrome —
+ *  yes closes for real, which ends every run on the way out; no keeps the
+ *  window and the runs. See `holdTheClose`. */
+const CLOSING = "biom:window-closing";
 
 /** THE LOGO, AND THERE IS ONE FILE OF IT. Beside this one, copied into the
  *  staging directory with the rest of the shell, so the path resolves the same
@@ -474,6 +480,43 @@ if (!app.requestSingleInstanceLock()) {
     return logo;
   }
 
+  /** ASK BEFORE CLOSING OVER A LIVE RUN.
+   *
+   *  Every automation is a process group the server started, and the server
+   *  ends every one of them on its own way out — which is what closing this
+   *  window does. So the window does not simply close: the close is HELD, the
+   *  server is asked `run.live` on the unprefixed route with this launch's
+   *  token, and where anything is alive the page is told how many and draws
+   *  the question. `forced` is the page's yes, and it is the one way past the
+   *  hold. A server that does not answer — dead, or on its way there — has
+   *  nothing to keep running, and the window closes at once.
+   *
+   *  It is the WINDOW's close event, so it covers the bar's own button, the
+   *  desktop's Alt+F4 and a window manager's close alike: every route to a
+   *  closed window runs through it. */
+  let forced = false;
+  function holdTheClose(port, token) {
+    if (!win) return;
+    win.on("close", (event) => {
+      if (forced) return;
+      event.preventDefault();
+      const ask = fetch(`http://localhost:${port}/api/call?token=${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "close", g: 1, kind: "run.live" }),
+      }).then((r) => r.json()).then((res) => (res && res.ok && typeof res.value === "number" ? res.value : 0), () => 0);
+      ask.then((alive) => {
+        if (!win) return;
+        if (alive > 0) {
+          win.webContents.send(CLOSING, alive);
+        } else {
+          forced = true;
+          win.close();
+        }
+      });
+    });
+  }
+
   function open(port, token) {
     win = new BrowserWindow({
       width: 1280,
@@ -496,6 +539,7 @@ if (!app.requestSingleInstanceLock()) {
     // nothing else on the machine has it, and it is minted fresh per launch.
     watchTheFirstDraw();
     fullscreenOnF11(win);
+    holdTheClose(port, token);
     // The bar's icons follow the window rather than the button that was
     // pressed, which is the only way they can be right after F11 or after the
     // desktop maximised us. `restore` is in the list because leaving a
@@ -539,7 +583,9 @@ if (!app.requestSingleInstanceLock()) {
     else win.maximize();
   });
   ipcMain.handle(FULLSCREEN, () => { if (alive()) win.setFullScreen(!win.isFullScreen()); });
-  ipcMain.handle(CLOSE, () => { if (alive()) win.close(); });
+  // `force` is the page answering yes to the question `holdTheClose` asked:
+  // close whatever is running, and the server ends it on the way out.
+  ipcMain.handle(CLOSE, (_event, force) => { if (force === true) forced = true; if (alive()) win.close(); });
   ipcMain.handle(STATE, () => stateOf());
   ipcMain.handle(LOGO, () => logoUrl());
 

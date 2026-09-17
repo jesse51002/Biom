@@ -20,7 +20,7 @@
 import { test, expect, beforeEach, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { makeShell, parseHash, hashOf, VIEWS, PRODUCTION_VIEWS } from "../client/shell/shell.js";
+import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS, PRODUCTION_VIEWS } from "../client/shell/shell.js";
 import {
   makeRack, rackWidth, autoCeiling,
   RACK_MIN, RACK_BASE, RACK_SHARE, RACK_KEY, RACK_STEP,
@@ -2540,10 +2540,14 @@ function fakeWindowShell({ lights = false, state = { maximized: false, fullScree
   const calls = [];
   /** @type {((s: any) => void)[]} */
   const hears = [];
+  /** @type {((n: number) => void)[]} */
+  const closings = [];
   return {
     calls,
     /** Something that is not our button moved the window. */
     moved(next) { for (const hear of [...hears]) hear(next); },
+    /** The main process held a close over `n` live runs. */
+    holding(n) { for (const hear of [...closings]) hear(n); },
     bridge: {
       chooseFolder: async () => { await null; return null; },
       logo: async () => { await null; return "data:image/png;base64,AAAA"; },
@@ -2551,9 +2555,10 @@ function fakeWindowShell({ lights = false, state = { maximized: false, fullScree
         minimize: async () => { calls.push("minimize"); },
         toggleMaximize: async () => { calls.push("toggleMaximize"); },
         toggleFullScreen: async () => { calls.push("toggleFullScreen"); },
-        close: async () => { calls.push("close"); },
+        close: async (force) => { calls.push(force === true ? "close!" : "close"); },
         state: async () => { await null; return state; },
         onChange: (hear) => { hears.push(hear); return () => hears.splice(hears.indexOf(hear), 1); },
+        onClosing: (hear) => { closings.push(hear); return () => closings.splice(closings.indexOf(hear), 1); },
         lights,
         inset: lights ? 78 : 0,
       },
@@ -2711,4 +2716,39 @@ test("the bar is a drag region and the controls are not", () => {
   expect(block(".titleacts")).toContain("-webkit-app-region:no-drag");
   // And the row the bar needs, which is a class rather than a second skeleton.
   expect(block(".app.framed")).toContain("var(--title-h)");
+});
+
+
+// THE CLOSE HELD OVER A LIVE RUN. The main process asks the server, finds
+// something alive, holds the window and says how many; the bar draws the
+// question, yes closes for real and no keeps everything.
+test("a close held over a live run draws the question in the bar; yes forces the close and no keeps the runs", async () => {
+  const w = await framed({ lights: false });
+  try {
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    w.holding(2);
+    await tick();
+    const ask = find(w.bar, (el) => has(el, "closeask"));
+    expect(ask).toBeTruthy();
+    expect(flat(find(ask, (el) => has(el, "closeword")))).toBe(CLOSE_WORDS.alive(2));
+    // No: the strip goes, nothing is closed, the runs are nobody's to end.
+    find(ask, (el) => has(el, "closeno")).fire("click");
+    await tick();
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    expect(w.calls).toEqual([]);
+    // Yes: the close is forced through, and the server ends every run on the way out.
+    w.holding(1);
+    await tick();
+    expect(flat(find(w.bar, (el) => has(el, "closeword")))).toBe(CLOSE_WORDS.alive(1));
+    find(w.bar, (el) => has(el, "closeyes")).fire("click");
+    await tick();
+    expect(w.calls).toEqual(["close!"]);
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    // The bar's own Close button asks nothing itself: it is an ordinary
+    // close, and the hold is the main process's.
+    find(w.bar, (el) => has(el, "close") && el.tagName === "BUTTON").fire("click");
+    expect(w.calls).toEqual(["close!", "close"]);
+  } finally {
+    w.done();
+  }
 });
