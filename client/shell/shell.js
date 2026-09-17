@@ -999,13 +999,19 @@ export function makeShell(deps) {
       if (!shared) return [h("p.poplabel", shareSaid || "Not shared.")];
       const url = shared.url;
       const field = /** @type {HTMLInputElement} */ (h("input.popfield", { type: "text", readonly: "", value: url, "aria-label": "The link" }));
+      // COPY KEEPS THE MENU OPEN. Copying is not the end of the act — the
+      // person still wants to see the link, open it, or copy it again — so the
+      // row says it copied and stays; only Open and Escape put the menu away.
+      const copyRow = popItem("Copy link", async () => {
+        try { await navigator.clipboard.writeText(url); } catch { field.select(); document.execCommand("copy"); }
+        const name = copyRow.querySelector(".popname");
+        if (name) name.textContent = "Copied";
+        setTimeout(() => { if (name && name.isConnected) name.textContent = "Copy link"; }, 1400);
+      });
       const rows = [
         h("p.poplabel", "Anyone with this link can open the page as it was captured."),
         field,
-        popItem("Copy link", async () => {
-          try { await navigator.clipboard.writeText(url); } catch { field.select(); document.execCommand("copy"); }
-          close();
-        }),
+        copyRow,
         popItem("Open in a new tab", () => { window.open(url, "_blank", "noopener"); close(); }),
         popItem("Share again", () => { shared = null; close(); void doShare(anchor); }),
       ];
@@ -1013,7 +1019,7 @@ export function makeShell(deps) {
         rows.push(h("p.poplabel", "Left pointing at this server: " + shared.left.join(", ")));
       }
       return rows;
-    }, { align: "end", width: "22rem" });
+    }, { center: true, width: "26rem" });
   }
 
   async function doReload() {

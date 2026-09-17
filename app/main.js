@@ -44,7 +44,7 @@
 
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
-const { mkdirSync, readFileSync } = require("node:fs");
+const { mkdirSync, readFileSync, rmSync } = require("node:fs");
 const { join } = require("node:path");
 
 const { dataHome } = require("./data.js");
@@ -138,6 +138,10 @@ const PARENT = "BIOM_SHELL";
  *  second pass knows it already has the cache it asked for. Spelled here and
  *  nowhere else — nothing but `ownFontCache()` reads it. */
 const OWN_CACHE = "BIOM_OWN_CACHE";
+/** THE SECOND CHANCE. Set on the one restart that follows a launch which
+ *  never drew, so a launch that never draws twice says so rather than
+ *  restarting forever. */
+const HEALED = "BIOM_HEALED_CACHE";
 
 /** CHROMIUM READS A FONT CACHE OF THE APPLICATION'S OWN, and getting it one
  *  means starting this program over.
@@ -223,6 +227,35 @@ function ownFontCache() {
 }
 
 ownFontCache();
+
+/** DELETE THE PRIVATE FONT CACHE AND START AGAIN, ONCE. Answers true when the
+ *  restart was issued (and nothing after it runs), false when this is not the
+ *  first try, not Linux, not a cache of our own, or the restart could not be
+ *  made — in which case the caller goes on to say why nothing drew. */
+function healFontCache() {
+  if (process.platform !== "linux") return false;
+  if (process.env[OWN_CACHE] !== "1") return false;
+  if (process.env[HEALED] === "1") return false;
+  if (typeof process.execve !== "function") return false;
+  const cache = join(dataHome(), "cache", "fontconfig");
+  try {
+    rmSync(cache, { recursive: true, force: true });
+  } catch (e) {
+    console.error("the application’s own font cache could not be cleared", e);
+    return false;
+  }
+  console.error("biom: cleared the application’s own font cache and is starting again");
+  try {
+    process.execve(process.execPath, [process.execPath, ...process.argv.slice(1)], {
+      ...process.env,
+      [HEALED]: "1",
+    });
+    return true;
+  } catch (e) {
+    console.error("Biom could not restart after clearing its font cache", e);
+    return false;
+  }
+}
 
 /** SINGLE INSTANCE, and it is Electron's own lock. A second launch focuses the
  *  window that is open — the server already holds several vaults at once and
@@ -358,6 +391,18 @@ if (!app.requestSingleInstanceLock()) {
 
     // ONE SENTENCE, on stderr, for whoever launched this from a terminal.
     console.error(`biom: the window never drew — ${why}`);
+
+    // THE CACHE OF OUR OWN CAN BE POISONED TOO, and the fix is ours to apply.
+    // The private cache keeps Chromium off the caches under the person's home,
+    // but two launches from two environments — the desktop and a container
+    // sharing that home — write into ONE private cache with two fontconfigs,
+    // and the next launch aborts exactly as it did before the cache existed.
+    // So the first time a launch never draws, the private cache is deleted
+    // and the program restarts itself once, the way `ownFontCache` restarted
+    // it; a person sees a second's delay instead of a dead launch. Only once:
+    // a launch that never draws with a clean cache is a different failure and
+    // gets the sentence and the dialog below.
+    if (healFontCache()) return;
 
     const linux = process.platform === "linux";
     const body =

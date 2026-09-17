@@ -39,7 +39,10 @@ export function closePopover() {
 /**
  * @param {HTMLElement} anchor the element the menu hangs from
  * @param {(close: () => void) => Child} build
- * @param {{ align?: "start" | "end", width?: string, onClose?: () => void }} [opts]
+ * @param {{ align?: "start" | "end", width?: string, center?: boolean, onClose?: () => void }} [opts]
+ *   `center` puts the menu in the middle of the window rather than under its
+ *   anchor — for a menu that is a small dialog, like the link a share answers
+ *   with, where hanging off a button in the corner reads as a tooltip
  * @returns {HTMLElement | null} null when the click closed an already-open menu
  */
 export function popover(anchor, build, opts = {}) {
@@ -60,6 +63,11 @@ export function popover(anchor, build, opts = {}) {
   /** @type {DOMRect | null} */
   let known = null;
   const place = () => {
+    if (opts.center) {
+      el.style.left = `${Math.round(Math.max(8, (innerWidth - el.offsetWidth) / 2))}px`;
+      el.style.top = `${Math.round(Math.max(8, (innerHeight - el.offsetHeight) / 2))}px`;
+      return;
+    }
     const r = anchor.getBoundingClientRect();
     if (anchor.isConnected && (r.width || r.height)) known = r;
     const a = known;

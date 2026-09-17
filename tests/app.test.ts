@@ -608,6 +608,27 @@ test("the window's Chromium is given a font cache of the application's own", asy
   // AND IT NEVER REFUSES TO START. Every way it can fail ends in a line on
   // stderr and the launch every version before this one made.
   expect(main).toContain('if (typeof process.execve !== "function") {');
+
+  // THE CACHE OF OUR OWN HEALS ITSELF, ONCE. Two launches from two environments
+  // sharing one home — a desktop and a container — write two fontconfigs' files
+  // into the one private cache, and the next launch aborts exactly as it did
+  // before the cache existed. So a launch that never draws clears the private
+  // cache and restarts itself, under a second marker so it happens once; a
+  // launch that never draws with a clean cache gets the dialog.
+  expect(main).toContain("function healFontCache()");
+  expect(main).toContain('const HEALED = "BIOM_HEALED_CACHE";');
+  expect(main).toContain('if (process.env[HEALED] === "1") return false;');
+  // Only a cache that is OURS is ever deleted: the guard is under the first
+  // marker, and the path is the private one, never `~/.cache/fontconfig`.
+  expect(main).toContain('if (process.env[OWN_CACHE] !== "1") return false;');
+  expect(main).toContain('const cache = join(dataHome(), "cache", "fontconfig");');
+  expect(main).not.toContain('".cache", "fontconfig"');
+  // Tried before the sentence and the dialog, and the same restart ownFontCache makes.
+  const heal = main.indexOf("if (healFontCache()) return;");
+  const said = main.indexOf('dialog.showErrorBox("Biom could not draw its window"');
+  expect(heal).toBeGreaterThan(0);
+  expect(heal).toBeLessThan(said);
+  expect(main.split("process.execve(process.execPath, [process.execPath, ...process.argv.slice(1)], {").length - 1).toBe(2);
 });
 
 test("the shell and the server answer where this machine's data lives with one rule", () => {
