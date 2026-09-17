@@ -549,21 +549,48 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle(LOGO, () => logoUrl());
 
   /** THE DRAWN PAGE, READ OUT OF THE BOX. Every frame in the window is walked
-   *  and the one that is the page — an `about:srcdoc` document, the only kind
-   *  the client weaves — is asked to serialise itself: scripts out, every
-   *  canvas turned into the picture it was showing, every section marked in
-   *  view so a scene below the fold plays for a stranger, and the sheet's own
-   *  ground written in, because the box is transparent and the app paints the
-   *  paper around it. The page has already been drawn and scrolled by a person,
-   *  so what comes out is what they were looking at. */
+   *  and the one that is the page — the only frame the client weaves — is
+   *  asked to serialise itself: scripts out, every canvas turned into the
+   *  picture it was showing, every section marked in view so a scene below the
+   *  fold plays for a stranger, and the sheet's own ground written in, because
+   *  the box is transparent and the app paints the paper around it. The page
+   *  has already been drawn and scrolled by a person, so what comes out is what
+   *  they were looking at.
+   *
+   *  THE SERIALIZER IS A FUNCTION, STRINGIFIED, and not a template literal
+   *  holding source: a `\n` written into a template is a backslash and an `n`
+   *  in the injected code rather than a newline escape, which is a syntax error
+   *  the box reports and the person sees as "the window has to hand one over".
+   *  `Function.prototype.toString` hands over exactly what is written here. */
+  function serialise(paper) {
+    var root = document.documentElement.cloneNode(true);
+    Array.prototype.forEach.call(root.querySelectorAll("script"), function (s) { s.remove(); });
+    Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view"); });
+    if (paper) {
+      root.style.setProperty("--paper", paper);
+      var ground = document.createElement("style");
+      ground.textContent = "html{background:var(--paper)}";
+      (root.querySelector("head") || root).prepend(ground);
+    }
+    var live = Array.prototype.slice.call(document.querySelectorAll("canvas"));
+    Array.prototype.forEach.call(root.querySelectorAll("canvas"), function (c, i) {
+      var src = live[i];
+      var img = document.createElement("img");
+      try { img.src = src ? src.toDataURL() : ""; } catch (e) { img.src = ""; }
+      img.width = src ? src.width : 0;
+      img.height = src ? src.height : 0;
+      img.setAttribute("class", c.getAttribute("class") || "");
+      c.replaceWith(img);
+    });
+    return "<!doctype html>" + String.fromCharCode(10) + root.outerHTML;
+  }
+
   ipcMain.handle(CAPTURE, async () => {
     if (!alive()) return "";
     // THE BOX IS THE ONE FRAME THAT IS NOT THE WINDOW. The client weaves exactly
-    // one iframe per page, so any frame under the main one is it; matching on
-    // its url was tried first and is not safe, because a sandboxed srcdoc
-    // frame reports its address differently across Electron versions. The
-    // whole subtree is walked rather than the direct children, so a page
-    // drawn one level down still counts, and the outermost one is taken.
+    // one iframe per page, so any frame under the main one is it. The whole
+    // subtree is walked rather than the direct children, so a page drawn one
+    // level down still counts, and the outermost one is taken.
     const main = win.webContents.mainFrame;
     const box = main.framesInSubtree.find((f) => f !== main);
     if (!box) {
@@ -578,28 +605,7 @@ if (!app.requestSingleInstanceLock()) {
       // No paper is a white sheet, which is still a page.
     }
     try {
-      return await box.executeJavaScript(`(function (paper) {
-        var root = document.documentElement.cloneNode(true);
-        Array.prototype.forEach.call(root.querySelectorAll("script"), function (s) { s.remove(); });
-        Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view"); });
-        if (paper) {
-          root.style.setProperty("--paper", paper);
-          var ground = document.createElement("style");
-          ground.textContent = "html{background:var(--paper)}";
-          (root.querySelector("head") || root).prepend(ground);
-        }
-        var live = Array.prototype.slice.call(document.querySelectorAll("canvas"));
-        Array.prototype.forEach.call(root.querySelectorAll("canvas"), function (c, i) {
-          var src = live[i];
-          var img = document.createElement("img");
-          try { img.src = src ? src.toDataURL() : ""; } catch (e) { img.src = ""; }
-          img.width = src ? src.width : 0;
-          img.height = src ? src.height : 0;
-          img.setAttribute("class", c.getAttribute("class") || "");
-          c.replaceWith(img);
-        });
-        return "<!doctype html>\n" + root.outerHTML;
-      })(${JSON.stringify(paper)})`, true);
+      return await box.executeJavaScript(`(${serialise.toString()})(${JSON.stringify(paper)})`, true);
     } catch (e) {
       console.error("the page could not be captured", e);
       return "";
