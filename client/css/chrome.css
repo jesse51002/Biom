@@ -186,7 +186,8 @@
    this — so it says so while it is working rather than sitting inert */
 .tool.busy{color:var(--cyan-t)}
 
-/* THE ONE FILLED BUTTON, for the one control that talks to the agent. */
+/* THE FILLED BUTTON, for a control that talks to the agent: Agent Terminal in
+   every build, and Modify page beside it in a source run. */
 .tool.spot{
   background:var(--magenta); color:var(--on-spot); margin-left:.35rem;
   padding:.3rem .65rem; font-weight:500;

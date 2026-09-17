@@ -540,26 +540,6 @@ export function makeShell(deps) {
 
     const tools = [];
 
-    // THE TERMINAL'S VISIBLE TOGGLE, in every build. It is not a developer's
-    // diagnostic — it is where a person runs their own agent beside the page —
-    // so it is not on any hide list. It names how many sessions are still
-    // running while the dock is put away, because Hide stops nothing and the
-    // person is entitled to see that it did not.
-    if (terminal !== null) {
-      const st = terminal.store.get();
-      const running = terminal.store.live();
-      const shown = st.dock.visible;
-      tools.push(h("button.tool.termtoggle", {
-        type: "button",
-        "aria-pressed": String(shown),
-        title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
-        onclick: () => {
-          terminal.store.toggle();
-          if (!shown) terminal.view.focus();
-        },
-      }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
-    }
-
     // REREADING ON DEMAND, which is still a thing a person wants even though the
     // watcher does it for them: a file the server could not see move, a doubt
     // about what is on screen, a stream that is not connected. It re-reads the
@@ -620,6 +600,30 @@ export function makeShell(deps) {
         },
       }, "\u22EF");
       tools.push(more);
+    }
+
+    // THE TERMINAL'S VISIBLE TOGGLE, in every build, LAST AND FILLED. It is not
+    // a developer's diagnostic — it is where a person runs their own agent
+    // beside the page — so it is not on any hide list, and in a built
+    // application it is the one action on the bar that does something rather
+    // than shows something, which is what `spot` marks. It sits at the far end
+    // of the row so it is in the same place on every page, whatever the page
+    // adds before it. It names how many sessions are still running while the
+    // dock is put away, because Hide stops nothing and the person is entitled
+    // to see that it did not.
+    if (terminal !== null) {
+      const st = terminal.store.get();
+      const running = terminal.store.live();
+      const shown = st.dock.visible;
+      tools.push(h("button.tool.spot.termtoggle", {
+        type: "button",
+        "aria-pressed": String(shown),
+        title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
+        onclick: () => {
+          terminal.store.toggle();
+          if (!shown) terminal.view.focus();
+        },
+      }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
     }
 
     return [crumbs, h("span.tools", ...tools)];
