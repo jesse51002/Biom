@@ -849,6 +849,91 @@ test("the section count is the RUNTIME's alone, and an unknown major is dropped 
   expect(host.compliance("k")).toEqual({ sections: 0 });
 });
 
+/* ══ a redraw keeps the reader's place ════════════════════════════════════
+ *
+ * The box scrolls inside itself and the host cannot read where to, so the
+ * shim reports it as a `position` notice and the mount — which outlives the
+ * realm a redraw tears down — keeps the latest. The shell says `keep` before
+ * it reloads; the new realm's `ready` is when the place is handed back as a
+ * `place` event, once, and the box clamps it to its new run. Said by nothing
+ * but a redraw, so a page navigated to still starts at the top.
+ */
+
+test("a redraw puts the new realm where the old one was scrolled to, once, and only when asked", async () => {
+  const dom = fakeDom();
+  const { makeFrameHost } = await import("../client/frame/frame.js");
+  const host = makeFrameHost({ resolve: mock(async () => ({})), runtime: mock(async () => ({})) });
+  host.setShim("");
+
+  const frame = host.for("k", "<main></main>", CTX);
+  /** Every notice the shell would hear as a DOM event off this box. */
+  const notices = [];
+  frame.el.dispatchEvent = (ev) => { notices.push(ev.detail); return true; };
+  const first = sayHello(dom, frame);
+  /** @param {{ runtime: any, guest: any }} hs */
+  const hear = (hs) => {
+    const heard = { runtime: [], guest: [] };
+    hs.runtime.onmessage = (ev) => heard.runtime.push(ev.data);
+    hs.guest.onmessage = (ev) => heard.guest.push(ev.data);
+    return heard;
+  };
+  hear(first);
+
+  // The latest position is what is kept, and it arrives on the ordinary port —
+  // the shim holds that one, and the runtime's `ready` is the only notice
+  // that insists on the privileged port.
+  first.guest.postMessage({ kind: "position", g: PROTOCOL, top: 120 });
+  first.guest.postMessage({ kind: "position", g: PROTOCOL, top: 640 });
+  await settle();
+
+  // A REBUILD NOBODY ASKED TO KEEP — a navigation back to this page — starts
+  // at the top: the new realm's `ready` earns no `place`.
+  const second = sayHello(dom, frame);
+  const quiet = hear(second);
+  second.runtime.postMessage({ kind: "ready", g: PROTOCOL, sections: 2 });
+  await settle();
+  expect(quiet.runtime.filter((m) => m.kind === "place")).toEqual([]);
+  expect(quiet.guest.filter((m) => m.kind === "place")).toEqual([]);
+
+  // THE REDRAW. `keep` is said while the realm that reported 640 is the one on
+  // the mount; the re-hello revokes its ports, and the position survives that
+  // — it is exactly the realm going away whose place is wanted.
+  host.keep("k");
+  const third = sayHello(dom, frame);
+  const heard = hear(third);
+  expect(heard.guest).toEqual([]);                         // nothing before `ready`
+  third.runtime.postMessage({ kind: "ready", g: PROTOCOL, sections: 2 });
+  await settle();
+  // Both ports hear it, like every host event; the shim acts on it and the
+  // runtime ignores it. Pixels, unclamped: the box is the only side that can
+  // measure the new run.
+  expect(heard.guest.filter((m) => m.kind === "place")).toEqual([{ kind: "place", top: 640 }]);
+  expect(heard.runtime.filter((m) => m.kind === "place")).toEqual([{ kind: "place", top: 640 }]);
+
+  // ONCE. A second `ready` from the same realm — or a rebuild nobody asked to
+  // keep — gets nothing: the place was spent on the redraw it was kept for.
+  third.runtime.postMessage({ kind: "ready", g: PROTOCOL, sections: 2 });
+  await settle();
+  expect(heard.guest.filter((m) => m.kind === "place")).toHaveLength(1);
+
+  // A box that never reported a position has nothing to keep.
+  const fresh = host.for("j", "<main></main>", CTX);
+  host.keep("j");
+  const hs = sayHello(dom, fresh);
+  const nothing = hear(hs);
+  hs.runtime.postMessage({ kind: "ready", g: PROTOCOL, sections: 1 });
+  await settle();
+  expect(nothing.guest.filter((m) => m.kind === "place")).toEqual([]);
+
+  // `keep` on a key with no mount is not an error; the shell may say it for a
+  // page whose box has not been built yet.
+  expect(() => host.keep("nowhere")).not.toThrow();
+  // And a position is a notice for the host alone: the shell never hears it as
+  // a DOM event, so a scroll does not repaint the strip — `ready` still does.
+  expect(notices.filter((n) => n && n.kind === "position")).toEqual([]);
+  expect(notices.filter((n) => n && n.kind === "ready").length).toBeGreaterThan(0);
+});
+
 /** The bridge half of `page.embed`, as the frame host sees it: a document for
  *  the page named. The frame host is what adds the ports. */
 const embedding = async (r) => r.kind === "page.embed"

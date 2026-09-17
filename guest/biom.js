@@ -184,6 +184,7 @@
 
     if (m.kind === "theme") applyTheme(m.theme);
     else if (m.kind === "refresh") void onRefresh(m.change || {});
+    else if (m.kind === "place" && typeof m.top === "number") place(m.top);
   }
 
   /** Something this page draws from moved underneath it — a section added or
@@ -737,7 +738,9 @@
     // `biom.page`.
     mountedPage = typeof m.page === "string" ? m.page : null;
     publish(ev.ports[0], ev.ports[1], mountedPage);
-    if (m.embedded === true) follow();
+    // A nested realm is held level by its embedder; a box of its own tells the
+    // host where it is, so a redraw can put it back.
+    if (m.embedded === true) follow(); else keep();
 
     // The ordinary one, and the only one this file ever touches.
     port = ev.ports[1];
@@ -750,6 +753,76 @@
     try { applyTheme(await call("theme.get")); } catch (e) { report(e); }
     try { hydrate(await call("data.get")); } catch (e) { report(e); }
     resolveReady(api);
+  }
+
+  /** The next frame where there is one; a realm without it (a test's window)
+   *  takes a task instead. What both of the scroll paths below coalesce on.
+   *  @param {() => void} fn */
+  const nextFrame = (fn) => {
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(fn);
+    else setTimeout(fn, 16);
+  };
+
+  /* A BOX OF ITS OWN SAYS WHERE IT IS SCROLLED TO, IN PIXELS, OVER THE PORT —
+     so that a redraw, which tears this realm down and builds another from
+     disk, can put the reader back where they were. The host cannot read it,
+     so it is reported as they scroll, coalesced to one notice per frame, and
+     the host keeps the latest. It is the box's own viewport and nothing about
+     its content: no height is reported, and the clamp happens in the realm
+     that is put back, below, because only that side can measure its run. */
+  function keep() {
+    const doc = document.scrollingElement || document.documentElement;
+    let queued = false;
+    window.addEventListener("scroll", () => {
+      if (queued) return;
+      queued = true;
+      nextFrame(() => {
+        queued = false;
+        post({ kind: "position", g: PROTOCOL, top: Math.max(0, doc.scrollTop || 0) });
+      });
+    }, { passive: true });
+  }
+
+  /** How long after `place` a layout that was still settling — fonts, images,
+   *  a section script — gets one more chance to be measured. Two applications
+   *  and no more: one frame after the host said the page had drawn, and one
+   *  here. A loop waiting for the run to stop changing would never know it had. */
+  const SETTLE_MS = 250;
+
+  /* THE HOST PUTS THIS REALM WHERE THE ONE BEFORE IT WAS. `top` is pixels from
+     the top of the old document; it is clamped to THIS document's run, so a
+     page that got shorter lands at its foot rather than past it, and applied
+     INSTANTLY, whatever the page's `scroll-behavior` says — a reader who was
+     at a place should still be at it, not easing towards it. Applied one
+     frame on and once more after `SETTLE_MS`, and the second time only if the
+     box is still exactly where the first put it: a box that has moved since
+     was moved by the reader, or clamped by a layout that shrank, and either
+     is left alone. No polling and no guess about anchors.
+
+     SCROLL ANCHORING IS OFF FOR THOSE TWO APPLICATIONS, and that was measured:
+     the fonts land after the first one, the text above the fold reflows, and
+     the browser keeps the visible anchor still by moving the box — 52 px on
+     the page it was measured on, and exactly the same 52 every time, so the
+     second application read it as the reader's and stood down. The rule is
+     the same scrollTop, not the same anchor, so `overflow-anchor: none` on the
+     root for the window and the page's own value back afterwards. */
+  /** @param {number} top */
+  function place(top) {
+    const doc = document.scrollingElement || document.documentElement;
+    const root = document.documentElement;
+    const want = Math.max(0, Number(top) || 0);
+    /** @type {number | null} */
+    let placed = null;
+    const anchoring = root.style.overflowAnchor;
+    root.style.overflowAnchor = "none";
+    const put = () => {
+      if (placed !== null && (doc.scrollTop || 0) !== placed) return;
+      const to = Math.min(want, Math.max(0, doc.scrollHeight - doc.clientHeight));
+      window.scrollTo({ top: to, left: doc.scrollLeft || 0, behavior: "instant" });
+      placed = doc.scrollTop || 0;
+    };
+    nextFrame(put);
+    setTimeout(() => { put(); root.style.overflowAnchor = anchoring; }, SETTLE_MS);
   }
 
   /* AN EMBEDDED REALM SAYS WHERE IT IS SCROLLED TO, and goes where it is put.

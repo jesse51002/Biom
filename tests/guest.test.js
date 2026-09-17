@@ -573,11 +573,16 @@ function shim(answers = {}) {
     head: { appendChild() {} },
   };
 
+  /** The box's own scroll listeners — what `keep()` registers on a box of its own. */
+  /** @type {(() => void)[]} */
+  const onScroll = [];
+
   /** @type {any} */
   const win = {
     parent: { postMessage() {} },
     addEventListener(/** @type {string} */ k, /** @type {any} */ fn) {
       if (k === "message") onWindowMessage.push(fn);
+      if (k === "scroll") onScroll.push(fn);
     },
     removeEventListener(/** @type {string} */ k, /** @type {any} */ fn) {
       const at = onWindowMessage.indexOf(fn);
@@ -594,7 +599,7 @@ function shim(answers = {}) {
   for (const fn of [...onWindowMessage])
     fn({ data: { kind: "ports", g: 1, page: "home" }, ports });
 
-  return { biom: win.biom, sent, win };
+  return { biom: win.biom, sent, win, doc, ports, scroll: onScroll };
 }
 
 test("biom.vault() asks the host which folder this is, and names no folder of its own", async () => {
@@ -619,4 +624,105 @@ test("the shim offers no way to browse, open or make a folder", () => {
   const { biom } = shim({ "theme.get": null, "data.get": {} });
   for (const name of ["browse", "openVault", "createVault", "recentVaults", "vaults"])
     expect(biom[name]).toBeUndefined();
+});
+
+/* ── a redraw keeps the reader's place, and the box is the half that measures ──
+ * The host holds where the old realm said it was scrolled to and hands it to
+ * the new one as `place`; what the new realm does with it is clamp it to ITS
+ * run and go there instantly — one frame on, and once more after a bounded
+ * settle for a layout that was still growing. And it says where it is as it
+ * scrolls, one `position` per frame, which is what the host has to hand back.
+ * The fake window has no rAF, so a "frame" here is a task; the settle is the
+ * shim's own constant and the waits below are longer than it.                */
+
+const wait = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+
+test("`place` puts the box at the old position clamped to the new run, twice and no more", async () => {
+  const { win, doc, ports } = shim({ "theme.get": null, "data.get": {} });
+  const root = doc.documentElement;
+  Object.assign(root, { scrollTop: 0, scrollLeft: 0, scrollHeight: 1000, clientHeight: 600 });
+  /** @type {any[]} */
+  const moves = [];
+  win.scrollTo = (/** @type {any} */ o) => { moves.push(o); root.scrollTop = Math.min(o.top, root.scrollHeight - root.clientHeight); };
+
+  // The page got shorter: 900 is past the foot of a 400-pixel run, so the box
+  // lands at the foot rather than past it. INSTANT, whatever the page's own
+  // `scroll-behavior` says.
+  root.style.overflowAnchor = "auto";
+  ports[1].onmessage({ data: { kind: "place", top: 900 }, ports: [] });
+  await wait(60);
+  expect(moves).toEqual([{ top: 400, left: 0, behavior: "instant" }]);
+  // SCROLL ANCHORING IS OFF WHILE THE TWO APPLICATIONS RUN. Measured: the
+  // fonts landed after the first one and the browser moved the box 52 px to
+  // keep the visible anchor still, and the second read that as the reader's.
+  // The rule is the same scrollTop, not the same anchor.
+  expect(root.style.overflowAnchor).toBe("none");
+
+  // The layout grew before the settle — fonts, images, a section script — and
+  // the box is still exactly where the first application put it, so the
+  // second one takes it the rest of the way.
+  root.scrollHeight = 2000;
+  await wait(300);
+  expect(moves).toEqual([
+    { top: 400, left: 0, behavior: "instant" },
+    { top: 900, left: 0, behavior: "instant" },
+  ]);
+
+  // And no third: nothing polls. Another 300 ms changes nothing, and the
+  // page's own anchoring is back the way it was.
+  root.scrollHeight = 3000;
+  await wait(300);
+  expect(moves).toHaveLength(2);
+  expect(root.style.overflowAnchor).toBe("auto");
+});
+
+test("the second application yields to a box that has moved since the first", async () => {
+  const { win, doc, ports } = shim({ "theme.get": null, "data.get": {} });
+  const root = doc.documentElement;
+  Object.assign(root, { scrollTop: 0, scrollLeft: 0, scrollHeight: 2000, clientHeight: 600 });
+  /** @type {any[]} */
+  const moves = [];
+  win.scrollTo = (/** @type {any} */ o) => { moves.push(o); root.scrollTop = o.top; };
+
+  ports[1].onmessage({ data: { kind: "place", top: 640 }, ports: [] });
+  await wait(60);
+  expect(moves).toEqual([{ top: 640, left: 0, behavior: "instant" }]);
+
+  // The reader scrolled on in the meantime. Where they went is where they stay.
+  root.scrollTop = 1200;
+  await wait(300);
+  expect(moves).toHaveLength(1);
+
+  // A malformed `place` is ignored rather than sending the box to the top.
+  ports[1].onmessage({ data: { kind: "place" }, ports: [] });
+  ports[1].onmessage({ data: { kind: "place", top: "640" }, ports: [] });
+  await wait(60);
+  expect(moves).toHaveLength(1);
+});
+
+test("a box of its own reports where it is scrolled to, one `position` per frame, in pixels", async () => {
+  const { sent, doc, scroll } = shim({ "theme.get": null, "data.get": {} });
+  const root = doc.documentElement;
+  Object.assign(root, { scrollTop: 0, scrollHeight: 2000, clientHeight: 600 });
+  // Registered once the ports arrived — a box of its own, not told it is
+  // embedded, is the one that reports to the host.
+  expect(scroll).toHaveLength(1);
+
+  // Three scroll events in one frame are one notice, carrying where the box
+  // IS when the frame comes round, not where it was at the first event.
+  root.scrollTop = 100; scroll[0]();
+  root.scrollTop = 250; scroll[0]();
+  root.scrollTop = 640; scroll[0]();
+  await wait(60);
+  const said = sent.filter((m) => m.kind === "position");
+  expect(said).toEqual([{ kind: "position", g: 1, top: 640 }]);
+
+  // The next frame's scroll is the next notice. Pixels from the top, never a
+  // fraction and never a height: the run is measured where it is put back.
+  root.scrollTop = 0; scroll[0]();
+  await wait(60);
+  expect(sent.filter((m) => m.kind === "position")).toEqual([
+    { kind: "position", g: 1, top: 640 },
+    { kind: "position", g: 1, top: 0 },
+  ]);
 });
