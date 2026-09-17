@@ -1525,6 +1525,28 @@ test("the automation and run kinds reach the registry, and every refusal is a co
   }
 });
 
+test("a page moved since a run started still lists the run, and the row names the page where it is now", async () => {
+  const w = await workspace();
+  try {
+    const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
+    const a = value(await call({ kind: "page.create", init: { name: "A" } })) as { id: string; uid: string };
+    const b = value(await call({ kind: "page.create", init: { name: "B" } })) as { id: string };
+    await w.deps.pages.writeFile(a.id, "automations/pull/automation.yaml", "name: Pull\ncommand: [x]\n");
+    const row = value(await call({ kind: "run.start", page: a.id, automation: "pull", inputs: {}, by: null })) as RunRow;
+    expect(row.page).toBe(a.id);
+    const moved = value(await call({ kind: "page.move", page: a.id, parent: b.id })) as string;
+    expect(moved).not.toBe(a.id);
+    // Listed under the new id, and named by it.
+    const under = value(await call({ kind: "run.list", page: moved })) as RunRow[];
+    expect(under.map((r) => [r.id, r.page, r.uid])).toEqual([[row.id, moved, a.uid]]);
+    expect((value(await call({ kind: "run.get", run: row.id })) as RunRow).page).toBe(moved);
+    // Not under the old id, which names nothing now.
+    expect((value(await call({ kind: "run.list", page: a.id })) as RunRow[]).length).toBe(0);
+  } finally {
+    await w.drop();
+  }
+});
+
 test("the vault's own instructions and skills are read and written, and nothing else is", async () => {
   const w = await workspace();
   try {

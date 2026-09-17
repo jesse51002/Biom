@@ -638,7 +638,12 @@ export function makeRuns(d: RunsDeps): Runs {
     list(filter) {
       const where: string[] = [];
       const params: (string | number)[] = [];
-      if (filter?.page !== undefined) { where.push("page = ?"); params.push(filter.page); }
+      // BY ID OR BY IDENTITY. A row keeps the id its page had when the run
+      // started; a page moved since has a new id and the same uid, and its
+      // runs are still its own.
+      if (filter?.page !== undefined && filter.uid !== undefined) { where.push("(page = ? OR uid = ?)"); params.push(filter.page, filter.uid); }
+      else if (filter?.page !== undefined) { where.push("page = ?"); params.push(filter.page); }
+      else if (filter?.uid !== undefined) { where.push("uid = ?"); params.push(filter.uid); }
       if (filter?.automation !== undefined) { where.push("automation = ?"); params.push(filter.automation); }
       const sql = `SELECT * FROM runs${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY started DESC, id DESC`;
       return db.all<Raw>(sql, params).map(rowOf);

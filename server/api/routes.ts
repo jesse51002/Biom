@@ -21,7 +21,9 @@ import type { Design } from "../../contracts/types.ts";
 import type { Docs } from "../../contracts/types.ts";
 import type { HostFetchResult } from "../../contracts/types.ts";
 import type { PageId } from "../../contracts/types.ts";
+import type { PageRef } from "../../contracts/types.ts";
 import type { Pages } from "../../contracts/types.ts";
+import type { RunRow } from "../../contracts/types.ts";
 import type { Presets } from "../../contracts/types.ts";
 import type { Runs } from "../../contracts/types.ts";
 import type { Tables } from "../../contracts/types.ts";
@@ -701,13 +703,24 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           return err(id, codeOf(e, "internal"), said !== "" ? said : "that automation could not be started");
         }
 
-      case "run.list":
-        return ok(id, deps.runs.list({ page: req.page, automation: req.automation }));
+      // A PAGE MOVED SINCE A RUN STARTED STILL OWNS IT. The row keeps the id
+      // the page had then and the identity it has always had; the filter asks
+      // by both, and every row answered names the page where it is NOW — this
+      // is the lowest layer holding the registry and the page list together.
+      case "run.list": {
+        const refs = await deps.pages.list();
+        // An id that names no page now lists nothing: the rows started under it
+        // belong to wherever that page went, and are listed there.
+        if (req.page !== undefined && !refs.some((p) => p.id === req.page)) return ok(id, []);
+        const uid = req.page === undefined ? undefined : refs.find((p) => p.id === req.page)?.uid;
+        const rows = deps.runs.list({ page: req.page, uid, automation: req.automation });
+        return ok(id, rows.map((r) => located(r, refs)));
+      }
 
       case "run.get": {
         const row = deps.runs.get(req.run);
         if (row === null) return err(id, "not_found", "no such run");
-        return ok(id, row);
+        return ok(id, located(row, await deps.pages.list()));
       }
 
       case "run.read":
@@ -786,6 +799,16 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
   // Otherwise: unreachable through the type and reachable off the wire, which is
   // the whole reason the enumeration has this member.
   return err(id, "unknown_kind", "not a request this host answers");
+}
+
+/** A run's row, naming its page where the page is NOW. The row carries the id
+ *  the page had when the run started and the identity it has always had; where
+ *  a page with that identity is listed under a different id, that is the page.
+ *  A run whose page is gone keeps the id it had, and the screens say so. */
+function located(row: RunRow, refs: readonly PageRef[]): RunRow {
+  if (row.uid === null) return row;
+  const now = refs.find((p) => p.uid === row.uid);
+  return now === undefined || now.id === row.page ? row : { ...row, page: now.id };
 }
 
 /** Follow a page move with the tables that were parented under it.

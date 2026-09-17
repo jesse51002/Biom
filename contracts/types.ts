@@ -1411,7 +1411,10 @@ export interface Runs {
   templates(): Promise<Template[]>;
   create(page: PageId, name: string, template: string): Promise<Automation>;
   start(page: PageId, folder: string, inputs: Record<string, VarScalar>, by: string | null): Promise<RunRow>;
-  list(filter?: { page?: PageId; automation?: string }): RunRow[];
+  /** Rows, newest first. `page` matches the id the row was started under and
+   *  `uid` the identity it carries; the route passes both, so a page moved
+   *  since still lists its runs. */
+  list(filter?: { page?: PageId; uid?: string; automation?: string }): RunRow[];
   get(id: string): RunRow | null;
   read(id: string, stream: "stdout" | "stderr", from?: number, max?: number): Promise<RunRead>;
   kill(id: string, by: "page" | "screen" | "shutdown"): Promise<RunRow>;
