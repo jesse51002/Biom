@@ -88,8 +88,8 @@ test("an empty folder gets NO plugins of its own, and every page in it still dra
     const made = await deps.pages.create({ parent: root0!.id, name: "Notes" });
     const drawn = (await deps.pages.read(made.id))!.html;
     expect(drawn).not.toContain("Nothing draws this page");
-    expect(drawn).toBe(readFileSync(join(SEED, "doc/index.html"), "utf8"));
-    expect((await deps.design.read()).html).toBe(readFileSync(join(SEED, "doc/index.html"), "utf8"));
+    expect(drawn).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
+    expect((await deps.design.read()).html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
 
     // WHAT A PERSON CAN READ IS THE MIRROR, and it is the whole set, byte for
     // byte what draws their page — written out of the same root the rung reads.
@@ -204,7 +204,7 @@ test("a vault's own plugin file wins by being there, and deleting it hands the p
     await second.settled(vault);
     expect(existsSync(join(vault, "plugins/doc/index.html"))).toBe(false);
     const deps = await second.deps(vault);
-    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "doc/index.html"), "utf8"));
+    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
   } finally {
     second.close();
     await rm(root, { recursive: true, force: true });
@@ -221,14 +221,14 @@ test("the mirror in docs/plugins/ is rewritten whole on every open, so a file ed
   const first = await hostAt(root, vault);
   await first.settled(vault);
   first.close();
-  const shown = join(vault, "docs/plugins/markdown.js");
+  const shown = join(vault, "docs/plugins/biom-markdown.js");
   await writeFile(shown, "// somebody typed here");
   await writeFile(join(vault, "docs/plugins/stray.js"), "// and left this");
 
   const second = await hostAt(root, vault);
   try {
     await second.settled(vault);
-    expect(readFileSync(shown, "utf8")).toBe(readFileSync(join(SEED, "markdown.js"), "utf8"));
+    expect(readFileSync(shown, "utf8")).toBe(readFileSync(join(SEED, "biom-markdown.js"), "utf8"));
     expect(existsSync(join(vault, "docs/plugins/stray.js"))).toBe(false);
     // And the mirror is not what draws: a page still reads the framework's own.
     expect(existsSync(join(vault, "plugins"))).toBe(false);
@@ -244,8 +244,8 @@ test("`guest/plugins/` is the fallback rung and is not served as a root of its o
   // a page happened to name decided whether the person's override drew or the
   // framework's did; the one url is the vault's `/plugin/` route, which answers
   // the vault's file first and the framework's second.
-  expect(locate("/guest/plugins/markdown.js")).toBeNull();
-  expect(locate("/guest/plugins/kanban/kanban.js")).toBeNull();
+  expect(locate("/guest/plugins/biom-markdown.js")).toBeNull();
+  expect(locate("/guest/plugins/biom-kanban/kanban.js")).toBeNull();
   // The runtime and the shim are still served from there, and must stay so: the
   // registry's `shipped` test is `document.currentScript` against `/guest/`, and
   // what it now means is "the framework's own code".
@@ -263,11 +263,11 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   // path under `plugins/` and marks it, because it cannot name the install, has
   // no base to resolve a relative path against inside the box, and was written
   // before anybody knew which folder it landed in.
-  const kanban = readFileSync(join(SEED, "kanban/index.html"), "utf8");
-  expect(kanban).toContain('data-g-src="kanban/kanban.js"');
+  const kanban = readFileSync(join(SEED, "biom-kanban/index.html"), "utf8");
+  expect(kanban).toContain('data-g-src="biom-kanban/kanban.js"');
 
   const doc = weaveRuntime(kanban, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
-  expect(doc).toContain(`src="${base}kanban/kanban.js"`);
+  expect(doc).toContain(`src="${base}biom-kanban/kanban.js"`);
   // The mark is gone from the tag; the comment above it explaining the mark is
   // the plugin author's words and stays, like every other word in their file.
   expect(doc).not.toContain("<script data-g-src");
@@ -293,8 +293,8 @@ test("the map's document and the mindmap plugin's own file are the same document
   // The equality is also what keeps the copy in `client/views/page.js` honest
   // about `data-g-src`: the plugin is a file in the vault now, and neither copy
   // may name an install directory.
-  const onDisk = readFileSync(join(SEED, "mindmap/index.html"), "utf8");
-  expect(onDisk).toContain('data-g-src="mindmap/mindmap.js"');
+  const onDisk = readFileSync(join(SEED, "biom-mindmap/index.html"), "utf8");
+  expect(onDisk).toContain('data-g-src="biom-mindmap/mindmap.js"');
   expect(onDisk).not.toContain("/guest/");
 });
 

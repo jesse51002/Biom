@@ -35,7 +35,8 @@ import { join } from "node:path";
 import { makeHost, pluginBundle, pluginFile, PLUGIN_DIR_ROUTE } from "../server/main.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { blobHash, isShipped, shippedHashes } from "../server/platform/shipped.ts";
-import { AGENTS, INSTRUCTIONS, MIRROR_DIR, SHIPPED_DIRS, SKILLS_DIR, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
+import { AGENTS, INSTRUCTIONS, MIRROR_DIR, SHIPPED_DIRS, SKILL_PREFIX, SKILLS_DIR, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
+import { OURS, frameworkPlugin } from "../server/domain/pages.ts";
 import { manifestSource } from "../tools/app.ts";
 import { vaultBase } from "../contracts/wire.js";
 
@@ -80,32 +81,39 @@ async function frameworkWith(files: Record<string, string>): Promise<string> {
 
 /* ══ the union ═══════════════════════════════════════════════════════════ */
 
-test("the bundle is the framework's slot plugins minus every name the vault has, then the vault's own", async () => {
+test("the bundle is the framework's slot plugins minus every file name the vault also has, then the vault's own", async () => {
+  // AN INVENTED FRAMEWORK, spelled the way the real one is: every file and
+  // every id wears `biom-`. The vault overrides one of them by carrying the
+  // same prefixed file, writes a `markdown` of its own under the bare name —
+  // which the prefix exists to leave free — and adds a plugin of its own.
   const framework = await frameworkWith({
-    "markdown.js": plugin("markdown"),
-    "table.js": plugin("table"),
-    "reveal.js": plugin("reveal"),
-    "doc/index.html": "<!doctype html>",
+    "biom-markdown.js": plugin("biom-markdown"),
+    "biom-table.js": plugin("biom-table"),
+    "biom-reveal.js": plugin("biom-reveal"),
+    "biom-doc/index.html": "<!doctype html>",
   });
   const vault = await scratch();
   await mkdir(join(vault, "plugins"), { recursive: true });
+  await writeFile(join(vault, "plugins", "biom-table.js"), plugin("biom-table"));
   await writeFile(join(vault, "plugins", "markdown.js"), plugin("markdown"));
   await writeFile(join(vault, "plugins", "board.js"), plugin("board"));
   try {
     const bundle = await (await pluginBundle(vault, makeFiles(framework))).text();
     // FRAMEWORK FIRST, so a vault plugin that `ctx.use`s a framework one finds
-    // it registered; the vault's after. And ONE markdown: the vault's, because
-    // the framework's never entered the script.
-    expect(run(bundle).took).toEqual(["reveal", "table", "board", "markdown"]);
-    expect(bundle).toContain("/* framework/reveal.js */");
-    expect(bundle).toContain("/* framework/table.js */");
-    expect(bundle).not.toContain("/* framework/markdown.js */");
+    // it registered; the vault's after. ONE `biom-table`: the vault's, because
+    // the framework's never entered the script. And `markdown` beside
+    // `biom-markdown`: two ids, no refusal, and the bare name reaches the
+    // vault's.
+    const { took, said } = run(bundle);
+    expect(took).toEqual(["biom-markdown", "biom-reveal", "biom-table", "board", "markdown"]);
+    expect(said).toEqual([]);
+    expect(bundle).toContain("/* framework/biom-reveal.js */");
+    expect(bundle).toContain("/* framework/biom-markdown.js */");
+    expect(bundle).not.toContain("/* framework/biom-table.js */");
+    expect(bundle).toContain("/* plugins/biom-table.js */");
     expect(bundle).toContain("/* plugins/markdown.js */");
     expect(bundle).toContain("/* plugins/board.js */");
-    expect(bundle.indexOf("/* framework/table.js */")).toBeLessThan(bundle.indexOf("/* plugins/board.js */"));
-    // A part kind is still bound to its file name whichever root it came from:
-    // the registry refused nothing above.
-    expect(run(bundle).said).toEqual([]);
+    expect(bundle.indexOf("/* framework/biom-reveal.js */")).toBeLessThan(bundle.indexOf("/* plugins/board.js */"));
   } finally {
     await rm(framework, { recursive: true, force: true });
     await rm(vault, { recursive: true, force: true });
@@ -164,19 +172,19 @@ test("a plugin's sibling file the vault has not got is served from the framework
   // framework's. That is the nearest-first walk applied per FILE, and it is why
   // the paved override copies a plugin whole — a person who wants isolation
   // takes the directory.
-  const framework = await frameworkWith({ "kanban/index.html": "<!doctype html><title>theirs</title>", "kanban/kanban.js": "// the framework's board" });
+  const framework = await frameworkWith({ "biom-kanban/index.html": "<!doctype html><title>theirs</title>", "biom-kanban/kanban.js": "// the framework's board" });
   const vault = await scratch();
-  await mkdir(join(vault, "plugins/kanban"), { recursive: true });
-  await writeFile(join(vault, "plugins/kanban/index.html"), "<!doctype html><title>mine</title>");
+  await mkdir(join(vault, "plugins/biom-kanban"), { recursive: true });
+  await writeFile(join(vault, "plugins/biom-kanban/index.html"), "<!doctype html><title>mine</title>");
   try {
     const root = makeFiles(framework);
     // The vault's file answers first.
-    const doc = await pluginFile("kanban/index.html", vault, root);
+    const doc = await pluginFile("biom-kanban/index.html", vault, root);
     expect(doc.status).toBe(200);
     expect(await doc.text()).toContain("mine");
     // A path it has not got falls back to the framework's, with the type the
     // name says.
-    const script = await pluginFile("kanban/kanban.js", vault, root);
+    const script = await pluginFile("biom-kanban/kanban.js", vault, root);
     expect(script.status).toBe(200);
     expect(script.headers.get("content-type")).toContain("javascript");
     expect(await script.text()).toBe("// the framework's board");
@@ -210,10 +218,14 @@ test("this repository's own history answers every committed plugin and skill, at
   const { spawnSync } = await import("node:child_process");
   const atTip = (path: string) => spawnSync("git", ["show", `HEAD:${path}`], { cwd: HERE, encoding: "utf8" }).stdout;
   const shipped = await shippedHashes(HERE, SHIPPED_DIRS);
+  // The tip may hold a plugin under its `biom-` name or, before the rename is
+  // committed, under the bare one — either way its bytes are in history.
   for (const rel of ["markdown.js", "doc/index.html", "kanban/kanban.js"]) {
-    expect([rel, isShipped(shipped, `guest/plugins/${rel}`, atTip(`guest/plugins/${rel}`))]).toEqual([rel, true]);
+    const bytes = atTip(`guest/plugins/biom-${rel}`) || atTip(`guest/plugins/${rel}`);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect([rel, isShipped(shipped, `guest/plugins/biom-${rel}`, bytes) || isShipped(shipped, `guest/plugins/${rel}`, bytes)]).toEqual([rel, true]);
   }
-  expect(isShipped(shipped, "guest/plugins/markdown.js", "// not a version anybody shipped")).toBe(false);
+  expect(isShipped(shipped, "guest/plugins/biom-markdown.js", "// not a version anybody shipped")).toBe(false);
   // AND THE SKILLS, under the names they had before the prefix as well as the
   // names they have: the rename left the old paths in history, which is what
   // lets the old-name sweep recognise an unedited copy in a vault seeded
@@ -243,6 +255,8 @@ test("a vault copy byte-identical to a shipped version is swept on open, and one
   await writeFile(join(vault, "plugins/doc/index.html"), "<!doctype html><title>old doc</title>");
   await writeFile(join(vault, "plugins/board.js"), "// this vault's own");
   const shipped = {
+    // Under the OLD bare names, which is where a seeded copy sits and where the
+    // history the rename left behind still answers for it.
     "guest/plugins/markdown.js": [blobHash(v1), blobHash(v2)],
     "guest/plugins/html.js": [blobHash(v1)],
     "guest/plugins/doc/index.html": [blobHash("<!doctype html><title>old doc</title>")],
@@ -269,7 +283,7 @@ test("a vault copy byte-identical to a shipped version is swept on open, and one
     expect(readFileSync(join(vault, "plugins/board.js"), "utf8")).toBe("// this vault's own");
     // And the page still draws — on the framework's doc, through the rung.
     const deps = await host.deps(vault);
-    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "doc/index.html"), "utf8"));
+    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
   } finally {
     host.close();
     await rm(root, { recursive: true, force: true });
@@ -598,15 +612,78 @@ test("a doc the framework ships is rewritten on open, and a doc it does not ship
   await mkdir(join(vault, "docs/plugins"), { recursive: true });
   await writeFile(join(vault, "docs/pages.md"), "# pages doc v1, with a note somebody typed");
   await writeFile(join(vault, "docs/mine.md"), "# a doc of the workspace's own");
-  await writeFile(join(vault, "docs/plugins/markdown.js"), "// the mirror, not a doc");
+  await writeFile(join(vault, "docs/plugins/biom-markdown.js"), "// the mirror, not a doc");
   try {
     expect(await rewriteOwned(makeFiles(vault), makeFiles(seed))).toBe(true);
     expect(readFileSync(join(vault, "docs/pages.md"), "utf8")).toBe("# pages doc v2");
     expect(readFileSync(join(vault, "docs/README.md"), "utf8")).toBe("# readme");
     expect(readFileSync(join(vault, "docs/mine.md"), "utf8")).toBe("# a doc of the workspace's own");
-    expect(readFileSync(join(vault, "docs/plugins/markdown.js"), "utf8")).toBe("// the mirror, not a doc");
+    expect(readFileSync(join(vault, "docs/plugins/biom-markdown.js"), "utf8")).toBe("// the mirror, not a doc");
   } finally {
     await rm(vault, { recursive: true, force: true });
     await rm(seed, { recursive: true, force: true });
+  }
+});
+
+/* ══ the prefix, on both sides of the wall ═══════════════════════════════ */
+
+test("every framework plugin wears biom-, file and id, and the prefix is spelled the same on both sides of the wall", () => {
+  // The registry's copy — the box has no import graph to reach the server's
+  // through — and the server's, held equal here so the two halves of one
+  // nearest-first lookup cannot drift. And the skills' prefix is the same word.
+  const registry = readFileSync(join(HERE, "guest/runtime/registry.js"), "utf8");
+  const spelled = /const OURS = "([^"]+)";/.exec(registry);
+  expect(spelled?.[1]).toBe(OURS);
+  expect(SKILL_PREFIX).toBe(OURS);
+  // Every file in guest/plugins/ wears it, and every slot plugin registers under it.
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  for (const entry of readdirSync(SEED, { withFileTypes: true })) {
+    expect([entry.name, entry.name.startsWith(OURS)]).toEqual([entry.name, true]);
+    if (entry.isFile() && entry.name.endsWith(".js")) {
+      const id = /id:\s*"([^"]+)"/.exec(readFileSync(join(SEED, entry.name), "utf8"))?.[1];
+      expect([entry.name, id]).toEqual([entry.name, entry.name.slice(0, -3)]);
+    }
+  }
+  // A page's bare name falls back to the prefixed document; a prefixed one is itself.
+  expect(frameworkPlugin("doc")).toBe("biom-doc/index.html");
+  expect(frameworkPlugin("biom-doc")).toBe("biom-doc/index.html");
+});
+
+test("a bare id in the box resolves nearest-first: the workspace's own, then the framework's biom- one", () => {
+  const glob = globalThis as any;
+  const had = { rt: glob.__gRuntime, biom: glob.biom, doc: glob.document };
+  const said: string[] = [];
+  glob.__gRuntime = { report: (m: string) => said.push(m) };
+  delete glob.biom;
+  glob.document = { currentScript: null };
+  try {
+    new Function(REGISTRY)();
+    const rt = glob.__gRuntime;
+    // The framework's markdown, from its own file.
+    rt.pluginFile = "biom-markdown.js";
+    expect(rt.plugins.register({ id: "biom-markdown", mount() {}, edit: true })).toBe(true);
+    // A bare `markdown` slot reaches it.
+    expect(rt.plugins.has("markdown")).toBe(true);
+    expect(rt.plugins.get("markdown").id).toBe("biom-markdown");
+    // The workspace writes its own, from the one file that may: now the bare
+    // name is the workspace's and the prefixed one is still the framework's.
+    rt.pluginFile = "markdown.js";
+    expect(rt.plugins.register({ id: "markdown", mount() {} })).toBe(true);
+    expect(rt.plugins.get("markdown").id).toBe("markdown");
+    expect(rt.plugins.get("biom-markdown").id).toBe("biom-markdown");
+    // The prefixed part kind is reserved to its file exactly as the bare one is.
+    rt.pluginFile = "0-notes.js";
+    expect(rt.plugins.register({ id: "biom-table", mount() {} })).toBe(false);
+    expect(said[said.length - 1]).toContain("only plugins/biom-table.js draws it");
+    // A prefixed lookup never falls back the other way.
+    expect(rt.plugins.has("biom-flow")).toBe(false);
+    rt.pluginFile = "flow.js";
+    expect(rt.plugins.register({ id: "flow", mount() {} })).toBe(true);
+    expect(rt.plugins.has("biom-flow")).toBe(false);
+    expect(rt.plugins.has("flow")).toBe(true);
+  } finally {
+    glob.__gRuntime = had.rt;
+    glob.biom = had.biom;
+    glob.document = had.doc;
   }
 });

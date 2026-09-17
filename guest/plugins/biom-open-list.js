@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/open-list.js — A NUMBERED LIST WHERE NOTHING HOLDS.
+/* guest/plugins/biom-open-list.js — A NUMBERED LIST WHERE NOTHING HOLDS.
  *
  * Every workspace has a page with open questions on it, and a list where every
  * entry is equally open is a different thing from a checklist: there is no
@@ -38,7 +38,7 @@
   var glob = /** @type {any} */ (globalThis);
 
   glob.biom.plugins.register({
-    id: "open-list",
+    id: "biom-open-list",
 
     /**
      * @param {Element} node the node this plugin fills

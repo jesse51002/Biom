@@ -93,7 +93,7 @@ const headTags = (vault) =>
  *  vault cannot spell for itself.
  *
  *  `plugins/kanban/index.html` has to load `plugins/kanban/kanban.js`. It cannot
- *  say `/guest/plugins/kanban/kanban.js`, which is what it said when it was
+ *  say `/guest/plugins/biom-kanban/kanban.js`, which is what it said when it was
  *  shipped: a path into an install directory, written into a person's folder, is
  *  wrong the first time they move the application. It cannot say a RELATIVE path
  *  either — the box is a `srcdoc` frame at an opaque origin and has no base to

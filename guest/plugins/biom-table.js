@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/table.js — a workspace table drawn as a grid in a slot. A
+/* guest/plugins/biom-table.js — a workspace table drawn as a grid in a slot. A
  * classic script sharing globals; see `guest/runtime/registry.js` for why there
  * are no imports in here.
  *
@@ -291,7 +291,7 @@
   }
 
   glob.biom.plugins.register({
-    id: "table",
+    id: "biom-table",
 
     /** `edit: false` is a statement rather than a default. A table IS editable —
      *  in the app's grid, which speaks the same `row.update` this box could —

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/checklist.js — A STATUS WORD READ OFF A LIST, AND THE VOCABULARY
+/* guest/plugins/biom-checklist.js — A STATUS WORD READ OFF A LIST, AND THE VOCABULARY
  * IS THE PAGE'S.
  *
  * A list where some items are done is about the second most ordinary thing a
@@ -49,7 +49,7 @@
   }
 
   glob.biom.plugins.register({
-    id: "checklist",
+    id: "biom-checklist",
 
     /**
      * @param {Element} node the node this plugin fills

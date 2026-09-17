@@ -36,6 +36,7 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
+import { DOC_PLUGIN } from "../contracts/types.ts";
 import { NOTHING_SHIPPED, shippedHashes } from "./platform/shipped.ts";
 import type { Shipped } from "./platform/shipped.ts";
 import { SHIPPED_DIRS, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "./workspace/framework.ts";
@@ -43,7 +44,7 @@ import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format } from "./platform/yaml.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, makePages } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages } from "./domain/pages.ts";
 import { makeDocs } from "./domain/docs.ts";
 import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
 import { makeTables } from "./domain/tables.ts";
@@ -785,7 +786,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // — read live, so editing the plugin changes the design doc on the next
     // draw exactly as it changes every other doc page.
     const docDocument = async () =>
-      (await files.read(DOC_PLUGIN_DOCUMENT)) ?? (await pluginRoot.read(DOC_PLUGIN_DOCUMENT.slice(PLUGINS_DIR_VAULT.length + 1))) ?? "";
+      (await files.read(DOC_PLUGIN_DOCUMENT)) ?? (await pluginRoot.read(frameworkPlugin(DOC_PLUGIN))) ?? "";
     // THE SAME BASELINE AS THE VAULT'S OWN FILES, rooted a level down. A write
     // into `design/` is this process's write wherever it was made from, and two
     // baselines over one tree would make half of them look like somebody else's.

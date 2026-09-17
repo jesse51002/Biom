@@ -7,6 +7,15 @@ any of them.
 
 ## The framework's plugins draw your pages until you put a file at the same path in `plugins/`
 
+**Every plugin the framework ships is called `biom-<name>`, file and id alike,
+and you keep saying the bare name.** `plugin: doc` in a page, `data-g-plugin="reveal"`
+in a section and a `markdown` slot all resolve nearest-first: a plugin of yours
+under that name if you wrote one, the framework's `biom-doc`, `biom-reveal` or
+`biom-markdown` otherwise. So a plugin you write can never share a name with one
+the framework ships later — under bare names it would have been refused as the
+framework's duplicate on every page, the day the framework shipped it, with
+nothing saying so.
+
 **Your `plugins/` folder holds only what you wrote or overrode.** Nothing is
 copied into it. The framework's own plugin set is the rung underneath: when a
 page names a plugin, the server looks in your folder first and in the
@@ -24,15 +33,18 @@ plugin set there every time the workspace opens — the same bytes that draw you
 page. It is a mirror, not a source: nothing reads it to draw, a file edited
 there is gone on the next open, and it is kept out of the workspace's history.
 
-**To change one, override it: put a file in `plugins/` at the same path.** The
-paved way is a copy of the whole plugin out of the mirror — `plugins/kanban/`
-from `docs/plugins/kanban/`, `plugins/markdown.js` from
-`docs/plugins/markdown.js` — and from that moment your copy draws, the
+**To change one, override it: put a file in `plugins/` at the same PREFIXED
+path.** The paved way is a copy of the whole plugin out of the mirror —
+`plugins/biom-kanban/` from `docs/plugins/biom-kanban/`, `plugins/biom-markdown.js`
+from `docs/plugins/biom-markdown.js` — and from that moment your copy draws, the
 framework's is ignored, and your copy no longer follows framework updates. That
-is the deal every override has, and you take it one plugin at a time. **Copy a
-plugin whole**: resolution is per file, so a `plugins/kanban/index.html` on its
-own still gets the framework's `kanban/kanban.js` underneath it, which is right
-for a partial override and surprising for somebody who wanted isolation.
+is the deal every override has, and you take it one plugin at a time. A file
+under the BARE name is not an override but a plugin of your own, which the bare
+name reaches first; both work, and the first is the one that says what it is.
+**Copy a plugin whole**: resolution is per file, so a `plugins/biom-kanban/index.html`
+on its own still gets the framework's `biom-kanban/kanban.js` underneath it,
+which is right for a partial override and surprising for somebody who wanted
+isolation.
 
 **Deleting an override is how you go back.** Nothing writes the file again, and
 the framework's own draws on the next read.
@@ -99,7 +111,7 @@ explains. Name a section file for what it is — `masthead.html`, `@page-notes.h
 
 A plugin's document was written to disk long before anybody knew which folder it
 would land in, and the box is a `srcdoc` frame with no base to resolve a relative
-`src` against. So the host spells both: a `<script data-g-src="kanban/kanban.js">`
+`src` against. So the host spells both: a `<script data-g-src="biom-kanban/kanban.js">`
 inside a plugin's own document becomes a real `src` under that workspace's own
 `/plugin/` route. **No file in a workspace may name a path into the application's
 own directory** — that is wrong the first time somebody moves the application.
@@ -112,10 +124,12 @@ add a plugin: it replaces the drawing of every slot of that kind in the workspac
 on every page, including pages somebody else wrote. Nothing in `content.yaml`
 would say it had happened.
 
-**`plugins/<kind>.js` is the one file that may draw `<kind>`.** That is the
-framework's `markdown.js`, or your override of it at `plugins/markdown.js` —
-the bare file name is what the reservation is bound to, whichever root it came
-from. It is not whoever registers first: the loader hands the page every
+**`plugins/<kind>.js` is the one file that may draw `<kind>`, and
+`biom-<kind>.js` the one file that may draw `biom-<kind>`.** The framework's
+markdown plugin is `biom-markdown.js` registering `biom-markdown`; a `markdown`
+slot reaches it because a bare name falls back to the framework's `biom-` one
+when this workspace registered none of its own. Write `plugins/markdown.js`
+registering `markdown` and every markdown slot draws with yours — it is nearer. It is not whoever registers first: the loader hands the page every
 `plugins/*.js` in name order, so first-past-the-post would have let a file called
 `0-notes.js` take `table` by sorting ahead of `table.js`. Any other file claiming
 a part kind is refused in a sentence naming the kind and the file that owns it.

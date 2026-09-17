@@ -149,7 +149,7 @@ export const MAP_DOCUMENT = `<!doctype html>
          somebody's folder: it cannot name the install directory, it has no base
          to resolve a relative path against inside the box, and it was written to
          disk before anybody knew which folder it landed in. -->
-    <script data-g-src="mindmap/mindmap.js"></script>
+    <script data-g-src="biom-mindmap/mindmap.js"></script>
   </head>
   <body><main id="g-map"></main></body>
 </html>

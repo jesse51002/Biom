@@ -23,12 +23,16 @@ description: >-
   read, and a copy nobody edited is swept on open against the framework's git
   history as a bridge — `guest/plugins/` is not served as a root of its own, and
   no file in a vault may name `/guest/` — and THE LOADER: the server answers
-  `GET /v/<enc>/plugin/` with the framework's `*.js` minus every name the vault
-  also has, then the vault's `plugins/*.js`, each in id order, each wrapped and
-  named by its file and root, the client weaves ONE tag for it and carries no
-  list of plugin ids at all, and none of it is a `contracts/` edit — so a
-  vault's own slot plugin (`plugins/<id>.js`) loads exactly as its own page
-  plugin (`plugins/<id>/index.html`) does. Load this whenever you touch
+  `GET /v/<enc>/plugin/` with the framework's `*.js` minus every file name the
+  vault also has, then the vault's `plugins/*.js`, each in id order, each
+  wrapped and named by its file and root, the client weaves ONE tag for it and
+  carries no list of plugin ids at all, and none of it is a `contracts/` edit —
+  so a vault's own slot plugin (`plugins/<id>.js`) loads exactly as its own page
+  plugin (`plugins/<id>/index.html`) does. EVERY FRAMEWORK PLUGIN WEARS `biom-`,
+  file and id, and a bare name resolves nearest-first — the workspace's own,
+  then the framework's `biom-` one — in the registry and on the server alike,
+  so a workspace's plugin can never be refused as the duplicate of one the
+  framework ships later. Load this whenever you touch
   `guest/runtime/registry.js`, `guest/plugins/*`, `server/workspace/framework.ts`,
   `server/platform/shipped.ts`, or the `/plugin/` route in `server/main.ts`.
   Trigger on
@@ -172,7 +176,7 @@ dependency may legitimately be absent.
 The child context `use` builds inherits the parent's **teardown bucket**, so a
 section coming down takes everything mounted underneath it with it.
 
-**The worked example is in `guest/plugins/markdown.js`.** A ` ```mermaid ` fence
+**The worked example is in `guest/plugins/biom-markdown.js`.** A ` ```mermaid ` fence
 inside prose stops being a code block and becomes a diagram — and because the
 diagram plugin is an OPTIONAL dependency (the vendored library behind it is
 3.6MB and is appended only where a page actually has a diagram), it is **asked
@@ -229,6 +233,44 @@ and everything under `input:` is **that plugin's own configuration, passed throu
 untouched**: a host that validated a plugin's options would have to know every
 plugin. A page that wants a progress bar over a document is an html page that
 draws one; a page that wants a board is `plugin: kanban`.
+
+---
+
+## 4b. The framework's plugins wear `biom-`, and a bare name resolves nearest-first
+
+**Every plugin the framework ships is `biom-<name>`, file and id alike.**
+`guest/plugins/biom-markdown.js` registers `biom-markdown`; `biom-doc/index.html`
+is what a page saying `plugin: doc` falls back to. The reason is the one the
+skills have: a plugin a workspace wrote must never share a name with one the
+framework ships later. Under bare names, the day the framework shipped a
+`flow.js` a workspace's `flow` — in a file of any other name — loaded second and
+was refused as the framework's duplicate, on every page, with nothing saying so.
+
+**Nothing a page or a section says changes, because a bare name is resolved
+nearest-first on both sides of the wall.** `resolve` in `guest/runtime/registry.js`
+answers `get("reveal")` and `has("reveal")` with the workspace's own `reveal` if
+one registered and the framework's `biom-reveal` otherwise — for
+`data-g-plugin`, for `ctx.use`, and for a slot's part kind, because every one of
+them goes through `get`. `frameworkPlugin` in `server/domain/pages.ts` does the
+same for a page's document: the vault's `plugins/doc/index.html`, then the
+framework's `biom-doc/index.html`. `OURS` is the one spelling in each file, and
+`tests/plugins-without-copies.test.ts` holds the two equal. A prefixed id is
+exactly what it says, so a page can pin the framework's by saying `biom-reveal`.
+
+**A part kind is reserved to its file under either name.** `markdown` to
+`plugins/markdown.js`, `biom-markdown` to `biom-markdown.js` — `isKind` in the
+registry is `PART_KINDS` with the prefix taken off, so a `biom-markdown`
+registered by some other file is the same theft a `markdown` would be. And a
+```biom-html fence is a code sample exactly as a ```html one is: the markdown
+plugin strips the prefix before it asks whether a fence names a part kind.
+
+**Two ways a workspace can have its own `markdown`, and they mean different
+things.** `plugins/biom-markdown.js` is an OVERRIDE: it shadows the framework's
+file by name, nothing else enters the script for it, and it is what the paved
+copy out of `docs/plugins/` makes. `plugins/markdown.js` registering `markdown`
+is a plugin of the workspace's OWN: it loads beside the framework's, a bare
+`markdown` reaches it first, and no framework release can refuse it. Both draw
+every markdown slot in the workspace; the first says what it is.
 
 ---
 
@@ -348,7 +390,7 @@ has to load `plugins/kanban/kanban.js`, cannot name the install directory,
 cannot use a relative `src` (the box is a `srcdoc` frame at an opaque origin with
 no base), and cannot name the vault route (the file was written before anybody
 knew which folder it would be read against). So it writes
-`<script data-g-src="kanban/kanban.js">` — a path under `plugins/`, marked — and
+`<script data-g-src="biom-kanban/kanban.js">` — a path under `plugins/`, marked — and
 `weaveRuntime` in `client/platform/document.js` turns the mark into a real `src`
 under the vault's route, where the per-file walk answers it. `/guest/plugins/`
 itself is refused by `locate()`, so there is one url per plugin.
@@ -365,7 +407,7 @@ rewritten) so a framework release is not a diff in every vault's history.
 `docs/` is not a watched directory, so writing it redraws nothing.
 
 **WHAT THEY CAN CHANGE IS AN OVERRIDE, and the paved way is a copy out of that
-mirror**: `docs/plugins/kanban/` to `plugins/kanban/`. An agent opened in the
+mirror**: `docs/plugins/biom-kanban/` to `plugins/kanban/`. An agent opened in the
 folder can do that with no route at all, which is why the mirror answers *how
 does a person see the original* and *how does an agent override one* in the same
 stroke. From then on the copy is theirs and pinned by choice — the framework's
@@ -412,9 +454,11 @@ loader needed a wire kind. It needed none.
 > list of plugin ids anywhere in the client.
 >
 > **The union is computed here by filename and nowhere else.** A vault
-> `markdown.js` means the framework's `markdown.js` never enters the script, so
-> the registry never sees two registrations of one id and its refusal never
-> fires for this reason. The framework's go FIRST, so a vault plugin that
+> `biom-markdown.js` means the framework's `biom-markdown.js` never enters the
+> script, so the registry never sees two registrations of one id and its
+> refusal never fires for this reason. A vault `markdown.js` is a different
+> file with a different id and loads beside the framework's; a bare `markdown`
+> reaches it first. The framework's go FIRST, so a vault plugin that
 > `ctx.use`s a framework one finds it registered.
 >
 > **No `contracts/` edit and therefore no barrier.** The route exists,
@@ -434,7 +478,7 @@ loader needed a wire kind. It needed none.
 >
 > **THE BUNDLE IS MEMOISED PER VAULT**, keyed on the vault folder's listing plus
 > each file's mtime and size, and on a hash of the framework sources read — so
-> editing `guest/plugins/markdown.js` in a checkout and pressing reload is live.
+> editing `guest/plugins/biom-markdown.js` in a checkout and pressing reload is live.
 > `no-store` stays on the response, and the memo is what makes that affordable.
 > **A single vault file over 512KB is refused by name** rather than held in that
 > string.

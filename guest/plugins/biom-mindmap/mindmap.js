@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/mindmap/mindmap.js — the workspace as a small sky. A classic
+/* guest/plugins/biom-mindmap/mindmap.js — the workspace as a small sky. A classic
  * script; see registry.js for why there are no imports in here.
  *
  * A PLUGIN IS A PAGE THAT READS A DECLARED INPUT, and this is the third one. A

@@ -196,11 +196,29 @@ export const DEFAULT_SECTION_FILE = "guest/sections/default.html";
  *  `makePages` — on disk in a checkout, out of the embedded map in a build. */
 export const PLUGINS_DIR = "guest/plugins";
 
-/** The `doc` plugin's document, in the vault. The design doc is always a doc
- *  page, and design.ts is rooted at `design/` and cannot see this — so the
- *  composition root reads it and hands it down. Named here so the two spellings
- *  of one path cannot drift. */
+/** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED. Every plugin the framework
+ *  ships is `biom-<name>` — the file `guest/plugins/biom-markdown.js`, the
+ *  document `guest/plugins/biom-doc/index.html`, and the id each registers —
+ *  so a plugin a workspace wrote can never share a name with one the framework
+ *  ships later. A page goes on saying the bare name: `plugin: doc` is resolved
+ *  nearest-first, the vault's own `plugins/doc/` and then the framework's
+ *  `biom-doc/`, which is the same rule `guest/runtime/registry.js` applies to
+ *  an id in the box. Spelled there as well, and a test holds the two equal. */
+export const OURS = "biom-";
+
+/** The `doc` plugin's document, in the vault: the workspace's own override of
+ *  it, when it has one. The framework's is `biom-doc/index.html` under
+ *  `PLUGINS_DIR`, and `frameworkPlugin` below is the one spelling of that
+ *  fallback. The design doc is always a doc page, and design.ts is rooted at
+ *  `design/` and cannot see either — so the composition root reads them and
+ *  hands the result down. */
 export const DOC_PLUGIN_DOCUMENT = "plugins/doc/index.html";
+
+/** The path under the framework's plugin root that a bare plugin id falls back
+ *  to: `doc/index.html` is asked for as `biom-doc/index.html`. An id that
+ *  already wears the prefix is asked for as it is. */
+export const frameworkPlugin = (id: string): string =>
+  id.startsWith(OURS) ? `${id}/index.html` : `${OURS}${id}/index.html`;
 
 /** The `mindmap` document the rail's own Map row draws with — resolved like
  *  every other plugin document: the vault's own if it has one, the framework's
@@ -734,13 +752,13 @@ export function makePages(
     return await pluginDocument(doc.plugin);
   };
 
-  /** One plugin's document: the vault's own, then the framework's. */
+  /** One plugin's document: the vault's own under the name the page said,
+   *  then the framework's under its `biom-` name. */
   const pluginDocument = async (plugin: string): Promise<string> => {
-    const rel = `${plugin}/${PAGE_DOCUMENT}`;
-    const mine = await files.read(`${PLUGINS_DIR_VAULT}/${rel}`);
+    const mine = await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`);
     if (mine !== null) return mine;
     if (framework !== null) {
-      const theirs = await framework.read(rel);
+      const theirs = await framework.read(frameworkPlugin(plugin));
       if (theirs !== null) return theirs;
     }
     return MISSING_DOCUMENT;

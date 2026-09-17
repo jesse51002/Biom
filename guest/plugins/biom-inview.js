@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/inview.js — PLAY WHILE IN VIEW, REST WHILE NOT.
+/* guest/plugins/biom-inview.js — PLAY WHILE IN VIEW, REST WHILE NOT.
  *
  * The twin of `reveal`. Where `reveal` puts one class on a section the first
  * time it is seen and disconnects, this keeps watching and keeps the class
@@ -28,7 +28,7 @@
   var glob = /** @type {any} */ (globalThis);
 
   glob.biom.plugins.register({
-    id: "inview",
+    id: "biom-inview",
 
     /**
      * @param {Element} node the node this plugin fills

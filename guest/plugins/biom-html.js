@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/html.js — a slot whose content is markup somebody wrote. A
+/* guest/plugins/biom-html.js — a slot whose content is markup somebody wrote. A
  * classic script sharing globals; see `guest/runtime/registry.js` for why there
  * are no imports in here.
  *
@@ -116,7 +116,7 @@
   }
 
   glob.biom.plugins.register({
-    id: "html",
+    id: "biom-html",
 
     /** `edit: false`, and the reason is in the format rather than in this file.
      *  What is STORED for this slot is a filename, so an in-place edit would

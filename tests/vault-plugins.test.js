@@ -30,7 +30,11 @@ function box() {
   const load = (name) =>
     new Function(readFileSync(new URL(`../guest/${name}`, import.meta.url), "utf8"))();
   load("runtime/registry.js");
-  for (const id of ["items", "open-list", "checklist", "reveal"]) load(`plugins/${id}.js`);
+  // THE FRAMEWORK'S OWN wear `biom-`, file and id alike, so a workspace's plugin
+  // can never be refused as the duplicate of one the framework ships later. A
+  // bare id still answers — `get("items")` falls back to `biom-items` — which
+  // is what every page and slot relies on.
+  for (const id of ["items", "open-list", "checklist", "reveal"]) load(`plugins/biom-${id}.js`);
   return { plugins: glob.__gRuntime.plugins, said, done: () => { delete glob.document; } };
 }
 
@@ -52,18 +56,36 @@ function ctx(options, slots) {
   };
 }
 
-test("every seeded slot plugin registers, under its own id, from the vault", () => {
+test("every framework slot plugin registers under its biom- id, and the bare id reaches it", () => {
   const g = box();
   for (const id of ["items", "open-list", "checklist", "reveal"]) {
+    // Registered as the framework's own name…
+    expect([id, g.plugins.ids().includes(`biom-${id}`)]).toEqual([id, true]);
+    // …and reached by the bare name a page or a slot says, nearest first.
     expect([id, g.plugins.has(id)]).toEqual([id, true]);
+    expect([id, g.plugins.get(id).id]).toEqual([id, `biom-${id}`]);
     // THE FILE IT CAME FROM, which is what a refusal has to name when a second
-    // file claims the same id. There is no `shipped` any more: every plugin is a
-    // file in the vault, so the person's copy IS the plugin. These are loaded
-    // here without the loader's wrapper around them, so what the registry can
-    // say about their provenance is that it was not told.
+    // file claims the same id. These are loaded here without the loader's
+    // wrapper around them, so what the registry can say about their provenance
+    // is that it was not told.
     expect([id, g.plugins.get(id).from]).toEqual([id, "an unnamed script"]);
   }
   expect(g.said).toEqual([]);
+  g.done();
+});
+
+test("a workspace plugin under the bare name is what the bare name reaches, and the framework's is still there under its own", () => {
+  // THE WHOLE POINT OF THE PREFIX: a workspace that wrote a `reveal` of its own
+  // is not refused as a duplicate on the day the framework ships one, and
+  // every section saying `reveal` draws with the workspace's.
+  const g = box();
+  const glob = /** @type {any} */ (globalThis);
+  glob.__gRuntime.pluginFile = "reveal.js";
+  expect(g.plugins.register({ id: "reveal", mount() {} })).toBe(true);
+  expect(g.plugins.get("reveal").id).toBe("reveal");
+  expect(g.plugins.get("biom-reveal").id).toBe("biom-reveal");
+  expect(g.said).toEqual([]);
+  delete glob.__gRuntime.pluginFile;
   g.done();
 });
 
@@ -318,7 +340,7 @@ function fence(info, source) {
   return { box, pre, code };
 }
 
-/** Load `guest/plugins/markdown.js` and reach its private `upgradeFences` the
+/** Load `guest/plugins/biom-markdown.js` and reach its private `upgradeFences` the
  *  way a page reaches it: through `mount`. Markdown-it is stubbed to a renderer
  *  that draws nothing, because the rendered HTML is not what is under test —
  *  `tests/markdown.test.js` holds the real parser to the joint this relies on,
@@ -326,10 +348,11 @@ function fence(info, source) {
 function fences(registered, made) {
   const glob = /** @type {any} */ (globalThis);
   const said = [];
-  // THE LOADER NAMES THE FILE, and it has to here: `markdown` is a part kind, so
-  // only `plugins/markdown.js` may register it. Left unset the registry refuses
-  // the plugin and the test fails on the reservation rather than on the fence.
-  glob.__gRuntime = { report: (m) => said.push(m), pluginFile: "markdown.js" };
+  // THE LOADER NAMES THE FILE, and it has to here: `biom-markdown` is the
+  // framework's plugin for a part kind, so only `plugins/biom-markdown.js` may
+  // register it. Left unset the registry refuses the registration, and the
+  // test below would be testing the refusal.
+  glob.__gRuntime = { report: (m) => said.push(m), pluginFile: "biom-markdown.js" };
   delete glob.biom;
   glob.document = {
     currentScript: null,
@@ -341,7 +364,7 @@ function fences(registered, made) {
     parse: () => [],
   });
   new Function(readFileSync(new URL("../guest/runtime/registry.js", import.meta.url), "utf8"))();
-  new Function(readFileSync(new URL("../guest/plugins/markdown.js", import.meta.url), "utf8"))();
+  new Function(readFileSync(new URL("../guest/plugins/biom-markdown.js", import.meta.url), "utf8"))();
 
   /** @type {{id: string, source: string}[]} */
   const drew = [];

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/items.js — ADD AND REMOVE ON A LIST SLOT, AND NOTHING ELSE.
+/* guest/plugins/biom-items.js — ADD AND REMOVE ON A LIST SLOT, AND NOTHING ELSE.
  *
  * A list a reader can add to is the most ordinary thing a page does, and the
  * code for it has no design content in it at all: read the array, splice it,
@@ -37,7 +37,7 @@
   /** The one shape both this plugin and `open-list` need, exported through the
    *  registry rather than through an import, because there are none in the box. */
   glob.biom.plugins.register({
-    id: "items",
+    id: "biom-items",
 
     /**
      * @param {Element} node the node this plugin fills

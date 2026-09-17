@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/child.js — one of this page's children, drawn in place. A
+/* guest/plugins/biom-child.js — one of this page's children, drawn in place. A
  * classic script sharing globals; see `guest/runtime/registry.js` for why there
  * are no imports in here.
  *
@@ -28,7 +28,7 @@
  * hold, which is what stops a page trapping somebody on it.
  *
  * THE CHILD'S MARKUP IS SCOPED AND ITS SCRIPTS ARE NOT RUN. Both for the same
- * reason `guest/plugins/html.js` gives at length: a `<style>` in a slot applies
+ * reason `guest/plugins/biom-html.js` gives at length: a `<style>` in a slot applies
  * to the whole document unless something wraps it, and a `<script>` inserted as
  * markup never executes anyway, so leaving one in place is a silent nothing
  * dressed as code. The child says how it LOOKS; the section it is mounted in
@@ -225,7 +225,7 @@
   }
 
   glob.biom.plugins.register({
-    id: "child",
+    id: "biom-child",
 
     /** A child row holds no text of its own: every word in it is the CHILD's —
      *  its name, its kind, its row count — so editing it here would be editing

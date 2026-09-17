@@ -23,7 +23,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 
 /** Framework-relative path → every blob hash it has ever had. Keyed the way
- *  the repository spells a path — `guest/plugins/markdown.js`,
+ *  the repository spells a path — `guest/plugins/biom-markdown.js`,
  *  `vault/.agents/skills/biom-pages/SKILL.md` — so one map answers for every
  *  directory the framework owns inside a vault. */
 export type Shipped = Readonly<Record<string, readonly string[]>>;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/reveal.js — PLAY ONCE, THEN REST.
+/* guest/plugins/biom-reveal.js — PLAY ONCE, THEN REST.
  *
  * An `IntersectionObserver` that puts one class on the section the first time it
  * comes into view and disconnects. Five lines, written slightly differently in
@@ -36,7 +36,7 @@
   var glob = /** @type {any} */ (globalThis);
 
   glob.biom.plugins.register({
-    id: "reveal",
+    id: "biom-reveal",
 
     /**
      * @param {Element} node the node this plugin fills

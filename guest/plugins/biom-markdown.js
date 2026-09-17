@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/markdown.js — prose in a slot. A classic script sharing
+/* guest/plugins/biom-markdown.js — prose in a slot. A classic script sharing
  * globals; see `guest/runtime/registry.js` for why there are no imports in here.
  *
  * MOST OF WHAT A SLOT HOLDS IS PROSE, which is why a bare string in a section's
@@ -106,7 +106,7 @@
   }
 
   glob.biom.plugins.register({
-    id: "markdown",
+    id: "biom-markdown",
 
     /** `edit: true` DECLARES that this content is editable; it grants nothing.
      *  The runtime holds the only port that can call `section.write`, and
@@ -275,7 +275,7 @@
     for (const code of Array.from(node.querySelectorAll("pre > code[class]"))) {
       const found = /(?:^|\s)language-([a-z][a-z0-9-]*)(?:\s|$)/.exec(code.className);
       const id = found ? found[1] : "";
-      if (!id || PART_KINDS.has(id) || !ctx.has(id)) continue;
+      if (!id || PART_KINDS.has(id) || PART_KINDS.has(id.replace(/^biom-/, "")) || !ctx.has(id)) continue;
       const pre = code.parentElement;
       if (!pre) continue;
       const holder = document.createElement("div");
