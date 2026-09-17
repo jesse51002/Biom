@@ -63,6 +63,7 @@ Watch every scene yourself, at more than one point in its loop, before anything 
 
 - **A grid item will not shrink below its content's floor without `min-inline-size: 0`**; `overflow-x: auto` on the plate alone lets it push the whole page sideways on a phone.
 - **Below roughly 600px the app shell itself does not reflow.** Measure the section inside the frame rather than the window.
+- **Keyframe names are document-wide, so two sections on one page that both name `cap-1` are one animation.** The runtime hoists every `@keyframes` out of its section's scope, and the last section drawn wins for the whole page — the first scene then plays its captions on the second scene's timings and nothing says why. Prefix every keyframe name with something of the section's own.
 - **A CSS `transform` on an SVG element replaces its `transform` attribute.** Animate an inner group and leave placement on the outer one; a gauge that drains needs `transform-box: fill-box` and its own origin.
 - **A canvas reads tokens once the section is sized**, in a ResizeObserver, never at script time.
 - **A custom property set inline on an element fails the checker.** Make it a class.

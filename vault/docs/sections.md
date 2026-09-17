@@ -232,7 +232,7 @@ headline capability of the format on the quietest possible failure. `@font-face`
 `@property`, `@counter-style`, `@import`, `@charset`, `@namespace`,
 `@font-feature-values` and `@font-palette-values` are hoisted with it, for the same
 reason: each names something for the whole document and has no meaning scoped to a
-subtree. **Write them where they read best.**
+subtree. A name is therefore shared by every section on the page: two sections that both declare `@keyframes cap-1` are declaring one animation, and the one drawn last wins for both. **Write them where they read best.**
 
 **The markup is interpolated as text, before it is parsed.** That is the only way
 `<img alt="{{caption}}">` can work at all — an attribute value is not a node and
