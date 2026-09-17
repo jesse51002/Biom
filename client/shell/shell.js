@@ -506,11 +506,12 @@ export function makeShell(deps) {
     tools.push(reload);
 
     // SHARE A PAGE — the stop-gap until the hosted server makes every page a
-    // URL. The server captures the page as it is drawn and puts the file in a
-    // bucket under a random id; the link comes back here. A production build
-    // refuses the kind (the capture drives a development dependency), so the
-    // button is not offered there for the same reason the panels are not.
-    if (page && !production) {
+    // URL. The page as it is drawn goes to the server, which makes the file
+    // stand alone and puts it in a bucket under a random id; the link comes
+    // back here. In the desktop application the shell reads the drawn page
+    // out of the box and hands it over; in a browser tab the server draws the
+    // page in a browser of its own. Either way it is one press.
+    if (page) {
       const share = h("button.tool" + (sharing ? ".busy" : ""), {
         type: "button",
         title: "Capture this page as it is drawn and get a link",
@@ -973,7 +974,12 @@ export function makeShell(deps) {
     shareSaid = "";
     paint();
     try {
-      const made = await ws.sharePage(page.id);
+      // THE SHELL CAN SEE INTO THE BOX AND THIS PAGE CANNOT, so where there is
+      // a shell the capture is the person's own window, as they are looking at
+      // it. Where there is none the server draws the page itself.
+      const shell = /** @type {{ biomShell?: { capturePage?: () => Promise<string> } }} */ (/** @type {unknown} */ (globalThis)).biomShell;
+      const html = shell && typeof shell.capturePage === "function" ? await shell.capturePage() : undefined;
+      const made = await ws.sharePage(page.id, html && html !== "" ? html : undefined);
       shared = { page: page.id, url: made.url, left: made.left };
     } catch (err) {
       console.error("the page was not shared", err);

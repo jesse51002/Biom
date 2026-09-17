@@ -74,6 +74,11 @@ const STATE = "biom:window-state";
  *  double-click on our bar, the desktop's own keyboard shortcut, a tiling
  *  manager — so the icon that says which it is has to flip. */
 const CHANGED = "biom:window-changed";
+/** The drawn page, read out of the box. The page cannot read it — the frame
+ *  has an opaque origin, and the host is on the other side of that wall by
+ *  design — and the main process can, through `webContents.mainFrame.frames`.
+ *  Which is why the capture lives here and not in the client. */
+const CAPTURE = "biom:capture-page";
 
 /** THE LOGO, AND THERE IS ONE FILE OF IT. Beside this one, copied into the
  *  staging directory with the rest of the shell, so the path resolves the same
@@ -542,6 +547,55 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle(CLOSE, () => { if (alive()) win.close(); });
   ipcMain.handle(STATE, () => stateOf());
   ipcMain.handle(LOGO, () => logoUrl());
+
+  /** THE DRAWN PAGE, READ OUT OF THE BOX. Every frame in the window is walked
+   *  and the one that is the page — an `about:srcdoc` document, the only kind
+   *  the client weaves — is asked to serialise itself: scripts out, every
+   *  canvas turned into the picture it was showing, every section marked in
+   *  view so a scene below the fold plays for a stranger, and the sheet's own
+   *  ground written in, because the box is transparent and the app paints the
+   *  paper around it. The page has already been drawn and scrolled by a person,
+   *  so what comes out is what they were looking at. */
+  ipcMain.handle(CAPTURE, async () => {
+    if (!alive()) return "";
+    const frames = win.webContents.mainFrame.frames;
+    const box = frames.find((f) => f.url === "about:srcdoc" || f.url.startsWith("about:srcdoc"));
+    if (!box) return "";
+    let paper = "";
+    try {
+      paper = await win.webContents.executeJavaScript(
+        'getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()', true);
+    } catch {
+      // No paper is a white sheet, which is still a page.
+    }
+    try {
+      return await box.executeJavaScript(`(function (paper) {
+        var root = document.documentElement.cloneNode(true);
+        Array.prototype.forEach.call(root.querySelectorAll("script"), function (s) { s.remove(); });
+        Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view"); });
+        if (paper) {
+          root.style.setProperty("--paper", paper);
+          var ground = document.createElement("style");
+          ground.textContent = "html{background:var(--paper)}";
+          (root.querySelector("head") || root).prepend(ground);
+        }
+        var live = Array.prototype.slice.call(document.querySelectorAll("canvas"));
+        Array.prototype.forEach.call(root.querySelectorAll("canvas"), function (c, i) {
+          var src = live[i];
+          var img = document.createElement("img");
+          try { img.src = src ? src.toDataURL() : ""; } catch (e) { img.src = ""; }
+          img.width = src ? src.width : 0;
+          img.height = src ? src.height : 0;
+          img.setAttribute("class", c.getAttribute("class") || "");
+          c.replaceWith(img);
+        });
+        return "<!doctype html>\n" + root.outerHTML;
+      })(${JSON.stringify(paper)})`, true);
+    } catch (e) {
+      console.error("the page could not be captured", e);
+      return "";
+    }
+  });
 
   app.whenReady().then(() => {
     // Before anything is spawned and long before `open` runs, because a menu set

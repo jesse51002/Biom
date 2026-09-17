@@ -86,7 +86,7 @@ function fakeVault(root: string, here: string): Vault {
  *  one drives a browser and a bucket, and `tests/share.test.ts` holds it. */
 function fakeShare(): Sharer {
   return {
-    async share(page: PageId) {
+    async share(page: PageId, _html?: string) {
       return { url: `https://shares.example/${page}.html`, key: `${page}.html`, left: [] };
     },
   };
@@ -1493,17 +1493,18 @@ test("a Deps that says nothing about the build behaves exactly as it did", async
   }
 });
 
-test("page.share answers the link in development and is refused in production", async () => {
+test("page.share answers the link in every build, and hands a captured document through", async () => {
   const w = await workspace();
   try {
     const dev = await handle(req({ kind: "page.share", page: "home" }), w.deps);
     if (!dev.ok) throw new Error(dev.error.message);
     expect(dev.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
 
-    const built = await handle(req({ kind: "page.share", page: "home" }), { ...w.deps, production: true });
-    if (built.ok) throw new Error("unreachable");
-    expect(built.error.code).toBe("unsupported");
-    expect(built.error.message).toContain("this build does not offer");
+    // A compiled build answers too: the shell captures in its own window and
+    // the server only rewrites and uploads what it was handed.
+    const built = await handle(req({ kind: "page.share", page: "home", html: "<html></html>" }), { ...w.deps, production: true });
+    if (!built.ok) throw new Error(built.error.message);
+    expect(built.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
   } finally {
     await w.drop();
   }

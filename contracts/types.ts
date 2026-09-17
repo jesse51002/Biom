@@ -1001,8 +1001,14 @@ export type ApiRequest =
          *  link reaches. The FIFTH contracts edit, taken at its own barrier on
          *  2026-09-17. It is here and not in `HostRequest` because the box never
          *  asks for it — the workspace UI does — so no page in the wild can say
-         *  it and no guard learned it. The answer is a `Share`. */
-        | { kind: "page.share"; page: PageId }
+         *  it and no guard learned it. The answer is a `Share`.
+         *
+         *  `html` is the page's drawn document, when the caller could read it
+         *  itself: the desktop shell can reach into the box, so it captures
+         *  from the person's own window and the server only rewrites and
+         *  uploads. Absent, the server draws the page in a browser of its own,
+         *  which a development server can do and a compiled one cannot. */
+        | { kind: "page.share"; page: PageId; html?: string }
 
       ));
 

@@ -71,11 +71,13 @@ const fakePages = (has: boolean): Pages => ({
   async read() { return has ? ({ id: "home/x", name: "x" } as unknown as Page) : null; },
 } as unknown as Pages);
 
-function sharer(o: { has?: boolean; missing?: string | null; capture?: () => Promise<string> } = {}) {
+function sharer(o: { has?: boolean; missing?: string | null; capture?: (() => Promise<string>) | null } = {}) {
   const puts: Array<{ key: string; html: string }> = [];
   const made = makeSharer({
     pages: fakePages(o.has ?? true),
-    capture: o.capture ?? (async () => `<html><head><base href="${BASE}"></head><body><img src="a.png"></body></html>`),
+    capture: o.capture === undefined
+      ? async () => `<html><head><base href="${BASE}"></head><body><img src="a.png"></body></html>`
+      : o.capture,
     sources: () => sources({ "a.png": "PNG" }),
     upload: {
       missing: () => o.missing === undefined ? null : o.missing,
@@ -119,4 +121,25 @@ test("the bucket names the first missing variable and nothing when all five are 
   expect(makeBucket({
     AWS_ACCESS_KEY_ID: "a", AWS_SECRET_ACCESS_KEY: "b", AWS_REGION: "r", BIOM_SHARE_BUCKET: "k", BIOM_SHARE_HOST: "h",
   }).missing()).toBeNull();
+});
+
+test("a document handed over is used as the capture, and the server's own browser is never asked", async () => {
+  let captured = 0;
+  const { made, puts } = sharer({ capture: async () => { captured++; return ""; } });
+  const handed = `<html><head><base href="${BASE}"></head><body><p>from the window</p><img src="a.png"></body></html>`;
+  const out = await made.share("home/x", handed);
+  expect(captured).toBe(0);
+  expect(puts[0]?.html).toContain("from the window");
+  expect(puts[0]?.html).toContain("data:image/png");
+  expect(out.left).toEqual([]);
+});
+
+test("a build with no browser refuses in words when nothing was handed over, and answers when something was", async () => {
+  const { made, puts } = sharer({ capture: null });
+  await expect(made.share("home/x")).rejects.toMatchObject({ code: "unsupported" });
+  await expect(made.share("home/x", "   ")).rejects.toMatchObject({ code: "unsupported" });
+  expect(puts).toHaveLength(0);
+  const out = await made.share("home/x", "<html><body>handed</body></html>");
+  expect(out.key).toMatch(/\.html$/);
+  expect(puts).toHaveLength(1);
 });

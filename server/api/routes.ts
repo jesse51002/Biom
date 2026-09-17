@@ -76,9 +76,10 @@ export interface Deps {
    *  it mirrors. */
   mirror: Mirror;
   /** SHARE A PAGE — the stop-gap. Built by the composition root against the
-   *  folder, because the capture names the folder in the address it opens and
-   *  the rewrite reads the folder's own assets. Refused in production: the
-   *  capture drives Playwright, which is a development dependency. */
+   *  folder, because the rewrite reads the folder's own assets. Answered in
+   *  every build: the compiled application captures in its own window and
+   *  hands the document over, and a development server can draw the page in
+   *  a browser of its own when nothing was handed over. */
   share: Sharer;
   /** WHICH BUILD THIS IS, and it is here rather than in `contracts/` on purpose.
    *  The kinds still exist: `ApiRequest` goes on spelling `sql`, `fetch` and
@@ -307,8 +308,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
       }
 
       case "page.share":
-        if (deps.production) return refused(id, "sharing a page");
-        return ok(id, await deps.share.share(req.page));
+        return ok(id, await deps.share.share(req.page, req.html));
       case "page.create": {
         const made = await deps.pages.create(req.init);
         await mirrored(follow(deps.mirror, made.id, true));

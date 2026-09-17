@@ -148,7 +148,7 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
  *   moveChild(child: Child, from: PageId, to: PageId): Promise<PageId | null>,
  *   writeSlot(id: PageId, section: BlockId, part: string, data: string): Promise<void>,
  *   setSections(id: PageId, sections: Section[]): Promise<Section[]>,
- *   sharePage(id: PageId): Promise<Share>,
+ *   sharePage(id: PageId, html?: string): Promise<Share>,
  * }} Workspace
  */
 
@@ -764,11 +764,17 @@ export function makeWorkspace(transport) {
     /* ── the vault, which is which folder this workspace IS ──────────── */
 
     /** SHARE A PAGE. Not cached and not reflected in the replica: nothing about
-     *  the workspace changes, a file lands in a bucket somewhere else. The
-     *  answer is the link and what the capture could not fold in.
-     *  @param {PageId} id @returns {Promise<Share>} */
-    async sharePage(id) {
-      return /** @type {Share} */ (await ask({ ...env(), kind: "page.share", page: id }));
+     *  the workspace changes, a file lands in a bucket somewhere else. `html`
+     *  is the drawn page when the caller could read it — the desktop shell
+     *  can — and absent when the server has to draw it itself. The answer is
+     *  the link and what the capture could not fold in.
+     *  @param {PageId} id @param {string} [html] @returns {Promise<Share>} */
+    async sharePage(id, html) {
+      /** @type {ApiRequest} */
+      const req = html === undefined
+        ? { ...env(), kind: "page.share", page: id }
+        : { ...env(), kind: "page.share", page: id, html };
+      return /** @type {Share} */ (await ask(req));
     },
 
     async vaultInfo() {

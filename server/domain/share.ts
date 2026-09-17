@@ -134,17 +134,19 @@ export async function standalone(html: string, from: Sources): Promise<Standalon
 /* ── the module ─────────────────────────────────────────────────────────── */
 
 export interface Sharer {
-  /** Capture `page` and put it somewhere a link reaches. Throws with a closed
-   *  code: `not_found` for a page that is not there, `unsupported` when the
-   *  bucket is not configured, `internal` when the capture or the upload
-   *  failed. */
-  share(page: PageId): Promise<Share>;
+  /** Capture `page` — or take `html` as the capture, when the caller could
+   *  read the drawn page itself — and put it somewhere a link reaches. Throws
+   *  with a closed code: `not_found` for a page that is not there,
+   *  `unsupported` when the bucket is not configured or this build cannot
+   *  capture, `internal` when the capture or the upload failed. */
+  share(page: PageId, html?: string): Promise<Share>;
 }
 
 export interface ShareDeps {
   pages: Pages;
-  /** Draw the page in a browser the server owns and hand back its document. */
-  capture(page: PageId): Promise<string>;
+  /** Draw the page in a browser the server owns and hand back its document,
+   *  or null when this build has no browser to draw it in. */
+  capture: ((page: PageId) => Promise<string>) | null;
   /** What the rewrite reads from. `origin` is read late because the port is
    *  the operating system's answer and is not known when this is built. */
   sources(): Sources;
@@ -157,14 +159,21 @@ const bad = (code: string, message: string): Error => Object.assign(new Error(me
 
 export function makeSharer(deps: ShareDeps): Sharer {
   return {
-    async share(page) {
+    async share(page, html) {
       // The cheap refusals first, before a browser is launched for nothing.
       const missing = deps.upload.missing();
       if (missing !== null) throw bad("unsupported", `sharing is not set up on this server: ${missing} is not set`);
       const held = await deps.pages.read(page);
       if (held === null) throw bad("not_found", "no such page");
 
-      const drawn = await deps.capture(page);
+      let drawn: string;
+      if (typeof html === "string" && html.trim() !== "") {
+        drawn = html;
+      } else if (deps.capture !== null) {
+        drawn = await deps.capture(page);
+      } else {
+        throw bad("unsupported", "this build cannot capture a page on its own; the window has to hand one over");
+      }
       const made = await standalone(drawn, deps.sources());
       const key = `${crypto.randomUUID()}.html`;
       const url = await deps.upload.put(key, made.html);

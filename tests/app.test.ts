@@ -249,7 +249,7 @@ test("a vault is seeded out of the carried map with no directory read at all", a
 
 /* ── the bridge, and the window it works ───────────────────────────────── */
 
-test("the preload exposes one object with three keys, and nothing else crosses", async () => {
+test("the preload exposes one object with four keys, and nothing else crosses", async () => {
   // THE SHELL USED TO INJECT NOTHING, then one function, and it is three keys
   // now because the application draws its own title bar: a page that draws the
   // window's controls has to be able to work them, and minimising a window is
@@ -268,7 +268,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
   // inside the one nested object, so the two lists come apart on indentation.
   const surface = preload.slice(preload.indexOf("exposeInMainWorld"));
   expect([...surface.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]))
-    .toEqual(["chooseFolder", "logo", "windowControls"]);
+    .toEqual(["chooseFolder", "logo", "capturePage", "windowControls"]);
   expect([...surface.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]))
     .toEqual(["minimize", "toggleMaximize", "toggleFullScreen", "close", "state", "onChange", "lights", "inset"]);
 
@@ -290,6 +290,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
   const channels = [
     "biom:choose-folder", "biom:logo", "biom:window-minimize", "biom:window-maximize",
     "biom:window-fullscreen", "biom:window-close", "biom:window-state", "biom:window-changed",
+    "biom:capture-page",
   ];
   for (const channel of channels) {
     expect([channel, preload.includes(JSON.stringify(channel))]).toEqual([channel, true]);
@@ -298,7 +299,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
 
   // ONE `ipcMain.handle` PER ACT, and the push channel is a send rather than a
   // handle — it is the only thing the main process says without being asked.
-  for (const name of ["CHOOSE", "LOGO", "MINIMIZE", "MAXIMIZE", "FULLSCREEN", "CLOSE", "STATE"]) {
+  for (const name of ["CHOOSE", "LOGO", "MINIMIZE", "MAXIMIZE", "FULLSCREEN", "CLOSE", "STATE", "CAPTURE"]) {
     expect([name, main.includes(`ipcMain.handle(${name}`)]).toEqual([name, true]);
   }
   expect(main).not.toContain("ipcMain.handle(CHANGED");

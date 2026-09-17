@@ -591,14 +591,15 @@ const NO_VAULT = refusing("this request names no workspace");
  *  the server's own address in a browser of its own. Null until then. */
 let served: { origin: string; token: string | null } | null = null;
 
-/** THE FIVE NAMES THE BUCKET NEEDS, out of the environment — and, for a
- *  development server only, out of `~/.config/biom/share.env` when the
- *  environment has none of them. That file is what the provisioning script
- *  writes and is never in a repository; a compiled application reads no file
- *  here, because it refuses the kind anyway. */
+/** THE FIVE NAMES THE BUCKET NEEDS, out of the environment — and out of
+ *  `~/.config/biom/share.env` when the environment has none of them. That file
+ *  is what the provisioning script writes and is never in a repository. A
+ *  compiled application reads it too: a desktop launcher hands the process no
+ *  environment of the person's, and the file beside their other config is the
+ *  one place they can put the key. */
 function shareEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
-  if (env.BIOM_SHARE_BUCKET || PRODUCTION) return env;
+  if (env.BIOM_SHARE_BUCKET) return env;
   const file = join(homedir(), ".config", "biom", "share.env");
   if (!existsSync(file)) return env;
   try {
@@ -848,7 +849,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // disk beside the program; the assets are the vault's, path-guarded.
     const share = makeSharer({
       pages,
-      capture: (page) => {
+      // A COMPILED BUILD DRAWS NOTHING ITSELF: Playwright is a development
+      // dependency, and the shell hands the drawn page over instead.
+      capture: PRODUCTION ? null : (page) => {
         if (served === null) throw Object.assign(new Error("the server is not listening yet"), { code: "internal" });
         return capturePage({ origin: served.origin, vault: path, token: served.token }, page);
       },
