@@ -184,7 +184,7 @@ screen lays the dock over the bed's cell and drops the rail and strip rows
   It is appended to the body so a narrow dock does not size it, and it stops its
   own Escape so the shell's does not also close a panel. It is copy only —
   nothing is typed into a shell. The list is `AGENTS` in `client/shell/dock.js`.
-- **The rail's Agent Terminal button is in every build**, drawn filled (`.tool.spot`)
+- **The rail's Agent Terminal button is in every build**, drawn filled in the primary accent (`.tool.prime`)
   and last on the bar so it is in the same place on every page, and it shows how
   many sessions are still running while the dock is hidden.
 

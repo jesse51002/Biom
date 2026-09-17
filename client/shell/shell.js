@@ -606,16 +606,17 @@ export function makeShell(deps) {
     // a developer's diagnostic — it is where a person runs their own agent
     // beside the page — so it is not on any hide list, and in a built
     // application it is the one action on the bar that does something rather
-    // than shows something, which is what `spot` marks. It sits at the far end
-    // of the row so it is in the same place on every page, whatever the page
-    // adds before it. It names how many sessions are still running while the
-    // dock is put away, because Hide stops nothing and the person is entitled
-    // to see that it did not.
+    // than shows something, so it takes `prime`, the bar's fill in the
+    // palette's primary accent — not `spot`, which is the second accent and
+    // Modify page's. It sits at the far end of the row so it is in the same
+    // place on every page, whatever the page adds before it. It names how many
+    // sessions are still running while the dock is put away, because Hide
+    // stops nothing and the person is entitled to see that it did not.
     if (terminal !== null) {
       const st = terminal.store.get();
       const running = terminal.store.live();
       const shown = st.dock.visible;
-      tools.push(h("button.tool.spot.termtoggle", {
+      tools.push(h("button.tool.prime.termtoggle", {
         type: "button",
         "aria-pressed": String(shown),
         title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
