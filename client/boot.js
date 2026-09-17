@@ -246,9 +246,9 @@ const views = {
   // registry on demand — none of it is in the snapshot — and the two that
   // watch runs are handed the stream, so a run starting or ending anywhere is
   // one reread.
-  runs: makeRunsView({ h, ws, ui, events }),
+  runs: makeRunsView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
   instructions: makeInstructionsView({ h, ws, ui }),
-  automation: makeAutomationView({ h, ws, ui, events }),
+  automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
 };
 
 const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events });

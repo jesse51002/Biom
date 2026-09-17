@@ -387,8 +387,11 @@ export interface Host {
    *  makes the requirement testable: open a stream, close it, assert the handles
    *  are gone.
    *
+   *  `hearRun` is the second, named event: a run started or ended under this
+   *  folder, which is a reason to reread `run.list` and never to redraw.
+   *
    *  Answers the function that unsubscribes. Calling it twice is harmless. */
-  watch(path: string, hear: () => void): Promise<() => void>;
+  watch(path: string, hear: () => void, hearRun?: () => void): Promise<() => void>;
   /** The vaults with a live watcher on them right now, absolute, and the
    *  directories each one holds open. The tests read it; nothing else does. */
   watching(): { path: string; handles: string[] }[];
@@ -836,16 +839,18 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
   }
 
-  /** A RUN STARTED OR ENDED, said on the vault's stream exactly as a changed
-   *  file is: payload-free, and the client answers by rereading `run.list`.
-   *  Nothing on disk moved that the watcher would report — `.biom/` is
-   *  excluded by name — so the registry says it itself, to the same
-   *  subscribers, through the same one event. A vault nobody is watching has
-   *  nobody to tell, and that is fine: the row is on disk for the next read. */
+  /** A RUN STARTED OR ENDED, said on the vault's stream as a changed file is
+   *  — payload-free — but as its own NAMED event, `run` beside `change`, so
+   *  the client rereads `run.list` and does not redraw the page: a page that
+   *  starts a run and follows its log must not be torn down for having done
+   *  so. Nothing on disk moved that the watcher would report — `.biom/` is
+   *  excluded by name — so the registry says it itself. A vault nobody is
+   *  watching has nobody to tell, and that is fine: the row is on disk for
+   *  the next read. */
   function announce(path: string, _row: RunRow): void {
     const now = live.get(path);
     if (now === undefined) return;
-    for (const hear of [...now.hears]) {
+    for (const hear of [...now.runHears]) {
       try {
         hear();
       } catch (e) {
@@ -863,6 +868,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   interface Live {
     watcher: Watcher;
     hears: Set<() => void>;
+    /** Told when a run starts or ends, on the same stream as a second, named
+     *  event — so a page is NOT redrawn for it. A file changing is a reason to
+     *  reread the page; a run's row moving is a reason to reread `run.list`,
+     *  and tearing a box down for it would take a page mid-interaction with
+     *  it. */
+    runHears: Set<() => void>;
     /** The burst being coalesced. Absolute paths, deduplicated by the set. */
     pending: Set<string>;
     timer: ReturnType<typeof setTimeout> | null;
@@ -1006,13 +1017,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }, SETTLE);
   }
 
-  async function subscribe(where: string, hear: () => void): Promise<() => void> {
+  async function subscribe(where: string, hear: () => void, hearRun?: () => void): Promise<() => void> {
     const held = await acquire(where);
     let now = live.get(held.path);
     if (now === undefined) {
       const made: Live = {
         watcher: { handles: () => [], close: () => {} },
         hears: new Set(),
+        runHears: new Set(),
         pending: new Set(),
         timer: null,
         busy: false,
@@ -1027,12 +1039,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
     const mine = now;
     mine.hears.add(hear);
+    if (hearRun !== undefined) mine.runHears.add(hearRun);
 
     let released = false;
     return () => {
       if (released) return;
       released = true;
       mine.hears.delete(hear);
+      if (hearRun !== undefined) mine.runHears.delete(hearRun);
       if (mine.hears.size > 0) return;
       if (live.get(held.path) !== mine) return;
       live.delete(held.path);
@@ -1874,7 +1888,7 @@ export function events(host: Host, path: string): Response {
       };
       let got: () => void;
       try {
-        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"));
+        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"), () => send("event: run\ndata: 1\n\n"));
       } catch {
         // A folder that cannot be a workspace. The stream ends rather than
         // hanging, and the tab's own reconnect will keep asking — which is

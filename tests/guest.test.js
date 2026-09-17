@@ -618,6 +618,29 @@ test("biom.vault() asks the host which folder this is, and names no folder of it
   expect(Object.keys(asked[0]).sort()).toEqual(["g", "id", "kind"]);
 });
 
+test("the shim wraps the six run kinds, and a page's start carries no stamp of its own", async () => {
+  const row = { id: "r1", page: "home", automation: "pull", by: null, status: "running" };
+  const { biom, sent } = shim({
+    "theme.get": null, "data.get": {},
+    "automation.list": [], "run.start": row, "run.list": [row], "run.get": row,
+    "run.read": { text: "hi", next: 2, ended: false }, "run.kill": { ...row, status: "killed" },
+  });
+  expect(await biom.automations()).toEqual([]);
+  expect(await biom.start("home", "pull", { window: 7 })).toEqual(row);
+  expect(await biom.runs({ page: "home" })).toEqual([row]);
+  expect(await biom.run("r1")).toEqual(row);
+  expect(await biom.readRun("r1", "stdout", 0)).toEqual({ text: "hi", next: 2, ended: false });
+  expect((await biom.kill("r1")).status).toBe("killed");
+  // What went down the port: the kinds by name, the inputs as given, and no
+  // `by` — the stamp is the bridge's, over anything a box could say.
+  const runKinds = sent.map((m) => m.kind).filter((k) => k.startsWith("run.") || k.startsWith("automation."));
+  expect(runKinds).toEqual(["automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill"]);
+  const started = sent.find((m) => m.kind === "run.start");
+  expect(started.inputs).toEqual({ window: 7 });
+  expect("by" in started).toBe(false);
+  expect(sent.find((m) => m.kind === "run.read").stream).toBe("stdout");
+});
+
 test("the shim offers no way to browse, open or make a folder", () => {
   // The other four `vault.*` kinds are outer-ring. Nothing in here wraps one,
   // and the guard would refuse it if something did.

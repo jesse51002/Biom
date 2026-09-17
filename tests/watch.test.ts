@@ -598,3 +598,52 @@ test("a stream over a folder that cannot be a workspace ends rather than hanging
   const first = await reader.read();
   expect(first.done).toBe(true);
 });
+
+// A RUN STARTING OR ENDING IS THE STREAM'S SECOND NAMED EVENT. It rides the
+// same stream as a changed file, payload-free, and is NOT `change`: a page that
+// starts a run and follows its log must not be torn down for having done so.
+// The screens that draw runs reread `run.list` on it; nothing else moves.
+test("a run starting and ending is said on the stream as its own event, and never as a change", async () => {
+  const g = await ground();
+  const vault = g.at("Runs");
+  const host = await stand(vault, g.memory);
+  try {
+    // A page with one automation, written the way an agent writes one.
+    const dir = join(vault, "pages", "home", "automations", "blip");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "automation.yaml"), "name: Blip\ncommand: [sh, -c, \"echo blip\"]\n", "utf8");
+    // The mount has read nothing yet; let the write settle so it is not the
+    // change this test is about.
+    await quiet(300);
+
+    const body = events(host, vault).body!;
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let seen = "";
+    const pump = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        seen += decoder.decode(value);
+      }
+    })();
+
+    // Told: the stream is open, and the watch is armed.
+    expect(await until(() => seen.includes(": open"))).toBe(true);
+    const changesBefore = (seen.match(/event: change/g) ?? []).length;
+
+    const started = value(await call(host, vault, { kind: "run.start", page: "home", automation: "blip", inputs: {}, by: null })) as { id: string };
+    expect(await until(() => (seen.match(/event: run/g) ?? []).length >= 2, 6000)).toBe(true);
+    // Two run events — the start and the end — and no change: nothing on disk
+    // moved that draws a page, because `.biom/` is the framework's and excluded.
+    expect((seen.match(/event: change/g) ?? []).length).toBe(changesBefore);
+    const row = value(await call(host, vault, { kind: "run.get", run: started.id })) as { status: string };
+    expect(row.status).toBe("exited");
+
+    await reader.cancel();
+    await pump;
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});

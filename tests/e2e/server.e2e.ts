@@ -541,6 +541,112 @@ walk("a workspace already on disk is opened from the picker and lands on its roo
   expect(await page.locator("nav.rack").innerText()).not.toContain("Kitchen");
 });
 
+walk("an automation is made on a page's Automations screen, started, and its log read back; the overview lists it; a page in the box can start one", async () => {
+  // ON THE SECOND WORKSPACE, freshly seeded and open on its root. The page bar
+  // carries Instructions and Automations; Automations takes the canvas, and a
+  // page with none opens on the templates.
+  await page.locator("span.tools button.tool", { hasText: "Automations" }).first().click();
+  await until("the Automations screen took the canvas", BOUNDS.draw, async () =>
+    (await page.locator("div.autoscreen div.pick button.tpl").count()) > 0);
+  // The line to hand your agent is the first thing on it, with Copy.
+  expect(await page.locator("div.autoscreen div.ask p.p").innerText()).toContain("Make an automation on page `home`");
+
+  // A NEW ONE FROM THE NODE TEMPLATE. The name is asked with a prompt, which
+  // the page answers with the template's own name.
+  page.once("dialog", (d) => void d.accept("Overnight"));
+  await page.locator('div.autoscreen button.tpl[data-template="node"]').click();
+  await until("the manifest form drew", BOUNDS.draw, async () => (await page.locator("div.manifest div.form").count()) > 0);
+  // The copy landed under the page, named as asked, and is the workspace's now.
+  const folder = join(second, "pages", "home", "automations", "overnight");
+  expect(existsSync(join(folder, "automation.yaml"))).toBe(true);
+  expect(readFileSync(join(folder, "automation.yaml"), "utf8")).toContain("name: Overnight");
+  expect(existsSync(join(folder, "code", "main.js"))).toBe(true);
+
+  // THE COMMAND IS MADE ONE THIS MACHINE CERTAINLY HAS. The template's is
+  // `node code/main.js`, and a runner with no node on its PATH is a fact about
+  // the runner and not about the framework — so the manifest is rewritten
+  // through the wire, the way the form writes it, to a shell that prints the
+  // same two lines the template's script does. The form's own write is the
+  // same kind from the same origin.
+  const set = (await page.evaluate(async (route) => {
+    const res = await fetch(route, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "e2e-manifest", g: 1, kind: "automation.set", page: "home", automation: "overnight", manifest: {
+        name: "Overnight", description: "prints where it ran", agent: "sh", env: [],
+        command: ["sh", "-c", "echo vault: $BIOM_VAULT; echo run: $BIOM_RUN"], inputs: [],
+      } }),
+    });
+    return await res.json();
+  }, `/v/${encodeURIComponent(second)}/api/call`)) as { ok: boolean; error?: { message?: string } };
+  expect([set.ok, set.error?.message ?? ""]).toEqual([true, ""]);
+  expect(readFileSync(join(folder, "automation.yaml"), "utf8")).toContain("echo vault");
+
+  // RUN IT FROM THE SCREEN. The row's one raw line is the last line printed,
+  // and the row ends as exited 0.
+  await page.locator('div.subbar button.sub[data-sub="runs"]').click();
+  await until("the Run button drew", BOUNDS.draw, async () => (await page.locator("div.runs button.run").count()) > 0);
+  await page.locator("div.runs button.run").click();
+  await until("the run ended as exited 0", BOUNDS.redraw, async () => {
+    const rows = page.locator("div.runrows div.runrow");
+    if ((await rows.count()) === 0) return false;
+    const verdict = await rows.first().locator("span.verdict").innerText().catch(() => "");
+    return verdict.startsWith("exited 0");
+  });
+  const line = await page.locator("div.runrows div.runrow").first().locator("span.line").innerText();
+  expect(line).toContain("run: ");
+  expect(line).toContain(join(second, ".biom", "runs"));
+  // The run's directory is the shape the guide says, and .biom/ ignores itself.
+  const runId = line.slice(line.lastIndexOf("/") + 1).trim();
+  const runDir = join(second, ".biom", "runs", runId);
+  for (const entry of ["automation.yaml", "AGENTS.md", "CLAUDE.md", "vault", "code", "stdout.log", "stderr.log", ".claude/settings.json"]) {
+    expect([entry, existsSync(join(runDir, entry))]).toEqual([entry, true]);
+  }
+  expect(readFileSync(join(second, ".biom", ".gitignore"), "utf8")).toBe("*\n");
+
+  // THE OVERVIEW, from the rail's foot, lists the finished run under the page
+  // it belongs to, and the page is a link.
+  await page.locator("div.rackfoot li.treerow a", { hasText: "Automations" }).first().click();
+  await until("the overview drew the finished run", BOUNDS.draw, async () =>
+    (await page.locator("div.overview div.run-row").count()) > 0);
+  const row = page.locator("div.overview div.run-row").first();
+  expect(await row.locator("div.run-name").innerText()).toBe("overnight");
+  expect(await row.locator("a.pagelink").innerText()).toBe("home");
+
+  // A PAGE IN THE BOX CAN START ONE. `biom.start` goes down the guest port,
+  // the bridge stamps the page's uid as *started by* — the shim sends no `by`
+  // and the bridge would overwrite one — and the row that comes back says
+  // who. Then `biom.readRun` follows the log to its end.
+  await page.evaluate(() => { location.hash = "#/page/home"; });
+  await until("the root drew again", BOUNDS.draw, async () => {
+    const said = await page.frameLocator("iframe.artifact").locator("body").innerText().catch(() => "");
+    return said.includes("Point your agent at this folder");
+  });
+  const started = await page.frameLocator("iframe.artifact").locator("body").evaluate(async () => {
+    const g = (window as any).biom;
+    const row = await g.start("home", "overnight", {});
+    let at = 0;
+    let text = "";
+    for (let i = 0; i < 200; i++) {
+      const got = await g.readRun(row.id, "stdout", at);
+      text += got.text;
+      at = got.next;
+      if (got.ended && got.text === "") break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const done = await g.run(row.id);
+    return { by: row.by, status: done.status, exit: done.exit, text };
+  });
+  expect(started.status).toBe("exited");
+  expect(started.exit).toBe(0);
+  expect(started.text).toContain("vault: " + second);
+  // The stamp is the page's uid, not the lie the box sent.
+  const rootDoc = readFileSync(join(second, "pages", "home", "content.yaml"), "utf8");
+  const uid = /^uid: ([a-z0-9]+)$/m.exec(rootDoc)?.[1] ?? "";
+  expect(uid).not.toBe("");
+  expect(started.by).toBe(uid);
+});
+
 walk("nothing threw, and nothing was written outside this run's own folder", async () => {
   // THE WHOLE RUN'S STDERR, read once at the end. A frame anywhere in it means
   // something threw where a refusal was supposed to be a sentence.
