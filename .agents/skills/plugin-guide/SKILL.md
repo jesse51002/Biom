@@ -15,22 +15,29 @@ description: >-
   `data-g-plugin` nodes configured by attributes alone, teardown, how a PART KIND
   is drawn by the one file the format names (`plugins/<kind>.js`) rather than by
   whichever file registers first, how the loader tells the registry which file is
-  running and why `shipped` is gone, that NOTHING IS SHIPPED any more —
-  every plugin is seeded into `<vault>/plugins/` and served from the vault route,
-  `guest/plugins/` is a seed root and is no longer served, and no file in a vault
-  may name `/guest/` — and THE LOADER, which is built: the server answers
-  `GET /v/<enc>/plugin/` with every `plugins/*.js` in that vault concatenated in
-  id order, each wrapped and named by its file, the client weaves ONE tag for it
-  and carries no list of plugin ids at all, and none of it is a `contracts/`
-  edit — so a vault's own slot plugin (`plugins/<id>.js`) loads exactly as its
-  own page plugin (`plugins/<id>/index.html`) already did. Load this whenever you touch `guest/runtime/registry.js`,
-  `guest/plugins/*`, or the `/plugin/` route in `server/main.ts`. Trigger on
+  running and why `shipped` is gone, that THE FRAMEWORK'S PLUGINS ARE THE RUNG
+  UNDER THE VAULT'S — a page's document and a slot plugin are resolved from
+  `<vault>/plugins/` first and `guest/plugins/` second, nothing is copied into a
+  vault unasked, a vault file at the framework's path is an OVERRIDE, the
+  framework's set is mirrored into `docs/plugins/` on every open for a person to
+  read, and a copy nobody edited is swept on open against the framework's git
+  history as a bridge — `guest/plugins/` is not served as a root of its own, and
+  no file in a vault may name `/guest/` — and THE LOADER: the server answers
+  `GET /v/<enc>/plugin/` with the framework's `*.js` minus every name the vault
+  also has, then the vault's `plugins/*.js`, each in id order, each wrapped and
+  named by its file and root, the client weaves ONE tag for it and carries no
+  list of plugin ids at all, and none of it is a `contracts/` edit — so a
+  vault's own slot plugin (`plugins/<id>.js`) loads exactly as its own page
+  plugin (`plugins/<id>/index.html`) does. Load this whenever you touch
+  `guest/runtime/registry.js`, `guest/plugins/*`, `server/workspace/plugins.ts`,
+  `server/platform/shipped.ts`, or the `/plugin/` route in `server/main.ts`.
+  Trigger on
   "plugin", "register", "mount", "ctx.use", "ctx.has", "ctx.options",
   "data-g-plugin", "page plugin", "shipped plugin", "vault plugin", "reserved
   id", "duplicate plugin id", "document.currentScript", "markdown plugin",
-  "mermaid", "classic script",
-  "no imports in the box", "/plugin/ route", or any change to what can fill a
-  node.
+  "mermaid", "classic script", "override", "docs/plugins", "sweep", "stale
+  plugin", "no imports in the box", "/plugin/ route", or any change to what can
+  fill a node.
 ---
 
 # Plugins — a registry where an import graph cannot be
@@ -227,11 +234,12 @@ draws one; a page that wants a board is `plugin: kanban`.
 
 ## 5. A part kind is drawn by the file the format names
 
-**Nothing is shipped any more.** Every plugin is copied out of `guest/plugins/`
-into `<vault>/plugins/` by the seeder and served from `/v/<enc>/plugin/…`, so the
-question *"is this ours"* has an empty set to answer about. That is the point —
-a copy in the person's hands is the whole promise — and it took the old rule's
-teeth with it.
+**Nothing is shipped in the old sense — served from `/guest/` ahead of the
+vault — and nothing is copied into the vault either.** The framework's plugins
+are the rung under `<vault>/plugins/`, served on the same `/v/<enc>/plugin/…`
+route behind the vault's own files, so the question *"is this ours"* is answered
+by which root a file was read from and never by a url. That took the old
+first-past-the-post rule's teeth with it, and this section is what replaced them.
 
 **What it must not take is the case the rule was written for.** `markdown`,
 `html`, `table` and `child` are not plugins the framework happens to ship: they
@@ -256,9 +264,11 @@ order, so **`plugins/0-notes.js` sorted ahead of `plugins/table.js` and took
 `table`** — every table in the workspace drawn by a file that had no idea, with
 nothing anywhere saying so.
 
-- **`plugins/<kind>.js` is the one file that may draw `<kind>`.** That is the
-  seeded `markdown.js`, or the person's own edit of it — editing the file that
-  draws your prose is the point of it being in the folder. The runtime's own
+- **`<kind>.js` is the one file that may draw `<kind>`.** That is the
+  framework's `markdown.js`, or the person's override of it at
+  `plugins/markdown.js` — the loader hands the registry the bare file name
+  whichever root it came from, and the union means only one of the two is ever
+  in the script. The runtime's own
   code, served from `/guest/`, may also register one; nothing there currently
   does.
 - **Any other file is refused**, before or after, with the file it came from in
@@ -303,51 +313,109 @@ section, and every section under it, from drawing.
 
 ---
 
-## 7. Where a vault's own plugins come from — AND THE HALF THAT IS NOT BUILT
+## 7. Where a plugin comes from — the vault's own, then the framework's
 
-**The server half exists.** `server/main.ts` routes `/v/<url-encoded-vault-path>/plugin/<rel>`
-to `<vault>/plugins/<rel>` and serves it as a classic script, exactly as `/guest/`
-and `/vendor/` are served. It is one of only two routes that resolve inside a
-vault (the other is `/asset/`), and it is per-vault for the obvious reason the
-other two are not: a plugin somebody wrote for their workspace lives in it. Path
-escape is refused by `under()`.
+**Two roots, nearest wins, and the framework's is never the winner.** A page
+naming `plugin: timeline` is handed a document by `htmlOf` in
+`server/domain/pages.ts` in this order: the page's own `index.html`; then
+`<vault>/plugins/timeline/index.html`, which is the person's — written by them,
+or copied in to be changed; then the FRAMEWORK'S own `guest/plugins/timeline/index.html`,
+read through the read-only `Files` the composition root hands `makePages`
+(`guest/plugins/` on disk in a checkout, the embedded map in a build). `MISSING_DOCUMENT`
+is what is left underneath, for a page naming a plugin nobody has. **A vault file
+at the framework's path is an OVERRIDE**: it wins by being there, and deleting it
+is how the framework's takes over again — nothing writes it back.
 
-**A PLUGIN THAT IS A PAGE ALREADY WORKS.** A page naming `plugin: timeline` is
-handed `<vault>/plugins/timeline/index.html` by `htmlOf` in `server/domain/pages.ts`,
-with the runtime spliced into its head and `biom.input` carrying what the
-page put under `input:`. The order is the page's own `index.html` first, then the
-workspace's own `plugins/<id>/index.html`. **There is no third rung**: nothing is
-shipped, the seeder puts every plugin in the vault before anything reads a page,
-and `MISSING_DOCUMENT` is what is left underneath for a page naming a plugin this
-workspace has not got. `doc`, `kanban` and `timeline` are the same shape in the
-same directory because they are the same kind of thing — which is what makes "a
-plugin is a downloaded artifact" a statement about the code rather than a promise
-about it.
+**Nothing is copied into `plugins/` unasked.** The set used to be seeded into
+every vault by `presets.ts`, on the argument that a copy in the person's hands
+was the whole promise; the cost, named at the time, was that a framework fix
+never reached a copy already made, and it was measured: this project's own
+workspace carried fourteen framework plugins a licence header to 283 lines
+behind, none of them edited on purpose. So a fresh vault has no `plugins/` at
+all, every page in it draws, and every vault follows a framework release the
+moment it is installed. `tests/new-vault.test.ts` holds the shape.
 
-**A FILE IN A VAULT MAY NOT NAME `/guest/`, and a plugin document naming its own
-sibling is the case that needed solving.** `plugins/kanban/index.html` has to load
-`plugins/kanban/kanban.js`: it cannot name the install directory (wrong the first
-time the application moves), cannot use a relative `src` (the box is a `srcdoc`
-frame at an opaque origin with no base), and cannot name the vault route (the file
-was written to disk before anybody knew which folder it landed in). So it writes
+**Resolution is per FILE, and that is why an override is copied whole.** The
+same walk the document takes, the route takes for a plugin's other files:
+`pluginFile` in `server/main.ts` answers `/v/<enc>/plugin/<rel>` from the
+vault's `plugins/<rel>` if it is there and the framework's `<rel>` if not — so a
+`plugins/kanban/index.html` alone still gets the framework's `kanban/kanban.js`
+underneath it. That is right for a partial override and surprising for somebody
+who wanted isolation, which is why the paved way to override is the whole
+directory. **A file in a vault may not name `/guest/`**, and a plugin document
+naming its own sibling is the case that needed solving: `plugins/kanban/index.html`
+has to load `plugins/kanban/kanban.js`, cannot name the install directory,
+cannot use a relative `src` (the box is a `srcdoc` frame at an opaque origin with
+no base), and cannot name the vault route (the file was written before anybody
+knew which folder it would be read against). So it writes
 `<script data-g-src="kanban/kanban.js">` — a path under `plugins/`, marked — and
-`weaveRuntime` in `client/platform/document.js`, which is the half that knows the
-vault, turns the mark into a real `src`. A `<base href>` was the alternative and
-was rejected: it would change relative resolution for a page author's own markup
-too, including every link they wrote.
+`weaveRuntime` in `client/platform/document.js` turns the mark into a real `src`
+under the vault's route, where the per-file walk answers it. `/guest/plugins/`
+itself is refused by `locate()`, so there is one url per plugin.
 
-**A PLUGIN THAT FILLS A SLOT LOADS TOO, AND THE ROUTE IS THE FOLDER.** This
-section said for a long time that it did not, and that the loader needed a wire
-kind. It needed neither.
+**WHAT A PERSON CAN READ IS `docs/plugins/`, and it is rewritten whole on every
+open.** `mirrorPlugins` in `server/workspace/plugins.ts` empties the folder and
+writes the framework's set into it out of the same `Files` the rung reads, so
+what they open is byte for byte what draws their page. Whole every time rather
+than filled, which is the one-word difference from the seeder: `fill` skipped a
+file that was there, and that is exactly what let a copy drift. Nothing serves
+it, nothing resolves a page against it, a file edited there is gone on the next
+open, and the folder is added to the vault's `.gitignore` (appended, never
+rewritten) so a framework release is not a diff in every vault's history.
+`docs/` is not a watched directory, so writing it redraws nothing.
+
+**WHAT THEY CAN CHANGE IS AN OVERRIDE, and the paved way is a copy out of that
+mirror**: `docs/plugins/kanban/` to `plugins/kanban/`. An agent opened in the
+folder can do that with no route at all, which is why the mirror answers *how
+does a person see the original* and *how does an agent override one* in the same
+stroke. From then on the copy is theirs and pinned by choice — the framework's
+version is shadowed until the copy is deleted. **A route and a Config row for
+the same copy are not built**: a write has to go through the guarded API, which
+is a wire kind and a `contracts/` edit, and `contracts/` waits for a barrier.
+
+**AND A COPY NOBODY EDITED GOES ON OPEN — a bridge, and it says so.**
+`sweepShipped` in the same module walks `plugins/` and, for every file the
+framework also has, asks whether it is byte for byte a version the framework
+EVER shipped: `server/platform/shipped.ts` computes git's own blob hash of the
+file and checks it against every hash that path has had in `guest/plugins/`'s
+history — read out of the checkout's `.git` in a source run, carried as
+`SHIPPED` in `dist/embedded.ts` by `tools/app.ts` in a build, which has no
+`.git` beside it. A match was never edited by anybody, and it goes: committed
+first, exactly as every agent write is, so the deletion is one readable diff and
+one `git revert` away, and a page plugin's directory goes with its last file.
+One changed byte keeps a file. **What it costs is named rather than solved**: a
+person who kept an OLD version on purpose, unedited, has a file that matches and
+loses it — the stale-copy cost taken away when it was silent. It exists so that
+no vault seeded before this, and no vault whose owner never reads about it, goes
+on carrying stale copies; once every vault on this side of the change has been
+opened once, it is sunset and the rung and the mirror are the whole mechanism.
+**A vault seeded from a version that is not in this repository's history is not
+matched** — the history is the public repository's, and this project's own
+workspace predates it, so that one is migrated by hand.
+
+**Neither job is on the mount path.** `afterMount` in `server/main.ts` starts
+both once `hold` has the mount, a page draws from the rung the instant the vault
+is open, and each failure is a sentence in the log rather than a mount that did
+not happen. `Host.settled(path)` is the promise a test waits on.
+
+**A PLUGIN THAT FILLS A SLOT LOADS THROUGH THE SAME ROUTE, AND THE ROUTE IS THE
+FOLDER UNION THE FRAMEWORK'S SET.** This section said for a long time that the
+loader needed a wire kind. It needed none.
 
 > **The server answers the DIRECTORY on the route it already serves the files
 > on.** `GET /v/<enc>/plugin/` — the same string `client/platform/document.js`
 > builds to reach one file, with nothing appended — is `pluginBundle` in
-> `server/main.ts`: every `plugins/*.js` in that vault, concatenated in id order,
-> each preceded by a comment naming its file and wrapped in a FUNCTION of its
-> own. The
-> client weaves **one** tag for it, in the place the five id-named tags used to
-> sit, and there is no list of plugin ids anywhere in the client any more.
+> `server/main.ts`: the framework's `*.js` MINUS every name the vault's
+> `plugins/` also has, then the vault's `plugins/*.js`, each set in id order,
+> each preceded by a comment naming its file and its root and wrapped in a
+> FUNCTION of its own. The client weaves **one** tag for it, and there is no
+> list of plugin ids anywhere in the client.
+>
+> **The union is computed here by filename and nowhere else.** A vault
+> `markdown.js` means the framework's `markdown.js` never enters the script, so
+> the registry never sees two registrations of one id and its refusal never
+> fires for this reason. The framework's go FIRST, so a vault plugin that
+> `ctx.use`s a framework one finds it registered.
 >
 > **No `contracts/` edit and therefore no barrier.** The route exists,
 > `vaultBase` is read rather than changed, and nothing new crosses the wire as a
@@ -359,39 +427,26 @@ kind. It needed neither.
 > one stated order, and one place to report a failure from.
 >
 > **A FUNCTION PER FILE AND NOT A `try` BLOCK**, because a block is a scope for
-> neither `var` nor a function declaration: two plugins that each declared
-> `var state` at their top level were one variable, and a file's own
-> `"use strict"` was an expression statement doing nothing. The wrapper is also
-> what tells the registry **which file is running** — it sets `rt.pluginFile`
-> around the call, and §5 is what that decides.
+> neither `var` nor a function declaration. The wrapper is also what tells the
+> registry **which file is running** — it sets `rt.pluginFile` to the BARE file
+> name around the call, the same name whichever root the file came from, and §5
+> is what that decides.
 >
-> **THE BUNDLE IS MEMOISED PER VAULT**, keyed on the folder's listing plus each
-> file's mtime and size. Every box in the vault asks for this url, so without it
-> a rail of twenty pages read and recompiled the whole folder twenty times on a
-> single-threaded server. `no-store` stays on the response — the change loop is
-> writing a plugin and pressing reload — and the memo is what makes that
-> affordable. **A single file over 512KB is refused by name** rather than held in
-> that string.
+> **THE BUNDLE IS MEMOISED PER VAULT**, keyed on the vault folder's listing plus
+> each file's mtime and size, and on a hash of the framework sources read — so
+> editing `guest/plugins/markdown.js` in a checkout and pressing reload is live.
+> `no-store` stays on the response, and the memo is what makes that affordable.
+> **A single vault file over 512KB is refused by name** rather than held in that
+> string.
 >
-> **A FAILURE IS NAMED BY ITS FILE.** `plugins/<file> did not load: …` through
-> `rt.report`, because the alternative reaches the page as `no plugin named "…"
-> is registered` at whatever node wanted it — which reads as the page author's
-> bug and is the plugin's. A file that does not PARSE is the case a `try` cannot
-> catch, so each source is compiled on the server with `new Function` (which runs
-> none of it) and a file that fails is replaced by the sentence saying so: one
-> broken plugin is one broken plugin, rather than a vault whose every page draws
-> nothing.
+> **A FAILURE IS NAMED BY ITS FILE AND ITS ROOT.** `plugins/<file> did not load: …`
+> or `framework/<file> did not load: …` through `rt.report`, so a reader knows
+> which copy broke. A file that does not PARSE is the case a `try` cannot catch,
+> so each source is compiled on the server with `new Function` (which runs none
+> of it) and a file that fails is replaced by the sentence saying so.
 >
-> **An absent or empty `plugins/` is an empty script and never a 404.** Every box
-> in the vault carries that tag.
->
-> **The document is still byte-identical per vault**, because the tag is a url
-> and not a listing — so adding a plugin changes no document and nothing about
-> frame reuse changes.
->
-> **Ordering needed nothing.** `boot.js` draws nothing until both ports have
-> arrived AND the document has finished parsing, so a tag anywhere after it
-> registers in time.
+> **An absent or empty `plugins/` answers the framework's set alone and never a
+> 404.** Every box in the vault carries that tag.
 >
 > **A page plugin still needs none of this.** It IS the document, so the server
 > naming its file is the whole of the loading. `plugins/<id>.js` is a slot
@@ -401,12 +456,8 @@ kind. It needed neither.
 > nothing refuses the combination.
 >
 > **§5 is what happens when one of them claims a part kind**, and the order the
-> folder happens to sort in decides nothing: only `plugins/<kind>.js` may draw
-> `<kind>`, so a file named to sort first cannot take one.
-
-Everything else in this skill — the registry, the id grammar, the reservation
-rule, `ctx.use` — was written against the day that loader existed, which is why
-none of it changed when it landed.
+> folder happens to sort in decides nothing: only `<kind>.js` may draw `<kind>`,
+> so a file named to sort first cannot take one.
 
 ---
 
@@ -468,11 +519,18 @@ as long as the box does.
 - **Page-level plugins:** `mountPagePlugins` in `guest/runtime/boot.js`,
   reading the `PagePlugin[]` the server puts on `Page.page`.
 - **Teardown bookkeeping:** `guest/runtime/effects.js`.
-- **The plugins, as a SEED ROOT rather than a served one:**
-  `guest/plugins/` — copied into `<vault>/plugins/` by `seedPlugins` in
-  `server/workspace/presets.ts` and drawn from there; `/guest/plugins/`
-  is refused by `locate()` in `server/main.ts` so there are never two urls for one
-  plugin. **List that directory rather than trusting a roster here.**
+- **The plugins, as the FALLBACK RUNG rather than a served root:**
+  `guest/plugins/` — read second by `pluginDocument` in `server/domain/pages.ts`
+  and by `pluginFile` and `pluginBundle` in `server/main.ts`, through the
+  read-only `Files` `makeHost` builds once as `pluginRoot`; `/guest/plugins/`
+  is refused by `locate()` so there are never two urls for one plugin.
+  **List that directory rather than trusting a roster here.**
+- **The mirror and the sweep on open:** `server/workspace/plugins.ts` —
+  `mirrorPlugins` writes `docs/plugins/` whole, `sweepShipped` deletes unedited
+  shipped copies; `afterMount` in `server/main.ts` runs both off the mount path.
+- **What counts as shipped:** `server/platform/shipped.ts` — git's blob hash,
+  and every hash a path has had in `guest/plugins/`'s history; `tools/app.ts`
+  carries the list as `SHIPPED` in `dist/embedded.ts`.
   `markdown.js` is the
   reference implementation and the worked example of `ctx.has` + `ctx.use`
   (fence → diagram), the UMD-not-module rule, and "a missing library draws the
@@ -531,10 +589,10 @@ as long as the box does.
 This skill is the single source of truth for the plugin registry and the plugin
 contract. Whenever either genuinely changes — a field added to a plugin
 definition, a field added to `ctx`, a change to how a reserved id is decided, a
-plugin added to or removed from the seed root, and above all **the day the
-vault-plugin loader in §7 is built** —
+plugin added to or removed from the framework's set, a change to which root
+wins, and above all **the day the sweep in §7 is sunset** —
 **update this skill in the same change** so it never goes stale, and check whether
-`vault/.agents/skills/plugins/SKILL.md` needs the same edit for its own audience.
-If a rule here is what diverged, fix the rule; if the divergence is a mistake, fix
-the code. Either way they agree when you are done. §7 stays in this file, stated
-plainly, until it is no longer true.
+`vault/.agents/skills/plugins/SKILL.md` and `vault/docs/plugins.md` need the same
+edit for their own audience. If a rule here is what diverged, fix the rule; if
+the divergence is a mistake, fix the code. Either way they agree when you are
+done.

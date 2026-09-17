@@ -232,11 +232,10 @@ const views = {
   // plugin always draws it. See the comment on `makeDesignView`.
   design: makeDesignView({ h, frameHost, ws, ui, vault: vault ?? "" }),
   // The map of the whole workspace: the `mindmap` plugin's document, mounted on
-  // `@map`, which the server answers as a bare plugin page. NOTHING IS SHIPPED
-  // any more — every plugin is seeded into `<vault>/plugins/` and served from
-  // there — so what this draws is the document `page.js` carries as
-  // `MAP_DOCUMENT`, held equal to the seed root's own file by
-  // `tests/mindmap.test.js`, and never a plugin the framework serves.
+  // `@map`, which the server answers as a bare plugin page — the vault's own
+  // `plugins/mindmap/` if it overrode one, the framework's otherwise — so what
+  // this draws is the document `page.js` carries as `MAP_DOCUMENT`, held equal
+  // to the framework's own file by `tests/mindmap.test.js`.
   map: makeMapView({ h, frameHost, ws, ui, vault: vault ?? "" }),
 };
 

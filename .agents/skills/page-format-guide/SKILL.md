@@ -122,10 +122,10 @@ already spent.
 
 **This is not `kind:` returning.** That key claimed a page was one of a closed set
 the host understood, and each of them was a branch in the host. This one names a
-DOCUMENT, the host has no opinion about what it does, and the set is open: NOTHING
-IS SHIPPED at all. Every plugin is seeded into `<vault>/plugins/` and drawn from
-there, so the framework's own and one a workspace wrote are not merely
-indistinguishable — they are the same thing in the same folder.
+DOCUMENT, the host has no opinion about what it does, and the set is open: the
+framework's own plugins are the rung UNDER the workspace's `plugins/`, resolved
+by the same lookup, so the framework's own and one a workspace wrote are the same
+shape of thing — and a workspace file at the framework's path is an override.
 
 **SECTIONS ARE THE DOC PLUGIN'S CONCEPT.** A board has none; an html page has
 none; child reconciliation, `section.order` and the whole section runtime belong

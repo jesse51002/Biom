@@ -64,13 +64,13 @@
 //     starts from that — and it is why this walk failing is worth a sentence
 //     rather than a silence, since what is lost is a file on every future page.
 //
-//   · plugins/ — EVERY PLUGIN, copied out of `guest/plugins/`. Nothing is
-//     shipped: the page plugins (`doc`, `kanban`, `mindmap`) and the slot
-//     plugins (`markdown`, `html`, `table`, `child` and the rest) all live in
-//     the vault, are served to the box from it, and are the person's to open and
-//     change. It rides the same `fill` as everything else, so a vault made
-//     before this existed gains them on the next start and one that wrote its
-//     own `plugins/doc/index.html` keeps it.
+//   · NOT plugins/. The framework's plugins used to be copied in here too, and
+//     the cost — named at the time — was that a framework fix never reached a
+//     copy already made. They are the FALLBACK RUNG now: `pages.ts` reads the
+//     vault's `plugins/` first and the framework's own set second, so a vault
+//     holds only what it wrote or overrode. What a person can open to read is
+//     the mirror `server/workspace/plugins.ts` writes into `docs/plugins/` on
+//     every open, and what they can change is a copy of it in `plugins/`.
 //
 //   · The THEME.
 //
@@ -152,25 +152,6 @@ export interface PresetDeps {
    *  `skill/_lib/`, which is a re-export shim here and a verbatim copy of each
    *  named file in a vault. Read, never written. */
   checkerLib?: Files;
-  /** Rooted at `guest/plugins/`, and copied verbatim into the vault's
-   *  own `plugins/`. EVERY PLUGIN IS A FILE IN THE VAULT — `doc`, `kanban` and
-   *  `mindmap` are page plugins with an `index.html` each, `markdown`, `html`,
-   *  `table`, `child` and the rest are slot plugins and are classic scripts —
-   *  and after this copy there is no shipped set left to fall back to. The point
-   *  is the copy: a person can open the file that drew their page where they
-   *  stand, and change it.
-   *
-   *  IT IS A SECOND SEED ROOT RATHER THAN A DIRECTORY UNDER `vault/`,
-   *  because the runtime's own plugins would then exist twice in one repository
-   *  and the copy that fell behind would be somebody's page drawing the old
-   *  drawing. Nothing under `server/` may import `guest/`, so the composition
-   *  root hands it down exactly as it hands down `vaultSeed` and `skill`.
-   *
-   *  WHAT THE COPY COSTS IS NAMED AND NOT SOLVED: `fill` never writes over a file
-   *  that is there, so a framework fix to a plugin never reaches a vault that has
-   *  already been seeded. That is the base-moves-under-the-extension problem and
-   *  it is deferred. Read, never written. */
-  pluginSeed?: Files;
   yaml: YamlCodec;
 }
 
@@ -184,12 +165,6 @@ export interface ThemeStore {
 }
 
 const THEME_FILE = "theme.json";
-
-/** A workspace's OWN plugins, a root sibling of `pages/`. The server already
- *  serves this folder to the box as classic scripts and already reads a page's
- *  document out of it; seeding into it is what makes both of those the ONLY
- *  route rather than the second one. */
-const PLUGINS_DIR = "plugins";
 
 /* ── what a vault gets at its root ──────────────────────────────────────── */
 
@@ -369,7 +344,7 @@ const str = (v: string | string[] | undefined): string | null =>
 /* ── the module ─────────────────────────────────────────────────────────── */
 
 export function makePresets(deps: PresetDeps): Presets {
-  const { pages, files, seed, vaultSeed, skill, checkerLib, pluginSeed } = deps;
+  const { pages, files, seed, vaultSeed, skill, checkerLib } = deps;
 
   /** Domain failures carry one of the contract's closed error codes, so the API
    *  layer answers with it rather than falling back to `internal`. The message
@@ -483,46 +458,6 @@ export function makePresets(deps: PresetDeps): Presets {
     }
   }
 
-  /** EVERY PLUGIN, INTO `<vault>/plugins/`, and nothing is shipped any more.
-   *
-   *  It is the same walk and the same `fill` as the vault root, pointed at a
-   *  second root — which is why this piece needed no new machinery. Three things
-   *  follow from `fill` and are the whole behaviour:
-   *
-   *  · A vault made before this existed gains the set on its next start. No
-   *    migration, no version marker, no prompt — the same property the skills
-   *    and the design doc were given.
-   *  · A vault that has its own `plugins/doc/index.html` keeps it, byte for
-   *    byte, and gains the plugins it has not got. The walk is FILE BY FILE
-   *    rather than directory by directory, so a partial copy is the case that
-   *    works rather than the case that breaks.
-   *  · A plugin somebody deleted comes back on the next start, because a missing
-   *    file is a file `fill` writes.
-   *
-   *  THE EMPTY SEED IS SAID OUT LOUD, exactly as `seedVaultRoot` says it. A root
-   *  that is handed over but has nothing in it seeds nothing, and there is no
-   *  shipped rung left to fall back to — so every page in the workspace draws
-   *  MISSING_DOCUMENT and the log is silent about why. The `undefined` case was
-   *  already a sentence; this is the same failure reached by a different route
-   *  and it gets the same one. */
-  async function seedPlugins(): Promise<void> {
-    if (pluginSeed === undefined) {
-      console.warn("vault: no plugins were handed to this workspace — no page will draw");
-      return;
-    }
-    // Listed here rather than left to `walk`, because what is being asked is a
-    // question `walk` has no answer for: it copies what it is given and an empty
-    // directory is a legitimate thing to copy. A list that THROWS is not caught
-    // anywhere on this path — a seed root that cannot be read is a broken
-    // install, and a mount that carried on would hand somebody a workspace in
-    // which nothing draws.
-    if ((await pluginSeed.list(".")).length === 0) {
-      console.warn("vault: nothing on disk to seed the vault's plugins with — no page will draw");
-      return;
-    }
-    await walk(pluginSeed, ".", PLUGINS_DIR);
-  }
-
   /** Copy a directory of the seed, whatever depth it turns out to be.
    *
    *  IT USED TO STOP AT TWO LEVELS, on the reasoning that two was all the shape
@@ -613,12 +548,6 @@ export function makePresets(deps: PresetDeps): Presets {
       // go deeper. Before this, that knowledge lived only in the framework repo.
       await seedVaultRoot();
       await seedChecker();
-
-      // AND EVERY PLUGIN, BEFORE ANYTHING READS A PAGE. There is no shipped set
-      // left, so until this returns the vault has nothing that can draw — which
-      // is why it sits here, where the format gate already sits, and for the
-      // same reason.
-      await seedPlugins();
 
       // THE ROOT PAGE, which is guaranteed rather than seeded: pages.ts conjures
       // it the instant anything asks for the page list, because every ordering

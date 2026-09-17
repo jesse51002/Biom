@@ -120,10 +120,10 @@ import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
 
 const PAGES_DIR = "pages";
-/** A workspace's OWN plugins, a root sibling of `pages/`. The server already
- *  serves this directory to the box as classic scripts; this is the same folder
- *  read for a page's document, so a plugin installed here is reached exactly as
- *  a shipped one is. */
+/** A workspace's OWN plugins, a root sibling of `pages/`. The server serves
+ *  this directory to the box as classic scripts and reads a page's document out
+ *  of it FIRST — a file here at the framework's path is an override, and it
+ *  wins by being there. */
 export const PLUGINS_DIR_VAULT = "plugins";
 /** Where the design doc lives: beside `pages/` rather than inside it, which is
  *  what keeps it out of the tree without a reserved id inside the tree. */
@@ -188,12 +188,12 @@ const ASSETS = "_assets";
  *  framework rather than to any vault and nothing may import `guest/`. */
 export const DEFAULT_SECTION_FILE = "guest/sections/default.html";
 
-/** WHERE THE PLUGINS SHIP FROM, AND IT IS A SEED ROOT RATHER THAN A LOOKUP.
- *  Nothing is served out of here and nothing reads a page's document out of it:
- *  `guest/plugins/` is copied into every vault's own `plugins/` by the seeder,
- *  file by file, and every page is then drawn by the copy in the folder. The
- *  composition root names this directory when it builds that seed root, which is
- *  the only thing it is still for. */
+/** WHERE THE FRAMEWORK'S OWN PLUGINS ARE, AND IT IS THE FALLBACK RUNG. Nothing
+ *  is copied out of here any more: a page's document is read from the vault's
+ *  `plugins/` first and from here second, so a vault holds only the plugins it
+ *  wrote or overrode and the rest follow the framework. The composition root
+ *  names this directory when it builds the read-only `Files` handed to
+ *  `makePages` — on disk in a checkout, out of the embedded map in a build. */
 export const PLUGINS_DIR = "guest/plugins";
 
 /** The `doc` plugin's document, in the vault. The design doc is always a doc
@@ -202,9 +202,9 @@ export const PLUGINS_DIR = "guest/plugins";
  *  of one path cannot drift. */
 export const DOC_PLUGIN_DOCUMENT = "plugins/doc/index.html";
 
-/** The `mindmap` document the rail's own Map row draws with — read out of the
- *  VAULT like every other plugin document, because there is no shipped set left
- *  to fall back to. */
+/** The `mindmap` document the rail's own Map row draws with — resolved like
+ *  every other plugin document: the vault's own if it has one, the framework's
+ *  otherwise. */
 export const MAP_PLUGIN = "mindmap";
 
 /** The page's own document, when it draws itself. */
@@ -695,6 +695,10 @@ export const ROOT_PAGE_STANDIN =
  *   `defaultSection` is: it lives in `guest/` and nothing here may import it.
  *   Written into the page's directory as its own `index.html` and never read
  *   again, so a person editing that copy is editing their page.
+ * @param framework the framework's own plugins, rooted at `guest/plugins/` and
+ *   read-only — the last rung a page's document is resolved from. Left out, a
+ *   page names a plugin the vault has not got and draws `MISSING_DOCUMENT`,
+ *   which is what a test that stands the module up alone should see.
  */
 export function makePages(
   files: Files,
@@ -703,6 +707,7 @@ export function makePages(
   defaultSection: string = DEFAULT_SECTION,
   rootName: string = "Home",
   rootPage: string = ROOT_PAGE_STANDIN,
+  framework: Files | null = null,
 ): Pages {
   const dirOf = pageDir;
 
@@ -711,32 +716,35 @@ export function makePages(
    *
    *  THE ORDER IS THE WHOLE STATEMENT OF WHAT A PLUGIN IS, AND IT IS NEAREST
    *  FIRST. A page's OWN `index.html` wins, because a page that drew itself
-   *  asked for nothing else. Then one in this workspace's `plugins/`. There is
-   *  no third rung any more, and its going is what finishes the argument the two
-   *  rungs above were making.
+   *  asked for nothing else. Then one in this workspace's `plugins/`, which is
+   *  the person's — written by them, or copied in to be changed. Then the
+   *  FRAMEWORK'S OWN, which is never the winner: a vault file at the same path
+   *  always replaces it, and a vault that holds no such file follows every
+   *  framework release without a copy going stale. `MISSING_DOCUMENT` is what is
+   *  left underneath, reached only by a page naming a plugin nobody has.
    *
-   *  THE SHIPPED SET USED TO WIN, AND THAT WAS A BUG RATHER THAN A POLICY. It
-   *  meant `doc`, `kanban` and `mindmap` were unreplaceable by name: a workspace
-   *  that wrote `plugins/doc/index.html` had it silently ignored, with nothing
-   *  anywhere saying why. Then it was moved last, which made it a default rather
-   *  than a winner. Now it is gone: the framework SEEDS every plugin into the
-   *  vault instead, so the second rung is always occupied and the person can open
-   *  the file that drew their page where they stand. `MISSING_DOCUMENT` is what
-   *  is left underneath, and it is reached only by a page naming a plugin this
-   *  workspace has not got.
-   *
-   *  WHICH IS WHY THE SEEDER RUNNING BEFORE ANYTHING READS A PAGE IS LOAD-BEARING
-   *  rather than tidy. `presets.seedIfEmpty()` is gated on nothing and runs on
-   *  every mount, ahead of the first read — see the order in `main.ts`. */
+   *  THE FRAMEWORK'S SET USED TO BE SEEDED INTO THE VAULT INSTEAD, so that the
+   *  second rung was always occupied — and the cost, named at the time, was
+   *  that a framework fix never reached a copy already made. The last rung is
+   *  what pays that down: nothing is copied unasked, and what a person wants
+   *  to change they copy into `plugins/` themselves. */
   const htmlOf = async (id: PageId, doc: PageDoc): Promise<string> => {
     const own = await files.read(`${dirOf(id)}/${PAGE_DOCUMENT}`);
     if (own !== null) return own;
     return await pluginDocument(doc.plugin);
   };
 
-  /** One plugin's document out of the vault's own `plugins/`. */
-  const pluginDocument = async (plugin: string): Promise<string> =>
-    (await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`)) ?? MISSING_DOCUMENT;
+  /** One plugin's document: the vault's own, then the framework's. */
+  const pluginDocument = async (plugin: string): Promise<string> => {
+    const rel = `${plugin}/${PAGE_DOCUMENT}`;
+    const mine = await files.read(`${PLUGINS_DIR_VAULT}/${rel}`);
+    if (mine !== null) return mine;
+    if (framework !== null) {
+      const theirs = await framework.read(rel);
+      if (theirs !== null) return theirs;
+    }
+    return MISSING_DOCUMENT;
+  };
 
   /** The tolerant read, and the whole of the isolation: `null` is no page,
    *  `broken` is a page whose `content.yaml` will not parse.

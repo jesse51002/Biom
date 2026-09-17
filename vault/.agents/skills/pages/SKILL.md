@@ -150,9 +150,9 @@ every key a page and a section may carry, the keys that are refused by name and
 what replaced each, `contents` as the order, and the shipped default section. The
 rules it produces are here.
 
-**R61 — the plugin a page names has to be able to draw it.** The host looks in two places, in order: the page's own `index.html`, then this workspace's `plugins/<id>/index.html`. **There is no third rung — nothing is shipped**, every plugin is a file in `plugins/`, and a page that names neither draws a stand-in saying so, which is a page nobody can use.
+**R61 — the plugin a page names has to be able to draw it.** The host looks in three places, in order: the page's own `index.html`, then this workspace's `plugins/<id>/index.html` — an override, if you made one — then the framework's own `<id>/index.html`, which is never the winner. A page that names a plugin nobody has draws a stand-in saying so, which is a page nobody can use.
 
-**The checker can only see the first of the two**, because it is handed one page directory and cannot see the workspace around it — so a page naming a plugin it did not ship with is never a finding, and might well be installed. What it does report is the case with no ambiguity in it: **a page that names no plugin, and therefore draws its own `index.html`, and has no `index.html`.** *(FAIL.)*
+**The checker can only see the first of the three**, because it is handed one page directory and cannot see the workspace or the framework around it — so a page naming a plugin the checker cannot find is never a finding, and might well be the framework's own. What it does report is the case with no ambiguity in it: **a page that names no plugin, and therefore draws its own `index.html`, and has no `index.html`.** *(FAIL.)*
 
 **And `contents:` left on a page a document is not drawing** is a WARN: sections are the doc plugin's input, so on a board or an html page nothing reads that key and every word under it is invisible. It is the shape a page ends up in when `plugin:` was changed and the body was not.
 

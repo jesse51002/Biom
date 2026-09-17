@@ -332,34 +332,6 @@ test("a workspace handed no preset root opens with an empty shed rather than fai
 
 /* ── a seed root that is there and is wrong ─────────────────────────────── */
 
-test("a plugin seed root that is EMPTY is said out loud, because no page will draw", async () => {
-  // The `undefined` case already had a sentence. This is the same failure by a
-  // different route — a root handed over and holding nothing — and it used to be
-  // silent: the walk found no entries, returned, and every page in the workspace
-  // drew MISSING_DOCUMENT with nothing in the log saying why. There is no shipped
-  // rung left to fall back to, so the silence is the whole of the bug.
-  const { db, presets } = boot(root, null, { pluginSeed: seedRoot(() => []) });
-  const said = await warnings(() => presets.seedIfEmpty());
-  expect(said).toContain("no page will draw");
-  expect(existsSync(join(root, "plugins"))).toBe(false);
-  // And the mount finished: an empty seed is a bad install, not a crash.
-  expect(existsSync(join(root, "design", "content.yaml"))).toBe(true);
-  db.close();
-});
-
-test("a plugin seed root that cannot be READ fails the mount rather than seeding half a vault", async () => {
-  // EACCES on the install directory, EIO on the disk under it. `Files.list`
-  // answers ENOENT and its neighbours with an empty array, so a throw that gets
-  // this far means something is wrong with the install itself — and a mount that
-  // swallowed it would hand somebody a workspace in which nothing draws and the
-  // log says nothing.
-  const { db, presets } = boot(root, null, {
-    pluginSeed: seedRoot(() => { throw Object.assign(new Error("permission denied"), { code: "EACCES" }); }),
-  });
-  await expect(presets.seedIfEmpty()).rejects.toThrow(/permission denied/);
-  db.close();
-});
-
 test("a seed root whose SUBDIRECTORY cannot be read fails too, at whatever depth it is", async () => {
   // The same rule one level down, and the one the walk used to swallow: a root
   // that lists fine and a directory inside it that does not. Half the vault root
