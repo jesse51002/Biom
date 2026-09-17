@@ -33,14 +33,22 @@
      package, so a third-party import adds no edge to the dependency graph and
      needs no exception in layers.json. -->
 <script type="importmap">
-{ "imports": { "markdown-it": "/vendor/markdown-it.mjs" } }
+{ "imports": {
+  "markdown-it": "/vendor/markdown-it.mjs",
+  "@xterm/xterm": "/vendor/xterm.mjs",
+  "@xterm/addon-fit": "/vendor/addon-fit.mjs"
+} }
 </script>
 
 <link rel="stylesheet" href="/css/tokens.css">
+<!-- The emulator's own sheet, as upstream ships it, before ours so the dock's
+     dress in terminal.css wins every tie. -->
+<link rel="stylesheet" href="/vendor/xterm.css">
 <link rel="stylesheet" href="/css/page.css">
 <link rel="stylesheet" href="/css/table.css">
 <link rel="stylesheet" href="/css/chrome.css">
 <link rel="stylesheet" href="/css/panels.css">
+<link rel="stylesheet" href="/css/terminal.css">
 </head>
 <body>
 <div id="root"></div>

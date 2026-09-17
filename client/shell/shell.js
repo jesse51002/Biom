@@ -51,6 +51,8 @@
 /** @import { FrameHost, Page, PageId, TableView,
  *            UiState, UiStore, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { TerminalStore } from "../store/terminals.js" */
+/** @import { TerminalView } from "../views/terminal.js" */
 
 import { remember } from "../platform/dom.js";
 import { closePopover, popover, popItem } from "../widgets/popover.js";
@@ -63,6 +65,7 @@ import { closeHref } from "../views/vault.js";
 import { makePanels } from "./panels.js";
 import { makeDialog } from "./dialog.js";
 import { makeRack } from "./rack.js";
+import { makeDock } from "./dock.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 /** @typedef {(el: HTMLElement, ...content: any[]) => HTMLElement} Fill */
@@ -113,6 +116,10 @@ import { makeRack } from "./rack.js";
  * @property {string} [search] THE QUERY THIS WINDOW WAS OPENED WITH, which the
  *   rail's `Close workspace` row carries forward minus the folder. Defaults to
  *   the real one, and to "" where there is no window at all.
+ * @property {{ store: TerminalStore, view: TerminalView }} [terminal]
+ *   THE AGENT TERMINAL, when this window has a workspace to run one in. Absent,
+ *   no dock is built, no `.work` wraps the bed, and the rail offers no Terminal
+ *   row — which is a tab with no folder, and every test that is not about it.
  */
 
 /** The route vocabulary, so a hash somebody typed cannot invent a view.
@@ -222,6 +229,18 @@ export function makeShell(deps) {
   const bed = h("div.bed", rack, canvas, sizer.grip);
   const strip = h("div.strip");
 
+  /** THE TERMINAL DOCK, beside the whole workspace — rail-side navigation and
+   *  page alike — on whichever edge it was dragged to. `.work` holds the bed and
+   *  the dock as two fixed children for the life of the window, and which edge
+   *  is a grid template on it: see the header of `dock.js` for why nothing here
+   *  may ever reparent either. No terminal, no wrapper, and the bed is the row
+   *  it always was. */
+  const terminal = deps.terminal ?? null;
+  const dock = terminal === null ? null : makeDock({ h, terms: terminal.store, view: terminal.view });
+  const work = dock === null ? null : h("div.work", bed, dock.el);
+  if (dock !== null && work !== null) dock.attach(work);
+  const middle = work ?? bed;
+
   /** The window's own bar, or null in a browser. Read once: see `windowBridge`.
    *  The double-click is here rather than on a control because the whole bar is
    *  a drag region and a drag region on Linux has no window manager behind it
@@ -236,8 +255,8 @@ export function makeShell(deps) {
   // skeleton: with no bridge the element is not built and nothing about the
   // page below it changes by a pixel.
   const app = titlebar === null
-    ? h("div.app", rail, bed, strip)
-    : h("div.app.framed", titlebar, rail, bed, strip);
+    ? h("div.app", rail, middle, strip)
+    : h("div.app.framed", titlebar, rail, middle, strip);
 
   /** What the body was last built from. Identity, not equality. @type {unknown[]} */
   let built = [Symbol("nothing")];
@@ -520,6 +539,26 @@ export function makeShell(deps) {
     const crumbs = h("nav.crumbs", { "aria-label": "Where" }, ...trail(route, w, page));
 
     const tools = [];
+
+    // THE TERMINAL'S VISIBLE TOGGLE, in every build. It is not a developer's
+    // diagnostic — it is where a person runs their own agent beside the page —
+    // so it is not on any hide list. It names how many sessions are still
+    // running while the dock is put away, because Hide stops nothing and the
+    // person is entitled to see that it did not.
+    if (terminal !== null) {
+      const st = terminal.store.get();
+      const running = terminal.store.live();
+      const shown = st.dock.visible;
+      tools.push(h("button.tool.termtoggle", {
+        type: "button",
+        "aria-pressed": String(shown),
+        title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
+        onclick: () => {
+          terminal.store.toggle();
+          if (!shown) terminal.view.focus();
+        },
+      }, !shown && running > 0 ? `Terminal · ${running}` : "Terminal"));
+    }
 
     // REREADING ON DEMAND, which is still a thing a person wants even though the
     // watcher does it for them: a file the server could not see move, a doubt
@@ -869,7 +908,26 @@ export function makeShell(deps) {
           // `closeHref`, is the other direction of the same move, and it keeps
           // the per-launch token for the same reason. Middle-click opens the
           // start page in a second tab and this file does nothing to arrange it.
-          h("li.treerow", h("a", { href: closeHref(search) },
+          //
+          // LEAVING WITH TERMINALS RUNNING ASKS FIRST. A workspace's sessions do
+          // not follow the window to the start page — no session silently changes
+          // workspace — so closing it ends them, and only once the person has
+          // said so. Cancel keeps everything where it is.
+          h("li.treerow", h("a", {
+            href: closeHref(search),
+            onclick: (/** @type {Event} */ e) => {
+              if (terminal === null) return;
+              const running = terminal.store.live();
+              if (running === 0) return;
+              e.preventDefault();
+              const href = closeHref(search);
+              const ok = typeof confirm === "function" && confirm(
+                `${running === 1 ? "A terminal session is" : `${running} terminal sessions are`} still running in this workspace. ` +
+                "Closing it ends them. Close the workspace?");
+              if (!ok) return;
+              void terminal.store.endAll().then(() => { location.href = href; });
+            },
+          },
             h("span.kindtag", { "data-kind": "close", "aria-hidden": "true" }),
             h("span.nm", "Close workspace"))))),
     ];
@@ -1081,7 +1139,9 @@ export function makeShell(deps) {
     // a `#/vault` somebody typed with a folder open, and the way out of a
     // workspace that did not open at all.
     const bare = u.route.view === "vault";
-    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "");
+    // The dock first, because whether it fills the window decides the grid.
+    if (dock !== null) dock.sync(bare);
+    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "") + (dock !== null && dock.full() ? " tfull" : "");
 
     if (titlebar !== null) fill(titlebar, ...titleParts());
     fill(rail, ...(bare ? [] : railParts()));
@@ -1194,9 +1254,15 @@ export function makeShell(deps) {
         }
       }
 
+      if (dock !== null) dock.mount();
+
       if (typeof document !== "undefined" && document.addEventListener) {
         document.addEventListener("keydown", (ev) => {
           if (ev.key !== "Escape") return;
+          // ESCAPE INSIDE THE TERMINAL IS THE PROGRAM'S. Vim leaves insert mode
+          // on it and an agent cancels on it; a panel of ours closing instead
+          // would be the host stealing a key the person pressed for the shell.
+          if (dock !== null && dock.holds(ev.target)) return;
           const u = ui.get();
           if (u.dialog) ui.set({ dialog: false });
           else if (u.inserting !== null) ui.set({ inserting: null });
