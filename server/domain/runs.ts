@@ -722,7 +722,11 @@ export function makeRuns(d: RunsDeps): Runs {
       } catch {
         skills = [];
       }
-      for (const s of skills.filter((x) => x.dir).sort(byName)) {
+      // A SKILL IS A DIRECTORY HOLDING `SKILL.md`. `_lib/` and `check.ts` sit
+      // beside the skills and are the checker's — the seeder's, never a
+      // person's — so a leading underscore and a bare file are not listed.
+      for (const s of skills.filter((x) => x.dir && !x.name.startsWith("_")).sort(byName)) {
+        if ((await files.read(`${VAULT_SKILLS}/${s.name}/SKILL.md`)) === null) continue;
         const seeded = await d.seededSkill(s.name);
         for (const p of await filesUnder(`${VAULT_SKILLS}/${s.name}`)) out.push({ path: p, seeded });
       }

@@ -1,0 +1,5 @@
+name: Claude Code
+description: A headless Claude Code run over this workspace.
+agent: claude
+command: [claude, -p, "@{kickoff}", --add-dir, "{vault}", --permission-mode, acceptEdits, --output-format, stream-json, --verbose]
+inputs: []

@@ -1,0 +1,5 @@
+name: OpenCode
+description: A headless OpenCode run over this workspace.
+agent: opencode
+command: [opencode, run, --format, json, "@{kickoff}"]
+inputs: []

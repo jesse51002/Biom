@@ -301,6 +301,22 @@ const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? 
 export function pageFile(data: unknown): string | null {
   if (typeof data !== "string") return null;
   const parts = data.split("/");
+  // AN AUTOMATION'S FILES, under `automations/<folder>/`: the manifest, the
+  // kickoff, the instructions, and anything under `skills/` or `code/`. The
+  // page's Files screen writes them through `page.writeFile`, and `runs.ts`
+  // reads them with the same grammar spelled as `pageFileOk` — two spellings
+  // because the two modules are siblings, held equal by a test.
+  if (parts[0] === AUTOMATIONS && parts.length >= 3) {
+    const folder = parts[1] ?? "";
+    if (!AUTOMATION_FOLDER.test(folder)) return null;
+    const rest = parts.slice(2);
+    if (!rest.every((p) => FILE.test(p) && !p.includes(".."))) return null;
+    const head = rest[0] ?? "";
+    const ok = rest.length === 1
+      ? head === "automation.yaml" || head === "kickoff.md" || head === "INSTRUCTIONS.md"
+      : (head === "skills" || head === "code");
+    return ok ? data : null;
+  }
   const name =
     parts.length === 2 && parts[0] === ASSETS ? parts[1]
     : parts.length === 1 ? parts[0]
@@ -308,6 +324,12 @@ export function pageFile(data: unknown): string | null {
   if (name === undefined || !FILE.test(name) || name.includes("..")) return null;
   return parts.length === 2 ? `${ASSETS}/${name}` : name;
 }
+
+/** Where a page's automations live, and what one is called. Spelled here and
+ *  in `runs.ts`, which owns them; this file only has to let their files be
+ *  written. */
+const AUTOMATIONS = "automations";
+const AUTOMATION_FOLDER = /^[a-z][a-z0-9-]*$/;
 
 /** Turn a page name into the directory segment a human would have typed. */
 function slug(name: string): string {

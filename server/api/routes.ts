@@ -23,6 +23,7 @@ import type { HostFetchResult } from "../../contracts/types.ts";
 import type { PageId } from "../../contracts/types.ts";
 import type { Pages } from "../../contracts/types.ts";
 import type { Presets } from "../../contracts/types.ts";
+import type { Runs } from "../../contracts/types.ts";
 import type { Tables } from "../../contracts/types.ts";
 import type { Vault } from "../../contracts/types.ts";
 import type { ThemeStore } from "../workspace/presets.ts";
@@ -92,6 +93,18 @@ export interface Deps {
    *  built AGAINST a vault, and this one outlives every swap. It is the only
    *  member of Deps that is the same object from one request to the next. */
   vault: Vault;
+  /** AUTOMATIONS AND RUNS: the folder reader, the registry, the run directory,
+   *  the logs served and never read. Built against a vault like `pages`. */
+  runs: Runs;
+  /** HOW MANY RUNS ARE ALIVE ACROSS EVERY MOUNTED FOLDER — the shell's one
+   *  question before it closes a window. Answered on the unprefixed route as
+   *  well, because it is about runs rather than in a vault; like `vault` it is
+   *  the root's and outlives every swap. */
+  live: () => number;
+  /** THE NAMES IN THE SERVER'S ENVIRONMENT, and nothing else about them, for
+   *  the manifest form's picker. The root reads the environment; this layer
+   *  never does, and no value ever reaches the wire. */
+  envNames: () => string[];
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -667,6 +680,84 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
 
       case "vault.recent":
         return ok(id, await deps.vault.recent());
+
+      /* ── automations and runs ────────────────────────────────────────── */
+
+      // EVERY ONE OF THESE IS ANSWERED IN FULL: there is no access model in
+      // the workspace yet, and the build carries no filter and no seam for
+      // one. What will narrow a list, a row and a log is the asker's VIEW
+      // permission on the row's `page`, from the sync engine's model, written
+      // here when that model lands. The refusals below carry the domain's own
+      // sentence, which is written for a person and names an automation or an
+      // input by the name they typed — never a path.
+      case "automation.list":
+        return ok(id, await deps.runs.automations(req.page));
+
+      case "run.start":
+        try {
+          return ok(id, await deps.runs.start(req.page, req.automation, req.inputs ?? {}, req.by ?? null));
+        } catch (e) {
+          const said = e instanceof Error && e.message !== "" ? e.message : "";
+          return err(id, codeOf(e, "internal"), said !== "" ? said : "that automation could not be started");
+        }
+
+      case "run.list":
+        return ok(id, deps.runs.list({ page: req.page, automation: req.automation }));
+
+      case "run.get": {
+        const row = deps.runs.get(req.run);
+        if (row === null) return err(id, "not_found", "no such run");
+        return ok(id, row);
+      }
+
+      case "run.read":
+        return ok(id, await deps.runs.read(req.run, req.stream, req.from, req.max));
+
+      // ENDED BY A PAGE. The workspace's own screen calls the same kind through
+      // the transport and is client zero of it; which of the two pressed Kill
+      // is what `endedBy` records, and a request off the wire is a page's.
+      case "run.kill":
+        return ok(id, await deps.runs.kill(req.run, "page"));
+
+      // The one kind about runs rather than in a vault: answered with or
+      // without a folder named, because the shell asking it has no folder in
+      // mind — it is closing the window over every one of them.
+      case "run.live":
+        return ok(id, deps.live());
+
+      case "page.files":
+        return ok(id, await deps.runs.pageFiles(req.page));
+
+      case "page.readFile": {
+        const text = await deps.runs.readPageFile(req.page, req.file);
+        return ok(id, text);
+      }
+
+      case "automation.get":
+        return ok(id, await deps.runs.manifest(req.page, req.automation));
+
+      case "automation.set":
+        await deps.runs.setManifest(req.page, req.automation, req.manifest);
+        return ok(id, null);
+
+      case "automation.templates":
+        return ok(id, await deps.runs.templates());
+
+      case "automation.create":
+        return ok(id, await deps.runs.create(req.page, req.name, req.template));
+
+      case "env.names":
+        return ok(id, deps.envNames());
+
+      case "vault.files":
+        return ok(id, await deps.runs.vaultFiles());
+
+      case "vault.readFile":
+        return ok(id, await deps.runs.readVaultFile(req.file));
+
+      case "vault.writeFile":
+        await deps.runs.writeVaultFile(req.file, req.text);
+        return ok(id, null);
 
     }
   } catch (e) {

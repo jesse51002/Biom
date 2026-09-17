@@ -67,6 +67,12 @@ export const EXCLUDED: ReadonlySet<string> = new Set([
   "workspace.db",
   "workspace.db-wal",
   "workspace.db-shm",
+  // THE FRAMEWORK'S OWN FOLDER INSIDE A VAULT: the registry of runs and every
+  // run's directory, whose two logs GROW while a run is alive. The dotfile
+  // rule below already declines it; it is named here anyway, beside the other
+  // database, because a log growing must never redraw a page and a rule that
+  // is only implied is a rule somebody edits away.
+  ".biom",
 ]);
 
 /** A running watch over one vault. Closing it releases every handle it holds,

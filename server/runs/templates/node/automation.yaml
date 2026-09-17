@@ -1,0 +1,5 @@
+name: Node
+description: A script under code/, run with the node on this machine.
+agent: node
+command: [node, code/main.js]
+inputs: []

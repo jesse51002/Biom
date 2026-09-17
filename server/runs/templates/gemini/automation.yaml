@@ -1,0 +1,5 @@
+name: Gemini CLI
+description: A headless Gemini CLI run over this workspace.
+agent: gemini
+command: [gemini, --include-directories, "{vault}", --output-format, json, -p, "@{kickoff}"]
+inputs: []

@@ -16,7 +16,7 @@ import { makeFiles } from "../server/platform/files.ts";
 import { makeRunFs } from "../server/platform/rundir.ts";
 import { makeProcessRunner } from "../server/platform/process.ts";
 import { parse, parseAny, format, formatAny } from "../server/platform/yaml.ts";
-import { makePages, pageDir } from "../server/domain/pages.ts";
+import { makePages, pageDir, pageFile } from "../server/domain/pages.ts";
 import { makeRuns, manifestOf, settleInputs, substitute, completeUtf8, runAgentsMd, pageFileOk, vaultFileOk } from "../server/domain/runs.ts";
 import type { Files, FileEntry, RunRow, ProcessRunner } from "../contracts/types.ts";
 
@@ -169,7 +169,17 @@ test("the run's AGENTS.md names the three instruction files in reading order and
   expect(text).toContain("$BIOM_API");
 });
 
-test("the files a screen may open are named, and nothing that walks", () => {
+test("the files a screen may open are named, and nothing that walks — and pages.ts lets the same ones be written", () => {
+  // Two spellings of one grammar, because `pages.ts` and `runs.ts` are
+  // siblings: `page.writeFile` writes what `page.readFile` reads.
+  for (const path of [
+    "INSTRUCTIONS.md", "automations/pull/kickoff.md", "automations/pull/automation.yaml",
+    "automations/pull/INSTRUCTIONS.md", "automations/pull/skills/one/SKILL.md", "automations/pull/code/main.py",
+    "automations/pull/code/deep/er/file.ts", "automations/Pull/kickoff.md", "automations/pull/other.md",
+    "automations/pull/../../content.yaml", "automations/pull/skills/../x", "AGENTS.md", "content.yaml",
+  ]) {
+    expect([path, pageFileOk(path)]).toEqual([path, pageFile(path) !== null && (path.startsWith("automations/") || path === "INSTRUCTIONS.md")]);
+  }
   expect(pageFileOk("INSTRUCTIONS.md")).toBe(true);
   expect(pageFileOk("automations/pull/kickoff.md")).toBe(true);
   expect(pageFileOk("automations/pull/skills/one/SKILL.md")).toBe(true);
