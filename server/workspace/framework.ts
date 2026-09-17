@@ -212,7 +212,7 @@ export async function rewriteOwned(
     const wanted = new Map<string, string>();
     for (const [path, text] of want) if (path === at || path.startsWith(at + "/")) wanted.set(path, text);
     if (await same(vault, at, wanted)) continue;
-    if (at === AGENTS && !(await guideMayGo(vault, shipped))) continue;
+    if (at === AGENTS && !(await guideMayGo(vault, await vaultSeed.read(INSTRUCTIONS), shipped))) continue;
     await vault.remove(at);
     for (const [path, text] of wanted) await vault.write(path, text);
     changed = true;
@@ -223,13 +223,21 @@ export async function rewriteOwned(
 /** May the vault's `AGENTS.md` be written over? Yes if there is none, or if
  *  it is unedited — a version the framework shipped. An EDITED one is the
  *  person's: it is moved to `INSTRUCTIONS.md` first, whole, and the answer is
- *  still yes — unless `INSTRUCTIONS.md` is already there, in which case nothing
- *  is touched and the log says why. */
-async function guideMayGo(vault: Files, shipped: Shipped): Promise<boolean> {
+ *  still yes — unless an `INSTRUCTIONS.md` of the person's is already there,
+ *  in which case nothing is touched and the log says why.
+ *
+ *  THE STUB DOES NOT COUNT AS THEIRS. The seeder fills `INSTRUCTIONS.md` on
+ *  the mount path, before this runs, so on the first open of a vault with an
+ *  edited guide the file is always there — holding exactly the stub, which is
+ *  the framework's words and nobody's yet. That, or any version of the stub
+ *  the framework ever shipped, is written over by the move. */
+async function guideMayGo(vault: Files, stub: string | null, shipped: Shipped): Promise<boolean> {
   const held = await vault.read(AGENTS);
   if (held === null) return true;
   if (isShipped(shipped, `vault/${AGENTS}`, held)) return true;
-  if ((await vault.read(INSTRUCTIONS)) !== null) {
+  const theirs = await vault.read(INSTRUCTIONS);
+  const untouched = theirs === null || theirs === stub || isShipped(shipped, `vault/${INSTRUCTIONS}`, theirs);
+  if (!untouched) {
     console.log(`guide   →  ${AGENTS} was edited here and ${INSTRUCTIONS} already exists, so neither is touched; ${AGENTS} is the framework's and ${INSTRUCTIONS} is yours — move what is yours across and delete the rest`);
     return false;
   }

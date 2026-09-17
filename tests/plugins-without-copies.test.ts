@@ -557,6 +557,24 @@ test("an edited AGENTS.md is renamed to INSTRUCTIONS.md and the framework's writ
   }
 });
 
+test("the seeded stub does not count as the person's INSTRUCTIONS.md, so an edited guide still moves across on the first open", async () => {
+  // The order on a real open: the seeder fills the stub on the mount path,
+  // then the rewrite meets the edited guide with the stub already beside it.
+  const f = await frameworkSkills();
+  await writeFile(join(f.vaultSeed, INSTRUCTIONS), "# the stub");
+  const vault = await scratch();
+  await writeFile(join(vault, AGENTS), "# mine, edited");
+  await writeFile(join(vault, INSTRUCTIONS), "# the stub");
+  try {
+    expect(await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib), {})).toBe(true);
+    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe("# mine, edited");
+    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
 test("an edited AGENTS.md beside an INSTRUCTIONS.md that already exists is left alone, because two files cannot be made one without reading them", async () => {
   const f = await frameworkSkills();
   const vault = await scratch();
