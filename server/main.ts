@@ -857,10 +857,17 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       },
       sources: () => ({
         origin: served === null ? "" : served.origin,
+        // THROUGH `source()`, WHICH IS WHERE A FRAMEWORK FILE IS DECIDED TO BE.
+        // Reading `client/fonts` off the disk beside the program answered null
+        // for every font in the compiled application, which carries its files
+        // inside the binary and has no directory beside it — measured: a share
+        // from the built application left all eleven fonts naming the server.
         font: async (name) => {
           const abs = under(join(HERE, CLIENT, "fonts"), name);
           if (abs === null) return null;
-          const f = Bun.file(abs);
+          const where = source(relative(HERE, abs).split(sep).join("/"));
+          if (where === null) return null;
+          const f = Bun.file(where);
           return (await f.exists()) ? new Uint8Array(await f.arrayBuffer()) : null;
         },
         asset: async (rel) => {

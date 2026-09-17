@@ -610,7 +610,16 @@ if (!app.requestSingleInstanceLock()) {
   function serialise(paper) {
     var root = document.documentElement.cloneNode(true);
     Array.prototype.forEach.call(root.querySelectorAll("script"), function (s) { s.remove(); });
-    Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view"); });
+    // EVERYTHING THAT PLAYS ONCE HAS PLAYED. Three things in a workspace hide
+    // until an observer sees them, and each says so with one class: a section
+    // that reveals itself (`is-seen`, the reveal plugin's default and what
+    // every section script of that shape adds), a grid of cards (`g-seen`),
+    // and a scene that pauses off screen (`in-view`). A capture is read from
+    // wherever the person had scrolled to, so anything below that had not been
+    // seen and would rest invisible for a stranger forever; marked seen, it
+    // rests on its landed frame, which is the frame that tells the story.
+    Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view", "is-seen"); });
+    Array.prototype.forEach.call(root.querySelectorAll(".g-cards"), function (el) { el.classList.add("g-seen"); });
     if (paper) {
       root.style.setProperty("--paper", paper);
       var ground = document.createElement("style");

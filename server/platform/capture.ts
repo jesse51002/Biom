@@ -119,7 +119,11 @@ export async function capturePage(at: CaptureAt, page: string): Promise<string> 
       // EVERY SCENE PLAYS. The `inview` plugin marks a section on screen and
       // clears it off screen, and the capture is taken scrolled to the top, so
       // without this every scene below the fold would rest paused forever.
-      for (const el of Array.from(root.querySelectorAll("[data-g-section]"))) el.classList.add("in-view");
+      // And everything that plays once has played: a section that reveals
+      // itself, a grid of cards. The scroll above sees most of them; this
+      // catches what a fast scroll or a tall page did not.
+      for (const el of Array.from(root.querySelectorAll("[data-g-section]"))) el.classList.add("in-view", "is-seen");
+      for (const el of Array.from(root.querySelectorAll(".g-cards"))) el.classList.add("g-seen");
       if (paper) {
         root.style.setProperty("--paper", paper);
         const ground = document.createElement("style");
