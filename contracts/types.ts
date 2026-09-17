@@ -1535,6 +1535,29 @@ export interface WorkspaceStore {
   readDesign(): Promise<Page>;
   patchDesign(section: BlockId | null, patch: VarPatch): Promise<PageDoc>;
   writeDesignFile(file: string, text: string): Promise<void>;
+
+  /* ── automations and runs: never cached, read on demand ──────────── */
+  /** The workspace's own screens are client zero of the run kinds: the same
+   *  six a page may say, through the transport with no box to be stamped
+   *  from, and the outer-ring kinds beside them. Nothing here is kept in the
+   *  snapshot — a run's row moves on its own clock and the stream says when. */
+  automations(page?: PageId): Promise<Automation[]>;
+  startRun(page: PageId, automation: string, inputs: Record<string, VarScalar>): Promise<RunRow>;
+  runs(filter?: { page?: PageId; automation?: string }): Promise<RunRow[]>;
+  run(id: string): Promise<RunRow | null>;
+  readRun(id: string, stream: "stdout" | "stderr", from?: number, max?: number): Promise<RunRead>;
+  killRun(id: string): Promise<RunRow>;
+  liveRuns(): Promise<number>;
+  pageFiles(page: PageId): Promise<VaultFile[]>;
+  readPageFile(page: PageId, file: string): Promise<string | null>;
+  manifest(page: PageId, automation: string): Promise<AutomationManifest>;
+  setManifest(page: PageId, automation: string, manifest: AutomationManifest): Promise<void>;
+  templates(): Promise<Template[]>;
+  createAutomation(page: PageId, name: string, template: string): Promise<Automation>;
+  envNames(): Promise<string[]>;
+  vaultFiles(): Promise<VaultFile[]>;
+  readVaultFile(file: string): Promise<string | null>;
+  writeVaultFile(file: string, text: string): Promise<void>;
 }
 
 /** `map` is the rail's own map of the whole workspace, mounted on `MAP_PAGE`

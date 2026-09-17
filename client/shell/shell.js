@@ -78,6 +78,11 @@ import { makeRack } from "./rack.js";
  * @property {() => HTMLElement} vault
  * @property {() => HTMLElement} design
  * @property {() => HTMLElement} map
+ * @property {() => HTMLElement} runs THE OVERVIEW: running now, finished, Start.
+ * @property {{ vault: () => HTMLElement, page: (page: Page) => HTMLElement }} instructions
+ *   the workspace's INSTRUCTIONS.md with its skills, and a page's own.
+ * @property {(page: Page) => HTMLElement} automation a page's automations:
+ *   manifest, files, runs.
  */
 
 /**
@@ -116,12 +121,22 @@ import { makeRack } from "./rack.js";
  *  different halves of this file. A test that hand-copied either would be a
  *  third list.
  *  @type {ReadonlySet<string>} */
-export const VIEWS = new Set(["page", "table", "vault", "design", "map"]);
+export const VIEWS = new Set(["page", "table", "vault", "design", "map", "runs", "instructions"]);
 
 /** The screens a built application does not offer, so a typed `#/map` cannot
- *  reach what the rail no longer shows. One name today.
+ *  reach what the rail no longer shows. One name today. `runs` and
+ *  `instructions` are NOT here: what is running and what an agent is told are
+ *  the person's, and both rows are in every build.
  *  @type {ReadonlySet<string>} */
 const HIDDEN_VIEWS = new Set(["map"]);
+
+/** THE PAGE SCREENS A BUILT APPLICATION DOES NOT OFFER, the way `HIDDEN_VIEWS`
+ *  names the routes. `config` is the ports screen — declared, never enforced,
+ *  and a developer's diagnostic — and it went behind the three-dots menu with
+ *  the menu; in a built application there is no menu and `pageView` never
+ *  reaches it. `instructions` and `automation` are on the bar in every build.
+ *  @type {ReadonlySet<string>} */
+const HIDDEN_PAGE_VIEWS = new Set(["config"]);
 
 /** The same vocabulary minus those, DERIVED rather than written out a second
  *  time. Two hand-kept lists are two places a view can be added, and the one
@@ -189,6 +204,13 @@ export function makeShell(deps) {
    *  @param {null | "agent" | "history"} panel
    *  @returns {null | "agent" | "history"} */
   const offered = (panel) => (panel !== null && production && HIDDEN_PANELS.has(panel) ? null : panel);
+
+  /** WHICH PAGE SCREEN THIS BUILD WILL SHOW, `offered`'s twin for `pageView`.
+   *  `pageView` is a field on the UI store and any caller can set it, so
+   *  taking the menu off the bar leaves a second door; every reader of the
+   *  field goes through here and a hidden one draws the page.
+   *  @param {UiState["pageView"]} view @returns {UiState["pageView"]} */
+  const offeredPageView = (view) => (production && HIDDEN_PAGE_VIEWS.has(view) ? "page" : view);
 
   /** THE QUERY THIS WINDOW WAS OPENED WITH, and all `Close workspace` needs: the
    *  start page is this same address with the folder taken out of it. Read once,
@@ -321,6 +343,13 @@ export function makeShell(deps) {
         // on every refresh the box is sent — so the body is built once per entry
         // into the route and nothing in the snapshot has to be compared.
         return ["map"];
+      case "runs":
+        // The overview reads the registry itself and rereads on the stream and
+        // on its own clock, so it is built once per entry into the route.
+        return ["runs"];
+      case "instructions":
+        // The workspace's instructions and skills, read on entry and on Reload.
+        return ["instructions", reloads];
       default:
         return ["none"];
     }
@@ -372,7 +401,14 @@ export function makeShell(deps) {
         if (missing.has(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
         const page = w.page;
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
-        return pageView === "config" ? views.config(page) : views.page(page);
+        // THE FOUR SCREENS OF A PAGE, and `offeredPageView` is the one door: a
+        // `pageView` this build does not offer draws the page.
+        switch (offeredPageView(pageView)) {
+          case "instructions": return views.instructions.page(page);
+          case "automation": return views.automation(page);
+          case "config": return views.config(page);
+          default: return views.page(page);
+        }
       }
       case "table": {
         if (w.table && w.table.schema.name === route.id) return views.table(w.table);
@@ -385,6 +421,12 @@ export function makeShell(deps) {
       case "map":
         // The whole workspace as a sky, drawn by the shipped map plugin.
         return views.map();
+      case "runs":
+        // What is running across the workspace, and Start.
+        return views.runs();
+      case "instructions":
+        // The vault's INSTRUCTIONS.md and its own skills, one tree, one editor.
+        return views.instructions.vault();
       default:
         return h("p.hold", "Nothing open.");
     }
@@ -417,7 +459,8 @@ export function makeShell(deps) {
     if (route.view === "vault") return "vault";
     if (troubled) return "none";
     if (route.view !== "page") return route.view;
-    if (pageView === "config") return "config";
+    const shown = offeredPageView(pageView);
+    if (shown !== "page") return shown;
     // Only once the page is actually on screen. Before it is, the canvas is
     // holding a sentence — "Opening…", or the one about a page that is not there
     // — and a sentence wants the padding a box does not.
@@ -559,21 +602,36 @@ export function makeShell(deps) {
           panel === "agent", "spot"));
       }
 
-      // Config is a screen about the page rather than a way of looking at it,
-      // so it is behind the page's own menu rather than a tab beside the name.
-      // One item today; the menu is where the next page-level thing goes.
-      const more = h("button.tool.more", {
-        type: "button", "aria-label": "More", "aria-haspopup": "menu",
-        onclick: () => {
-          popover(more, (close) => [
-            popItem(pageView === "config" ? "Page" : "Config", () => {
-              close();
-              ui.set({ pageView: pageView === "config" ? "page" : "config" });
-            }),
-          ], { align: "end" });
-        },
-      }, "\u22EF");
-      tools.push(more);
+      // THE PAGE'S TWO SCREENS, as two controls where the three dots were:
+      // Instructions, the page's INSTRUCTIONS.md in one editor, and
+      // Automations, its manifests, files and runs. Each takes the canvas when
+      // pressed and gives it back when pressed again. They are in every build.
+      const shown = offeredPageView(pageView);
+      /** @param {"instructions" | "automation"} which @param {string} text */
+      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: shown === which ? "page" : which }), shown === which);
+      tools.push(screenTool("instructions", "Instructions"));
+      tools.push(screenTool("automation", "Automations"));
+
+      // CONFIG IS A DEVELOPER'S SCREEN NOW. The ports it draws are declared
+      // and never enforced, so what it says is a claim this build cannot
+      // back, and the owner decided (2026-09-17) the menu that reached it goes
+      // with it. In development the menu stays, one item, so the screen is
+      // still reachable by somebody working on it; `HIDDEN_PAGE_VIEWS` shuts
+      // the second door a typed `pageView` would be.
+      if (!production) {
+        const more = h("button.tool.more", {
+          type: "button", "aria-label": "More", "aria-haspopup": "menu",
+          onclick: () => {
+            popover(more, (close) => [
+              popItem(pageView === "config" ? "Page" : "Config", () => {
+                close();
+                ui.set({ pageView: pageView === "config" ? "page" : "config" });
+              }),
+            ], { align: "end" });
+          },
+        }, "\u22EF");
+        tools.push(more);
+      }
     }
 
     return [crumbs, h("span.tools", ...tools)];
@@ -840,6 +898,14 @@ export function makeShell(deps) {
           // Each row's glyph is drawn from `data-kind` in page.css: a brush, a
           // folded map, a doorway.
           link("Design", route.view === "design", () => ui.go("design", ""), "design"),
+          // THE WORKSPACE'S OWN INSTRUCTIONS: the vault's INSTRUCTIONS.md and
+          // its own skills, in one tree with one editor. The file every agent
+          // opened anywhere in the folder reads first, and the person's.
+          link("Instructions", route.view === "instructions", () => ui.go("instructions", ""), "instructions"),
+          // AUTOMATIONS: what is running now across the workspace, what has
+          // finished, and Start. A page's own screen is where one is made;
+          // this is where all of them are watched.
+          link("Automations", route.view === "runs", () => ui.go("runs", ""), "runs"),
           // The map: every page as a light, every prose link as a line between
           // two, drawn by the shipped `mindmap` plugin over the whole workspace.
           // It is a drawing of a tree a stranger's vault does not have yet — a

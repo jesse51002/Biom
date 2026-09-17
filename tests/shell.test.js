@@ -334,7 +334,7 @@ function fakeFrameHost() {
  *  element each time — which is what makes "the body was not rebuilt" provable
  *  rather than assumed. */
 function fakeViews() {
-  const drawn = { tree: 0, page: 0, config: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0 };
+  const drawn = { tree: 0, page: 0, config: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0, runs: 0, instructions: 0, pageInstructions: 0, automation: 0 };
   const one = (name, cls) => (...args) => { drawn[name]++; return h("div." + cls, String(args[0] ?? "")); };
   return {
     drawn,
@@ -346,6 +346,12 @@ function fakeViews() {
       vault: one("vault", "vaultpick"),
       design: one("design", "designdoc"),
       map: one("map", "sky"),
+      runs: one("runs", "overview"),
+      instructions: {
+        vault: one("instructions", "vaultins"),
+        page: (p) => { drawn.pageInstructions++; return h("div.pageins", p.id); },
+      },
+      automation: (p) => { drawn.automation++; return h("div.autoscreen", p.id); },
     },
   };
 }
@@ -1333,16 +1339,17 @@ test("the rail's foot lists Design, the Map, then Close workspace", async () => 
 
   const foot = find(g.rack, (el) => has(el, "rackfoot"));
   const rows = findAll(foot, (el) => el.tagName === "A").map(flat);
-  // The design language, the map, and the way out last. There was a Settings
-  // row here — the picker drawn INSIDE the chrome, with the folder open behind
-  // it — and the owner decided (2026-09-14) that it does what the start page
-  // does and looks five times worse. The screen went; the act stayed.
-  expect(rows).toEqual(["Design", "Map", "Close workspace"]);
+  // The design language, the workspace's own instructions, every run, the map,
+  // and the way out last. There was a Settings row here — the picker drawn
+  // INSIDE the chrome, with the folder open behind it — and the owner decided
+  // (2026-09-14) that it does what the start page does and looks five times
+  // worse. The screen went; the act stayed.
+  expect(rows).toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
   // THE TAG IS DRAWN FROM `data-kind` AND IS NOT TEXT IN THE ROW, which is why
   // it is asserted here rather than read off the name: a brush, a folded map,
   // a doorway.
   const tags = findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]);
-  expect(tags).toEqual(["design", "map", "close"]);
+  expect(tags).toEqual(["design", "instructions", "runs", "map", "close"]);
 });
 
 test("Design is a route like any other, and the rail names the folder it is", async () => {
@@ -2134,16 +2141,84 @@ test("the Map row and its route are both gone in production, and both there with
   await tick();
   const devFoot = find(dev.rack, (el) => has(el, "rackfoot"));
   expect(findAll(devFoot, (el) => el.tagName === "A").map(flat))
-    .toEqual(["Design", "Map", "Close workspace"]);
+    .toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
 
   const built = harness(DOC, { view: "page", id: DOC.id }, true);
   await tick();
   const foot = find(built.rack, (el) => has(el, "rackfoot"));
   // The whole-workspace mind map is a drawing of a tree a stranger's vault does
-  // not have yet: a one-page workspace maps to one light.
-  expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Close workspace"]);
+  // not have yet: a one-page workspace maps to one light. INSTRUCTIONS AND
+  // AUTOMATIONS STAY: what an agent is told and what is running are the
+  // person's, in every build.
+  expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Instructions", "Automations", "Close workspace"]);
   expect(findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]))
-    .toEqual(["design", "close"]);
+    .toEqual(["design", "instructions", "runs", "close"]);
+});
+
+test("the Instructions and Automations rows open their screens, in both builds", async () => {
+  for (const production of [false, true]) {
+    const w = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    const foot = find(w.rack, (el) => has(el, "rackfoot"));
+    const row = (text) => find(foot, (el) => el.tagName === "A" && flat(el) === text);
+    row("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().route.view).toBe("instructions");
+    expect(w.plate.firstChild.className).toBe("vaultins");
+    expect(w.plate.attrs["data-face"]).toBe("instructions");
+    row("Automations").fire("click");
+    await tick();
+    expect(w.ui.get().route.view).toBe("runs");
+    expect(w.plate.firstChild.className).toBe("overview");
+    expect(w.plate.attrs["data-face"]).toBe("runs");
+    // And both are in the route vocabulary of both builds: a typed hash reaches them.
+    expect(parseHash("#/runs", production).view).toBe("runs");
+    expect(parseHash("#/instructions", production).view).toBe("instructions");
+  }
+});
+
+test("a page's bar carries Instructions and Automations, each taking the canvas and giving it back, in both builds", async () => {
+  for (const production of [false, true]) {
+    const w = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    const toolNamed = (text) => find(w.rail, (el) => has(el, "tool") && flat(el) === text);
+    expect(toolNamed("Instructions")).toBeTruthy();
+    expect(toolNamed("Automations")).toBeTruthy();
+    toolNamed("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("instructions");
+    expect(w.plate.firstChild.className).toBe("pageins");
+    expect(w.plate.attrs["data-face"]).toBe("instructions");
+    toolNamed("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("page");
+    expect(w.plate.firstChild.className).toBe("pagebody");
+    toolNamed("Automations").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("automation");
+    expect(w.plate.firstChild.className).toBe("autoscreen");
+    expect(w.plate.attrs["data-face"]).toBe("automation");
+  }
+});
+
+test("the Config screen and the menu that reached it are development's; a typed pageView of config draws the page in production", async () => {
+  const dev = harness(DOC, { view: "page", id: DOC.id });
+  await tick();
+  expect(find(dev.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBeTruthy();
+  dev.ui.set({ pageView: "config" });
+  await tick();
+  expect(dev.plate.firstChild.className).toBe("ports");
+  expect(dev.plate.attrs["data-face"]).toBe("config");
+
+  const built = harness(DOC, { view: "page", id: DOC.id }, true);
+  await tick();
+  expect(find(built.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBe(null);
+  // THE SECOND DOOR: the field is anybody's to set, and the shell answers with
+  // the page rather than the screen.
+  built.ui.set({ pageView: "config" });
+  await tick();
+  expect(built.plate.firstChild.className).toBe("pagebody");
+  expect(built.plate.attrs["data-face"]).toBe("page");
 });
 
 test("a typed #/map does not open the map in production", () => {
@@ -2240,9 +2315,11 @@ test("the Modify page panel is not offered in production, and no other route ope
   const built = harness(DOC, { view: "page", id: DOC.id }, true);
   await tick();
   expect(byText(built.rail, "Modify page")).toBe(null);
-  // The `···` menu beside it is untouched: it is the page's own screens, not a
-  // developer's panel.
-  expect(find(built.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBeTruthy();
+  // The `···` menu is gone with it — Config is a developer's screen too now —
+  // and the page's own screens are the two controls on the bar instead.
+  expect(find(built.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBe(null);
+  expect(find(built.rail, (el) => has(el, "tool") && flat(el) === "Instructions")).toBeTruthy();
+  expect(find(built.rail, (el) => has(el, "tool") && flat(el) === "Automations")).toBeTruthy();
 
   // THE ROW GOING WITHOUT THE PANEL GOING would leave it one `ui.set` away —
   // the same hidden-rather-than-absent feature a typed `#/map` would be. The

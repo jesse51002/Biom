@@ -27,6 +27,9 @@ import { makeBridge } from "./bridge/bridge.js";
 import { makeFrameHost } from "./frame/frame.js";
 import { makePageView, makeDesignView, makeMapView } from "./views/page.js";
 import { makeConfigView } from "./views/config.js";
+import { makeInstructionsView } from "./views/instructions.js";
+import { makeAutomationView } from "./views/automation.js";
+import { makeRunsView } from "./views/runs.js";
 import { makeTableView } from "./views/table.js";
 import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
@@ -238,6 +241,14 @@ const views = {
   // `MAP_DOCUMENT`, held equal to the seed root's own file by
   // `tests/mindmap.test.js`, and never a plugin the framework serves.
   map: makeMapView({ h, frameHost, ws, ui, vault: vault ?? "" }),
+  // AUTOMATIONS AND INSTRUCTIONS: the rail's overview of every run and the
+  // workspace's own instructions, and a page's two screens. Each reads the
+  // registry on demand — none of it is in the snapshot — and the two that
+  // watch runs are handed the stream, so a run starting or ending anywhere is
+  // one reread.
+  runs: makeRunsView({ h, ws, ui, events }),
+  instructions: makeInstructionsView({ h, ws, ui }),
+  automation: makeAutomationView({ h, ws, ui, events }),
 };
 
 const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events });
