@@ -412,7 +412,7 @@ walk("window.biomShell is those names and no others", async () => {
 
   expect(surface.top).toEqual(["chooseFolder", "logo", "windowControls"]);
   expect(surface.controls).toEqual([
-    "close", "inset", "lights", "minimize", "onChange", "state", "toggleFullScreen", "toggleMaximize",
+    "close", "inset", "lights", "minimize", "onChange", "onClosing", "state", "toggleFullScreen", "toggleMaximize",
   ]);
   // NOTHING ELSE CROSSED. Node is off in both worlds and no `ipcRenderer` was
   // handed over, so the object above is every channel the main process answers.
@@ -547,16 +547,63 @@ test.skipIf(why !== null || noWm === null)("maximise and full screen are not wal
   console.log(`  skipped: ${noWm}`);
 });
 
-walk("closing the window quits the server with it", async () => {
+/** The pid of the run's process group leader, read off the registry through
+ *  the wire, so the orphan check can name it. */
+let sleeperPgid = 0;
+
+walk("closing over a live run asks in the bar, and no keeps the run", async () => {
+  // AN AUTOMATION THAT SLEEPS, made behind the app's back the way an agent
+  // makes one — a folder under the root page — and started through the wire
+  // with this launch's token. It ignores TERM so only the KILL after the grace
+  // ends it, which is the branch the exit path has to be seen to take.
+  const vault = decodeURIComponent((await wire.evaluate<string>("location.search")).replace(/^\?.*vault=/, "").replace(/&.*$/, ""));
+  const dir = join(vault, "pages", "home", "automations", "sleeper");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "automation.yaml"), "name: Sleeper\ncommand: [sh, -c, \"trap '' TERM; sleep 300 & wait\"]\n", "utf8");
+  const route = `/v/${encodeURIComponent(vault)}/api/call?token=${ready.token}`;
+  const started = JSON.parse(await wire.evaluate<string>(
+    `fetch(${JSON.stringify(route)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify({ id: "e2e-run", g: 1, kind: "run.start", page: "home", automation: "sleeper", inputs: {}, by: null }))} }).then(r => r.text())`,
+  )) as { ok: boolean; value?: { id: string; pgid: number; status: string }; error?: { message?: string } };
+  expect([started.ok, started.error?.message ?? ""]).toEqual([true, ""]);
+  sleeperPgid = Number(started.value?.pgid);
+  expect(sleeperPgid).toBeGreaterThan(0);
+  // Alive, as the operating system sees it.
+  expect(Bun.spawnSync(["pgrep", "-g", String(sleeperPgid)]).exitCode).toBe(0);
+
+  // THE BAR'S CLOSE IS HELD: the main process asked the server, found one
+  // alive, and pushed the count; the bar draws the question instead of
+  // closing. No keeps the window and the run.
+  const at = "document.querySelector('header.titlebar button.wctl.close')";
+  await until("the bar offered close", BOUNDS.draw, async () => await wire.evaluate<boolean>(`${at} !== null`));
+  await wire.evaluate(`${at}.click()`);
+  await until("the question was drawn in the bar", BOUNDS.draw, async () =>
+    (await wire.evaluate<number>("document.querySelectorAll('header.titlebar span.closeask').length")) === 1);
+  expect(await wire.evaluate<string>("document.querySelector('header.titlebar span.closeword').innerText")).toContain("1 automation is running");
+  await wire.evaluate("document.querySelector('header.titlebar button.closeno').click()");
+  await until("the question went and the window stayed", BOUNDS.draw, async () =>
+    (await wire.evaluate<number>("document.querySelectorAll('header.titlebar span.closeask').length")) === 0);
+  expect(over()).toBe(false);
+  expect(Bun.spawnSync(["pgrep", "-g", String(sleeperPgid)]).exitCode).toBe(0);
+}, process.platform === "win32" ? "the run's group is asked of pgrep, which Windows has not got" : null);
+
+walk("closing the window quits the server with it, and yes to the question leaves no run behind", async () => {
   // THE WINDOW OWNS THE LIFETIME. Closing it must not leave a process holding a
-  // port and a workspace open with nothing on screen to say so.
+  // port and a workspace open with nothing on screen to say so — nor a run.
   const port = ready.port;
   const at = "document.querySelector('header.titlebar button.wctl.close')";
   await until("the bar offered close", BOUNDS.draw, async () => await wire.evaluate<boolean>(`${at} !== null`));
-  // FIRED RATHER THAN AWAITED. The answer to this one would have to come back
-  // from a renderer that the click destroys, so waiting for it waits out the
-  // whole bound and then fails a step that did exactly what it was meant to.
-  wire.fire(`${at}.click()`);
+  await wire.evaluate(`${at}.click()`);
+  // With a run alive the close is held and the question drawn; yes is the one
+  // way past it. On Windows the run step above did not run, so the close is
+  // simply a close.
+  if (sleeperPgid > 0) {
+    await until("the question was drawn again", BOUNDS.draw, async () =>
+      (await wire.evaluate<number>("document.querySelectorAll('header.titlebar span.closeask').length")) === 1);
+    // FIRED RATHER THAN AWAITED. The answer to this one would have to come back
+    // from a renderer that the click destroys, so waiting for it waits out the
+    // whole bound and then fails a step that did exactly what it was meant to.
+    wire.fire("document.querySelector('header.titlebar button.closeyes').click()");
+  }
 
   await until("the application exited", BOUNDS.redraw, () => over());
   await until("the server stopped answering", BOUNDS.redraw, async () => {
@@ -578,6 +625,12 @@ walk("closing the window quits the server with it", async () => {
   } else {
     await until("no biom-server of this run is left running", BOUNDS.redraw, () =>
       running(bundleServer()).every((pid) => ours.has(pid)));
+    // AND NOTHING OF THE RUN. The sleeper ignored TERM, so this is the KILL
+    // after the grace, sent to the whole group on the server's way out.
+    if (sleeperPgid > 0) {
+      await until("nothing of the run's group is left", BOUNDS.redraw, () =>
+        Bun.spawnSync(["pgrep", "-g", String(sleeperPgid)]).exitCode !== 0);
+    }
   }
 });
 

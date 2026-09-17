@@ -177,6 +177,8 @@ section — `await` at the top level of a section script is a syntax error.
 | `biom.vault()` | which folder this workspace is. Below |
 | `biom.open(target)` | go to a page or a table. Takes what `children()` hands back |
 | `biom.embed` / `biom.embedInto` | draw another page inside this one. Below |
+| `biom.automations(pageId?)` / `biom.start(pageId, name, inputs?)` | every automation in the workspace, or one page's; start one. Below |
+| `biom.runs(filter?)` / `biom.run(id)` / `biom.readRun(id, stream?, from?, max?)` / `biom.kill(id)` | the rows, one row, a log from an offset, and the end of one. Below |
 | `biom.onRefresh(fn)` | the page's data changed and a drawing built from it should redraw |
 | `biom.onTheme(fn)` | the palette changed |
 
@@ -250,6 +252,37 @@ script**, because a doc page empties its section stack on every redraw and the
 iframe goes with it. The handle also has `onScroll(fn)` and `scrollTo(at)`, both a
 fraction of the nested page's run, for keeping two pages level by proportion.
 `biom.embed(pageId)` is the raw half for a caller doing the relay itself.
+
+## Automations and runs, from a page
+
+A page may see every automation in the workspace, start any of them, follow any
+run's log and end any — [`automations.md`](./automations.md) is what one is. What
+the framework knows about a run is its row: `status` (`running`, `exited`,
+`killed`, `lost`), `started` and `ended`, `exit`, the `page` that holds it, and
+`by`, the identity of the page whose box started it — stamped by the host over
+anything the page said. What a run *means* is this page's to draw from what it
+wrote.
+
+```js
+const row = await biom.start("home/Socials", "pull", { window: 7 });
+let at = 0;
+for (;;) {
+  const got = await biom.readRun(row.id, "stdout", at);
+  log.textContent += got.text;
+  at = got.next;
+  if (got.ended && got.text === "") break;
+  await new Promise((r) => setTimeout(r, 1000));
+}
+const done = await biom.run(row.id);   // done.status, done.exit
+```
+
+`readRun` hands back bytes from an offset, the next offset, and whether the run
+has ended: a live log is followed by asking again, and the loop stops when the
+answer says the run ended and nothing new arrived. A character cut by the read
+is held back for the next one. Two runs of one automation at once are allowed;
+`biom.runs({ page, automation })` says how many are alive before you start
+another. A run a page starts and a run the workspace's own screen starts are the
+same kind of thing — only `by` differs.
 
 ## The scroll toolkit
 
