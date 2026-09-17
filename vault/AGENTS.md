@@ -1,3 +1,5 @@
+**Read [INSTRUCTIONS.md](INSTRUCTIONS.md) first** — it is what this workspace is and how its owner wants it written. **This file is the format. It is the framework's, and it is rewritten every time the workspace opens: put nothing of your own in it** — that goes in `INSTRUCTIONS.md`, which is yours and is never touched.
+
 **This folder is a workspace.** Every page, every word on one, the design language and the theme are files in here — there is no export step and no API to go through, so **editing a file IS editing the workspace.**
 
 # If somebody else might use it, it is a plugin

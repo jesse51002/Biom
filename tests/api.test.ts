@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 
 import { handle, route } from "../server/api/routes.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
-import { rewriteSkills } from "../server/workspace/framework.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
@@ -210,7 +210,7 @@ async function workspace() {
    *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
   const furnish = async () => {
     await presets.seedIfEmpty();
-    await rewriteSkills(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
+    await rewriteOwned(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
   };
 
   return {

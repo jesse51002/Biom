@@ -38,7 +38,7 @@ import {
 import type { EmbeddedMap } from "./platform/embedded.ts";
 import { NOTHING_SHIPPED, shippedHashes } from "./platform/shipped.ts";
 import type { Shipped } from "./platform/shipped.ts";
-import { SHIPPED_DIRS, mirrorPlugins, rewriteSkills, sweepOldSkills, sweepShipped } from "./workspace/framework.ts";
+import { SHIPPED_DIRS, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format } from "./platform/yaml.ts";
 import { scaleOf } from "../contracts/scale.ts";
@@ -613,13 +613,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  still a workspace. */
   async function afterMount(files: Files): Promise<void> {
     try {
-      const written = await rewriteSkills(files, skillsSeed, checkerSeed, checkerLibSeed);
+      const written = await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed, await shipped());
       // A copy under the name a skill had before it wore the prefix, unedited,
       // goes with the same commit — otherwise a vault carries the skill twice.
       const gone = await sweepOldSkills(files, skillsSeed, await shipped());
       for (const rel of gone) console.log(`skills  →  ${rel} was the framework's own under its old name, unedited, and is gone`);
       if (written || gone.length > 0) {
-        await files.commit(`The framework's skills and checker, as ${await frameworkVersion()} ships them`);
+        await files.commit(`The framework's guide, docs, skills and checker, as ${await frameworkVersion()} ships them`);
       }
     } catch (e) {
       console.warn("the framework's skills could not be written into .agents/skills/", e);
@@ -744,10 +744,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const presets = makePresets({
       pages, tables, files, yaml,
       seed: seedRoot("presets", at.presets),
-      // The vault's own furniture: `AGENTS.md`, `docs/`, `design/` and `base/`,
+      // The vault's own furniture: `INSTRUCTIONS.md`, `design/` and `base/`,
       // copied file by file and never over anything already there. The same
-      // root's `.agents/skills/` is the framework's and goes through
-      // `rewriteSkills` in `afterMount` instead.
+      // root's `AGENTS.md`, `docs/` and `.agents/skills/` are the framework's
+      // and go through `rewriteOwned` in `afterMount` instead.
       vaultSeed: skillsSeed,
     });
 

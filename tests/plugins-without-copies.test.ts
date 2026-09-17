@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { makeHost, pluginBundle, pluginFile, PLUGIN_DIR_ROUTE } from "../server/main.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { blobHash, isShipped, shippedHashes } from "../server/platform/shipped.ts";
-import { MIRROR_DIR, SHIPPED_DIRS, SKILLS_DIR, mirrorPlugins, rewriteSkills, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
+import { AGENTS, INSTRUCTIONS, MIRROR_DIR, SHIPPED_DIRS, SKILLS_DIR, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
 import { manifestSource } from "../tools/app.ts";
 import { vaultBase } from "../contracts/wire.js";
 
@@ -376,14 +376,16 @@ test("a framework skill edited in a vault is the framework's again on the next o
   try {
     const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
     // First open: everything the framework owns lands, and it says so.
-    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(true);
     expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
     expect(readFileSync(join(vault, SKILLS_DIR, "check.ts"), "utf8")).toBe("// the checker v1");
     expect(readFileSync(join(vault, SKILLS_DIR, "_lib/wire.js"), "utf8")).toBe("// wire v1");
-    // AGENTS.md is the seeder's and the person's; the rewrite never touches it.
-    expect(existsSync(join(vault, "AGENTS.md"))).toBe(false);
+    // AGENTS.md is the framework's too now, written with the skills; the
+    // stub INSTRUCTIONS.md beside it is the seeder's and is not written here.
+    expect(readFileSync(join(vault, "AGENTS.md"), "utf8")).toBe("# the guide");
+    expect(existsSync(join(vault, "INSTRUCTIONS.md"))).toBe(false);
     // Second open, nothing changed: nothing written, and it says so.
-    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(false);
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(false);
 
     // An edit to the framework's skill, a file added inside it, and a skill of
     // the vault's own beside them.
@@ -395,7 +397,7 @@ test("a framework skill edited in a vault is the framework's again on the next o
     await writeFile(join(vault, SKILLS_DIR, "ours/SKILL.md"), "# ours");
     await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
     await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# a workspace's own pages skill");
-    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(true);
     // The framework's name is the framework's again, whole.
     expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
     expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/notes.md"))).toBe(false);
@@ -407,7 +409,7 @@ test("a framework skill edited in a vault is the framework's again on the next o
 
     // The framework moves: the next open carries the new version.
     await writeFile(join(f.vaultSeed, ".agents/skills/biom-sections/SKILL.md"), "# sections v2");
-    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(true);
     expect(readFileSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"), "utf8")).toBe("# sections v2");
   } finally {
     await rm(vault, { recursive: true, force: true });
@@ -421,7 +423,7 @@ test("a vault directory carrying a framework skill's prefixed name holds the fra
   await mkdir(join(vault, SKILLS_DIR, "biom-pages"), { recursive: true });
   await writeFile(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "# a skill somebody wrote under the framework's name");
   try {
-    await rewriteSkills(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
+    await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
     expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
     expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/extra.md"), "utf8")).toBe("more on pages");
   } finally {
@@ -452,7 +454,7 @@ test("on a real open the skills land off the mount path, are committed once nami
     // One commit, naming the framework.
     const { spawnSync } = await import("node:child_process");
     const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" }).stdout;
-    expect(log).toContain("The framework's skills and checker, as framework ");
+    expect(log).toContain("The framework's guide, docs, skills and checker, as framework ");
     expect(log.split("\n").filter((l) => l.includes("skills and checker")).length).toBe(1);
     // And the copy RUNS, which is the assertion that has caught a copied
     // checker before: it imports through `_lib/`, and a vault has no `contracts/`.
@@ -480,7 +482,7 @@ test("a copy under a skill's OLD name, unedited, goes on open; an edited one sta
     [`vault/${SKILLS_DIR}/sections/SKILL.md`]: [blobHash("# sections v0")],
   };
   try {
-    await rewriteSkills(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
+    await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
     expect(await sweepOldSkills(makeFiles(vault), makeFiles(f.vaultSeed), shipped)).toEqual([`${SKILLS_DIR}/pages`]);
     expect(existsSync(join(vault, SKILLS_DIR, "pages"))).toBe(false);
     expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"))).toBe(true);
@@ -492,5 +494,101 @@ test("a copy under a skill's OLD name, unedited, goes on open; an edited one sta
   } finally {
     await rm(vault, { recursive: true, force: true });
     for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
+/* ══ the guide ═══════════════════════════════════════════════════════════ */
+
+test("a fresh vault has the framework's AGENTS.md and the person's INSTRUCTIONS.md, and the first line of one names the other", async () => {
+  const root = await scratch();
+  const vault = join(root, "v");
+  const host = await makeHost({
+    vault,
+    memory: join(root, "vaults.json"),
+    presets: join(HERE, "presets"),
+    vaultSeed: join(HERE, "vault"),
+    skill: join(HERE, "skill"),
+    checkerLib: HERE,
+  });
+  try {
+    await host.settled(vault);
+    const guide = readFileSync(join(vault, AGENTS), "utf8");
+    expect(guide).toBe(readFileSync(join(HERE, "vault", AGENTS), "utf8"));
+    expect(guide.split("\n")[0]).toContain(`[${INSTRUCTIONS}](${INSTRUCTIONS})`);
+    expect(guide.split("\n")[0]).toContain("rewritten every time the workspace opens");
+    // The stub is the seeder's, filled once, and says whose it is.
+    const mine = readFileSync(join(vault, INSTRUCTIONS), "utf8");
+    expect(mine).toBe(readFileSync(join(HERE, "vault", INSTRUCTIONS), "utf8"));
+    expect(mine).toContain("the framework never touches it");
+    // And the docs are the framework's too, rewritten with the guide.
+    expect(readFileSync(join(vault, "docs/pages.md"), "utf8")).toBe(readFileSync(join(HERE, "vault/docs/pages.md"), "utf8"));
+  } finally {
+    host.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an edited AGENTS.md is renamed to INSTRUCTIONS.md and the framework's written in its place; an unedited one is simply rewritten", async () => {
+  const f = await frameworkSkills();
+  const vault = await scratch();
+  const theirs = "# Our company\n\nEverything we know, and how we write it.\n";
+  await writeFile(join(vault, AGENTS), theirs);
+  try {
+    const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
+    // Edited — nothing in `shipped` matches it — so it moves across, whole.
+    expect(await rewriteOwned(makeFiles(vault), ...roots, {})).toBe(true);
+    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe(theirs);
+    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
+    // Next open: both present, the guide is current, nothing moves.
+    expect(await rewriteOwned(makeFiles(vault), ...roots, {})).toBe(false);
+    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe(theirs);
+
+    // An UNEDITED old guide — a version the framework shipped — is rewritten
+    // and never moved: there is nothing of the person's in it.
+    await writeFile(join(vault, AGENTS), "# the guide, as it shipped once");
+    await rm(join(vault, INSTRUCTIONS));
+    const shipped = { [`vault/${AGENTS}`]: [blobHash("# the guide, as it shipped once")] };
+    expect(await rewriteOwned(makeFiles(vault), ...roots, shipped)).toBe(true);
+    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
+    expect(existsSync(join(vault, INSTRUCTIONS))).toBe(false);
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
+test("an edited AGENTS.md beside an INSTRUCTIONS.md that already exists is left alone, because two files cannot be made one without reading them", async () => {
+  const f = await frameworkSkills();
+  const vault = await scratch();
+  await writeFile(join(vault, AGENTS), "# mine, edited");
+  await writeFile(join(vault, INSTRUCTIONS), "# also mine");
+  try {
+    await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib), {});
+    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# mine, edited");
+    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe("# also mine");
+    // The skills beside it were still written: one unit's refusal is not another's.
+    expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"))).toBe(true);
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
+test("a doc the framework ships is rewritten on open, and a doc it does not ship is left where it stands", async () => {
+  const seed = await frameworkWith({ "AGENTS.md": "# g", "docs/pages.md": "# pages doc v2", "docs/README.md": "# readme" });
+  const vault = await scratch();
+  await mkdir(join(vault, "docs/plugins"), { recursive: true });
+  await writeFile(join(vault, "docs/pages.md"), "# pages doc v1, with a note somebody typed");
+  await writeFile(join(vault, "docs/mine.md"), "# a doc of the workspace's own");
+  await writeFile(join(vault, "docs/plugins/markdown.js"), "// the mirror, not a doc");
+  try {
+    expect(await rewriteOwned(makeFiles(vault), makeFiles(seed))).toBe(true);
+    expect(readFileSync(join(vault, "docs/pages.md"), "utf8")).toBe("# pages doc v2");
+    expect(readFileSync(join(vault, "docs/README.md"), "utf8")).toBe("# readme");
+    expect(readFileSync(join(vault, "docs/mine.md"), "utf8")).toBe("# a doc of the workspace's own");
+    expect(readFileSync(join(vault, "docs/plugins/markdown.js"), "utf8")).toBe("// the mirror, not a doc");
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    await rm(seed, { recursive: true, force: true });
   }
 });

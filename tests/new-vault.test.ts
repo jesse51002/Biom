@@ -548,7 +548,10 @@ test("what create makes is an ordinary folder, and opening it is the ordinary pa
       expect(existsSync(join(abs, "pages/home/content.yaml"))).toBe(true);
       // No plugin of its own: the framework's draw it, through the rung.
       expect(existsSync(join(abs, "plugins"))).toBe(false);
+      // The guide is the framework's and lands off the mount path.
+      await host.settled(abs);
       expect(existsSync(join(abs, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(abs, "INSTRUCTIONS.md"))).toBe(true);
       // The name typed is the folder's name, and the workspace's.
       expect((await (await host.deps(abs)).vault.info()).name).toBe("Studio");
     } finally {

@@ -41,7 +41,7 @@ import { makeDocs } from "../server/domain/docs.ts";
 import { makePages } from "../server/domain/pages.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
-import { rewriteSkills } from "../server/workspace/framework.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { handle } from "../server/api/routes.ts";
 import { isHostRequest } from "../contracts/guards.js";
 import { PROTOCOL } from "../contracts/wire.js";
@@ -88,7 +88,7 @@ function boot(dir: string) {
    *  mount path there, so a test that wants the furniture asks for both. */
   const furnish = async () => {
     await presets.seedIfEmpty();
-    await rewriteSkills(files, makeFiles(VAULT_SEED), makeFiles(SKILL), makeFiles(join(import.meta.dir, "..")));
+    await rewriteOwned(files, makeFiles(VAULT_SEED), makeFiles(SKILL), makeFiles(join(import.meta.dir, "..")));
   };
   return { db, files, pages, design, docs, tables, presets, theme, furnish, deps: { pages, design, docs, tables, presets, theme } };
 }

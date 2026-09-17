@@ -36,20 +36,16 @@ which number means what.
 
 ## Where they live, and how they got here
 
-**Both are at the root of this workspace, and they got here by two different
-rules.** `docs/` was copied in when the workspace was first opened, file by file
-and only where nothing was at that path, so **a workspace made before a doc
-existed gains it on the next start, and anything you edited stays exactly as
-you left it.** That is also the cost, stated rather than solved: a doc improved
-in the framework never reaches a workspace that already has its own copy.
-
-**The skills are the framework's, and they are rewritten whole every time the
-workspace opens** — every `.agents/skills/biom-<skill>/` the framework ships,
-with `check.ts` and `_lib/` beside them. A skill cannot be overridden: an edit
-to one here is gone on the next open, and what you want kept goes into a skill
-under a name of your own, which is never touched — and the `biom-` prefix is
-what keeps your names free: a `pages` skill of yours is yours, because the
-framework's is `biom-pages`. That is what keeps the skill an agent
+**Both are at the root of this workspace, and both are the framework's,
+rewritten whole every time the workspace opens** — every `docs/*.md`, every
+`.agents/skills/biom-<skill>/` the framework ships, with `check.ts` and `_lib/`
+beside them, and `AGENTS.md` above them all. None of it can be overridden: an
+edit here is gone on the next open. **What is yours is `INSTRUCTIONS.md`**,
+which `AGENTS.md` sends every agent to first, and any skill under a name of
+your own — the `biom-` prefix is what keeps your names free: a `pages` skill of
+yours is yours, because the framework's is `biom-pages`. A doc of your own
+under `docs/` is left where it stands too; only the names the framework ships
+are rewritten. That is what keeps the skill an agent
 reads, and the checker it runs, the framework's current ones in every
 workspace.
 

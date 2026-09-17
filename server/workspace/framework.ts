@@ -7,9 +7,9 @@
 // and a vault whose background work has not finished draws exactly as it will
 // a second later. `main.ts` runs all three once the mount has returned.
 //
-// THE SKILLS. `.agents/skills/biom-<skill>/` for every skill the framework
-// ships, with `check.ts` and its `_lib/` beside them, are REWRITTEN WHOLE on
-// every open. They cannot take the plugin design below, because an agent reads the
+// WHAT THE FRAMEWORK OWNS IN A VAULT: `.agents/skills/biom-<skill>/` for every
+// skill it ships, with `check.ts` and its `_lib/` beside them; `AGENTS.md`; and
+// every doc under `docs/`. All of it is REWRITTEN WHOLE on every open. They cannot take the plugin design below, because an agent reads the
 // folder and not the server: a skill is a file Claude Code, Cursor or Codex
 // opens directly, before the server has been asked anything and in a clone the
 // server has never opened — so it has to be on disk, in the vault, current. And
@@ -26,6 +26,22 @@
 // version the framework shipped, goes — a vault must not carry a skill twice,
 // and an unedited copy is the framework's to take back. When anything changed,
 // `main.ts` commits it as one diff naming the framework version.
+//
+// `AGENTS.md` IS THE FRAMEWORK'S, AND `INSTRUCTIONS.md` IS THE PERSON'S. The
+// guide used to be one file with two owners — the framework's paragraphs seeded
+// once and then somebody's own text around them — so the framework's half went
+// stale exactly as a skill did and the person's half could never be rewritten.
+// Now `AGENTS.md` is the format, rewritten like a skill, and its first line
+// sends the agent to `INSTRUCTIONS.md`, which the seeder fills once as a stub
+// and nothing here ever touches. THE BRIDGE for a vault that already had an
+// `AGENTS.md`: unedited — byte for byte a version the framework shipped — it is
+// rewritten; edited, it is RENAMED to `INSTRUCTIONS.md`, whole, and the
+// framework's written in its place, because that is the move the person would
+// make by hand, nothing of theirs is lost, and an edited guide left alone would
+// be stale forever for anyone who does not read a log. A vault that already
+// has both is left alone, with a line in the log: two files cannot be made one
+// without reading them. `docs/` takes the skills rule outright — it is the
+// manual, written for the person and not by them.
 //
 // THE MIRROR is `docs/plugins/`: the framework's whole plugin set, written out
 // of the same `Files` the fallback rung reads, so the folder a person opens is
@@ -50,7 +66,7 @@
 // skills rewrite stay.
 
 import type { FileEntry, Files } from "../../contracts/types.ts";
-import { isShipped } from "../platform/shipped.ts";
+import { NOTHING_SHIPPED, isShipped } from "../platform/shipped.ts";
 import type { Shipped } from "../platform/shipped.ts";
 
 /* ── the skills ─────────────────────────────────────────────────────────── */
@@ -73,7 +89,17 @@ export const SKILL_PREFIX = "biom-";
 /** The directories the framework owns inside a vault, framework-relative —
  *  what `tools/app.ts` reads the shipped hashes for, and what a source run asks
  *  its own history about. */
-export const SHIPPED_DIRS: readonly string[] = ["guest/plugins", "vault/.agents/skills"];
+export const SHIPPED_DIRS: readonly string[] = ["guest/plugins", "vault/.agents/skills", "vault/AGENTS.md", "vault/docs"];
+/** The guide every agent reads first, and it is the framework's: the format,
+ *  rewritten on every open. */
+export const AGENTS = "AGENTS.md";
+/** The person's own guide, which `AGENTS.md` sends the agent to before
+ *  anything else. Filled once by the seeder; never touched here. */
+export const INSTRUCTIONS = "INSTRUCTIONS.md";
+/** The manual for the format, for the person whose folder this is — the
+ *  framework's, rewritten file by file. `docs/plugins/` inside it is the mirror
+ *  below, and is not a doc. */
+export const DOCS_DIR = "docs";
 /** The checker, beside the skills so an agent working in a vault can run it
  *  against a page it just wrote. */
 export const CHECK = "check.ts";
@@ -103,14 +129,28 @@ export const CHECK_LIB: readonly (readonly [string, string])[] = [
   ["contracts/scale.ts", "scale.ts"],
 ];
 
-/** What the framework owns under `.agents/skills/`, as it should be on disk:
- *  vault-relative path → text. Every skill directory the framework ships, the
- *  checker, and the modules it imports. */
-async function ownedSkills(vaultSeed: Files, skill: Files | null, checkerLib: Files | null): Promise<Map<string, string>> {
+/** What the framework owns in a vault, as it should be on disk: vault-relative
+ *  path → text. Every skill directory the framework ships, the checker and the
+ *  modules it imports, the guide, and every doc — the docs at their top level
+ *  only, because `docs/plugins/` is the mirror and not a doc. */
+async function owned(vaultSeed: Files, skill: Files | null, checkerLib: Files | null): Promise<Map<string, string>> {
   const want = new Map<string, string>();
   for (const rel of await filesUnder(vaultSeed, SKILLS_DIR)) {
     const text = await vaultSeed.read(`${SKILLS_DIR}/${rel}`);
     if (text !== null) want.set(`${SKILLS_DIR}/${rel}`, text);
+  }
+  const guide = await vaultSeed.read(AGENTS);
+  if (guide !== null) want.set(AGENTS, guide);
+  let docs: FileEntry[] = [];
+  try {
+    docs = await vaultSeed.list(DOCS_DIR);
+  } catch {
+    docs = [];
+  }
+  for (const entry of docs) {
+    if (entry.dir) continue;
+    const text = await vaultSeed.read(`${DOCS_DIR}/${entry.name}`);
+    if (text !== null) want.set(`${DOCS_DIR}/${entry.name}`, text);
   }
   if (skill !== null) {
     const checker = await skill.read(CHECK);
@@ -125,40 +165,77 @@ async function ownedSkills(vaultSeed: Files, skill: Files | null, checkerLib: Fi
   return want;
 }
 
-/** The top-level names the framework owns under `.agents/skills/`: each skill
- *  directory, `check.ts` and `_lib`. A vault entry under any other name is the
- *  workspace's own. */
-function ownedNames(want: Map<string, string>): Set<string> {
+/** THE UNITS THE REWRITE WORKS IN — each one compared and rewritten whole. A
+ *  skill directory, `check.ts` and `_lib/` under `.agents/skills/`; the guide;
+ *  and each doc by itself, so a doc the framework stops shipping stays and
+ *  nothing beside the docs is ever removed. A vault entry under any other
+ *  name is the workspace's own. */
+function units(want: Map<string, string>): Set<string> {
   const names = new Set<string>();
   for (const path of want.keys()) {
-    const rest = path.slice(SKILLS_DIR.length + 1);
-    const cut = rest.indexOf("/");
-    names.add(cut < 0 ? rest : rest.slice(0, cut));
+    if (path.startsWith(SKILLS_DIR + "/")) {
+      const rest = path.slice(SKILLS_DIR.length + 1);
+      const cut = rest.indexOf("/");
+      names.add(`${SKILLS_DIR}/${cut < 0 ? rest : rest.slice(0, cut)}`);
+    } else {
+      names.add(path);
+    }
   }
   return names;
 }
 
-/** REWRITE THE FRAMEWORK'S SKILLS, WHOLE. For each name the framework owns,
- *  what is in the vault is compared with what the framework ships — every file
- *  under it, by content — and rewritten only when the two differ, so an open
- *  that changes nothing writes nothing. A name the framework owns is emptied
- *  before it is written, so a file somebody added inside `sections/` goes with
- *  the edit; a name it does not own is never looked at. Answers whether
- *  anything was written, so the caller can commit it as one diff. */
-export async function rewriteSkills(vault: Files, vaultSeed: Files, skill: Files | null = null, checkerLib: Files | null = null): Promise<boolean> {
-  const want = await ownedSkills(vaultSeed, skill, checkerLib);
+/** REWRITE WHAT THE FRAMEWORK OWNS, WHOLE. For each unit, what is in the vault
+ *  is compared with what the framework ships — every file under it, by content
+ *  — and rewritten only when the two differ, so an open that changes nothing
+ *  writes nothing. A unit is emptied before it is written, so a file somebody
+ *  added inside `biom-sections/` goes with the edit; a name the framework does
+ *  not own is never looked at. Answers whether anything was written, so the
+ *  caller can commit it as one diff.
+ *
+ *  `AGENTS.md` IS THE ONE UNIT WITH A BRIDGE, decided by `shipped`: an edited
+ *  guide — one that is not byte for byte a version the framework ever shipped —
+ *  is renamed to `INSTRUCTIONS.md` before the framework's is written, and left
+ *  alone with a line in the log if that file is already there. Handed no
+ *  history, every guide that differs reads as edited, which is the safe side:
+ *  nothing is ever written over. */
+export async function rewriteOwned(
+  vault: Files,
+  vaultSeed: Files,
+  skill: Files | null = null,
+  checkerLib: Files | null = null,
+  shipped: Shipped = NOTHING_SHIPPED,
+): Promise<boolean> {
+  const want = await owned(vaultSeed, skill, checkerLib);
   if (want.size === 0) return false;
   let changed = false;
-  for (const name of ownedNames(want)) {
-    const at = `${SKILLS_DIR}/${name}`;
+  for (const at of units(want)) {
     const wanted = new Map<string, string>();
     for (const [path, text] of want) if (path === at || path.startsWith(at + "/")) wanted.set(path, text);
     if (await same(vault, at, wanted)) continue;
+    if (at === AGENTS && !(await guideMayGo(vault, shipped))) continue;
     await vault.remove(at);
     for (const [path, text] of wanted) await vault.write(path, text);
     changed = true;
   }
   return changed;
+}
+
+/** May the vault's `AGENTS.md` be written over? Yes if there is none, or if
+ *  it is unedited — a version the framework shipped. An EDITED one is the
+ *  person's: it is moved to `INSTRUCTIONS.md` first, whole, and the answer is
+ *  still yes — unless `INSTRUCTIONS.md` is already there, in which case nothing
+ *  is touched and the log says why. */
+async function guideMayGo(vault: Files, shipped: Shipped): Promise<boolean> {
+  const held = await vault.read(AGENTS);
+  if (held === null) return true;
+  if (isShipped(shipped, `vault/${AGENTS}`, held)) return true;
+  if ((await vault.read(INSTRUCTIONS)) !== null) {
+    console.log(`guide   →  ${AGENTS} was edited here and ${INSTRUCTIONS} already exists, so neither is touched; ${AGENTS} is the framework's and ${INSTRUCTIONS} is yours — move what is yours across and delete the rest`);
+    return false;
+  }
+  await vault.write(INSTRUCTIONS, held);
+  console.log(`guide   →  ${AGENTS} was edited here, so it is now ${INSTRUCTIONS}, which is yours; ${AGENTS} is the framework's and is rewritten on every open`);
+  return true;
 }
 
 /** THE BRIDGE FOR THE PREFIX. A vault seeded before the framework's skills wore

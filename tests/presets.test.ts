@@ -34,7 +34,7 @@ import { makeDb } from "../server/platform/db.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { ROOT_PAGE_FILE, makePages } from "../server/domain/pages.ts";
 import { makeTables } from "../server/domain/tables.ts";
-import { rewriteSkills } from "../server/workspace/framework.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
 
 import type { PresetDeps } from "../server/workspace/presets.ts";
@@ -183,7 +183,7 @@ function boot(dir: string, presetRoot: string | null = shed, seeds: Partial<Pres
    *  off the mount path. A test that wants the furniture asks for both. */
   const furnish = async () => {
     await presets.seedIfEmpty();
-    await rewriteSkills(files, makeFiles(join(import.meta.dir, "..", "vault")), makeFiles(join(import.meta.dir, "..", "skill")), makeFiles(join(import.meta.dir, "..")));
+    await rewriteOwned(files, makeFiles(join(import.meta.dir, "..", "vault")), makeFiles(join(import.meta.dir, "..", "skill")), makeFiles(join(import.meta.dir, "..")));
   };
   return { db, files, pages, tables, presets, furnish, theme: makeTheme(files) };
 }

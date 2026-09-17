@@ -690,6 +690,8 @@ test("vault.create makes the folder, seeds it and answers a mounted vault", asyn
     // workspace indistinguishable from a chosen one.
     expect(made.seeded).toBe(true);
     expect(seeded(g.at("notes"))).toBe(true);
+    // The guide is the framework's and lands off the mount path.
+    await host.settled(g.at("notes"));
     expect(existsSync(join(g.at("notes"), "AGENTS.md"))).toBe(true);
 
     // And it is MOUNTED. A create that left the caller to open it afterwards

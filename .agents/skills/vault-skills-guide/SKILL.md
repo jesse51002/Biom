@@ -326,12 +326,16 @@ vault/…                               what ships
 <workspace>/.agents/skills/check.ts   what the documented gate command runs
 ```
 
-**The skills and the checker are the framework's inside a workspace, and they
-are REWRITTEN WHOLE on every open.** `rewriteSkills` in
+**The guide, the docs, the skills and the checker are the framework's inside a
+workspace, and they are REWRITTEN WHOLE on every open.** `rewriteOwned` in
 `server/workspace/framework.ts` runs off the mount path once a vault is up:
-every `.agents/skills/biom-<skill>/` the framework ships, `check.ts` and `_lib/`
-are compared with what `vault/.agents/skills/` and `skill/` hold and rewritten
-where they differ, committed once naming the framework version. **Every one of
+`AGENTS.md`, every `docs/*.md`, every `.agents/skills/biom-<skill>/` the
+framework ships, `check.ts` and `_lib/` are compared with what `vault/` and
+`skill/` hold and rewritten where they differ, committed once naming the
+framework version. **`AGENTS.md` sends the agent to `INSTRUCTIONS.md` in its
+first line, and that file is the person's** — seeded once as a stub, never
+touched; an edited `AGENTS.md` from before this rule is renamed across on the
+first open rather than written over. **Every one of
 them wears `biom-`, and a new skill here takes the prefix too** — it is what
 keeps the framework's names from ever meeting a skill a workspace wrote, since a
 name the framework owns is rewritten and a name it does not is never touched;
@@ -345,18 +349,12 @@ into a skill under a name of that workspace's own, which the rewrite never
 touches. Nothing is removed: a skill this repository stops shipping stays where
 it is in every workspace that had it.
 
-**`docs/` is still filled once and never overwritten**, with `AGENTS.md`,
-`base/` and `design/`: those are the person's from the moment they land. So a
-doc improved here reaches new workspaces only, and an existing workspace's copy
-is checked by hand:
+**`INSTRUCTIONS.md`, `base/` and `design/` are filled once and never
+overwritten**: those are the person's from the moment they land.
 
-```bash
-diff -q vault/docs/<name>.md  <vault>/docs/<name>.md
-```
-
-**Testing a change from inside a workspace is honest now for the skills and
-the checker** — the running server rewrote them when it opened the folder — and
-still not for a doc. When you want certainty about which checker ran, invoke
+**Testing a change from inside a workspace is honest** — the running server
+rewrote the guide, the docs, the skills and the checker when it opened the
+folder. When you want certainty about which checker ran, invoke
 `skill/check.ts` by path.
 
 ### A rule is one statement in two places
@@ -415,11 +413,11 @@ When a new one appears, add it as a class rather than as an incident.
   and inside a vault.
 - **The agreement test:** `tests/skill.test.ts` — every cited rule has
   prose, every documented rule is cited or retired, no number is both.
-- **The seeder, and the additive rule for what is the person's** — `AGENTS.md`,
-  `docs/`, `base/`, `design/`: `server/workspace/presets.ts`. **The rewrite of
-  what is the framework's** — the skills, the checker, its `_lib/`:
-  `rewriteSkills` in `server/workspace/framework.ts`, run by `afterMount` in
-  `server/main.ts`.
+- **The seeder, and the additive rule for what is the person's** —
+  `INSTRUCTIONS.md`, `base/`, `design/`: `server/workspace/presets.ts`. **The
+  rewrite of what is the framework's** — `AGENTS.md`, `docs/`, the skills, the
+  checker, its `_lib/`: `rewriteOwned` in `server/workspace/framework.ts`, run
+  by `afterMount` in `server/main.ts`.
 - **Siblings, for the mechanism a skill describes:** the section runtime →
   `section-runtime-guide`; the format on disk → `page-format-guide`; the plugin
   registry → `plugin-guide`; the box and its ports → `boundary-guide`.

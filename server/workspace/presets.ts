@@ -36,19 +36,20 @@
 //     `guest/pages/welcome.html` — so what a stranger meets is a shape rather
 //     than a stack of sections. `ensureRoot` in pages.ts owns the whole of it.
 //
-//   · AGENTS.md and docs/, copied from vault/. A Biom vault is a folder
-//     somebody points Claude Code, Cursor or Codex at directly, and the format
-//     guide has to be IN the folder — one that lives in this repo is one the
-//     agent working in somebody else's vault never sees, which made "point an
-//     agent at the folder and it just works" false. `AGENTS.md` is the person's
-//     from the moment it lands and is filled once, like everything below.
+//   · INSTRUCTIONS.md, copied from vault/: the person's own guide, a stub that
+//     says what goes in it, theirs from the moment it lands and filled once like
+//     everything below.
 //
-//   · NOT .agents/skills/. The skills, the checker and its `_lib/` are the
-//     FRAMEWORK's inside a vault, not the person's: they are rewritten whole on
-//     every open by `server/workspace/framework.ts`, off the mount path, so a
-//     framework release reaches every vault and a change made in one is gone on
-//     the next open. A workspace adds skills under names of its own. The walk
-//     below leaves the directory out on purpose.
+//   · NOT AGENTS.md, NOT docs/, NOT .agents/skills/. The guide, the manual, the
+//     skills, the checker and its `_lib/` are the FRAMEWORK's inside a vault, not
+//     the person's: they are rewritten whole on every open by
+//     `server/workspace/framework.ts`, off the mount path, so a framework release
+//     reaches every vault and a change made in one is gone on the next open. A
+//     Biom vault is a folder somebody points Claude Code, Cursor or Codex at
+//     directly, and the format guide has to be IN the folder and CURRENT — one
+//     seeded once went stale exactly as a skill did. The walk below leaves all
+//     three out on purpose; `AGENTS.md`'s first line sends the agent to
+//     `INSTRUCTIONS.md`.
 //
 //   · design/ — the design doc, copied from vault/design/. One page,
 //     beside `pages/` rather than inside it, holding the workspace's own design
@@ -135,11 +136,11 @@ export interface PresetDeps {
    *  directory of presets should say so by omitting the root rather than by
    *  pointing at one that is not there. */
   seed?: Files;
-  /** Rooted at vault/, which MIRRORS THE VAULT ROOT: `AGENTS.md`, `docs/`,
+  /** Rooted at vault/, which MIRRORS THE VAULT ROOT: `INSTRUCTIONS.md`,
    *  `design/` and `base/`, in exactly the shape they take on disk in a
    *  workspace. Copying it is therefore a walk rather than a translation. Its
-   *  `.agents/skills/` is skipped here and rewritten by `framework.ts` instead.
-   *  Read, never written.
+   *  `AGENTS.md`, `docs/` and `.agents/skills/` are skipped here and rewritten
+   *  by `framework.ts` instead. Read, never written.
    *
    *  OPTIONAL because `contracts/` is frozen, this interface is not, and a
    *  required field would fail the build of a caller that predates it. A
@@ -162,11 +163,11 @@ const THEME_FILE = "theme.json";
 
 /* ── what a vault gets at its root ──────────────────────────────────────── */
 
-/** The one directory under vault/ the walk below leaves alone: the framework's
- *  skills are rewritten by `framework.ts` rather than filled here. Spelled here
- *  as well as there because this module may not import a sibling; a test holds
- *  the two equal. */
-const SKILLS_DIR = ".agents/skills";
+/** What under vault/ the walk below leaves alone: the framework's guide, its
+ *  manual and its skills are rewritten by `framework.ts` rather than filled
+ *  here. Spelled here as well as there because this module may not import a
+ *  sibling; a test holds the two equal. */
+const NOT_FILLED: readonly string[] = ["AGENTS.md", "docs", ".agents/skills"];
 
 /* ── the default theme ──────────────────────────────────────────────────── */
 
@@ -410,11 +411,12 @@ export function makePresets(deps: PresetDeps): Presets {
     }
 
     for (const entry of here) {
+      if (NOT_FILLED.includes(entry.name)) continue;
       if (!entry.dir) {
         await fill(entry.name, await vaultSeed.read(entry.name));
         continue;
       }
-      await walk(vaultSeed, entry.name, "", SKILLS_DIR);
+      await walk(vaultSeed, entry.name, "", NOT_FILLED);
     }
   }
 
@@ -434,16 +436,16 @@ export function makePresets(deps: PresetDeps): Presets {
    *  install: a directory that cannot be read, a disk that failed. Swallowing
    *  those seeds half a vault and says nothing, which is the one outcome worse
    *  than refusing to mount. */
-  async function walk(root: Files, dir: string, into: string, skip: string | null = null): Promise<void> {
+  async function walk(root: Files, dir: string, into: string, skip: readonly string[] = []): Promise<void> {
     for (const entry of await root.list(dir)) {
       // `.` is the root of a seed and is not a path segment. Spelled with the
       // format's own forward slash and never `path.join`: these are vault-
       // relative logical paths, and a backslash in one is a file Windows would
       // put somewhere else.
       const rel = dir === "." ? entry.name : `${dir}/${entry.name}`;
-      // THE ONE DIRECTORY THAT IS NOT THE PERSON'S. `.agents/skills/` is the
-      // framework's and is rewritten on every open rather than filled once.
-      if (rel === skip) continue;
+      // WHAT IS NOT THE PERSON'S. The framework's guide, manual and skills are
+      // rewritten on every open rather than filled once.
+      if (skip.includes(rel)) continue;
       if (entry.dir) await walk(root, rel, into, skip);
       else await fill(into === "" ? rel : `${into}/${rel}`, await root.read(rel));
     }
