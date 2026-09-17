@@ -179,6 +179,15 @@ const FORBIDDEN_KEY = "__proto__";
  *  It narrows NOTHING. Whoever asked knows what they expect and validates it
  *  themselves; this only turns text into values and reports a syntax error in
  *  the same sentence and with the same line number `parse` would. */
+/** WRITE ANY VALUE AS YAML, in the house spelling. `format` is the page
+ *  document's, with its fixed key order and its block-scalar rule; this is for
+ *  a file that is not a page — an automation's manifest, which the form edits
+ *  as a structure and the server writes back, so a hand-edited file and a
+ *  form-edited one are the same file. Keys keep the order they were given. */
+export function formatAny(value: unknown): string {
+  return new Document(value, { version: "1.2" }).toString(WRITE);
+}
+
 export function parseAny(text: string): unknown {
   const doc = parseDocument(text, { version: "1.2", uniqueKeys: true, prettyErrors: true });
   const failure = doc.errors[0];

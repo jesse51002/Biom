@@ -2,11 +2,15 @@
 // One SQLite file, parameterised statements. Layer 1: it has no idea what is
 // stored in it — no registry, no column types, no page ids.
 //
-// Nothing in the framework may import this file except `server/domain/tables.ts`,
-// and the layering gate is what makes that provable. The point of the rule is
-// that every CREATE, ALTER, SELECT, INSERT and PRAGMA in the framework lives in
-// one of those two files, so swapping SQLite for a server database is two files
-// and the blast radius is a fact rather than a hope.
+// Nothing in the framework may import this file except `server/domain/tables.ts`
+// and `server/domain/runs.ts`, and the layering gate is what makes that
+// provable. The point of the rule is that every CREATE, ALTER, SELECT, INSERT
+// and PRAGMA in the framework lives in one of those three files, so swapping
+// SQLite for a server database is three files and the blast radius is a fact
+// rather than a hope. `runs.ts` is the second database — `<vault>/.biom/runs.db`,
+// the registry of what has been started from this workspace on this machine,
+// beside `workspace.db` and never in git — and it widened the rule by exactly
+// one module on 2026-09-17.
 //
 // bun:sqlite is synchronous and this wrapper stays synchronous. An async facade
 // over a sync call would be a lie about where the time goes, and at one user
