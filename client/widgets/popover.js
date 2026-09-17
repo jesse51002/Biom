@@ -15,7 +15,7 @@
 
 import { h, svg } from "../platform/dom.js";
 
-/** @typedef {{ el: HTMLElement, anchor: HTMLElement, onDown: (e: PointerEvent) => void,
+/** @typedef {{ el: HTMLElement, scrim: HTMLElement | null, anchor: HTMLElement, onDown: (e: PointerEvent) => void,
  *              onKey: (e: KeyboardEvent) => void, onMove: () => void,
  *              scroller: Element | null, onClose?: (() => void) | undefined }} Live */
 
@@ -31,6 +31,7 @@ export function closePopover() {
   window.removeEventListener("resize", live.onMove);
   live.scroller?.removeEventListener("scroll", live.onMove);
   live.el.remove();
+  live.scrim?.remove();
   live.anchor?.setAttribute("aria-expanded", "false");
   live = null;
   done?.();
@@ -42,7 +43,14 @@ export function closePopover() {
  * @param {{ align?: "start" | "end", width?: string, center?: boolean, onClose?: () => void }} [opts]
  *   `center` puts the menu in the middle of the window rather than under its
  *   anchor — for a menu that is a small dialog, like the link a share answers
- *   with, where hanging off a button in the corner reads as a tooltip
+ *   with, where hanging off a button in the corner reads as a tooltip. A
+ *   centred menu sits on a SCRIM, and that is not decoration: the page under
+ *   it is an iframe, and a click inside an iframe never reaches this
+ *   document's listeners, so a menu over a page could not hear a click
+ *   outside itself. The scrim is a layer of this document that takes the click
+ *   before the frame can, and closes the menu. It draws a close control too,
+ *   because a menu in the middle of the screen is a small dialog and a dialog
+ *   says how it is put away
  * @returns {HTMLElement | null} null when the click closed an already-open menu
  */
 export function popover(anchor, build, opts = {}) {
@@ -50,8 +58,15 @@ export function popover(anchor, build, opts = {}) {
   closePopover();
   if (wasMine) return null;                       // clicking the trigger again closes it
 
-  const el = h("div.pop", { role: "menu" });
+  const el = h("div.pop" + (opts.center ? ".centered" : ""), { role: opts.center ? "dialog" : "menu" });
   if (opts.width) el.style.width = opts.width;
+  /** @type {HTMLElement | null} */
+  let scrim = null;
+  if (opts.center) {
+    scrim = h("div.popscrim", { onpointerdown: (/** @type {PointerEvent} */ e) => { if (e.target === scrim) closePopover(); } });
+    document.body.append(scrim);
+    el.append(h("button.popclose", { type: "button", "aria-label": "Close", title: "Close", onclick: () => closePopover() }, "\u00D7"));
+  }
   el.append(...nodesOf(build(closePopover)));
   document.body.append(el);
 
@@ -101,7 +116,7 @@ export function popover(anchor, build, opts = {}) {
   scroller?.addEventListener("scroll", place, { passive: true });
 
   anchor.setAttribute("aria-expanded", "true");
-  live = { el, anchor, onDown, onKey, onMove: place, scroller, onClose: opts.onClose };
+  live = { el, scrim, anchor, onDown, onKey, onMove: place, scroller, onClose: opts.onClose };
 
   focusFirst(el);
   return el;

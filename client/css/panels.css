@@ -55,6 +55,14 @@
 @keyframes pop-in{from{opacity:0; transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.pop{animation:none}}
 .poplabel{font-size:.75rem; color:var(--ink-3); padding:.35rem .5rem .25rem}
+.popscrim{position:fixed; inset:0; z-index:59; background:var(--scrim)}
+.pop.centered{padding:1rem 1rem .6rem; border-radius:8px}
+.popclose{
+  position:absolute; top:.35rem; right:.35rem; width:1.6rem; height:1.6rem; padding:0;
+  border:0; border-radius:4px; background:none; color:var(--ink-3); font-size:1.1rem; line-height:1; cursor:pointer;
+}
+.popclose:hover, .popclose:focus-visible{background:var(--field); color:var(--ink); outline:none}
+.pop.centered > .poplabel:first-of-type{padding-right:1.8rem}
 .popfield{display:block; width:100%; box-sizing:border-box; margin:.1rem 0 .3rem; padding:.3rem .5rem; font:inherit; font-size:.8rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px}
 .popsep{height:1px; background:var(--rule-soft); margin:.25rem 0}
 .poplist{max-height:13rem; overflow:auto}
