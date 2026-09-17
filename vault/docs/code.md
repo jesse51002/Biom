@@ -317,9 +317,9 @@ Each of these is a consequence of the opaque origin rather than a policy.
 <script src="/vendor/three.min.js"></script>     <!-- window.THREE,   706KB -->
 ```
 
-**Nothing the framework ships loads one.** A page draws with the platform — an
-inline `<svg>` and the section's own script — and a library is this workspace's
-own choice, taken where a page genuinely needs one and never at page load.
+**Nothing the framework ships loads one.** A page draws with the platform — HTML,
+CSS and the section's own script — and a library is this workspace's own choice,
+taken where a page genuinely needs one and never at page load.
 
 **A classic `<script src>` loads at an opaque origin and a module one does not** —
 measured, not assumed — which is why what is vendored is the IIFE build and why

@@ -1,23 +1,46 @@
 <!-- base/diagram/index.html — A DIAGRAM DRAWN FROM THE DOCUMENT'S OWN WORDS.
 
      THERE IS NO DIAGRAM LIBRARY HERE AND THAT IS THE POINT. A figure in this
-     format is an inline `<svg>` the section writes, on the palette's tokens,
-     animated once when it arrives — and a diagram of relationships is that same
-     figure with boxes and edges in it. Nothing is fetched, nothing is themed by
-     somebody else's stylesheet, and every line on screen is a line in this file.
+     format is HTML the section writes — elements, grid and flex, borders and
+     backgrounds on the palette's tokens, animated once when it arrives — and a
+     diagram of relationships is that same figure with boxes and edges in it.
+     Nothing is fetched, nothing is themed by somebody else's stylesheet, and
+     every line on screen is a line in this file.
 
-     THE WORDS ARE THE DIAGRAM. The boxes and the arrows are `variables` on the
-     section — `nodes`, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as parallel
-     lists sharing a stem and the same length — so editing the diagram is editing
-     the document, which is the same thing that made a fence worth having. A
-     variable is a scalar or a list of scalars and nothing else; anything tabular
-     is parallel lists, which is why the edges are four lists rather than one.
+     WHAT IT DRAWS. Four stations round a loop, each with a mark of its own drawn
+     in CSS — somebody asking, a file being written, a window redrawing, a folder
+     — with the edges bracketed down a lane beside them, and a walk that goes
+     round once when the section arrives, lighting one station at a time in the
+     one hot colour and leaving it as it found it.
+
+     WHERE THE WORDS LIVE. All of them in `content.yaml`. The prose is markdown
+     parts; the DIAGRAM is `variables` on the section — `nodes` and `nodeIcon`,
+     one entry each per box, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as
+     parallel lists sharing a stem and the same length — so editing the diagram
+     is editing the document. A variable is a scalar or a list of scalars and
+     nothing else; anything tabular is parallel lists, which is why the edges are
+     four lists rather than one.
+
+     WHAT TO CHANGE FIRST: `nodes`, then the edge lists, then the prose beside
+     them. `nodeIcon` takes `ask`, `file`, `window` or `folder`, and anything
+     else — a typo, a missing entry — draws a plain mark rather than nothing.
 
      NOTHING IN HERE HOLDS A POSITION. The script lays the graph out: a node's ROW
      is how far it is from a source — one more than the deepest thing pointing at
      it — and its place across that row is the order it was written in. So adding
-     a node is adding a name, and the drawing rearranges itself around it. A
-     coordinate typed into a file is a coordinate somebody has to maintain.
+     a node is adding a name, and the drawing rearranges itself around it. The
+     only thing the script tells the stylesheet is a CUSTOM PROPERTY — which grid
+     line a box starts on, which lane an edge runs in — and the stylesheet decides
+     what to do with it.
+
+     THE EDGES RUN IN A LANE BESIDE THE BOXES, and that is the one decision this
+     starter makes for you rather than the rule making it. Each edge is ONE
+     element with three borders — a bracket — spanning the grid rows between the
+     box it leaves and the box it points at, so it comes out of one, runs down its
+     own lane and goes back in at the other, with the arrowhead where it lands.
+     Parallel edges take deeper lanes and nothing overlaps; the bracket costs no
+     geometry at all, because the grid already knows where every row is. A backward
+     edge is the same bracket upside down, dashed, with its arrow at the top.
 
      TOP TO BOTTOM, because the reader scrolls down and never sideways. That is
      the rule the layout enforces rather than asks for, and it is why an edge that
@@ -32,14 +55,20 @@
      reader who asked for stillness gets the finished diagram and no move at all,
      with no second media query in here to keep in step.
 
-     THE VIEWBOX IS THE ONLY GEOMETRY. No `width` attribute and no pixel size
-     anywhere: the svg is 100% of its plate and the viewBox decides the rest, so
-     the drawing is crisp on a phone and on a projector.
+     NO PIXEL WIDTHS. A box is as wide as its own name makes it, a row of boxes
+     wraps, and the lanes are in `rem` — so the drawing is right on a phone and on
+     a projector and nothing in here was measured to make it so.
 
-     THIS FILE IS DELIBERATELY PLAIN. One ink, one rule, no accent, no tint, no
-     box around the drawing — a starter's look is inherited by every page copied
-     from it, so the only safe amount of look in here is none. The SHAPE is what
-     to take; how it should be inked is yours, and `design/` decides that. -->
+     ONE HOT COLOUR, SPENT ON ONE STATION AT A TIME. Everything else on the
+     drawing is `--ink` and `--rule`, because a figure where every box is
+     coloured has coloured nothing — and `--cyan` is a role rather than a hue, so
+     the whole drawing repaints when the workspace changes its palette.
+
+     WHAT TO KEEP AND WHAT TO REPLACE. The MECHANISM is the part to keep: the
+     words in the document, the layout computed, the reveal behind `--motion`,
+     nothing measured and no colour spelled. Everything about how it LOOKS is
+     yours — the icon set is four shapes this loop happened to need, the lit
+     colour is the palette's, and `design/` is whose taste decides both. -->
 <style>
   /* THE SECTION IS THE CONTAINER, and it has to say so: `@container` matches
      nothing until an ancestor declares `container-type`. Nothing declares it for
@@ -74,7 +103,7 @@
   /* THE DRAWING SCROLLS INSIDE ITS OWN BOX where it cannot fit, which is the one
      rule in here that is not negotiable: the page's one frame IS the scroller for
      the whole document, so a wide drawing left to widen the page would drag every
-     section on it sideways. The svg reflows to the plate, so this almost never
+     section on it sideways. The boxes reflow to the plate, so this almost never
      fires — it is here for the day somebody gives the drawing a minimum. */
   .plate {
     grid-area: plate;
@@ -83,99 +112,226 @@
     overscroll-behavior-x: contain;
   }
 
-  /* NO WIDTH, NO HEIGHT, NO PIXELS. The viewBox carries the proportions and the
-     plate carries the size. */
-  .plate svg {
-    display: block;
-    inline-size: 100%;
-    block-size: auto;
-    overflow: visible;
+  /* THE DRAWING IS A GRID AND THE GRID IS THE WHOLE LAYOUT. Two columns — the
+     edges' lane, then the boxes — and TWO ROWS PER ROW OF BOXES, so a bracket can
+     start and end halfway down a box rather than at its corner. Every line number
+     on either side of that is a custom property the script writes. */
+  .plot {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    column-gap: .2rem;
   }
 
-  .box {
-    fill: none;
-    stroke: var(--rule);
-    stroke-width: 1;
-  }
-  .name {
-    fill: var(--ink);
-    font-family: var(--sheet-face);
-    font-size: 15px;
-    text-anchor: middle;
-    dominant-baseline: middle;
+  /* A ROW OF SIBLINGS, side by side and wrapping where there is no room. Nothing
+     names how many there are. */
+  .row {
+    grid-column: 2;
+    grid-row: var(--row, 1) / span 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-block: .45rem;
   }
 
-  /* SOLID IS A LIVE DEPENDENCY, DASHED IS EVERYTHING ELSE — a handoff, a build
+  /* A STATION IS ITS MARK AND ITS NAME. `row-reverse` puts the drawn icon in
+     front of the words while leaving the NAME as the box's own text node, which
+     is what keeps the layout test able to read a row off the drawing. */
+  .node {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    padding: .55rem .85rem;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    color: var(--ink);
+    text-align: center;
+  }
+
+  /* THE MARK, DRAWN HERE. A border and two pseudo-elements each — no picture
+     file, no icon font, no vector geometry — so it takes the palette like
+     everything else does and it is
+     one more thing the page can repaint by changing `theme.json`. Everything
+     inside one is `currentColor`, which is what lets the walk below light the
+     whole station, pseudo-elements included, by animating one property.
+
+     A LENGTH IN `rem` RATHER THAN A PERCENTAGE, because an icon's size is fixed
+     by what it IS rather than by the column it is drawn in — the one case R25
+     makes room for. */
+  .ico {
+    position: relative;
+    flex: 0 0 auto;
+    inline-size: .95rem;
+    block-size: .8rem;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+  }
+  .ico::before,
+  .ico::after { content: ""; position: absolute; }
+
+  /* SOMEBODY ASKING — a bubble with a tail. */
+  .ico.is-ask { border-radius: 3px; }
+  .ico.is-ask::after {
+    inset-block-start: 100%;
+    inset-inline-start: .18rem;
+    inline-size: 0;
+    block-size: 0;
+    border-inline: .16rem solid transparent;
+    border-block-start: .2rem solid currentColor;
+  }
+
+  /* A FILE BEING WRITTEN — a sheet, portrait, with two lines on it. */
+  .ico.is-file { inline-size: .72rem; block-size: .92rem; border-radius: 1px; }
+  .ico.is-file::before { inset-block-start: .22rem; inset-inline: .15rem; block-size: 1px; background: currentColor; }
+  .ico.is-file::after { inset-block-end: .22rem; inset-inline: .15rem .3rem; block-size: 1px; background: currentColor; }
+
+  /* A WINDOW REDRAWING — a frame with its bar across the top. */
+  .ico.is-window::before { inset-block-start: 0; inset-inline: 0; block-size: .18rem; background: currentColor; }
+  .ico.is-window::after { inset-block-end: .16rem; inset-inline-start: .16rem; inline-size: .38rem; block-size: 1px; background: currentColor; }
+
+  /* A FOLDER — a box with a tab on its leading corner. */
+  .ico.is-folder { border-start-start-radius: 0; }
+  .ico.is-folder::before {
+    inset-block-end: 100%;
+    inset-inline-start: -1px;
+    inline-size: .42rem;
+    block-size: .2rem;
+    border: 1px solid currentColor;
+    border-block-end: 0;
+    border-start-start-radius: 2px;
+    border-start-end-radius: 2px;
+  }
+
+  /* AND ANYTHING ELSE — a plain mark, so a station whose `nodeIcon` is absent or
+     misspelled still has one rather than a broken shape. */
+  .ico.is-dot { inline-size: .5rem; block-size: .5rem; border-radius: 50%; }
+
+  /* AN EDGE IS ITS LABEL AND ITS BRACKET, right-aligned against the boxes. */
+  .link {
+    grid-column: 1;
+    grid-row: var(--from, 1) / var(--to, 2);
+    display: flex;
+    justify-content: flex-end;
+    align-items: stretch;
+    gap: .4rem;
+  }
+
+  /* THE EDGE'S OWN WORDS, beside the line it belongs to rather than over it —
+     which is what an ordinary element gives you and a line in a drawing does not:
+     nothing overlaps, nothing needs a halo behind it, and it wraps. */
+  .says {
+    align-self: center;
+    /* AND A DEEPER LANE'S WORDS SIT LOWER, so two edges crossing the same rows do
+       not write over each other: every label is right-aligned against the boxes,
+       so without this the long edge's label and the short one it spans land in
+       the same place. A translate rather than a margin, because it moves the
+       words and not the row they were centred in. */
+    translate: 0 calc(var(--lane, 0) * 2.2rem);
+    max-inline-size: 10rem;
+    font-size: .78rem;
+    line-height: 1.35;
+    color: var(--ink-3);
+    text-align: end;
+  }
+
+  /* THE BRACKET. Three borders on one element: out of the box it leaves, down its
+     own lane, back in at the box it points at. `--lane` is how far out that lane
+     sits, so two edges crossing the same rows never share a line.
+     SOLID IS A LIVE DEPENDENCY, DASHED IS EVERYTHING ELSE — a handoff, a build
      step, an edge that runs back up the page. It is a rule about every diagram in
      a workspace rather than about this one: the distinction stops carrying
      information the moment two pages spell it differently. */
-  .edge {
-    fill: none;
-    stroke: var(--rule);
-    stroke-width: 1.5;
+  .line {
+    position: relative;
+    inline-size: calc(.9rem + var(--lane, 0) * .8rem);
+    border: 1px solid var(--rule);
+    border-inline-end: 0;
+    border-start-start-radius: 3px;
+    border-end-start-radius: 3px;
   }
+  .line.is-dash { border-style: dashed; }
 
-  .tip { fill: var(--rule); }
-
-  /* THE EDGE'S OWN WORDS, over the line rather than beside it. `paint-order` puts
-     the stroke down first, so the halo is drawn UNDER the glyphs instead of over
-     them — written the other way round the label is a smear. */
-  .says {
-    fill: var(--ink-3);
-    font-family: var(--sheet-face);
-    font-size: 11px;
-    text-anchor: middle;
-    dominant-baseline: middle;
-    paint-order: stroke;
-    stroke: var(--stock);
-    stroke-width: 4;
-    stroke-linejoin: round;
+  /* THE ARROWHEAD, at the end the edge points at: a box with no size, two
+     transparent borders and one inked one. */
+  .line::after {
+    content: "";
+    position: absolute;
+    inset-inline-end: -1px;
+    inset-block-end: -.26rem;
+    inline-size: 0;
+    block-size: 0;
+    border-block: .26rem solid transparent;
+    border-inline-start: .34rem solid var(--rule);
+  }
+  .line.is-back::after {
+    inset-block-end: auto;
+    inset-block-start: -.26rem;
   }
 
   /* BEFORE IT IS SEEN: the boxes are already there and the edges are not drawn
      yet. The figure is legible at every frame of this, which is the bar — a
      reveal that starts from nothing is a section that is blank while it plays. */
-  .edge, .tip, .says { opacity: 0; }
-  .edge { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .line { transform: scaleY(0); transform-origin: top; }
+  .line.is-back { transform-origin: bottom; }
+  .says { opacity: 0; }
 
   /* AND THE CLASS THE `reveal` PLUGIN ADDS. `--i` is the edge's own index, set by
      the script as a CUSTOM PROPERTY — the one thing a script may write onto an
      element's style — so the stagger is a number the stylesheet decides what to
      do with rather than a duration baked into the JavaScript. */
-  :scope.is-seen .edge {
-    animation: edge-in calc(520ms * var(--motion, 1)) ease-out both;
+  :scope.is-seen .line {
+    animation: line-in calc(520ms * var(--motion, 1)) ease-out both;
     animation-delay: calc(var(--i, 0) * 90ms * var(--motion, 1));
   }
-  :scope.is-seen .tip,
   :scope.is-seen .says {
     animation: mark-in calc(260ms * var(--motion, 1)) ease-out both;
     animation-delay: calc((var(--i, 0) * 90ms + 380ms) * var(--motion, 1));
   }
-  @keyframes edge-in {
-    from { stroke-dashoffset: 1; opacity: 1; }
-    to { stroke-dashoffset: 0; opacity: 1; }
+  /* AND THE WALK. The reveal goes round the loop once, lighting one station at a
+     time in the one hot colour and leaving it as it found it — `--n` is the
+     station's own index, written by the script, so the order is the order the
+     graph was laid out in and nothing here counts anything.
+
+     ONE PROPERTY CARRIES THE WHOLE STATION, because a keyframe on the box cannot
+     reach the icon inside it: everything the icon is drawn with is
+     `currentColor`, so animating `color` lights the mark, its two
+     pseudo-elements and the name together.
+
+     LIT AND THEN RELEASED, rather than lit and left on. A figure where every box
+     ends up coloured has coloured nothing, and the thing being shown here is the
+     loop going round rather than a state one station is in. */
+  :scope.is-seen .node {
+    animation: station-lit calc(1100ms * var(--motion, 1)) ease-out both;
+    animation-delay: calc(var(--n, 0) * 320ms * var(--motion, 1));
+  }
+
+  @keyframes line-in {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
   }
   @keyframes mark-in {
     from { opacity: 0; }
     to { opacity: 1; }
   }
-
-  /* THE EDGE THAT RUNS BACK UP THE PAGE IS DASHED, and it stays dashed while it
-     draws — so this comes after the block above, which sets a dasharray of its
-     own to animate with. */
-  :scope.is-seen .edge.is-back {
-    animation: none;
-    opacity: 1;
-    stroke-dasharray: 4 3;
-    stroke-dashoffset: 0;
+  @keyframes station-lit {
+    0% { color: var(--ink); border-color: var(--rule); background-color: transparent; }
+    22%,
+    46% { color: var(--cyan-t); border-color: var(--cyan); background-color: color-mix(in srgb, var(--cyan) 12%, transparent); }
+    100% { color: var(--ink); border-color: var(--rule); background-color: transparent; }
   }
 
   /* A READER WHO ASKED FOR LESS MOTION GETS THE DIAGRAM AND NOT THE MOVE. The
      durations are already nothing through `--motion`; this is the half a
      multiplier cannot do, which is putting the ink back. */
   @media (prefers-reduced-motion: reduce) {
-    .edge, .tip, .says { opacity: 1; }
-    .edge { stroke-dashoffset: 0; }
+    .line { transform: none; }
+    .says { opacity: 1; }
+    /* The walk's last keyframe IS the station at rest, so a zero duration
+       already ends there; this says so rather than leaving it to be inferred. */
+    :scope.is-seen .node { animation: none; }
   }
 
   .say { grid-area: say; max-inline-size: 34rem; }
@@ -205,6 +361,9 @@
       grid-template-columns: minmax(0, 1fr);
       grid-template-areas: "head" "plate" "say" "note";
     }
+    /* The lane keeps its width and the labels give theirs up first, because a
+       phone has room for the drawing or for the words beside it and not both. */
+    .says { max-inline-size: 6.5rem; font-size: .72rem; }
   }
 </style>
 
@@ -226,29 +385,6 @@
      the diagram is edited in `content.yaml` beside the prose that explains it,
      and this file never has to be opened to move a box. */
 
-  const SVG = "http://www.w3.org/2000/svg";
-
-  /* THE VIEWBOX'S OWN UNITS, AND THEY ARE NOT PIXELS. The svg is 100% of the
-     plate and these decide the proportions, which is what lets one drawing be
-     right on a phone and on a projector.
-
-     WHAT THE NUMBER ITSELF DECIDES IS THE TYPE SIZE, which is the part that is
-     easy to get wrong: the whole drawing is scaled by the plate's width over
-     this one, so a viewBox twice as wide as the plate halves every label on the
-     way to the screen. At 960 against the band's own plate the names came out at
-     eight pixels — legible in the file and not on the page. This is set near
-     what the plate actually gets, so the drawing renders at about life size and
-     the `font-size` in the stylesheet above means what it says. */
-  const WIDE = 560;
-  const ROW = 150;
-  const BOX_H = 56;
-  const TOP = 14;
-  /* HOW FAR A BACKWARD EDGE BOWS OUT PAST THE BOXES. It cannot run up the
-     middle: with one node per row every box shares an x, so an edge drawn
-     straight back up the column lands exactly under the forward edges and is
-     invisible — measured, in the loop this starter ships with. */
-  const BOW = 70;
-
   /** A variable that is a list, a lone scalar, or absent — all three arrive here
    *  and leave as an array of strings. A one-item list is written as a scalar by
    *  most people writing YAML, so reading only the list form would break the
@@ -259,8 +395,23 @@
     return [String(value).trim()];
   }
 
+  /** One element, with its class, appended where it belongs. */
+  function add(parent, tag, cls) {
+    const el = document.createElement(tag);
+    if (cls) el.setAttribute("class", cls);
+    parent.appendChild(el);
+    return el;
+  }
+
   const vars = ctx.vars || {};
   const names = list(vars.nodes).filter(Boolean);
+  /* ONE MARK PER STATION, NAMED IN THE DOCUMENT. A list parallel to `nodes`, so
+     a station's icon is a word somebody can change beside its name rather than a
+     class typed into this file. A name this file has no shape for — or a list
+     that stops short — falls back to a plain mark, because a misspelling should
+     cost a nicer icon and never the drawing. */
+  const ICONS = ["ask", "file", "window", "folder"];
+  const icons = list(vars.nodeIcon);
   const from = list(vars.edgeFrom);
   const to = list(vars.edgeTo);
   const says = list(vars.edgeSays);
@@ -293,8 +444,8 @@
        "how far from a source" to compute — every node in it is behind every
        other — and left in, the relaxation below just pushes the whole ring down
        the page once per pass until the passes run out, which draws four boxes
-       over two thousand units of empty plate. Measured, in exactly the loop this
-       starter ships with.
+       over a screenful of empty plate. Measured, in exactly the loop this starter
+       ships with.
 
        A DEPTH-FIRST WALK IN THE ORDER THE NODES WERE WRITTEN is what decides
        which edge closes it: an edge to a node that is still on the stack is
@@ -315,9 +466,9 @@
         const top = stack[stack.length - 1];
         if (top.next >= kids[top.at].length) { state[top.at] = 2; stack.pop(); continue; }
         const e = kids[top.at][top.next++];
-        const to = edges[e].b;
-        if (state[to] === 1) back.add(e);
-        else if (state[to] === 0) { state[to] = 1; stack.push({ at: to, next: 0 }); }
+        const target = edges[e].b;
+        if (state[target] === 1) back.add(e);
+        else if (state[target] === 0) { state[target] = 1; stack.push({ at: target, next: 0 }); }
       }
     });
 
@@ -344,123 +495,67 @@
     const rows = [];
     row.forEach(function (r, i) { (rows[r] = rows[r] || []).push(i); });
 
-    const place = [];
-    rows.forEach(function (members, r) {
-      const step = WIDE / members.length;
-      members.forEach(function (i, n) {
-        place[i] = { x: step * (n + 0.5), y: TOP + r * ROW };
-      });
-    });
-
-    const tall = TOP * 2 + (rows.length - 1) * ROW + BOX_H;
-    const svg = document.createElementNS(SVG, "svg");
-    svg.setAttribute("viewBox", "0 0 " + WIDE + " " + tall);
-    svg.setAttribute("role", "img");
+    const plot = document.createElement("div");
+    plot.setAttribute("class", "plot");
+    plot.setAttribute("role", "img");
     /* THE DRAWING SAYS WHAT IT IS, to a reader who is not looking at it. The
        words are the document's own — the node names, in the order they were
        written — so there is nothing here for somebody to keep in step by hand. */
-    svg.setAttribute("aria-label", names.join(", "));
+    plot.setAttribute("aria-label", names.join(", "));
 
-    /* EVERY BOX'S WIDTH, WORKED OUT BEFORE ANY LINE IS DRAWN, because a backward
-       edge leaves and lands on a box's SIDE and has to know where that side is.
-       Each is sized from the LENGTH of its own name rather than from a
-       measurement, deliberately: measuring means waiting for the face to load,
-       and a diagram that waits is a section that is blank while it does. A node
-       label is a name and not a sentence — that is the drawing rule, not a
-       limitation of this arithmetic — so an estimate is right for every label
-       that belongs in one. */
-    const wide = names.map(function (name) { return Math.max(96, 26 + name.length * 8.4); });
+    /* TWO GRID ROWS PER ROW OF BOXES, so an edge can start and end halfway down a
+       box rather than at its corner: the boxes take both, and a bracket runs from
+       the line between one box's halves to the line between the other's. */
+    rows.forEach(function (members, r) {
+      const rowEl = add(plot, "div", "row");
+      rowEl.style.setProperty("--row", String(2 * r + 1));
+      members.forEach(function (i) {
+        const box = add(rowEl, "div", "node");
+        /* THE NAME IS THE BOX'S OWN TEXT and the mark is a child after it, which
+           `row-reverse` draws in front — set the other way round, the text would
+           replace the icon. */
+        box.textContent = names[i];
+        /* THE WALK'S ORDER IS THE LAYOUT'S ORDER, as a custom property: the one
+           thing a script may write onto an element's style, with the stylesheet
+           deciding what the delay does with it. */
+        box.style.setProperty("--n", String(i));
+        const mark = ICONS.indexOf(icons[i]) >= 0 ? icons[i] : "dot";
+        add(box, "i", "ico is-" + mark).setAttribute("aria-hidden", "true");
+      });
+    });
 
-    /** One element, with its attributes, appended where it belongs. */
-    function add(parent, tag, attrs) {
-      const el = document.createElementNS(SVG, tag);
-      for (const key of Object.keys(attrs)) el.setAttribute(key, String(attrs[key]));
-      parent.appendChild(el);
-      return el;
-    }
+    /* AND EACH EDGE GETS THE FIRST LANE NOTHING ELSE IS USING OVER THE ROWS IT
+       CROSSES. Greedy and order-independent, which is the property that matters:
+       adding an edge must not move the ones already drawn. */
+    const laid = [];
+    const overlaps = function (one, other) { return one[0] < other[1] && other[0] < one[1]; };
 
-    /* THE EDGES FIRST, so a box is never drawn under a line.
-     *
-     * A FORWARD EDGE FALLS FROM ONE BOX'S FOOT TO THE NEXT BOX'S HEAD. A
-     * BACKWARD ONE LEAVES AND LANDS ON A SIDE and bows out past the boxes — it
-     * cannot run up the middle, because with one node per row every box shares
-     * an x and a line drawn straight back up the column is exactly under the
-     * forward edges. It leaves on whichever side has more room, so a drawing
-     * hard against the left of its plate does not bow off it. */
     edges.forEach(function (e, n) {
-      const a = place[e.a];
-      const b = place[e.b];
-      const back = b.y < a.y;
-      const path = add(svg, "path", {
-        class: "edge" + (e.dashed || back ? " is-back" : ""),
-        /* `pathLength` NORMALISES EVERY EDGE TO 1, which is what lets one
-           `stroke-dasharray` in the stylesheet draw a short edge and a long one
-           at the same speed — and means nothing here has to measure a path. */
-        pathLength: 1,
-        d: "",
-      });
-      let tipD;
-      let sayAt;
-      if (back) {
-        /* Out to the right where the boxes sit left of centre, out to the left
-           where they sit right of it. */
-        const right = (a.x + b.x) / 2 < WIDE / 2;
-        const side = right ? 1 : -1;
-        const x1 = a.x + side * wide[e.a] / 2;
-        const x2 = b.x + side * wide[e.b] / 2;
-        const out = Math.max(x1 * side, x2 * side) + BOW;
-        const my = a.y + BOX_H / 2;
-        const ny = b.y + BOX_H / 2;
-        path.setAttribute("d", "M " + x1 + " " + my
-          + " C " + (side * out) + " " + my
-          + " " + (side * out) + " " + ny
-          + " " + x2 + " " + ny);
-        tipD = "M " + x2 + " " + ny
-          + " L " + (x2 + side * 9) + " " + (ny - 5)
-          + " L " + (x2 + side * 9) + " " + (ny + 5) + " Z";
-        sayAt = { x: side * (out - 4), y: (my + ny) / 2 };
-      } else {
-        const y1 = a.y + BOX_H;
-        const y2 = b.y;
-        const bend = Math.max(30, (y2 - y1) * 0.45);
-        path.setAttribute("d", "M " + a.x + " " + y1
-          + " C " + a.x + " " + (y1 + bend)
-          + " " + b.x + " " + (y2 - bend)
-          + " " + b.x + " " + y2);
-        tipD = "M " + b.x + " " + y2
-          + " L " + (b.x - 5) + " " + (y2 - 9)
-          + " L " + (b.x + 5) + " " + (y2 - 9) + " Z";
-        sayAt = { x: (a.x + b.x) / 2, y: (y1 + y2) / 2 };
-      }
+      const lo = Math.min(row[e.a], row[e.b]);
+      const hi = Math.max(row[e.a], row[e.b]);
+      /* An edge between two boxes on the SAME row would be a bracket with no
+         height, so it takes that row's own two lines instead. */
+      const span = hi > lo ? [2 * lo + 2, 2 * hi + 2] : [2 * lo + 1, 2 * lo + 3];
+      let lane = 0;
+      while (laid.some(function (other) { return other.lane === lane && overlaps(other.span, span); })) lane++;
+      laid.push({ lane: lane, span: span });
+
+      const link = add(plot, "div", "link");
       /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM
-         PROPERTY. The stylesheet decides what the stagger does with it. */
-      path.style.setProperty("--i", String(n));
+         PROPERTY. The stylesheet decides what the stagger and the lane do. */
+      link.style.setProperty("--i", String(n));
+      link.style.setProperty("--from", String(span[0]));
+      link.style.setProperty("--to", String(span[1]));
+      /* ON THE EDGE AND NOT ON ITS LINE, because the label reads it too: a deeper
+         lane's words have to clear the ones it spans. */
+      link.style.setProperty("--lane", String(lane));
 
-      const tip = add(svg, "path", { class: "tip", d: tipD });
-      tip.style.setProperty("--i", String(n));
+      if (e.says) add(link, "span", "says").textContent = e.says;
 
-      if (e.says) {
-        const label = add(svg, "text", { class: "says", x: sayAt.x, y: sayAt.y });
-        label.textContent = e.says;
-        label.style.setProperty("--i", String(n));
-      }
+      const upward = row[e.b] < row[e.a];
+      add(link, "div", "line" + (upward ? " is-back" : "") + (e.dashed || upward ? " is-dash" : ""));
     });
 
-    /* THEN THE BOXES, on the widths worked out above. */
-    names.forEach(function (name, i) {
-      const w = wide[i];
-      add(svg, "rect", {
-        class: "box",
-        x: place[i].x - w / 2,
-        y: place[i].y,
-        width: w,
-        height: BOX_H,
-        rx: 3,
-      });
-      const text = add(svg, "text", { class: "name", x: place[i].x, y: place[i].y + BOX_H / 2 });
-      text.textContent = name;
-    });
-
-    plate.replaceChildren(svg);
+    plate.replaceChildren(plot);
   }
 </script>

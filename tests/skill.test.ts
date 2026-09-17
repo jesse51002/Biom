@@ -645,7 +645,7 @@ test("R49 — a part is markdown, html, table or child, and nothing else", () =>
   expect(untyped.ok).toBe(false);
 
   // THERE IS NO DIAGRAM TYPE. A diagram is a drawing in the section's own
-  // markup — an inline `<svg>`, like every other figure — or a fence a plugin
+  // markup — HTML, like every other figure — or a fence a plugin
   // this workspace carries upgrades in place. Either way it is not a part kind.
   const drawn = check(page(html({}), withContents(
     "  - name: hero", "    data: hero.html", "    parts:", "      body:", "        type: diagram", "        data: shape",

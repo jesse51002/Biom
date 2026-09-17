@@ -180,7 +180,7 @@ nothing else. There is **no `name`**, because the key it sits under already stat
 the id.
 
 **There is no diagram type and no diagram file.** A diagram is a drawing the
-section makes — an inline `<svg>` over boxes and edges held in the section's own
+section makes — HTML over boxes and edges held in the section's own
 `variables` — which is
 [`.agents/skills/diagrams/`](../.agents/skills/diagrams/SKILL.md).
 

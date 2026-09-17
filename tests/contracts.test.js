@@ -39,7 +39,7 @@ test("refuses what only the workspace UI may say", () => {
   // artifact must not be able to express any of them.
   for (const kind of [
     "page.list", "page.create", "page.remove", "page.writeFile",
-    "page.move", "doc.raw", "doc.writeRaw",
+    "page.move", "page.rename", "doc.raw", "doc.writeRaw",
     "table.create", "table.alter", "table.remove", "table.setParent", "table.importCsv",
     // `vault.info` is NOT in this list and the four beside it are, which is the
     // whole of the line between them: *which folder is this* is about the folder
@@ -216,6 +216,17 @@ test("guest notices, which are the only way the host learns about a frame", () =
   expect(isGuestNotice({ kind: "unembed", g: 1, embed: "e1" })).toBe(true);
   expect(isGuestNotice({ kind: "unembed", g: 1 })).toBe(false);
   expect(isGuestNotice({ kind: "unembed", g: 1, embed: "" })).toBe(false);
+  // WHERE THE BOX IS SCROLLED TO, in pixels, so a redraw can put it back. A
+  // position and never a height: the run it is clamped against is measured in
+  // the box, and nothing about the box's content crosses here.
+  expect(isGuestNotice({ kind: "position", g: 1, top: 640 })).toBe(true);
+  expect(isGuestNotice({ kind: "position", g: 1, top: 0 })).toBe(true);
+  expect(isGuestNotice({ kind: "position", g: 1, top: 12.5 })).toBe(true);
+  expect(isGuestNotice({ kind: "position", g: 1 })).toBe(false);
+  expect(isGuestNotice({ kind: "position", g: 1, top: -1 })).toBe(false);
+  expect(isGuestNotice({ kind: "position", g: 1, top: NaN })).toBe(false);
+  expect(isGuestNotice({ kind: "position", g: 1, top: "640" })).toBe(false);
+  expect(isGuestNotice({ kind: "position", top: 640 })).toBe(false);
 });
 
 // ANOTHER PAGE, DRAWN. The fourth kind added to HostRequest after the note on

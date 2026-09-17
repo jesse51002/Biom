@@ -319,11 +319,14 @@ function fakeWs(page = DOC) {
 function fakeFrameHost() {
   return {
     sent: [],
+    /** Every key the shell asked to keep the reader's place for, in order. */
+    kept: [],
     setShim() {},
     for() { throw new Error("no frame is mounted in these tests"); },
     drop() {},
     broadcast(ev) { this.sent.push(ev); },
     compliance() { return null; },
+    keep(key) { this.kept.push(key); },
   };
 }
 
@@ -656,7 +659,7 @@ function withFrames(page = WITH_BLOCK, route = { view: "page", id: page.id }) {
   const frameHost = {
     sent: [],
     keys: [],
-    setShim() {}, drop() {}, refresh() {}, compliance() { return null; },
+    setShim() {}, drop() {}, refresh() {}, compliance() { return null; }, keep() {},
     broadcast(ev) { this.sent.push(ev); },
     for(key) {
       frameHost.keys.push(key);
@@ -773,6 +776,22 @@ test("reload re-reads the page and re-lists the tree", async () => {
   // has to turn up without refreshing the browser.
   expect(g.ws.calls).toContain("loadTree");
   expect(byText(g.rail, "Reload")).not.toBeNull();
+  // AND THE READER'S PLACE IS KEPT THROUGH IT. `keep` is said for the page on
+  // the route, and it is said BEFORE the teardown — the realm that reported
+  // where it was scrolled to is the one `reloadPage` is about to replace.
+  expect(g.frameHost.kept).toEqual(["notes"]);
+});
+
+test("keeping the reader's place is a redraw's alone: a navigation never says keep", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  g.ui.go("page", "home/other");
+  await tick();
+  g.ui.go("page", "notes");
+  await tick();
+  // The mount outlives its realm either way, so a page come back to from the
+  // rail would land where the reader last left it if anything but a redraw
+  // asked. Nothing but `doReload` does.
+  expect(g.frameHost.kept).toEqual([]);
 });
 
 /* ── disk wins, and the save that must be dropped for it to ────────────── */
@@ -799,6 +818,9 @@ test("an external change re-runs Reload, and the redraw goes through reloadPage"
 
   // THE TEARDOWN, not a cheaper redraw. This is the whole of the dropped save.
   expect(g.ws.calls).toContain("reloadPage:notes");
+  // The watcher's redraw keeps the reader's place exactly as the button does:
+  // one path, one `keep`, for the page on the route.
+  expect(g.frameHost.kept).toEqual(["notes"]);
   // The tree as well: a page an agent has just CREATED has to turn up in the
   // rail without anybody refreshing the browser.
   expect(g.ws.calls).toContain("loadTree");
@@ -1282,6 +1304,42 @@ test("every page row can start a page inside it; a table row cannot", async () =
   expect(g.made).toEqual([]);
   // and the parent opens, or whatever is made lands inside a shut row
   expect(g.ui.get().expanded.has("home/Notes")).toBe(true);
+});
+
+// EVERY OPEN PAGE ENDS IN A PLUS: the last row under its children is a way to
+// make one there, at the children's own depth. The hover-only plus on the row
+// itself was found by nobody, and a control nobody finds is a control that is
+// not there.
+test("an open page ends in a New page row at its children's depth; a shut one does not", async () => {
+  const shut = tree();
+  expect(findAll(shut.draw(), (el) => has(el, "addrow"))).toHaveLength(0);
+
+  const g = tree({
+    home: [
+      { kind: "page", id: "home/Notes", name: "Notes" },
+      { kind: "page", id: "home/Board", name: "Job board" },
+    ],
+    "home/Notes": [
+      { kind: "page", id: "home/Notes/Rates", name: "Rates" },
+      { kind: "page", id: "home/Notes/Sites", name: "Sites" },
+    ],
+    "home/Notes/Rates": [{ kind: "page", id: "home/Notes/Rates/Old", name: "Old" }],
+  }, { expanded: ["home/Notes", "home/Notes/Rates"] });
+  const root = g.draw();
+  // Read top to bottom: the plus for Rates closes Rates' children, BEFORE
+  // Sites, and the plus for Notes comes after everything Notes holds.
+  const order = findAll(root, (el) => el.tagName === "A" || has(el, "rowaddin"))
+    .map((el) => (has(el, "rowaddin") ? "+" + el.attrs["aria-label"] : flat(el)));
+  expect(order).toEqual([
+    "Notes", "Rates", "Old", "+New page inside Rates", "Sites", "+New page inside Notes", "Job board",
+  ]);
+  const adds = findAll(root, (el) => has(el, "rowaddin"));
+  expect(adds.map((el) => el.style["--depth"])).toEqual(["2", "1"]);
+
+  adds[1].fire("click", { preventDefault() {}, stopPropagation() {} });
+  await tick();
+  expect(g.ui.get().dialog).toBe(true);
+  expect(g.ui.get().dialogParent).toBe("home/Notes");
 });
 
 // A NEW TABLE NEEDS A NAME NOBODY HOLDS. The server refuses a duplicate, so a

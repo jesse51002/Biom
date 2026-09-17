@@ -16,8 +16,10 @@ contents:
         that word on a line of its own, so the markdown mirror and anything reading it say exactly
         what the page draws. Ticking appends the word; unticking trims it.
 
-        **This file is deliberately plain, and it is not a design.** The plugin sets `data-status`
-        on the item and inks nothing at all, so every rule about how a done item looks is here.
+        **The plugin inks nothing at all**, so every rule about how a done item looks is here: the
+        switch is a ring until it is ticked and a filled disc with a drawn tick afterwards, the done
+        row goes quiet, and the tally at the head reads the done count in the hot colour. All of
+        that is a design and yours to replace; the status in the document is the mechanism.
   - name: ideas
     data: index.html
     parts:

@@ -2,6 +2,8 @@
 
 Visual Workspace for AI Automations: point an agent at a folder, and what you ask for appears as real pages, drawn.
 
+**[biom.dev](https://biom.dev)** · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
+
 ## Get started
 
 ### 1. Install Bun
@@ -40,6 +42,8 @@ bun run app
 
 Biom appears in your applications menu, on macOS in `~/Applications`, on Windows in the Start menu. Open it, create a vault, start your agent in that folder, and tell it what you want. Running `bun run app` again replaces what is installed.
 
+Once per launch the built application fetches `https://biom.dev/version.json` and says so in the status strip when a newer version is out. The request carries the version and the platform in its user agent and nothing else — no id, nothing about your vault. Set `BIOM_NO_UPDATE_CHECK=1` to turn it off.
+
 ## What it is
 
 - **Works with any agent.** Claude Code, OpenClaw, Codex, Hermes, anything that can write a file.
@@ -50,6 +54,20 @@ Biom appears in your applications menu, on macOS in `~/Applications`, on Windows
 - **Your team's brain.** Ask for the launch plan or the investor update and it is written from everything you have decided and learned.
 - **Humans and agents working together.** One document, worked at once by people and agents.
 
+## The paid plans
+
+Everything in this repository runs on your machine, free, with any agent. The paid plans are not out yet. What they add is what a folder on one machine cannot do:
+
+- **Collaboration.** One workspace worked by several people and their agents at once, every page live for all of them.
+- **Every platform.** Your workspace on your phone, on the web and on every machine you use, in sync.
+- **Agents run by us, 24/7.** Biom agents working on your workspace around the clock, hosted, with the model included and one-click connections to GitHub, Gmail, Drive, Calendar, Slack and Stripe, so a digest, a scraper or a watcher runs without your laptop being open.
+
+The prices are on [biom.dev/pricing](https://biom.dev/pricing.html). To hear the day they open, [leave your email](https://biom.dev/waitlist.html).
+
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the gates and the rules. Licensed under the [AGPL-3.0](LICENSE).
+
+---
+
+[biom.dev](https://biom.dev) · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)

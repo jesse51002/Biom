@@ -27,10 +27,14 @@
      Its `<style>` is scoped to the slot by the plugin, so these selectors cannot
      reach the section above or below.
 
-     THIS FILE IS DELIBERATELY PLAIN. It is a row, and it carries a name, a count
-     and a kind — no dot, no tint on hover, no accent. A starter with a look is a
-     look that turns up in every page copied from it, and this one is copied into
-     EVERY page in the workspace, which makes it the most contagious file here. -->
+     IT IS A ROW AND IT STAYS ONE. A name, a count and a kind, and the one thing
+     it does beyond that is LIGHT when the pointer or the keyboard reaches it: a
+     leading edge that is nothing until the row is the one somebody is about to
+     open, in the palette's own hot colour. That is deliberately the whole of the
+     design in here — this file is copied into EVERY page in the workspace, which
+     makes it the most contagious file in `base/`, so what it carries is one
+     touch that says the row is live rather than a look every page inherits.
+     Restyle the copy in a page freely; think twice before restyling this one. -->
 <style>
   .kid {
     display: grid;
@@ -39,10 +43,22 @@
     gap: .55rem;
     padding: .5rem .65rem;
     border-bottom: 1px solid var(--rule);
+    /* THE EDGE THAT LIGHTS. Transparent rather than absent, so the row does not
+       move by two pixels the moment the pointer reaches it — the plugin makes
+       the whole drawing the control, so `:hover` and `:focus-within` are already
+       true at the moment they should be and nothing has to be told. */
+    border-inline-start: 2px solid transparent;
     color: var(--ink);
     font-family: var(--sheet-face);
     line-height: 1.4;
+    transition: border-color 140ms ease, background 140ms ease;
   }
+  .kid:hover,
+  .kid:focus-within {
+    border-inline-start-color: var(--cyan);
+    background: color-mix(in srgb, var(--cyan) 7%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) { .kid { transition: none; } }
 
   .kid-name { min-inline-size: 0; overflow-wrap: anywhere; }
 
@@ -55,7 +71,7 @@
      table, on every page this file is copied into, with no way to spell the
      other case — the markup cannot branch, so it cannot pluralise either. The
      `{{kind}}` beside it already says what is being counted. */
-  .kid-count { font-size: .8rem; color: var(--ink-3); }
+  .kid-count { font-family: var(--gauge-face); font-size: .8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .kid-count:empty { display: none; }
 
   .kid-kind {

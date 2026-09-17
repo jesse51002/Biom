@@ -1,11 +1,26 @@
-<!-- base/figure/index.html — TWO SLOTS SIDE BY SIDE, ONE OF THEM A PICTURE.
+<!-- base/figure/index.html — AN INSTRUMENT HELD BESIDE THE PROSE THAT EXPLAINS IT.
 
-     THIS FILE IS DELIBERATELY PLAIN. It is here to show the FORMAT — two slots
-     in one section, an image that comes out of the document rather than out of
-     this markup, and the one thing a section can do that a document could not —
-     and it has no visual opinion at all: no box around the picture, no rule down
-     the quotation, no colour anywhere. A starter with a look is a look that
-     turns up in every page copied from it. Take the shape and design your own.
+     WHAT IT DRAWS. Two slots side by side, and the held one is a FIGURE rather
+     than a picture somebody has to go and find: a row of counts in the gauge
+     face over a row of bars that grow from nothing the first time the section is
+     seen, with the tallest one lit. It is HTML — elements, grid and flex,
+     borders and backgrounds on the palette's tokens — because that is what a
+     figure is in this format, and it is what every page copied from here should
+     start from rather than a grey rectangle with a filename in it.
+
+     WHERE THE WORDS LIVE. All of them are in `content.yaml`. The argument and
+     the caption are markdown parts; the FIGURE's own words are the section's
+     `variables`, as parallel lists — `kpiName[1]` and `kpiValue[1]` are one
+     count, `barName[2]` and `barValue[2]` are one bar. So editing the document
+     edits the picture, and this file never has to be opened to change what the
+     drawing says.
+
+     WHAT TO CHANGE FIRST: those lists, and then the prose beside them. A number
+     per bar cannot live in a list SLOT — a slot holds markdown, and reading a
+     figure back out of prose is parsing — so the figures are variables, which
+     are edited on the page's own config screen rather than on the page. That is
+     the one thing here that does not work like the rest, and the caption says so
+     on the page rather than leaving a reader to find out.
 
      THE PICTURE STAYS PUT WHILE THE ARGUMENT SCROLLS PAST IT. That works because
      the page's one frame fills the canvas and scrolls inside itself, so the box
@@ -19,10 +34,18 @@
      three sections would be three things a person can reorder and delete on
      their own, and this is one. Choose per case and say which you chose.
 
-     THE FIGURE NAMES ITS FILE AND NOTHING ELSE — `kitchen.jpg`. Every frame is
-     given the workspace's `assets/` as its `<base>`, so a bare filename resolves
-     to this workspace's copy and the same filename works in prose. A path would
-     carry the workspace's absolute location on disk, which a page cannot know.
+     ONE HOT COLOUR, SPENT ONCE. The tallest bar and its label take `--cyan` and
+     nothing else on the drawing is coloured at all, because a figure where
+     everything is lit has lit nothing. Which bar that is comes out of the
+     numbers rather than out of a class typed into a file.
+
+     IT ARRIVES, AND ONLY ONCE. `reveal` adds `is-seen` the first time the
+     section comes into view and disconnects; the bars grow and the counts rise
+     under that class, every duration multiplied by `--motion` — which the
+     document declares as 1 and as 0 under `prefers-reduced-motion`. The
+     unfinished state is written under `:not(.is-seen)`, so a reader who asked
+     for stillness gets the finished figure and no move at all, and so does a
+     bar added after the reveal has already fired.
 
      THE COLLAPSE IS A CONTAINER QUERY, which asks how wide THIS SECTION is. A
      media query would ask how wide the whole canvas is and get the wrong answer
@@ -73,29 +96,109 @@
     gap: .5rem;
   }
 
-  /* Reflow rather than a fixed width: the picture takes the column it is given
-     and keeps its own proportions. */
-  .plate :is(img, svg) {
-    display: block;
-    inline-size: 100%;
-    block-size: auto;
-    max-inline-size: 100%;
+  /* THE INSTRUMENT. A plate the drawing sits on, so the figure reads as one
+     object rather than as two rows that happen to be near each other. */
+  .panel {
+    display: grid;
+    gap: .9rem;
+    padding: .85rem 1rem 1rem;
+    border: 1px solid var(--rule);
+    background: color-mix(in srgb, var(--stock-hi) 65%, transparent);
   }
 
-  /* THE PICTURE ARRIVES INSIDE A PARAGRAPH. `![alt](file.jpg)` is markdown, and
-     markdown renders BLOCK-LEVEL — so the slot holds a `<p>` with the image in
-     it, carrying the paragraph margin the type scale gave it. Left alone that is
-     16px of unasked-for air above and below the picture, on top of this grid's
-     own gap. Every rule aimed at a markdown slot moves one level down like
-     this. */
-  .figure > :first-child { margin-block-start: 0; }
-  .figure > :last-child { margin-block-end: 0; }
+  /* THE COUNTS. Auto-fit, so three become four by writing a fourth name and a
+     fourth figure and nothing here learns a number. */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(5.5rem, 100%), 1fr));
+    gap: .5rem .75rem;
+  }
+  .kpi { display: grid; gap: .1rem; padding-block-start: .4rem; border-block-start: 1px solid var(--rule); }
+  .k {
+    font-family: var(--furniture-face);
+    font-size: .62rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  /* THE GAUGE ROLE, WITH TABULAR FIGURES, because a column of numbers that
+     shifts as it counts is a column nobody can read down. */
+  .v {
+    font-family: var(--gauge-face);
+    font-size: 1.3rem;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
 
-  /* Quieter and smaller than the argument, which is the whole of what a caption
-     has to be. Anything past that is a design decision and it is yours. */
+  /* THE BARS. `flex: 1 1 0` on every bar and on every label, so the two rows
+     share one set of columns without either of them being told how many. */
+  .plot { display: grid; gap: .35rem; }
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: .3rem;
+    block-size: 7rem;
+    border-block-end: 1px solid var(--rule);
+  }
+  .bar {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    block-size: var(--h, 0%);
+    background: color-mix(in srgb, var(--ink) 20%, transparent);
+    transform-origin: 50% 100%;
+    transition: transform calc(520ms * var(--motion, 1)) cubic-bezier(.16, 1, .3, 1);
+    transition-delay: calc(var(--i, 0) * 70ms * var(--motion, 1));
+  }
+  /* THE ONE HOT COLOUR, ON THE ONE BAR THAT EARNED IT. */
+  .bar.is-lit { background: var(--cyan); }
+  .foot { display: flex; gap: .3rem; }
+  .foot > * {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    text-align: center;
+    font-family: var(--gauge-face);
+    font-size: .68rem;
+    color: var(--ink-3);
+  }
+  /* `--cyan-t` AND NOT `--cyan` WHEREVER THE COLOUR IS TEXT: the `-t` pair is
+     the half of the accent it is safe to read words in, on a light palette and
+     on a dark one. */
+  .foot > .is-lit { color: var(--cyan-t); }
+
+  /* BEFORE IT IS SEEN: the plate, the counts' labels and the axis are already
+     there and only the figures are missing. The drawing is legible at every
+     frame of this, which is the bar — a reveal that starts from nothing is a
+     section that is blank while it plays. */
+  .bar { transform: scaleY(0); }
+  .v { opacity: 0; transition: opacity calc(360ms * var(--motion, 1)) ease calc(160ms * var(--motion, 1)); }
+
+  /* AND THE CLASS THE `reveal` PLUGIN ADDS. It is already on the section by the
+     time a bar added later is drawn, so a figure that grows after the reveal has
+     fired arrives finished rather than invisible. */
+  :scope.is-seen .bar { transform: none; }
+  :scope.is-seen .v { opacity: 1; }
+
+  /* A READER WHO ASKED FOR LESS MOTION GETS THE FIGURE AND NOT THE MOVE. The
+     durations are already nothing through `--motion`; this is the half a
+     multiplier cannot do, which is putting the ink and the height back. */
+  @media (prefers-reduced-motion: reduce) {
+    .bar { transform: none; }
+    .v { opacity: 1; }
+  }
+
+  /* THE FIGURE'S WORDS, under it. Quieter and smaller than the argument, which
+     is the whole of what a caption has to be. */
   .caption { font-size: .85rem; line-height: 1.45; color: var(--ink-3); }
   .caption > :first-child { margin-block-start: 0; }
   .caption > :last-child { margin-block-end: 0; }
+
+  /* THE FAULT IS A SLOT LIKE EVERY OTHER WORD HERE, hidden until the script says
+     otherwise. A blank rectangle where a drawing was is indistinguishable from a
+     page that is still loading, and the person looking at it is usually the
+     person who could have fixed it. */
+  .fault { display: none; font-size: .9rem; color: var(--ink-3); }
+  :scope.is-fault .fault { display: block; }
+  :scope.is-fault .panel { display: none; }
 
   /* NARROW: ONE COLUMN, with the picture moved ABOVE the prose rather than left
      at the bottom of it. In `rem`, so the breakpoint tracks the reader's type
@@ -118,7 +221,87 @@
        rendered prose is paragraphs. -->
   <div class="say" data-g-part="body"></div>
   <figure class="plate">
-    <div class="figure" data-g-part="figure"></div>
+    <div class="panel"></div>
+    <div class="fault" data-g-part="fault"></div>
     <figcaption class="caption" data-g-part="caption"></figcaption>
   </figure>
+  <!-- ONE CLASS, ONCE, ON THIS SECTION, and the observer disconnects after it. -->
+  <span data-g-plugin="reveal"></span>
 </div>
+<script>
+  /* THE DRAWING, AND NOTHING ELSE. Every word in it comes out of `ctx.vars` —
+     the page's variables and the section's, merged with the nearest last — so
+     the figure is edited in `content.yaml` beside the prose that explains it. */
+
+  /** A variable that is a list, a lone scalar, or absent — all three arrive here
+   *  and leave as an array of strings. A one-item list is written as a scalar by
+   *  most people writing YAML, so reading only the list form would break the
+   *  smallest figure somebody draws. */
+  function list(value) {
+    if (Array.isArray(value)) return value.map(function (v) { return String(v).trim(); });
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value).trim()];
+  }
+
+  /** One element, with its class, appended where it belongs. */
+  function add(parent, tag, cls) {
+    const el = document.createElement(tag);
+    if (cls) el.setAttribute("class", cls);
+    parent.appendChild(el);
+    return el;
+  }
+
+  const vars = ctx.vars || {};
+  const kpiName = list(vars.kpiName);
+  const kpiValue = list(vars.kpiValue);
+  const barName = list(vars.barName);
+  const barValue = list(vars.barValue).map(Number);
+
+  const panel = section.querySelector(".panel");
+
+  /* NOTHING TO DRAW IS NOT AN EMPTY FIGURE, it is a section whose numbers have
+     not been written yet — so it says so, in its own slot. */
+  if (kpiName.length === 0 && barName.length === 0) {
+    section.classList.add("is-fault");
+  } else {
+    /* THE DRAWING SAYS WHAT IT IS, to a reader who is not looking at it. The
+       words are the document's own, so there is nothing here to keep in step. */
+    panel.setAttribute("role", "img");
+    panel.setAttribute("aria-label", kpiName.concat(barName).join(", "));
+
+    if (kpiName.length > 0) {
+      const kpis = add(panel, "div", "kpis");
+      kpiName.forEach(function (name, i) {
+        const cell = add(kpis, "div", "kpi");
+        add(cell, "div", "k").textContent = name;
+        /* A COUNT WITH NO FIGURE BESIDE IT IS STILL A COUNT — the lists are
+           parallel and a short one is somebody mid-edit, not a broken page. */
+        add(cell, "div", "v").textContent = kpiValue[i] === undefined ? "" : kpiValue[i];
+      });
+    }
+
+    /* THE TALLEST BAR IS FOUND RATHER THAN MARKED, so the lit one moves when the
+       numbers do and there is no class in a file to keep in step with them. */
+    const usable = barValue.filter(function (v) { return Number.isFinite(v); });
+    const top = usable.length > 0 ? Math.max.apply(null, usable) : 0;
+    const best = barValue.indexOf(top);
+
+    if (barName.length > 0) {
+      const plot = add(panel, "div", "plot");
+      const bars = add(plot, "div", "bars");
+      const foot = add(plot, "div", "foot");
+      barName.forEach(function (name, i) {
+        const value = Number.isFinite(barValue[i]) ? barValue[i] : 0;
+        const lit = i === best && top > 0;
+        const bar = add(bars, "div", lit ? "bar is-lit" : "bar");
+        /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM
+           PROPERTY. The stylesheet decides what the height and the stagger do
+           with it, and the palette still decides what anything resolves to. */
+        bar.style.setProperty("--h", (top > 0 ? Math.max(2, Math.round((value / top) * 100)) : 2) + "%");
+        bar.style.setProperty("--i", String(i));
+        bar.title = name + ": " + (Number.isFinite(barValue[i]) ? barValue[i] : "");
+        add(foot, "span", lit ? "is-lit" : "").textContent = name;
+      });
+    }
+  }
+</script>

@@ -94,6 +94,12 @@ import { makeDock } from "./dock.js";
  * @property {UiStore} ui
  * @property {FrameHost} frameHost
  * @property {ShellViews} views
+ * @property {string} [newerVersion] A NEWER RELEASE THAN THIS ONE, by name, or
+ *   absent. The server learned it from biom.dev on the way up and the document
+ *   carried it here; the strip says it in one line and links the install steps,
+ *   because a person who built from the repository has no other way to hear a
+ *   tag was cut. It is a fact about the launch, so it goes on the end of the
+ *   strip whatever the route, the way the versions line does.
  * @property {boolean} [production] WHICH BUILD THIS IS, and the only thing the
  *   chrome knows about it: whether a row is put in the list it returns. Nothing
  *   here is deleted in production and nothing becomes a second code path — every
@@ -180,6 +186,7 @@ function windowBridge() {
 export function makeShell(deps) {
   const { h, fill, ws, ui, frameHost, views, events } = deps;
   const production = deps.production === true;
+  const newerVersion = typeof deps.newerVersion === "string" ? deps.newerVersion.trim() : "";
 
   /** WHICH PANEL THIS BUILD WILL SHOW, and the one answer everything asks.
    *
@@ -984,7 +991,13 @@ export function makeShell(deps) {
     // first paint, and silence is the right answer then too — an absent fact is
     // not a negative one.
     if (vault !== null && vault.history === false) items.push(["Versions", "are not being kept"]);
-    return h("span.status", ...items.map(([k, v]) => h("span", k, " ", h("b", v))));
+    const drawn = items.map(([k, v]) => h("span", k, " ", h("b", v)));
+    // THE ONE ITEM THAT IS A LINK, and the last: a newer version exists, and the
+    // steps to get it are the same three the person already ran once.
+    if (newerVersion !== "") {
+      drawn.push(h("span", "Update ", h("a", { href: "https://biom.dev/get-started.html", target: "_blank", rel: "noopener" }, h("b", `${newerVersion} is out`))));
+    }
+    return h("span.status", ...drawn);
   }
 
   /* ── the two things the chrome does ────────────────────────────────────── */
@@ -1023,8 +1036,16 @@ export function makeShell(deps) {
     try {
       // The tree first is wrong and the page first is right: `reloadPage` drops
       // the cached page and emits, which is what tears every frame on it down.
-      if (route.view === "page" && route.id) await ws.reloadPage(route.id);
-      else if (route.view === "table" && route.id) await ws.loadTable(route.id);
+      //
+      // AND THE READER'S PLACE SURVIVES THE TEARDOWN. `keep` goes first, while
+      // the realm that reported where it was scrolled to is still the one on
+      // the mount; the new realm is put back there on its `ready`, clamped to
+      // whatever the page is now. It is said here and nowhere else, so a page
+      // navigated to starts at the top and only a redraw keeps its place.
+      if (route.view === "page" && route.id) {
+        frameHost.keep(route.id);
+        await ws.reloadPage(route.id);
+      } else if (route.view === "table" && route.id) await ws.loadTable(route.id);
       await ws.loadTree();
     } catch (err) {
       troubled = message(err);

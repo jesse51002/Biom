@@ -267,8 +267,8 @@ test("R59 is satisfied by a plugin node naming the slot, not only by ctx.write",
 //
 // MERMAID IS NOT SHIPPED ANY MORE, and this is the half of that decision that
 // had to keep working. The whole point of the format is a CUSTOM drawing — a
-// figure is an inline `<svg>` a section writes, and a diagram of relationships
-// is that same drawing — so nothing in `guest/plugins/` draws a mermaid fence
+// figure is HTML a section writes, and a diagram of relationships is that same
+// drawing — so nothing in `guest/plugins/` draws a mermaid fence
 // and a fresh vault gets no `plugins/mermaid.js`.
 //
 // What the framework kept is the MECHANISM rather than the name. `markdown.js`

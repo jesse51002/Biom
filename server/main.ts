@@ -72,7 +72,7 @@ import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultOf } from "../contracts/wire.js";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -164,6 +164,24 @@ export function environment(named: string | undefined): Environment {
 // client, and no other module in the server asks an environment a question.
 const ENV = environment(process.env.BIOM_ENV);
 const PRODUCTION = ENV === "production";
+
+/** WHICH BUILD THIS IS, BY NUMBER. `tools/app.ts` defines it from the tag the
+ *  build was cut at, so a stranger's binary carries `v0.1.1` or, between tags,
+ *  `v0.1.1-2-gf8759a0`; a source run has no define and carries "development".
+ *  Read once here, like the environment above, and for the same reason. */
+const VERSION = (process.env.BIOM_VERSION ?? "").trim() || "development";
+
+/** THE UPDATE CHECK, AND THE ONE WAY TO SILENCE IT. A production build asks
+ *  `biom.dev/version.json` once per launch whether a newer version exists, and
+ *  the document served at `/` carries the answer to the client. It is a real
+ *  question — a person who built from the repository has no other way to learn
+ *  a tag was cut — and the log line it leaves at biom.dev is the only count
+ *  anybody has of the program being started. The request carries the path
+ *  and a user agent naming this program, its version and the platform; no id,
+ *  no query, nothing about the vault. `BIOM_NO_UPDATE_CHECK=1` skips it, and
+ *  is what the founders' machines and CI set so the count is strangers only. */
+const CHECK_UPDATES = PRODUCTION && (process.env.BIOM_NO_UPDATE_CHECK ?? "").trim() === "";
+const VERSION_URL = "https://biom.dev/version.json";
 
 // THE INSTALL DIRECTORY, AND IT IS A PATH RATHER THAN A URL. `.pathname` off a
 // `file:` URL is percent-ENCODED, so an install under `/My Documents/` came out
@@ -1438,6 +1456,48 @@ function inVault(rest: string, vault: string): string | null {
  *  The name is duplicated in `client/index.html` and in `client/boot.js` and
  *  cannot be shared: `contracts/` is the only place all three could import from
  *  and it is frozen, and an HTML attribute cannot import anything at all. */
+/** `major.minor.patch` out of a version string, or null where there is none.
+ *  A leading `v`, and anything after the triple — `-2-gf8759a0`, a `-dirty` —
+ *  is ignored, so a build between tags compares as the tag it was cut from and
+ *  is told about the next one and nothing sooner. */
+export function versionTriple(text: string): [number, number, number] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(text.trim());
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** Whether `latest` is a newer release than `running`. False whenever either
+ *  side fails to parse: a development build is never told to update, and a
+ *  malformed file at biom.dev says nothing rather than something wrong. */
+export function newerThan(running: string, latest: string): boolean {
+  const a = versionTriple(running);
+  const b = versionTriple(latest);
+  if (a === null || b === null) return false;
+  if (b[0] !== a[0]) return b[0] > a[0];
+  if (b[1] !== a[1]) return b[1] > a[1];
+  return b[2] > a[2];
+}
+
+/** The one request this program makes on its own account. Resolves to the
+ *  newer version's name, or null — on the same version, an older file, a
+ *  malformed one, a network that is not there, or a slow answer. Never throws
+ *  and never retries: the next launch asks again. */
+export async function fetchNewer(running: string, url = VERSION_URL, platform = osPlatform()): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": `Biom/${running} (${platform})`, Accept: "application/json" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    const latest = body && typeof body === "object" && typeof (body as { version?: unknown }).version === "string"
+      ? (body as { version: string }).version
+      : null;
+    return latest !== null && newerThan(running, latest) ? latest : null;
+  } catch {
+    return null;
+  }
+}
+
 const ENV_META = "meta name=\"biom-env\" content=";
 
 /** Built once rather than per request: the pattern is constant, and `/` is a
@@ -1485,6 +1545,21 @@ export function withTrouble(html: string, why: string | null): string {
   // its `>`; the insertion point is one past that.
   const after = at.index + at[0].length + 1;
   return `${html.slice(0, after)}\n<${TROUBLE_META}"${escapeAttribute(why)}">${html.slice(after)}`;
+}
+
+/** THE THIRD THING THE CLIENT CANNOT WORK OUT FOR ITSELF: that a newer version
+ *  exists. Same channel, same shape as the trouble tag, same reason — a fact
+ *  about this launch and not about any vault, and `contracts/` is frozen. Absent
+ *  when there is nothing to say, so a document on the current version is
+ *  byte-identical to the file. */
+const UPDATE_META = "meta name=\"biom-update\" content=";
+
+export function withUpdate(html: string, newer: string | null): string {
+  if (newer === null || newer.trim() === "") return html;
+  const at = ENV_META_RE.exec(html);
+  if (at === null) return html;
+  const after = at.index + at[0].length + 1;
+  return `${html.slice(0, after)}\n<${UPDATE_META}"${escapeAttribute(newer)}">${html.slice(after)}`;
 }
 
 /** A sentence written by this framework, made safe to sit in an HTML attribute.
@@ -1563,7 +1638,7 @@ function source(key: string | null): string | null {
  *  client loads already has: the change loop is somebody writing a file and
  *  pressing reload, and a document cached in this process would be the one file
  *  in the client that needed a restart. */
-const composeRoot = (html: string) => withTrouble(withEnvironment(html, ENV), TROUBLE());
+const composeRoot = (html: string) => withUpdate(withTrouble(withEnvironment(html, ENV), TROUBLE()), NEWER);
 
 /** WHY THIS LAUNCH HAS NO WORKSPACE, read at the moment a document is composed
  *  rather than captured when the server started.
@@ -1575,6 +1650,11 @@ const composeRoot = (html: string) => withTrouble(withEnvironment(html, ENV), TR
  *  with a reader over the host; a caller that stood the routes up without one
  *  gets nothing, which is the honest answer to a question nobody asked. */
 let TROUBLE: () => string | null = () => null;
+
+/** THE NEWER VERSION, if the check has come back with one. Null until it does
+ *  and null forever if it does not; a document composed before the answer lands
+ *  says nothing, and the next load says it. */
+let NEWER: string | null = null;
 
 /** The framework's own files: the client, the box's code, the contracts, the
  *  fonts and the vendored scripts. One url whichever folder is being looked at,
@@ -1973,6 +2053,12 @@ if (import.meta.main) {
   // remembered entry is checked because it is a claim about the past. It used to
   // be one ternary here, and what that ternary did to a deleted workspace was
   // recreate it — empty, seeded from scratch, wearing its name.
+  // ASKED FIRST AND AWAITED NEVER: the check runs alongside the mount below, so
+  // by the time the shell loads `/` the answer has usually landed. A launch that
+  // beats it sees the notice on its next load instead, which is the honest
+  // trade for a start-up that never waits on a network.
+  if (CHECK_UPDATES) fetchNewer(VERSION).then((newer) => { NEWER = newer; });
+
   const start = await bootVault(Bun.env.VAULT, await memory.last());
   const host = await makeHost({
     vault: start.path ?? undefined,

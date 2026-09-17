@@ -235,6 +235,11 @@ export function isGuestNotice(v) {
       // A box letting go of a session `page.embed` granted it. Named by the
       // token the grant carried; the host closes both ports and forgets it.
       return Number.isInteger(v.g) && typeof v.embed === "string" && v.embed !== "";
+    case "position":
+      // Where the box is scrolled to, in pixels, so a redraw can put it back.
+      // A finite number at or above zero; the clamp to the new run is the
+      // box's, because only the box can measure it.
+      return Number.isInteger(v.g) && typeof v.top === "number" && Number.isFinite(v.top) && v.top >= 0;
     default:
       return false;
   }

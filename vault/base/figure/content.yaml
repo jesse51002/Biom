@@ -12,11 +12,33 @@ contents:
         ends: sticky only pins inside its own containing block. That is why the figure and the
         argument are ONE section rather than two.
 
-        **This file is deliberately plain, and it is not a design.** It carries the shape and no
-        visual opinion — no box around the picture, no rule down the quotation, no colour — because
-        a starter with a look is a look that turns up in every page copied from it.
+        **The figure is a drawing and not a photograph.** A row of counts over a row of bars, in
+        HTML, on the palette's tokens, growing once when the section is first seen — which is what a
+        figure is here. Its words and its numbers are the section's `variables`, as parallel lists,
+        so changing the drawing is changing the document.
   - name: spread
     data: index.html
+    variables:
+      kpiName:
+        - Trays potted on
+        - Trays lost
+        - Trays given away
+      kpiValue:
+        - 17
+        - 4
+        - 9
+      barName:
+        - Feb
+        - Mar
+        - Apr
+        - May
+        - Jun
+      barValue:
+        - 12
+        - 19
+        - 34
+        - 26
+        - 15
     parts:
       body: |
         ## What the section can do that the document could not
@@ -28,14 +50,17 @@ contents:
         > Prose still wants a measure. A page that is edge to edge everywhere is exactly as
         > monotonous as one that is 34rem everywhere.
 
-        The freedom is to choose per section. Two columns where a picture earns its place beside the
+        The freedom is to choose per section. Two columns where a figure earns its place beside the
         argument; one column where the words are the whole of it; a grid where things are being
         compared. A page that chooses the same shape every time has not used any of it.
 
-        Swap this slot's prose for the real argument, and put the picture that belongs to it in
-        `assets/`.
-      figure: |
-        ![A photograph that is not in this workspace yet](kitchen.jpg)
+        Swap this slot's prose for the real argument, and swap `kpiName`, `kpiValue`, `barName` and
+        `barValue` for the real figures. The tallest bar lights itself, so nothing here has to be
+        told which one matters.
       caption: |
-        _`kitchen.jpg` is a placeholder and there is no such file here yet. Put a real picture in
-        `assets/` and name it — the filename alone, never a path._
+        _A number per bar cannot live in a list slot — a slot holds markdown, and reading a figure
+        back out of prose is parsing — so the figures are `variables`, edited on this page's config
+        screen rather than on the page. Every count here is invented._
+      fault: |
+        _This figure has no numbers yet. Add `kpiName` and `kpiValue`, or `barName` and `barValue`,
+        to the section's `variables` — one entry each per count — and the drawing appears._

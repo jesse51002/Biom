@@ -85,7 +85,7 @@ test("an empty folder is seeded with the whole plugin set, and nothing in it nam
     }
 
     // AND MERMAID IS NOT AMONG THEM. The whole point of this format is a CUSTOM
-    // drawing — a figure is an inline `<svg>` a section writes, and a diagram of
+    // drawing — a figure is HTML a section writes, and a diagram of
     // relationships is that same drawing — so a fresh vault ships with no
     // diagram library and no plugin that reaches one. A workspace that wants
     // mermaid puts its own `plugins/mermaid.js` in here, and the markdown
@@ -146,9 +146,15 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
     // cannot assert: the drawing, the starter to copy, and the words it is laid
     // out from.
     const skill = readFileSync(join(vault, ".agents/skills/diagrams/SKILL.md"), "utf8");
-    expect(skill).toContain("`<svg>`");
+    expect(skill).toContain("HTML elements in the section's own markup");
     expect(skill).toContain("base/diagram/");
     expect(skill).toContain("variables");
+    // AND IT NO LONGER TEACHES THE ONE IT USED TO. A figure is drawn in HTML —
+    // the guide an agent reads before it writes a page is the whole of how that
+    // decision reaches a workspace, so a sentence still asking for vector
+    // geometry produces exactly the page this format stopped asking for.
+    expect(skill).not.toContain("<svg");
+    expect(skill).not.toContain("viewBox");
   } finally {
     host.close();
     await rm(root, { recursive: true, force: true });

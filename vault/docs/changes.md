@@ -15,6 +15,12 @@ torn down and built again from what is on disk, exactly as the Reload button doe
 it. That is what makes it trustworthy — the page you are looking at after a change
 is the page a stranger would get opening the file fresh.
 
+**Where you were scrolled to is kept.** The new box is put back at the same
+position once it has drawn — clamped, so a page that got shorter lands at its
+foot rather than past it. Nothing animates and nothing guesses at an anchor: the
+same distance from the top when there is one, otherwise the bottom. Opening a
+page afresh, or coming back to it from the rail, still starts at the top.
+
 **The app's own writes do not trigger it.** A write through the app lands in
 `pages/` and looks exactly like an agent's, so the server keeps the hash of what it
 last wrote into or last read out of every file. Equal, and the notification is
@@ -25,8 +31,9 @@ notification.
 
 ## The Reload button is still there
 
-It re-reads the page on demand and does exactly what the watcher's redraw does. It
-is for when you want to be certain, not for the ordinary loop.
+It re-reads the page on demand and does exactly what the watcher's redraw does,
+keeping your place the same way. It is for when you want to be certain, not for
+the ordinary loop.
 
 ## Disk wins over an unsaved edit
 

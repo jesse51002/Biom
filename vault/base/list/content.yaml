@@ -8,9 +8,10 @@ contents:
         section below into that page's `contents` with `data:` changed to match. Or copy this whole
         directory into `pages/<parent>/children/<name>/` and it draws as it stands.
 
-        **This file is deliberately plain, and it is not a design.** It carries one mechanism and no
-        visual opinion, because a starter with a look is a look that turns up in every page copied
-        from it. Take the shape; decide how it should look in your own file.
+        **It is drawn, because that is what the rule at the top of the guide asks for.** Each item
+        is a plate with a mark on it, the mark and the leading edge light under the pointer, and the
+        row arrives once when the section is first seen. The MECHANISM is the part to take when you
+        copy; the look is a design, and your own page's design decides it.
 
         **The items are one slot holding a LIST, not one slot each.** Every entry under `items:` is
         an item and the section draws one element per entry, so replacing the three below with five

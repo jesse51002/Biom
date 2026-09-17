@@ -4,7 +4,7 @@ contents:
   - name: how-to-use-this
     parts:
       body: |
-        Copy `index.html` beside a page's `content.yaml` — `figure.html` is the obvious name — and
+        Copy `index.html` beside a page's `content.yaml` — `run.html` is the obvious name — and
         paste the section below into that page's `contents` with `data:` changed to match. Or copy
         this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
 
@@ -18,21 +18,31 @@ contents:
         whole choreography below the fold, so a reader who scrolls down arrives after it finished.
 
         **`--motion` is the frame's reduced-motion switch** and it is already on the page — multiply
-        a duration or a delay by it and a reader who asked for less motion gets none.
-  - name: bars
+        a duration or a delay by it and a reader who asked for less motion gets none. The one thing
+        a multiplier cannot do is put the ink back, which is what the `prefers-reduced-motion` block
+        at the foot of the file is for: stillness gets the FINISHED figure, not an empty one.
+  - name: stages
     data: index.html
+    variables:
+      stageName:
+        - Sown
+        - Pricked out
+        - Potted on
+        - Hardened off
+        - Planted out
+      reached: Potted on
     parts:
       lede: |
-        ## What the count actually is
+        ## Where the run has got to
 
-        Four bars, drawn from four entries. The figure says the same thing the prose says and adds
-        nothing the prose does not — a figure that says something new is an argument nobody can
-        check.
-      rows:
-        - One
-        - Two
-        - Three
-        - Four
+        Five stages, drawn from five names. The line grows to the one `reached` names, the marks
+        light one after another as it passes them, and the stage it stops at is the only thing on
+        the drawing wearing the hot colour — a figure where everything is lit has lit nothing.
       note: |
-        Nothing on this page is real content; it is here so the file draws as something rather than
-        as an empty rectangle.
+        A figure's values are `variables` rather than a list slot, because a slot holds markdown and
+        reading a figure back out of prose is parsing. Variables are edited on this page's config
+        screen rather than on the page; `base/list/` is the shape for the things a reader really
+        should be able to add to from where they stand. Nothing here is real content.
+      fault: |
+        _This figure has no stages yet. Add `stageName` to the section's `variables` — one name per
+        mark — and name the one the run has got to in `reached`._

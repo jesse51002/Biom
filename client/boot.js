@@ -80,6 +80,16 @@ const startupTrouble =
     ? document.querySelector('meta[name="biom-trouble"]')?.getAttribute("content")
     : null) ?? "";
 
+/** A NEWER VERSION, or "" when this one is current. The third fact about this
+ *  launch on the same channel: the server asked biom.dev once on the way up and
+ *  wrote the answer here when there was one. A development build never asks,
+ *  and a document composed before the answer landed says nothing until the next
+ *  load — so an empty read is "nothing to say", never a failure. */
+const newerVersion =
+  (typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="biom-update"]')?.getAttribute("content")
+    : null) ?? "";
+
 /* ── which folder this tab is ───────────────────────────────────────────── */
 
 // SETTLED BEFORE ANYTHING IS CONSTRUCTED, and it never moves again. The server
@@ -278,7 +288,7 @@ const terminalView = terms === null || terminalLink === null ? null : makeTermin
 });
 
 const shell = makeShell({
-  h, fill, ws, ui, frameHost, views, production, events,
+  h, fill, ws, ui, frameHost, views, production, events, newerVersion,
   terminal: terms !== null && terminalView !== null ? { store: terms, view: terminalView } : undefined,
 });
 

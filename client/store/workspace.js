@@ -407,6 +407,30 @@ export function makeWorkspace(transport) {
       emit();
     },
 
+    async renamePage(id, name) {
+      // A RENAME IS A MOVE, and the answer is the new id: the last segment is
+      // spelled from the name, so the directory follows it and every id beneath
+      // it changes. Taking the answer is not optional — the id sent has stopped
+      // existing and nothing forwards.
+      const to = /** @type {PageId} */ (
+        await ask({ ...env(), kind: "page.rename", page: id, name })
+      );
+      // Re-read rather than reconcile, as a move is: the server owns ids and
+      // names both.
+      await readPages();
+      // The open page may be the one renamed, or beneath it — the whole
+      // subtree was rewritten — so its id is rebuilt onto the new prefix and
+      // re-read under that, which is the read that carries the new name too.
+      if (page) {
+        const now = rebase(page.id, id, to);
+        if (now !== page.id || page.id === id) page = await readPage(now);
+      }
+      emit();
+      changed({ page: id, shape: true });
+      if (to !== id) changed({ page: to, shape: true });
+      return to;
+    },
+
     async removeSection(id, section) {
       // ONE request, because a section is its entry, its own variables and — if
       // it names one — a file. It got simpler when the sidecar went, and it is

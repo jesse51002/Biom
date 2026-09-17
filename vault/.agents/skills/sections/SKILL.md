@@ -31,7 +31,7 @@ The second half is what this file is organised around. Everything below is eithe
 
 **Before the moves, the two rules this workspace's `AGENTS.md` puts at the top, because both of them are decided here.**
 
-**A page is DRAWN and not merely written.** We are not a plain markdown framework, for a reason: a section exists so a page can carry a drawing, a board, a figure, a live table. So a doc page gets its figures without being asked, wherever the content has a shape — a count, a sequence, a flow, a comparison, a boundary, a cycle — chosen deliberately for that subject and never decorative. **And drawn means an inline `<svg>` that animates on reveal** — vector, on the palette's tokens (R30 holds on a `fill` as it holds in CSS), with no pixel width on the `<svg>` itself (R25), its labels inside the drawing (R56's one exception), and its motion behind `--motion` so stillness is one switch away. A picture pasted in is not a figure, and a figure that only sits there has spent its one chance to read faster than the sentence beside it.
+**A page is DRAWN and not merely written.** We are not a plain markdown framework, for a reason: a section exists so a page can carry a drawing, a board, a figure, a live table. So a doc page gets its figures without being asked, wherever the content has a shape — a count, a sequence, a flow, a comparison, a boundary, a cycle — chosen deliberately for that subject and never decorative. **And drawn means HTML that animates on reveal** — elements in this file, laid out with grid and flex, inked with borders and backgrounds on the palette's tokens (R30), reflowing rather than sized in pixels (R25), its words out of the section's `variables`, and its motion behind `--motion` so stillness is one switch away. A picture pasted in is not a figure, and a figure that only sits there has spent its one chance to read faster than the sentence beside it.
 
 **And a drawing with even a small chance of being wanted on a second page is a PLUGIN, not a section script.** A section's `<script>` is for a drawing that is genuinely about this one section's own content. Everything else goes in `plugins/<id>.js` from the start — see [`../plugins/SKILL.md`](../plugins/SKILL.md) §3 — because the alternative is measured: one drawing became eighty-eight copies in eleven shapes in a workspace whose agents had this file open.
 
@@ -91,13 +91,14 @@ contents:                        # Sections. Nothing else. Ever.
 
   /* ONE SLOT, ONE ELEMENT PER ITEM, so the layout never names a number. */
   .cells { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); align-items: start; }
-  /* ONE HAIRLINE, and it is structure and not decoration: without some mark a
-     reader cannot tell where one item ends and the next begins. EVERYTHING PAST
-     THAT IS YOURS — a card, a tint, an accent per column are all fine choices,
-     and none of them belongs in an example, because what an example does is get
-     copied. `base/list/` says the same thing at greater length and it was
-     measured: an earlier version of this block had cards and an accent cycling
-     in threes, and three independently generated pages came back wearing both. */
+  /* ONE HAIRLINE, BECAUSE THIS EXAMPLE IS ABOUT THE MECHANISM AND NOTHING ELSE.
+     A real section draws more than this — `base/list/` is the same shape with
+     the workspace's own look on it, a plate per card and a mark that lights
+     under the pointer — and what makes that safe to copy is that the file says
+     which half is the mechanism and which half is a design. An accent cycling in
+     threes once spread from an example here to three pages nobody chose it for,
+     which is what that split is for rather than an argument for drawing
+     nothing. */
   .cells > * { min-inline-size: 0; padding-block-start: .6rem; border-block-start: 1px solid var(--rule); }
 
   /* THE CONTROLS ARE FURNITURE IN THE LAYOUT. There is no mode to hide them
@@ -715,7 +716,7 @@ recoverable one.
 to your file** — the `@scope` wrapper around your `<style>`, the `@keyframes`
 family hoisted back out of it, the markup interpolated as text before it is
 parsed, and the one id space the whole page shares. **Read it before you write a
-`<style>` or an `<svg>`**: two of those four are traps that fail silently.
+`<style>` or a drawing**: two of those four are traps that fail silently.
 
 ---
 
@@ -911,7 +912,7 @@ The words stay editable, the failure is legible to the person who can fix it, an
 
 **The controls a section draws take tokens like everything else.** `--nonrepro` is the one that exists for them: guides, outlines and anything that is furniture rather than page.
 
-**And the starters in `base/` take almost none of this, on purpose.** They are the format worked out plainly — `--ink`, `--ink-3`, `--rule` and the two faces are close to the whole of what they use — because a starter's look is inherited by every page copied from it, and one example that reaches for an accent has chosen an accent for pages nobody has written yet. The palette is wide so that YOUR section can use it.
+**And the starters in `base/` spend ONE accent, once each, on purpose.** They used to take none at all, on the argument that a starter's look is inherited by every page copied from it — which was right about inheritance and wrong about what was being inherited, because what a page copied from a plain example inherits is plainness, and this format exists so a page is not that. So each starter lights exactly one thing in `--cyan` — the tallest bar, the stage a run has reached, the station the walk is at, the next question up — and says in its own header which half of it is the MECHANISM to keep and which half is a DESIGN to replace. `base/README.md` carries that in full. The palette is wide so that YOUR section can use the rest of it.
 
 ---
 
