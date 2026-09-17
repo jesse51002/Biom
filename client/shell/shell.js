@@ -557,7 +557,7 @@ export function makeShell(deps) {
           terminal.store.toggle();
           if (!shown) terminal.view.focus();
         },
-      }, !shown && running > 0 ? `Terminal · ${running}` : "Terminal"));
+      }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
     }
 
     // REREADING ON DEMAND, which is still a thing a person wants even though the

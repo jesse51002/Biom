@@ -211,6 +211,10 @@ export function makeTerminals(deps) {
   let autostart = false;
   /** The size a shell opened without a fitted pane is started at. */
   let lastSize = { cols: 80, rows: 24 };
+  /** Sessions this window asked to end, so their exit closes the tab. */
+  const ended = new Set();
+  /** Dismisses already sent, so a burst of events does not repeat one. */
+  const dismissing = new Set();
 
   /** @param {Partial<TerminalState>} patch */
   function set(patch) {
@@ -238,6 +242,32 @@ export function makeTerminals(deps) {
   };
 
   const live = () => state.sessions.filter((s) => s.state === "running" || s.state === "ending").length;
+
+  /** ENDING A SESSION CLOSES IT. A session this window ended, or a shell that
+   *  exited cleanly — somebody typed `exit` — is dismissed the moment it is
+   *  gone, so no tab is left behind saying so. An exit NOBODY asked for, with a
+   *  failing code or a signal, is kept with its final output, because that
+   *  output is the only account of what went wrong.
+   *  @param {SessionView} s */
+  const closes = (s) => s.state === "exited" && (ended.has(s.id) || s.exit?.code === 0);
+
+  /** NO TERMINAL, NO DOCK. Once the socket has said what exists, a dock with
+   *  no session, none starting and no failure left to read is closed rather
+   *  than drawn as an empty panel — after the last tab goes, after a reload
+   *  that finds none, and after the last failure is dismissed. Opening it
+   *  again starts a fresh shell. */
+  function closeIfEmpty() {
+    if (state.link !== "open" || !state.dock.visible) return;
+    if (state.sessions.length > 0 || state.pending.length > 0 || state.failures.length > 0) return;
+    setDock(dockAfter(state.dock, { type: "hide" }));
+  }
+
+  function closeEnded() {
+    for (const s of state.sessions) {
+      if (!closes(s) || dismissing.has(s.id)) continue;
+      if (link.send({ op: "dismiss", id: s.id })) dismissing.add(s.id);
+    }
+  }
 
   function create() {
     if (state.link !== "open") {
@@ -270,10 +300,12 @@ export function makeTerminals(deps) {
         const sessions = reconcile(state.sessions, Array.isArray(e.sessions) ? e.sessions : []);
         const active = sessions.some((s) => s.id === state.active) ? state.active : sessions.at(-1)?.id ?? null;
         set({ sessions, active });
+        closeEnded();
         if (autostart) {
           autostart = false;
           if (sessions.length === 0 && state.pending.length === 0 && state.dock.visible) create();
         }
+        closeIfEmpty();
         return;
       }
       case "created": {
@@ -297,6 +329,7 @@ export function makeTerminals(deps) {
           const known = state.sessions.some((s) => s.id === e.session.id);
           if (known) patchSession(e.session.id, (s) => viewOf(e.session, s));
           else set({ sessions: [...state.sessions, viewOf(e.session)] });
+          closeEnded();
         }
         return;
       case "removed": {
@@ -304,7 +337,10 @@ export function makeTerminals(deps) {
         if (at < 0) return;
         const sessions = state.sessions.filter((s) => s.id !== e.id);
         const active = state.active === e.id ? (sessions[at] ?? sessions[at - 1])?.id ?? null : state.active;
+        ended.delete(e.id);
+        dismissing.delete(e.id);
         set({ sessions, active, confirming: state.confirming === e.id ? null : state.confirming });
+        closeIfEmpty();
         return;
       }
       case "resync":
@@ -367,12 +403,15 @@ export function makeTerminals(deps) {
       const id = state.confirming;
       if (id === null) return;
       set({ confirming: null });
-      link.send({ op: "end", id });
+      if (link.send({ op: "end", id })) ended.add(id);
     },
     /** @param {string} id */
     dismiss: (id) => link.send({ op: "dismiss", id }),
     /** @param {string} nonceOf */
-    forgetFailure: (nonceOf) => set({ failures: state.failures.filter((f) => f.nonce !== nonceOf) }),
+    forgetFailure(nonceOf) {
+      set({ failures: state.failures.filter((f) => f.nonce !== nonceOf) });
+      closeIfEmpty();
+    },
     /** @param {string} id @param {string} label */
     rename: (id, label) => link.send({ op: "label", id, label }),
     /** @param {Side} side */
@@ -418,7 +457,7 @@ export function makeTerminals(deps) {
      *  about to leave can say so rather than claim they all stopped.
      *  @param {number} [ms] */
     endAll(ms = 8000) {
-      for (const s of state.sessions) if (s.state === "running" || s.state === "failed") link.send({ op: "end", id: s.id });
+      for (const s of state.sessions) if ((s.state === "running" || s.state === "failed") && link.send({ op: "end", id: s.id })) ended.add(s.id);
       return new Promise((resolve) => {
         const started = Date.now();
         const check = () => {

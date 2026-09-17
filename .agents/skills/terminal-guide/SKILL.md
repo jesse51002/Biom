@@ -22,7 +22,7 @@ description: >-
 
 # The agent terminal — one server-owned PTY per session, one dock per window
 
-A person opens a workspace, opens Terminal, and runs the agent they already use.
+A person opens a workspace, opens Agent Terminal, and runs the agent they already use.
 The shell starts in the **vault root**, beside `AGENTS.md` and `.agents/skills/`.
 The page stays mounted and usable beside it; the agent's writes reach the page
 through the file watcher exactly as any other write does. Biom presents the
@@ -84,8 +84,16 @@ desktop application closing the window ends the server and every tree with it.
   server answers a seen nonce with the session it already made. The client
   resends pending creates with the same nonce after a reconnect.
 - **The limit counts creates in flight.**
-- **An exited session is kept** with its real status until dismissed; nothing
-  respawns. A failed `end` becomes `failed` and cannot be dismissed.
+- **Ending a session closes it.** A session this window ended, or a shell that
+  exited with code 0, is dismissed by the store as soon as it is gone. An exit
+  nobody asked for — a failing code or a signal — is kept with its real status
+  and final output until dismissed, because that output is the only account of
+  what went wrong. Nothing respawns. A failed `end` becomes `failed` and cannot
+  be dismissed.
+- **No terminal, no dock.** Once the socket has listed the sessions, a dock
+  with none, none starting and no spawn failure left to read is hidden — when
+  the last tab closes, when a reload finds none, and when the last failure is
+  dismissed (`closeIfEmpty` in the store). Opening it again starts a new shell.
 - **Leaving a workspace with live sessions asks first** (`Close workspace` in the
   rail's foot) and ends them on yes. Quitting the desktop application does not
   warn yet — it ends every session; see §8.
@@ -169,7 +177,14 @@ screen lays the dock over the bed's cell and drops the rail and strip rows
   computes from it.
 - **Dock layout is per tab** (sessionStorage, per vault): a reload keeps it, a
   restart does not — longer retention is an open decision.
-- **The rail's Terminal button is in every build** and shows how many sessions
+- **Help is a dialog in the middle of the screen**, not a popover off the `?`:
+  it holds a Copy line per agent CLI (the command that starts it and the one
+  that installs it) and a first thing to ask it, through `copyButton` in
+  `client/widgets/prompt.js`, so a refused clipboard selects the line instead.
+  It is appended to the body so a narrow dock does not size it, and it stops its
+  own Escape so the shell's does not also close a panel. It is copy only —
+  nothing is typed into a shell. The list is `AGENTS` in `client/shell/dock.js`.
+- **The rail's Agent Terminal button is in every build** and shows how many sessions
   are still running while the dock is hidden.
 
 ## 7. Keys

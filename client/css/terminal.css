@@ -243,11 +243,28 @@
   font-size:.8rem; color:var(--ink-2);
 }
 
-/* ---------- the help card ---------- */
+/* ---------- the help dialog ---------- */
 
-.termhelp{padding:.25rem .5rem .5rem; font-size:.82rem; line-height:1.45; color:var(--ink-2)}
-.termhelp p{margin:.35rem 0}
-.termhelp ul{margin:.25rem 0; padding-left:1.1rem}
+.dialog.termhelp{width:min(40rem,100%); font-size:.85rem; line-height:1.45; color:var(--ink-2)}
+.termhelp p{margin:.4rem 0}
 .termhelp b{color:var(--ink); font-weight:500}
+.termhelp .poplabel{margin:1rem 0 .35rem}
+.termhelp .agents{display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:.6rem; margin:.75rem 0 0}
+.termhelp .agent{border:1px solid var(--rule-soft); border-radius:6px; padding:.6rem .7rem .7rem; background:var(--stock)}
+.termhelp .agent h3{margin:0 0 .4rem; font-size:.85rem; font-weight:500; color:var(--ink)}
+.termhelp .install{margin:.5rem 0 .25rem; font-size:.75rem; color:var(--ink-3)}
+.termhelp .cmd{display:flex; align-items:center; gap:.5rem; min-width:0}
+.termhelp .cmd code{
+  flex:1; min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; padding:.35rem .5rem;
+  font-family:var(--mono-face); font-size:.8rem; color:var(--ink);
+  background:var(--field); border-radius:4px; user-select:all;
+}
+.termhelp .cmd.quiet code{font-size:.72rem; color:var(--ink-2)}
+.termhelp .cmd button{
+  flex:none; padding:.3rem .6rem; font-size:.75rem; border:1px solid var(--rule);
+  background:var(--stock-hi); color:var(--ink); border-radius:4px; cursor:pointer;
+}
+.termhelp .cmd button:hover{background:var(--field)}
+.termhelp kbd{font-family:var(--mono-face); font-size:.75rem}
 
 @media (prefers-reduced-motion:reduce){.dockhandle, .dropzone{transition:none}}

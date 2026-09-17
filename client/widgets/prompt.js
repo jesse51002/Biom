@@ -46,15 +46,16 @@ export function promptCard(h, text, opts = {}) {
  * @param {H} h
  * @param {string} text
  * @param {HTMLElement} body the element to select if the clipboard refuses
+ * @param {string} [idle] what the button says at rest, for a thing that is not a prompt
  * @returns {HTMLElement}
  */
-export function copyButton(h, text, body) {
-  const btn = h("button.full", { type: "button" }, IDLE);
+export function copyButton(h, text, body, idle = IDLE) {
+  const btn = h("button.full", { type: "button" }, idle);
 
   /** @param {string} said @param {number} ms */
   const say = (said, ms) => {
     btn.textContent = said;
-    setTimeout(() => { btn.textContent = IDLE; }, ms);
+    setTimeout(() => { btn.textContent = idle; }, ms);
   };
 
   btn.addEventListener("click", async () => {
