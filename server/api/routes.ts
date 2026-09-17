@@ -27,6 +27,7 @@ import type { Tables } from "../../contracts/types.ts";
 import type { Vault } from "../../contracts/types.ts";
 import type { ThemeStore } from "../workspace/presets.ts";
 import type { Mirror } from "../domain/mirror.ts";
+import type { Sharer } from "../domain/share.ts";
 import { follow } from "../domain/mirror.ts";
 
 /** THE MIRROR NEVER FAILS A WRITE, AND NEVER FAILS A REDRAW. It is derived: the
@@ -74,6 +75,11 @@ export interface Deps {
    *  same request, so the projection is swept into the same commit as the change
    *  it mirrors. */
   mirror: Mirror;
+  /** SHARE A PAGE — the stop-gap. Built by the composition root against the
+   *  folder, because the capture names the folder in the address it opens and
+   *  the rewrite reads the folder's own assets. Refused in production: the
+   *  capture drives Playwright, which is a development dependency. */
+  share: Sharer;
   /** WHICH BUILD THIS IS, and it is here rather than in `contracts/` on purpose.
    *  The kinds still exist: `ApiRequest` goes on spelling `sql`, `fetch` and
    *  `vault.browse`, the guards go on admitting them, and one server answers
@@ -300,6 +306,9 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         return ok(id, page);
       }
 
+      case "page.share":
+        if (deps.production) return refused(id, "sharing a page");
+        return ok(id, await deps.share.share(req.page));
       case "page.create": {
         const made = await deps.pages.create(req.init);
         await mirrored(follow(deps.mirror, made.id, true));

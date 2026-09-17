@@ -29,7 +29,7 @@
 // the import graph acyclic.
 
 /** @import { ApiRequest, BlockId, Change, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
- *            PageId, PageRef, Part, Row, RowId, RowQuery, Section, TableName,
+ *            PageId, PageRef, Part, Row, RowId, RowQuery, Section, Share, TableName,
  *            TableRef, TableView, Theme, Transport, Variables, VarPatch, VaultInfo, WorkspaceStore }
  *            from "../../contracts/types.ts" */
 
@@ -148,6 +148,7 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
  *   moveChild(child: Child, from: PageId, to: PageId): Promise<PageId | null>,
  *   writeSlot(id: PageId, section: BlockId, part: string, data: string): Promise<void>,
  *   setSections(id: PageId, sections: Section[]): Promise<Section[]>,
+ *   sharePage(id: PageId): Promise<Share>,
  * }} Workspace
  */
 
@@ -761,6 +762,14 @@ export function makeWorkspace(transport) {
     },
 
     /* ── the vault, which is which folder this workspace IS ──────────── */
+
+    /** SHARE A PAGE. Not cached and not reflected in the replica: nothing about
+     *  the workspace changes, a file lands in a bucket somewhere else. The
+     *  answer is the link and what the capture could not fold in.
+     *  @param {PageId} id @returns {Promise<Share>} */
+    async sharePage(id) {
+      return /** @type {Share} */ (await ask({ ...env(), kind: "page.share", page: id }));
+    },
 
     async vaultInfo() {
       return /** @type {VaultInfo} */ (await ask({ ...env(), kind: "vault.info" }));

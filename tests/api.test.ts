@@ -44,6 +44,7 @@ import { makePages } from "../server/domain/pages.ts";
 import { PROTOCOL } from "../contracts/wire.js";
 
 import type { TableTree } from "../server/domain/tables.ts";
+import type { Sharer } from "../server/domain/share.ts";
 import { ROOT_PAGE, parentOf } from "../contracts/types.ts";
 import type {
   ApiRequest, ApiResponse, Child, DirListing, Page, PageDoc, PageId, PageRef,
@@ -77,6 +78,16 @@ function fakeVault(root: string, here: string): Vault {
     },
     async recent() {
       return [info(here)];
+    },
+  };
+}
+
+/** The sharer, as this layer sees it: one call that answers a link. The real
+ *  one drives a browser and a bucket, and `tests/share.test.ts` holds it. */
+function fakeShare(): Sharer {
+  return {
+    async share(page: PageId) {
+      return { url: `https://shares.example/${page}.html`, key: `${page}.html`, left: [] };
     },
   };
 }
@@ -217,7 +228,7 @@ async function workspace() {
     root,
     vault,
     tables,
-    deps: { pages, design, docs, tables, presets, theme, mirror, vault: fakeVault(root, vault) },
+    deps: { pages, design, docs, tables, presets, theme, mirror, share: fakeShare(), vault: fakeVault(root, vault) },
     files,
     presets,
     furnish,
@@ -1477,6 +1488,22 @@ test("a Deps that says nothing about the build behaves exactly as it did", async
     expect("production" in w.deps).toBe(false);
     expect((value(await handle(req({ kind: "sql", query: "SELECT 1" }), w.deps)) as SqlResult).columns)
       .toEqual(["n"]);
+  } finally {
+    await w.drop();
+  }
+});
+
+test("page.share answers the link in development and is refused in production", async () => {
+  const w = await workspace();
+  try {
+    const dev = await handle(req({ kind: "page.share", page: "home" }), w.deps);
+    if (!dev.ok) throw new Error(dev.error.message);
+    expect(dev.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
+
+    const built = await handle(req({ kind: "page.share", page: "home" }), { ...w.deps, production: true });
+    if (built.ok) throw new Error("unreachable");
+    expect(built.error.code).toBe("unsupported");
+    expect(built.error.message).toContain("this build does not offer");
   } finally {
     await w.drop();
   }

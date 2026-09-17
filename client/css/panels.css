@@ -55,6 +55,7 @@
 @keyframes pop-in{from{opacity:0; transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.pop{animation:none}}
 .poplabel{font-size:.75rem; color:var(--ink-3); padding:.35rem .5rem .25rem}
+.popfield{display:block; width:100%; box-sizing:border-box; margin:.1rem 0 .3rem; padding:.3rem .5rem; font:inherit; font-size:.8rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px}
 .popsep{height:1px; background:var(--rule-soft); margin:.25rem 0}
 .poplist{max-height:13rem; overflow:auto}
 .popitem{
