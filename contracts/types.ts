@@ -300,12 +300,25 @@ export const DOC_PLUGIN: PluginName = "doc";
  *  workspace, so one name space, in one folder, answers for all of them. */
 export const PLUGIN_NAME = /^[a-z][a-z0-9-]*$/;
 
+/** What a page's `uid` looks like: lowercase letters and digits, eight to
+ *  thirty-two of them, minted by the framework and never typed. One grammar,
+ *  read by the codec that refuses anything else and by the mint. */
+export const UID = /^[a-z0-9]{8,32}$/;
+
 /** NO `parent`. The id is a path and the folder is the hierarchy, so a page's
  *  parent is everything before its last segment — derived, never stored, and so
  *  never able to disagree with where the page actually is. */
 export interface PageRef {
   id: PageId;
   name: string;
+  /** AN IDENTITY THAT SURVIVES A MOVE. The id is where a page sits and changes
+   *  when the page does; this does not. Minted on `page.create`, written into
+   *  every page that has none on mount, and named by every run a page starts,
+   *  so a page moved under another parent still owns the runs it started.
+   *  Absent only on a page whose document would not parse — the tolerant
+   *  listing has no file to read it out of. The SIXTH contracts edit, taken
+   *  with the automation kinds below on 2026-09-17. */
+  uid?: string;
 }
 
 /** The markdown type scale. Its shape, its grammar and the walk that narrows
@@ -600,6 +613,98 @@ export interface Vault {
   recent(): Promise<VaultInfo[]>;
 }
 
+/* ── automations and runs ──────────────────────────────────────────────── */
+
+/** One field a run asks for before it starts, declared in the manifest and
+ *  drawn as a form by the framework's own screens. `text`, `number` and
+ *  `boolean` are the three things a field can be typed into. */
+export interface AutomationInput {
+  name: string;
+  type: "text" | "number" | "boolean";
+  default?: VarScalar;
+  required?: boolean;
+}
+
+/** THE MANIFEST, `automation.yaml`, and it is thin on purpose: it says only what
+ *  the framework has to know to start the thing. `agent` is a label for people
+ *  and the framework reads nothing off it — there are no adapters and no vendor
+ *  is known by name. `env` is NAMES: each is checked present in the server's
+ *  own environment and never read from a file in the vault. `command` is a
+ *  LIST and never a shell string, so an input cannot become a second command;
+ *  `{name}` in it is an input, `{vault}` the vault's absolute path, `{run}` the
+ *  run directory's and `{kickoff}` the substituted prompt file's. */
+export interface AutomationManifest {
+  name: string;
+  description: string;
+  agent: string;
+  env: string[];
+  command: string[];
+  inputs: AutomationInput[];
+}
+
+/** One automation folder under one page: `<page dir>/automations/<folder>/`.
+ *  `manifest` is null and `trouble` says why when `automation.yaml` will not
+ *  parse — listed rather than dropped, because a folder somebody wrote is a
+ *  thing to repair and not a thing to hide. */
+export interface Automation {
+  page: PageId;
+  /** The page's identity, so a screen can name it after a move. Absent where
+   *  the page has none yet. */
+  uid?: string;
+  folder: string;
+  manifest: AutomationManifest | null;
+  trouble: string | null;
+}
+
+/** A starting point `automation.create` copies: one folder per harness the
+ *  framework ships beside its own code, never in the vault. */
+export interface Template {
+  id: string;
+  name: string;
+  agent: string;
+}
+
+export type RunStatus = "running" | "exited" | "killed" | "lost";
+
+/** ONE ROW OF THE REGISTRY, `<vault>/.biom/runs.db`, and it is the whole of
+ *  what the framework knows about a run: the automation it came from, the page
+ *  that holds it, who started it, what was actually started, when, and how it
+ *  ended. What the process PRINTED is two files the framework serves byte for
+ *  byte and never reads — see `run.read`. `page` is the page that holds the
+ *  automation and `by` is the page that pressed the button; the two differ
+ *  when one page starts another's. */
+export interface RunRow {
+  id: string;
+  page: PageId;
+  /** The holding page's `uid`, so the row outlives a move and a rename. */
+  uid: string | null;
+  automation: string;
+  /** Provenance: the `uid` of the page whose box started it, stamped by the
+   *  bridge and never by the page, or null for the workspace's own screen. */
+  by: string | null;
+  command: string[];
+  inputs: Record<string, VarScalar>;
+  pid: number | null;
+  pgid: number | null;
+  started: number;
+  ended: number | null;
+  status: RunStatus;
+  exit: number | null;
+  signal: string | null;
+  endedBy: "page" | "screen" | "shutdown" | null;
+}
+
+/** What `run.read` answers: bytes of one stream from an offset, where to read
+ *  from next, and whether the run has ended — so a page follows a live log by
+ *  asking again and stops the moment `ended` is true and `next` has caught up.
+ *  `text` is UTF-8 decoded leniently: a multibyte character cut by `max` is
+ *  repaired on the next read. */
+export interface RunRead {
+  text: string;
+  next: number;
+  ended: boolean;
+}
+
 /* ── the wire: what an artifact may say ────────────────────────────────── */
 
 /** The protocol major. Its runtime value lives in `wire.js`; an unknown major
@@ -711,6 +816,43 @@ export type HostRequest = Envelope &
      *  `vault.recent` stay in the outer ring: each of those is about a folder
      *  OTHER than this one, and an artifact has no business reaching for one. */
     | { kind: "vault.info" }
+    /** AUTOMATIONS AND RUNS, IN THE INNER RING, and the SIXTH contracts edit,
+     *  taken at its own barrier on 2026-09-17.
+     *
+     *  A page may see every automation in the workspace, start any of them,
+     *  read any run's row and log, and end any run — not only its own. The
+     *  ring is not the wall: what will narrow this is a page's VIEW
+     *  permission, on the row's `page`, when the sync engine has a model for
+     *  one, and until then every page sees everything. The stamp on a run is
+     *  provenance and not a filter — the bridge writes the starting page's
+     *  `uid` into `by` over whatever the box sent, so a row's *started by* is
+     *  a fact the browser enforces and not a claim the page made.
+     *
+     *  Every one of these reaches only what the framework knows: a manifest,
+     *  a row, a file it serves without reading. None of them names a folder
+     *  outside this vault and none of them reads a value out of the
+     *  environment. Omit `page` to mean every page. */
+    | { kind: "automation.list"; page?: PageId }
+    /** START ONE. The framework assembles a directory of the run's own under
+     *  `.biom/runs/<id>/`, substitutes `inputs` into the kickoff and the
+     *  command, starts the command there and answers the row. Refused by name
+     *  for an unknown automation, a missing required input, an `env` name the
+     *  server's environment has not got, or a command that cannot be started.
+     *  `by` is overwritten by the bridge and carried only for the workspace's
+     *  own screen, which has no box to be stamped from. */
+    | { kind: "run.start"; page: PageId; automation: string; inputs?: Record<string, VarScalar>; by?: string | null }
+    /** Rows, newest first, across the workspace; narrowed only when asked. */
+    | { kind: "run.list"; page?: PageId; automation?: string }
+    | { kind: "run.get"; run: string }
+    /** BYTES OF ONE LOG FROM AN OFFSET — `stdout` or `stderr` — with the next
+     *  offset and whether the run has ended, so any page can follow any live
+     *  log by reading again and stop when it is told to. The framework serves
+     *  the file and never parses it: a line that means something is the
+     *  page's to draw from what the run wrote. */
+    | { kind: "run.read"; run: string; stream: "stdout" | "stderr"; from?: number; max?: number }
+    /** END IT: the whole process group, TERM, a short grace, then KILL. The
+     *  row says `killed` and by whom. */
+    | { kind: "run.kill"; run: string }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -988,7 +1130,49 @@ export type ApiRequest =
         | { kind: "design.patch"; section: BlockId | null; patch: VarPatch }
         | { kind: "design.writeFile"; file: string; text: string }
 
+        /** HOW MANY RUNS ARE ALIVE, across every folder this process has
+         *  mounted. The shell's one question before it closes a window, and
+         *  the one kind that is about runs rather than in a vault — so it is
+         *  answered on the UNPREFIXED route beside the three that are about
+         *  vaults, where a request naming no folder can still ask it. */
+        | { kind: "run.live" }
+        /** A PAGE'S EDITABLE FILES, for its Instructions and Automations
+         *  screens: its `INSTRUCTIONS.md`, and under `automations/<folder>/`
+         *  each `kickoff.md`, `INSTRUCTIONS.md` and every file under `skills/`
+         *  and `code/`. `page.writeFile` already writes one. */
+        | { kind: "page.files"; page: PageId }
+        | { kind: "page.readFile"; page: PageId; file: string }
+        /** THE MANIFEST AS THE STRUCTURE THE FORM EDITS, read and written. The
+         *  server is what writes the yaml, so a hand-edited file and a
+         *  form-edited one are the same file. */
+        | { kind: "automation.get"; page: PageId; automation: string }
+        | { kind: "automation.set"; page: PageId; automation: string; manifest: AutomationManifest }
+        /** The starting points New offers — one per harness the framework
+         *  ships — and the copy it makes. `create` writes the template's files
+         *  into `automations/<name>/` under the page and refuses a name that
+         *  is already there. */
+        | { kind: "automation.templates" }
+        | { kind: "automation.create"; page: PageId; name: string; template: string }
+        /** THE NAMES IN THE SERVER'S ENVIRONMENT, and nothing else about them,
+         *  for the manifest form's picker. A value never crosses the wire. */
+        | { kind: "env.names" }
+        /** THE WORKSPACE'S OWN INSTRUCTIONS: `INSTRUCTIONS.md` at the vault
+         *  root and the skills under `.agents/skills/`, and nowhere else. A
+         *  skill the seeder wrote is marked `seeded` and the screens leave it
+         *  out — the server knows its own roster, so no list travels here. */
+        | { kind: "vault.files" }
+        | { kind: "vault.readFile"; file: string }
+        | { kind: "vault.writeFile"; file: string; text: string }
+
       ));
+
+/** One editable file a page or the vault offers its screens. `seeded` is true
+ *  of a file the framework wrote and rewrites — a copy nobody should edit in
+ *  place. */
+export interface VaultFile {
+  path: string;
+  seeded: boolean;
+}
 
 export type ApiResponse = HostResponse;
 
@@ -1029,6 +1213,11 @@ export interface Db {
  *  claims. See `PageId`. */
 export interface PageDoc {
   name: string;
+  /** The page's identity, under `name:` in the file — see `PageRef.uid`. A
+   *  host key and not a variable, so `{{uid}}` in prose resolves to nothing
+   *  and a plugin's `input` cannot collide with it. Absent in a file this
+   *  server has not yet opened; the mount writes one in. */
+  uid?: string;
   /** WHICH READER DRAWS THIS PAGE. Absent in the file means `html`. */
   plugin: PluginName;
   variables: Variables;
@@ -1103,6 +1292,9 @@ export interface Pages {
    *  beneath it moves with it and is renamed with it — the price of the folder
    *  being the hierarchy rather than a mirror of one. */
   move(id: PageId, parent: PageId): Promise<PageId>;
+  /** WRITE A `uid` INTO EVERY PAGE THAT HAS NONE, file by file, never touching
+   *  a page that has one. Run on mount. Answers how many were written. */
+  identify(): Promise<number>;
 }
 
 /** server/domain/design.ts — the design doc, which is ONE page living at
@@ -1189,6 +1381,54 @@ export interface Presets {
    *  a listing or a skill existed gains it on the next start; anything edited
    *  stays edited. */
   seedIfEmpty(): Promise<void>;
+}
+
+/** server/platform/process.ts — start a command in a directory with an
+ *  environment, in a process group of its own, its two outputs piped to two
+ *  files as they arrive; end a group with a signal, a grace and a kill. Layer
+ *  1: it knows no vault and no run. */
+export interface Started {
+  pid: number;
+  pgid: number;
+  /** Settles when the process ends, however it ends. */
+  done: Promise<{ exit: number | null; signal: string | null }>;
+}
+export interface ProcessRunner {
+  start(spec: { cmd: string[]; cwd: string; env: Record<string, string>; stdout: string; stderr: string }): Started;
+  /** TERM the group, wait `grace` ms, KILL what is left. Resolves when the
+   *  group is gone. */
+  end(pgid: number, grace: number): Promise<void>;
+  alive(pid: number): boolean;
+}
+
+/** server/domain/runs.ts — the registry, the folder reader, the run
+ *  directory's assembly, and the reconcile on mount. The one module beside
+ *  `tables.ts` allowed to import `db.ts`. */
+export interface Runs {
+  automations(page?: PageId): Promise<Automation[]>;
+  manifest(page: PageId, folder: string): Promise<AutomationManifest>;
+  setManifest(page: PageId, folder: string, manifest: AutomationManifest): Promise<void>;
+  templates(): Promise<Template[]>;
+  create(page: PageId, name: string, template: string): Promise<Automation>;
+  start(page: PageId, folder: string, inputs: Record<string, VarScalar>, by: string | null): Promise<RunRow>;
+  list(filter?: { page?: PageId; automation?: string }): RunRow[];
+  get(id: string): RunRow | null;
+  read(id: string, stream: "stdout" | "stderr", from?: number, max?: number): Promise<RunRead>;
+  kill(id: string, by: "page" | "screen" | "shutdown"): Promise<RunRow>;
+  /** Every row still `running` whose process is not: marked `lost`. Run once
+   *  on mount, before anything reads the table. */
+  reconcile(): number;
+  /** How many rows are `running` in this vault. */
+  live(): number;
+  /** End every live run, on the way out. */
+  endAll(by: "shutdown"): Promise<void>;
+  /** The files a page's screens may open and write. */
+  pageFiles(page: PageId): Promise<VaultFile[]>;
+  readPageFile(page: PageId, file: string): Promise<string | null>;
+  /** The vault's own `INSTRUCTIONS.md` and `.agents/skills/`. */
+  vaultFiles(): Promise<VaultFile[]>;
+  readVaultFile(file: string): Promise<string | null>;
+  writeVaultFile(file: string, text: string): Promise<void>;
 }
 
 /** client/transport/http.js — one method, one type. Two importers, both of
@@ -1300,11 +1540,15 @@ export interface WorkspaceStore {
 /** `map` is the rail's own map of the whole workspace, mounted on `MAP_PAGE`
  *  and drawn by the shipped `mindmap` plugin. It is a screen of the workspace
  *  like `design`, and it is the one addition this union has taken since. */
-export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map";
+export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map" | "runs" | "instructions";
 
 export interface UiState {
   route: { view: ViewName; id: string };
-  pageView: "page" | "config";
+  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE. `page` is the box;
+   *  `instructions` is one editor over the page's `INSTRUCTIONS.md`;
+   *  `automation` is the page's automations — manifest, files, runs; `config`
+   *  is the ports screen, offered in development only. */
+  pageView: "page" | "instructions" | "automation" | "config";
   panel: null | "agent" | "history";
   inserting: number | null;
   dialog: boolean;

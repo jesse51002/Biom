@@ -114,7 +114,7 @@
 // goes looking for.
 
 import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec } from "../../contracts/types.ts";
-import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, childKey, segmentOf } from "../../contracts/types.ts";
+import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
@@ -479,8 +479,10 @@ export function docOf(value: unknown, fallbackName: string): PageDoc {
       input[key] = (bag as Record<string, unknown>)[key];
     }
   }
+  const uid = str(raw.uid);
   return {
     name: str(raw.name) ?? fallbackName,
+    ...(uid !== null && UID.test(uid) ? { uid } : {}),
     plugin: plugin,
     variables: varsOf(raw.variables),
     contents: plugin === DOC_PLUGIN ? contents : [],
@@ -823,7 +825,22 @@ export function makePages(
     });
   };
 
-  const refOf = (id: PageId, doc: PageDoc): PageRef => ({ id, name: doc.name });
+  const refOf = (id: PageId, doc: PageDoc): PageRef =>
+    typeof doc.uid === "string" ? { id, name: doc.name, uid: doc.uid } : { id, name: doc.name };
+
+  /** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
+   *  platform's random source — long enough that two pages never share one and
+   *  short enough to read in a file. It is minted here and in no second place:
+   *  `create` writes one into a new page and `identify` into every page that
+   *  has none. */
+  const mintUid = (): string => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    let out = "";
+    for (const b of bytes) out += alphabet[b % alphabet.length];
+    return out;
+  };
 
   /** What a page that cannot be read looks like in the tree. Its name is its own
    *  segment — the same thing a page with no `name:` already shows — and it is
@@ -1069,6 +1086,7 @@ export function makePages(
       return {
         id,
         name: doc.name,
+        ...(typeof doc.uid === "string" ? { uid: doc.uid } : {}),
         markdown: await scaleFor(dir),
         variables: doc.variables,
         sections,
@@ -1394,6 +1412,28 @@ export function makePages(
       await files.write(`${dir}/${rel}`, text);
     },
 
+    /** EVERY PAGE THAT HAS NO IDENTITY GETS ONE, on mount, file by file. A page
+     *  that has one is never touched, and a page whose document will not parse
+     *  is left alone rather than rewritten from nothing — the fallback repairs
+     *  it and the next mount identifies it. One commit ahead of the sweep, not
+     *  one per page: the vault's history should say *identified* once. */
+    async identify(): Promise<number> {
+      const refs = await listPages();
+      // Read first, commit second: a page that will not parse is listed with no
+      // uid and is not a page to write, so it must not be what earns a commit.
+      const missing: { id: PageId; doc: PageDoc }[] = [];
+      for (const ref of refs) {
+        if (typeof ref.uid === "string") continue;
+        const found = await readDoc(ref.id);
+        if (found === null || !("doc" in found)) continue;
+        missing.push({ id: ref.id, doc: found.doc });
+      }
+      if (missing.length === 0) return 0;
+      await files.commit("Before every page was given an identity");
+      for (const { id, doc } of missing) await writeDoc(id, { ...doc, uid: mintUid() });
+      return missing.length;
+    },
+
     async create(init: PageInit): Promise<PageRef> {
       await ensureRoot();
       // THE DESIGN DOC IS A PAGE, AND IT IS NOT IN THE TREE. Giving it an id
@@ -1431,8 +1471,12 @@ export function makePages(
       // there is no `.md` file beside it. One section, no `data`, so it takes the
       // shipped default and its one slot: the least a page can be that is still a
       // page, and the thing an agent edits first.
+      // BORN WITH AN IDENTITY, so a run it starts today still names it after it
+      // has been moved twice.
+      const uid = mintUid();
       await writeDoc(id, {
         name,
+        uid,
         // A NEW PAGE IS A DOCUMENT. It is the one kind somebody can start typing
         // into with nothing else in place; an html page needs a file written for
         // it, which is an agent's job rather than a dialog's.
@@ -1451,7 +1495,7 @@ export function makePages(
       const drawing = await files.read(CHILD_DEFAULT);
       if (drawing !== null) await files.write(`${dirOf(id)}/${CHILD_DRAW}`, drawing);
 
-      return { id, name };
+      return { id, name, uid };
     },
 
     async remove(id: PageId): Promise<void> {

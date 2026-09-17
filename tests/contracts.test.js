@@ -47,9 +47,43 @@ test("refuses what only the workspace UI may say", () => {
     // making and remembering each name a folder that is not this one.
     "theme.set", "vault.browse", "vault.open", "vault.create", "vault.recent",
     "design.read", "design.patch", "design.writeFile",
+    // The outer half of the automations edit: a manifest written, a template
+    // copied, the environment's names, the vault's own files, and how many
+    // runs are alive across every folder. None of it is a page's to say.
+    "run.live", "page.files", "page.readFile", "automation.get", "automation.set",
+    "automation.templates", "automation.create", "env.names",
+    "vault.files", "vault.readFile", "vault.writeFile",
   ]) {
     expect(isHostRequest(req({ kind }))).toBe(false);
   }
+});
+
+// THE SIXTH CONTRACTS EDIT: automations and runs in the inner ring. A page may
+// see every automation, start one, read any run and end one — the ring is not
+// the wall — and every payload is checked rather than merely named.
+test("automations and runs are in the inner ring, checked", () => {
+  expect(isHostRequest(req({ kind: "automation.list" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "automation.list", page: "home/Socials" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "automation.list", page: "" }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.start", page: "home/Socials", automation: "pull" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.start", page: "home/Socials", automation: "pull", inputs: { window: 7, dry: false } }))).toBe(true);
+  // A box may send `by`; the bridge overwrites it. A nested input is refused:
+  // a form's values are scalars.
+  expect(isHostRequest(req({ kind: "run.start", page: "home/Socials", automation: "pull", by: "p1" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.start", page: "home/Socials", automation: "pull", inputs: { deep: { a: 1 } } }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.start", page: "home/Socials" }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.list" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.list", page: "home/Socials", automation: "pull" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.get", run: "r1k7" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.get" }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.kill", run: "r1k7" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.read", run: "r1k7", stream: "stdout" }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.read", run: "r1k7", stream: "stderr", from: 0, max: 4096 }))).toBe(true);
+  expect(isHostRequest(req({ kind: "run.read", run: "r1k7", stream: "both" }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.read", run: "r1k7", stream: "stdout", from: -1 }))).toBe(false);
+  expect(isHostRequest(req({ kind: "run.read", run: "r1k7", stream: "stdout", max: 0 }))).toBe(false);
+  // Strictly wider: the runtime may say every one of them too.
+  expect(isRuntimeRequest(req({ kind: "run.list" }))).toBe(true);
 });
 
 // The FIFTH kind added to the inner ring, and the first that was already a kind
