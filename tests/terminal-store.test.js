@@ -211,6 +211,68 @@ test("End asks first; a gone process is closed without asking; a spawn failure i
   expect(terms.get().failures).toEqual([{ nonce, message: "no shell could be started" }]);
 });
 
+test("ENDING A SESSION CLOSES IT, and the last tab closing closes the terminal", () => {
+  const link = fakeLink();
+  const terms = makeTerminals({ link });
+  link.become("open");
+  link.event({ ev: "sessions", sessions: [info("a"), info("b"), info("c")] });
+  terms.open();
+  const dismissals = () => link.sent.filter((m) => m.op === "dismiss").map((m) => m.id);
+
+  // Ended here: its exit, however it is reported, closes the tab — once.
+  terms.askEnd("a");
+  terms.confirmEnd();
+  link.event({ ev: "state", session: info("a", { state: "exited", exit: { code: null, signal: "SIGHUP" } }) });
+  link.event({ ev: "sessions", sessions: [info("a", { state: "exited", exit: { code: null, signal: "SIGHUP" } }), info("b"), info("c")] });
+  expect(dismissals()).toEqual(["a"]);
+  link.event({ ev: "removed", id: "a" });
+  expect(terms.get().dock.visible).toBe(true);
+
+  // A shell somebody typed `exit` into closes too.
+  link.event({ ev: "state", session: info("b", { state: "exited", exit: { code: 0, signal: null } }) });
+  expect(dismissals()).toEqual(["a", "b"]);
+  link.event({ ev: "removed", id: "b" });
+
+  // An exit nobody asked for, with a failing code, keeps its output to read.
+  link.event({ ev: "state", session: info("c", { state: "exited", exit: { code: 1, signal: null } }) });
+  expect(dismissals()).toEqual(["a", "b"]);
+  expect(terms.get().dock.visible).toBe(true);
+
+  // Closing that last tab by hand hides the dock, and opening it starts a shell.
+  terms.askEnd("c");
+  link.event({ ev: "removed", id: "c" });
+  expect(terms.get().dock.visible).toBe(false);
+  terms.open();
+  expect(link.sent.at(-1).op).toBe("create");
+});
+
+test("NO TERMINAL, NO DOCK — after a reload that finds none, and once the last failure is dismissed", () => {
+  // A reload that had the dock open reconnects without opening a shell.
+  const link = fakeLink();
+  const terms = makeTerminals({ link, dock: { ...DOCK_DEFAULT, visible: true } });
+  terms.connect();
+  link.become("open");
+  expect(terms.get().dock.visible).toBe(true);
+  link.event({ ev: "sessions", sessions: [] });
+  expect(terms.get().dock.visible).toBe(false);
+
+  // A shell that failed to start is kept on screen until it has been read.
+  terms.open();
+  const nonce = link.sent.at(-1).nonce;
+  link.event({ ev: "failed", nonce, message: "no shell could be started" });
+  expect(terms.get().dock.visible).toBe(true);
+  terms.forgetFailure(nonce);
+  expect(terms.get().dock.visible).toBe(false);
+
+  // Retrying starts the shell before the failure goes, so the dock stays.
+  terms.open();
+  const again = link.sent.at(-1).nonce;
+  link.event({ ev: "failed", nonce: again, message: "no shell could be started" });
+  terms.create();
+  terms.forgetFailure(again);
+  expect(terms.get().dock.visible).toBe(true);
+});
+
 test("output and bells mark only a tab that is not in front, and replayed output is history", () => {
   const link = fakeLink();
   const terms = makeTerminals({ link });

@@ -28,6 +28,7 @@
 /** @import { TerminalView } from "../views/terminal.js" */
 
 import { popover, popItem } from "../widgets/popover.js";
+import { copyButton } from "../widgets/prompt.js";
 import { FONT_MAX, FONT_MIN, SIDES } from "../store/terminals.js";
 
 /** @type {Record<Side, string>} */
@@ -264,8 +265,10 @@ export function makeDock(deps) {
     for (const f of st.failures) {
       items.push(note("fail", `The terminal did not start: ${f.message}`, [
         btn("Try again", () => {
-          terms.forgetFailure(f.nonce);
+          // Start the new one first: dismissing the last failure of an empty
+          // dock would otherwise close the dock before the retry is asked for.
           newTerminal();
+          terms.forgetFailure(f.nonce);
         }),
         btn("Dismiss", () => terms.forgetFailure(f.nonce), "ghost"),
       ]));
@@ -317,21 +320,66 @@ export function makeDock(deps) {
     terms.create();
   }
 
+  /** THE AGENTS THE HELP OFFERS, each as the line that starts it and the line
+   *  that installs it. Copied, never typed in: Biom does not write into a shell. */
+  const AGENTS = [
+    { name: "Claude Code", run: "claude", install: "npm install -g @anthropic-ai/claude-code" },
+    { name: "Codex CLI", run: "codex", install: "npm install -g @openai/codex" },
+    { name: "Gemini CLI", run: "gemini", install: "npm install -g @google/gemini-cli" },
+    { name: "Aider", run: "aider", install: "python -m pip install aider-install && aider-install" },
+  ];
+  /** The first thing worth saying to whichever agent starts. */
+  const FIRST_ASK = "Read AGENTS.md, then tell me what this workspace is for and what you can build in it.";
+
+  /** @type {HTMLElement | null} */ let helpEl = null;
+
+  /** A line to copy: the text as code, and a Copy button beside it.
+   *  @param {string} text @param {string} [kind] */
+  const copyLine = (text, kind = "") => {
+    const code = h("code", text);
+    return h("div.cmd" + (kind ? "." + kind : ""), code, copyButton(h, text, code, "Copy"));
+  };
+
+  function closeHelp() {
+    if (!helpEl) return;
+    helpEl.remove();
+    helpEl = null;
+    help.focus();
+  }
+
+  /** THE HELP IS A DIALOG IN THE MIDDLE OF THE SCREEN, because what it holds is
+   *  commands to copy and a popover off a 22px button is no place to read one.
+   *  It is appended to the body, not the dock, so a dock docked to a narrow edge
+   *  does not decide how wide it is — which is also why Escape is stopped here:
+   *  outside the dock, the shell's own Escape would close a panel as well. */
   function showHelp() {
-    popover(help, () => [
-      h("div.termhelp",
-        h("p.poplabel", "Starting an agent here"),
-        h("p", "Every new terminal is a shell in this workspace’s folder, where its AGENTS.md and skills are. Start the agent you already use:"),
-        h("ul",
-          h("li", h("b", "Claude Code"), " — ", h("code", "claude")),
-          h("li", h("b", "Codex CLI"), " — ", h("code", "codex")),
-          h("li", h("b", "Aider"), " — ", h("code", "aider")),
-          h("li", h("b", "Gemini CLI"), " — ", h("code", "gemini"))),
-        h("p", "It runs exactly as it would in any terminal: its own login, its own model and its own approvals. Biom does not read the session or type anything into it."),
-        h("p", h("b", "Hide"), " puts the terminal away and every session keeps running. ", h("b", "End"), " stops one session. Drag the grip at the left of this bar to move the terminal to any edge. ", h("kbd", "Ctrl+`"), " shows and hides it."),
-        h("p", "The two A buttons size the text, for a laptop beside a large screen. ", h("kbd", "Ctrl+="), " and ", h("kbd", "Ctrl+\u2212"), " do the same from the keyboard, ", h("kbd", "Ctrl+0"), " puts it back, and Ctrl with the wheel works over the terminal itself."),
-        h("p", "An agent’s edits appear on the page because the workspace watches its folder. Several terminals share one folder, so their agents can write the same files.")),
-    ], { align: "end", width: "22rem" });
+    if (helpEl) return;
+    const done = h("button.btn.ghost", { type: "button", onclick: closeHelp }, "Close");
+    const card = h("div.dialog.termhelp", { role: "dialog", "aria-modal": "true", "aria-labelledby": "termhelp-title" },
+      h("h2", { id: "termhelp-title" }, "Start an agent in this terminal"),
+      h("p", "Every terminal is a shell in this workspace’s folder, beside its AGENTS.md and skills. Copy the command for the agent you use and paste it into the terminal."),
+      h("div.agents", ...AGENTS.map((a) =>
+        h("section.agent",
+          h("h3", a.name),
+          copyLine(a.run),
+          h("p.install", "Not installed yet?"),
+          copyLine(a.install, "quiet")))),
+      h("p.poplabel", "Then ask it"),
+      copyLine(FIRST_ASK),
+      h("p.poplabel", "The terminal"),
+      h("p", h("b", "Hide"), " puts it away and every session keeps running. ", h("b", "End"), " stops one session. Drag the grip to move it to any edge. ", h("kbd", "Ctrl+`"), " shows and hides it, and ", h("kbd", "Ctrl+="), " / ", h("kbd", "Ctrl+\u2212"), " size the text."),
+      h("p", "It runs exactly as any terminal would: the agent’s own login, model and approvals. An agent’s edits appear on the page because the workspace watches its folder."),
+      h("div.foot", done));
+    helpEl = h("div.scrim", {
+      onclick: (/** @type {MouseEvent} */ e) => { if (e.target === e.currentTarget) closeHelp(); },
+      onkeydown: (/** @type {KeyboardEvent} */ e) => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        closeHelp();
+      },
+    }, card);
+    document.body.append(helpEl);
+    /** @type {HTMLElement | null} */ (card.querySelector(".cmd button"))?.focus();
   }
 
   function chooseSide() {
