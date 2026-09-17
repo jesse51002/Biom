@@ -7,7 +7,7 @@
 // simply fallen behind? Git already knows: every commit that touched
 // `guest/plugins/` left a blob for each file it held, and a vault file whose
 // blob hash is among them is byte for byte a version the framework shipped —
-// nobody changed it. `server/workspace/plugins.ts` asks that question on every
+// nobody changed it. `server/workspace/framework.ts` asks that question on every
 // open; this module is the half that can answer it, because it is the half
 // that runs git.
 //

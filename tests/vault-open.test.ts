@@ -310,7 +310,9 @@ test("opening an empty folder sets it up, furniture and all", async () => {
     expect(existsSync(join(second, ".git"))).toBe(true);
 
     // The furniture that makes the folder legible to an agent pointed at it.
-    // None of this is content, which is why it seeds when pages do not.
+    // None of this is content, which is why it seeds when pages do not. The
+    // skills and the checker land off the mount path, so they are waited on.
+    await host.settled(second);
     expect(existsSync(join(second, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(second, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
     expect(existsSync(join(second, "design", "content.yaml"))).toBe(true);
@@ -365,6 +367,9 @@ test("two vaults are open at once, and neither disturbs the other", async () => 
       page: made.id,
       text: "name: Site intake\nplugin: doc\nkind: doc\nrender: null\ncontents:\n  - name: body\n    type: markdown\n    data: |\n      Four questions.\n",
     });
+    // The first vault's own background work — the framework's skills, the
+    // plugin mirror — has to have landed before its bytes are the baseline.
+    await host.settled(work);
     const before = await snapshot(work);
 
     await mkdir(other, { recursive: true });

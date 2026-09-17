@@ -38,7 +38,7 @@ import {
 import type { EmbeddedMap } from "./platform/embedded.ts";
 import { NOTHING_SHIPPED, shippedHashes } from "./platform/shipped.ts";
 import type { Shipped } from "./platform/shipped.ts";
-import { mirrorPlugins, sweepShipped } from "./workspace/plugins.ts";
+import { mirrorPlugins, rewriteSkills, sweepShipped } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format } from "./platform/yaml.ts";
 import { scaleOf } from "../contracts/scale.ts";
@@ -203,6 +203,20 @@ async function carriedFiles(): Promise<{ files: EmbeddedMap; shipped: Shipped }>
     // about this import.
     if (noManifest(why)) return { files: NOTHING_EMBEDDED, shipped: NOTHING_SHIPPED };
     throw why;
+  }
+}
+
+/** WHICH FRAMEWORK THIS IS, for a commit message and nothing else. Read out of
+ *  `package.json` beside the program in a checkout; a compiled binary has no
+ *  such file beside it and says so in the one word it has. It is not `BIOM_ENV`
+ *  and must not become a switch: nothing below asks it a question. */
+async function frameworkVersion(): Promise<string> {
+  try {
+    const text = await Bun.file(join(HERE, "package.json")).text();
+    const version = (JSON.parse(text) as { version?: unknown }).version;
+    return typeof version === "string" && version !== "" ? `framework ${version}` : "the framework";
+  } catch {
+    return "the framework";
   }
 }
 
@@ -581,13 +595,30 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     return shippedOnce;
   };
 
+  /** THE THREE ROOTS THE FRAMEWORK OWNS INSIDE A VAULT, read-only, built once.
+   *  `vaultSeed` for the skills as they ship, `skill` for the checker, and the
+   *  framework itself for the modules the checker imports. The seeder is handed
+   *  the first for everything else at the vault root. */
+  const skillsSeed = seedRoot("vault", at.vaultSeed ?? VAULT_SEED);
+  const checkerSeed = seedRoot("skill", at.skill ?? SKILL);
+  const checkerLibSeed = seedRoot("", at.checkerLib ?? HERE);
+
   /** THE WORK AFTER A MOUNT, off the mount path on purpose: a page draws from
    *  the framework's plugins the instant the vault is open, so nothing here is
-   *  anything a page waits for. First the mirror, so what a person can read is
-   *  current; then the sweep, so what they never edited stops being a stale
-   *  copy. Each failure is a sentence in the log and never a mount that did not
-   *  happen — a folder whose `docs/` cannot be written is still a workspace. */
+   *  anything a page waits for. First the skills, so an agent pointed at the
+   *  folder reads the framework's current ones; then the mirror, so what a
+   *  person can read is current; then the sweep, so what they never edited
+   *  stops being a stale copy. Each failure is a sentence in the log and never
+   *  a mount that did not happen — a folder whose `docs/` cannot be written is
+   *  still a workspace. */
   async function afterMount(files: Files): Promise<void> {
+    try {
+      if (await rewriteSkills(files, skillsSeed, checkerSeed, checkerLibSeed)) {
+        await files.commit(`The framework's skills and checker, as ${await frameworkVersion()} ships them`);
+      }
+    } catch (e) {
+      console.warn("the framework's skills could not be written into .agents/skills/", e);
+    }
     try {
       await mirrorPlugins(files, pluginRoot);
     } catch (e) {
@@ -708,14 +739,11 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const presets = makePresets({
       pages, tables, files, yaml,
       seed: seedRoot("presets", at.presets),
-      // The vault's own furniture: `AGENTS.md`, `.agents/skills/` and `design/`, copied
-      // file by file and never over anything already there.
-      vaultSeed: seedRoot("vault", at.vaultSeed ?? VAULT_SEED),
-      skill: seedRoot("skill", at.skill ?? SKILL),
-      // The framework itself, read for the two modules the checker imports. It is
-      // the only Files here rooted above a single concern, which is what makes
-      // it the composition root's business rather than the seeder's.
-      checkerLib: seedRoot("", at.checkerLib ?? HERE),
+      // The vault's own furniture: `AGENTS.md`, `docs/`, `design/` and `base/`,
+      // copied file by file and never over anything already there. The same
+      // root's `.agents/skills/` is the framework's and goes through
+      // `rewriteSkills` in `afterMount` instead.
+      vaultSeed: skillsSeed,
     });
 
     // The rows live in SQLite and the pages live in git. A binary file rewritten

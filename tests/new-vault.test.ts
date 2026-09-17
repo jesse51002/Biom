@@ -135,6 +135,7 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
   const vault = join(root, "guided");
   const host = await hostAt(root, vault);
   try {
+    await host.settled(vault);
     for (const dir of ["docs", ".agents/skills"]) {
       for (const rel of filesUnder(join(vault, dir))) {
         // THE PROSE, which is what an agent reads. `check.ts` and the verbatim

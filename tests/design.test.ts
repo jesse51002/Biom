@@ -41,6 +41,7 @@ import { makeDocs } from "../server/domain/docs.ts";
 import { makePages } from "../server/domain/pages.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
+import { rewriteSkills } from "../server/workspace/framework.ts";
 import { handle } from "../server/api/routes.ts";
 import { isHostRequest } from "../contracts/guards.js";
 import { PROTOCOL } from "../contracts/wire.js";
@@ -81,9 +82,15 @@ function boot(dir: string) {
   const presets = makePresets({
     pages, tables, files, yaml,
     vaultSeed: makeFiles(VAULT_SEED),
-    skill: makeFiles(SKILL),
   });
-  return { db, files, pages, design, docs, tables, presets, theme, deps: { pages, design, docs, tables, presets, theme } };
+  /** What the host does on open: the seeder's fill, then the framework's
+   *  skills rewritten whole — the second is `framework.ts`'s and runs off the
+   *  mount path there, so a test that wants the furniture asks for both. */
+  const furnish = async () => {
+    await presets.seedIfEmpty();
+    await rewriteSkills(files, makeFiles(VAULT_SEED), makeFiles(SKILL), makeFiles(join(import.meta.dir, "..")));
+  };
+  return { db, files, pages, design, docs, tables, presets, theme, furnish, deps: { pages, design, docs, tables, presets, theme } };
 }
 
 /** The design doc's own document, off disk. */
@@ -137,7 +144,7 @@ test("a fresh vault has exactly one page, and it is the root", async () => {
 
 test("the furniture still seeds, because none of it is content", async () => {
   const w = boot(root);
-  await w.presets.seedIfEmpty();
+  await w.furnish();
 
   // The guide, at the root, where an agent pointed at this folder finds it
   // without being told. This is the whole premise: the format guide used to
@@ -152,8 +159,10 @@ test("the furniture still seeds, because none of it is content", async () => {
   // And no `CLAUDE.md` beside the guide. A vendor-named copy of the same words
   // is the same favouritism one file up, and a second copy that drifts.
   expect(existsSync(join(root, "CLAUDE.md"))).toBe(false);
+  // THE SKILLS ARE THE FRAMEWORK'S, rewritten on every open rather than filled
+  // once — `framework.ts` — and the checker travels the same way; skill/ stays
+  // the source of truth.
   expect(existsSync(join(root, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
-  // The checker travels as a copy; skill/ stays the source of truth.
   expect(existsSync(join(root, ".agents", "skills", "check.ts"))).toBe(true);
   expect(existsSync(join(SKILL, "check.ts"))).toBe(true);
 
@@ -176,7 +185,7 @@ test("the furniture still seeds, because none of it is content", async () => {
 
 test("seeding twice adds what is missing and leaves an edit alone", async () => {
   const first = boot(root);
-  await first.presets.seedIfEmpty();
+  await first.furnish();
   first.db.close();
 
   // Somebody makes the design doc theirs, which is the entire interaction this
@@ -192,12 +201,14 @@ test("seeding twice adds what is missing and leaves an edit alone", async () => 
   rmSync(join(root, "AGENTS.md"));
 
   const second = boot(root);
-  await second.presets.seedIfEmpty();
+  await second.furnish();
 
-  // ADDITIVE, FILE BY FILE, NEVER OVERWRITING. The gap is filled; the edit is
-  // untouched. This is the property that matters most here — and it costs more
-  // than it did, because one file now holds the doc's words as well as its
-  // shape, so overwriting it would take somebody's prose with it.
+  // ADDITIVE, FILE BY FILE, NEVER OVERWRITING, for what is the person's. The
+  // gap in AGENTS.md is filled; the edit to the design doc is untouched. This
+  // is the property that matters most here — and it costs more than it did,
+  // because one file now holds the doc's words as well as its shape, so
+  // overwriting it would take somebody's prose with it. The skill comes back
+  // by the other rule: it is the framework's, and is rewritten.
   expect(existsSync(join(root, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
   expect(existsSync(join(root, "AGENTS.md"))).toBe(true);
   expect(docOnDisk(root).name).toBe("Ours");

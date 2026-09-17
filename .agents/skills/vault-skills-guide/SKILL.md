@@ -326,23 +326,32 @@ vault/…                               what ships
 <workspace>/.agents/skills/check.ts   what the documented gate command runs
 ```
 
-**The seeder is additive and never overwrites.** A workspace gains a file it did
-not have; it does not gain a new VERSION of one it already has. That protects a
-person's edits to their own workspace, and it means **anything improved here
-reaches new workspaces only.** So the skill you just edited is not the skill an
-agent reads in an existing workspace, that workspace's checker can be older than
-the rules it is held to, and **testing a change from inside a workspace runs its
-stale copy and tells you the change did not work.**
+**The skills and the checker are the framework's inside a workspace, and they
+are REWRITTEN WHOLE on every open.** `rewriteSkills` in
+`server/workspace/framework.ts` runs off the mount path once a vault is up:
+every `.agents/skills/<skill>/` the framework ships, `check.ts` and `_lib/` are
+compared with what `vault/.agents/skills/` and `skill/` hold and rewritten where
+they differ, committed once naming the framework version. So a skill you edit
+here reaches every workspace on its next open, and **a change made to a
+framework skill inside a workspace is gone on that workspace's next open** —
+what is wanted everywhere goes here, and what is wanted in one workspace goes
+into a skill under a name of that workspace's own, which the rewrite never
+touches. Nothing is removed: a skill this repository stops shipping stays where
+it is in every workspace that had it.
+
+**`docs/` is still filled once and never overwritten**, with `AGENTS.md`,
+`base/` and `design/`: those are the person's from the moment they land. So a
+doc improved here reaches new workspaces only, and an existing workspace's copy
+is checked by hand:
 
 ```bash
-diff -q vault/.agents/skills/<name>/SKILL.md  <vault>/.agents/skills/<name>/SKILL.md
-diff -q vault/docs/<name>.md                 <vault>/docs/<name>.md
-diff -q skill/check.ts                        <vault>/.agents/skills/check.ts
+diff -q vault/docs/<name>.md  <vault>/docs/<name>.md
 ```
 
-Deleting a workspace's copies and restarting the server reseeds them. **When you
-want certainty about which checker ran, invoke `skill/check.ts` by
-path.**
+**Testing a change from inside a workspace is honest now for the skills and
+the checker** — the running server rewrote them when it opened the folder — and
+still not for a doc. When you want certainty about which checker ran, invoke
+`skill/check.ts` by path.
 
 ### A rule is one statement in two places
 
@@ -400,8 +409,11 @@ When a new one appears, add it as a class rather than as an incident.
   and inside a vault.
 - **The agreement test:** `tests/skill.test.ts` — every cited rule has
   prose, every documented rule is cited or retired, no number is both.
-- **The seeder, and the additive rule that lets a workspace's copy go stale:**
-  `server/workspace/presets.ts`.
+- **The seeder, and the additive rule for what is the person's** — `AGENTS.md`,
+  `docs/`, `base/`, `design/`: `server/workspace/presets.ts`. **The rewrite of
+  what is the framework's** — the skills, the checker, its `_lib/`:
+  `rewriteSkills` in `server/workspace/framework.ts`, run by `afterMount` in
+  `server/main.ts`.
 - **Siblings, for the mechanism a skill describes:** the section runtime →
   `section-runtime-guide`; the format on disk → `page-format-guide`; the plugin
   registry → `plugin-guide`; the box and its ports → `boundary-guide`.

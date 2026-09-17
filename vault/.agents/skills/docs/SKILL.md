@@ -36,15 +36,20 @@ which number means what.
 
 ## Where they live, and how they got here
 
-**Both are at the root of this workspace, and both were copied in when it was
-first opened.** A copy is made file by file and only where nothing is at that
-path, so **a workspace made before a file existed gains it on the next start, and
-anything you edited stays exactly as you left it.** That is also the cost, stated
-rather than solved: a doc improved in the framework never reaches a workspace that
-already has its own copy.
+**Both are at the root of this workspace, and they got here by two different
+rules.** `docs/` was copied in when the workspace was first opened, file by file
+and only where nothing was at that path, so **a workspace made before a doc
+existed gains it on the next start, and anything you edited stays exactly as
+you left it.** That is also the cost, stated rather than solved: a doc improved
+in the framework never reaches a workspace that already has its own copy.
 
-`.agents/skills/check.ts` is the one exception — it is code, its whole job is to
-agree with a format that keeps moving, and it is rewritten on every start.
+**The skills are the framework's, and they are rewritten whole every time the
+workspace opens** — every `.agents/skills/<skill>/` the framework ships, with
+`check.ts` and `_lib/` beside them. A skill cannot be overridden: an edit to one
+here is gone on the next open, and what you want kept goes into a skill under a
+name of your own, which is never touched. That is what keeps the skill an agent
+reads, and the checker it runs, the framework's current ones in every
+workspace.
 
 **The framework's own guides are a third thing and are not here.** They explain
 the code to somebody who can read the code, they live beside it, and nothing in

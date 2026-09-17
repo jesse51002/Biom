@@ -18,6 +18,12 @@
 //     list a build carries and the list a checkout reads out of its own history
 //     are the same numbers.
 //
+//   · THE SKILLS ARE THE FRAMEWORK'S, and the same rule reaches them the only
+//     way it can: an agent reads the folder, not the server, so there is no
+//     rung to fall back to — the file in the vault IS the framework's file, and
+//     it is rewritten whole on every open. Nothing under `.agents/skills/` can
+//     be overridden; a workspace adds skills under names of its own.
+//
 // Fixtures are invented and say so.
 
 import { test, expect } from "bun:test";
@@ -29,7 +35,7 @@ import { join } from "node:path";
 import { makeHost, pluginBundle, pluginFile, PLUGIN_DIR_ROUTE } from "../server/main.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { blobHash, isShipped, shippedHashes } from "../server/platform/shipped.ts";
-import { MIRROR_DIR, mirrorPlugins, sweepShipped } from "../server/workspace/plugins.ts";
+import { MIRROR_DIR, SKILLS_DIR, mirrorPlugins, rewriteSkills, sweepShipped } from "../server/workspace/framework.ts";
 import { manifestSource } from "../tools/app.ts";
 import { vaultBase } from "../contracts/wire.js";
 
@@ -331,4 +337,108 @@ test("the manifest carries the shipped hashes beside the files, sorted, and the 
   expect(source).toContain('"markdown.js": ["aaa","bbb"],');
   expect(source.indexOf('"doc/index.html"')).toBeLessThan(source.indexOf('"markdown.js"'));
   expect(manifestSource([])).toContain("export const SHIPPED: Record<string, string[]> = {\n};");
+});
+
+/* ══ the skills ══════════════════════════════════════════════════════════ */
+
+/** An invented framework: a vault seed with two skills, a checker, and the one
+ *  module it imports. */
+async function frameworkSkills(): Promise<{ vaultSeed: string; skill: string; lib: string }> {
+  const vaultSeed = await frameworkWith({
+    "AGENTS.md": "# the guide",
+    ".agents/skills/pages/SKILL.md": "# pages v1",
+    ".agents/skills/pages/extra.md": "more on pages",
+    ".agents/skills/sections/SKILL.md": "# sections v1",
+  });
+  const skill = await frameworkWith({ "check.ts": "// the checker v1" });
+  const lib = await frameworkWith({ "contracts/wire.js": "// wire v1", "contracts/types.ts": "// types v1", "contracts/scale.ts": "// scale v1" });
+  return { vaultSeed, skill, lib };
+}
+
+test("a framework skill edited in a vault is the framework's again on the next open, and the rewrite reports it", async () => {
+  const f = await frameworkSkills();
+  const vault = await scratch();
+  try {
+    const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
+    // First open: everything the framework owns lands, and it says so.
+    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "check.ts"), "utf8")).toBe("// the checker v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "_lib/wire.js"), "utf8")).toBe("// wire v1");
+    // AGENTS.md is the seeder's and the person's; the rewrite never touches it.
+    expect(existsSync(join(vault, "AGENTS.md"))).toBe(false);
+    // Second open, nothing changed: nothing written, and it says so.
+    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(false);
+
+    // An edit to the framework's skill, a file added inside it, and a skill of
+    // the vault's own beside them.
+    await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# pages, but mine");
+    await writeFile(join(vault, SKILLS_DIR, "pages/notes.md"), "added here");
+    await mkdir(join(vault, SKILLS_DIR, "ours"), { recursive: true });
+    await writeFile(join(vault, SKILLS_DIR, "ours/SKILL.md"), "# ours");
+    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    // The framework's name is the framework's again, whole.
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(existsSync(join(vault, SKILLS_DIR, "pages/notes.md"))).toBe(false);
+    // The vault's own is untouched, and the untouched framework skill was not rewritten.
+    expect(readFileSync(join(vault, SKILLS_DIR, "ours/SKILL.md"), "utf8")).toBe("# ours");
+    expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v1");
+
+    // The framework moves: the next open carries the new version.
+    await writeFile(join(f.vaultSeed, ".agents/skills/sections/SKILL.md"), "# sections v2");
+    expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
+    expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v2");
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
+test("a vault directory carrying a framework skill's name holds the framework's contents after the next open", async () => {
+  const f = await frameworkSkills();
+  const vault = await scratch();
+  await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
+  await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# a skill somebody wrote under the framework's name");
+  try {
+    await rewriteSkills(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/extra.md"), "utf8")).toBe("more on pages");
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
+  }
+});
+
+test("on a real open the skills land off the mount path, are committed once naming the framework, and the checker runs", async () => {
+  const root = await scratch();
+  const vault = join(root, "v");
+  const host = await makeHost({
+    vault,
+    memory: join(root, "vaults.json"),
+    presets: join(HERE, "presets"),
+    vaultSeed: join(HERE, "vault"),
+    skill: join(HERE, "skill"),
+    checkerLib: HERE,
+  });
+  try {
+    await host.settled(vault);
+    // Every skill the framework ships, byte for byte.
+    const shipped = join(HERE, "vault", SKILLS_DIR);
+    for (const rel of ["pages/SKILL.md", "sections/SKILL.md", "plugins/SKILL.md"]) {
+      expect(readFileSync(join(vault, SKILLS_DIR, rel), "utf8")).toBe(readFileSync(join(shipped, rel), "utf8"));
+    }
+    expect(readFileSync(join(vault, SKILLS_DIR, "check.ts"), "utf8")).toBe(readFileSync(join(HERE, "skill/check.ts"), "utf8"));
+    // One commit, naming the framework.
+    const { spawnSync } = await import("node:child_process");
+    const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" }).stdout;
+    expect(log).toContain("The framework's skills and checker, as framework ");
+    expect(log.split("\n").filter((l) => l.includes("skills and checker")).length).toBe(1);
+    // And the copy RUNS, which is the assertion that has caught a copied
+    // checker before: it imports through `_lib/`, and a vault has no `contracts/`.
+    const ran = spawnSync("bun", ["run", join(SKILLS_DIR, "check.ts"), "pages/home"], { cwd: vault, encoding: "utf8" });
+    expect(ran.stderr + ran.stdout).not.toContain("Cannot find module");
+  } finally {
+    host.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });

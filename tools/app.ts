@@ -223,7 +223,7 @@ export function manifestSource(keys: string[], shipped: Shipped = {}): string {
   // hash, keyed by path under `guest/plugins/`. A binary has no `.git` beside it
   // to ask, so the answer travels with it: the server's sweep on open checks a
   // vault's copies against this and removes the ones nobody edited — see
-  // `server/workspace/plugins.ts`. Sorted, so two builds of one tree agree.
+  // `server/workspace/framework.ts`. Sorted, so two builds of one tree agree.
   lines.push("export const SHIPPED: Record<string, string[]> = {");
   for (const path of Object.keys(shipped).sort()) {
     lines.push(`  ${JSON.stringify(path)}: ${JSON.stringify([...shipped[path]!].sort())},`);

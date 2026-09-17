@@ -226,6 +226,9 @@ test("a vault is seeded out of the carried map with no directory read at all", a
     carried: map,
   });
   try {
+    // The skills and the checker are written off the mount path, out of the
+    // same map; waiting on them is the only thing a test has to do differently.
+    await host.settled(vault);
     const files = (rel: string) => readFile(join(vault, rel), "utf8");
     // The guide, a skill under it, the design doc, a base block and the checker
     // — everything `vault/` and `skill/` carry, out of the map.

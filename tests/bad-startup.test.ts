@@ -362,6 +362,7 @@ test("a workspace made by an older build gains what it lacks and keeps what it h
 
     const host = await hostAt(root, at);
     expect(host.open()).toEqual([at]);
+    await host.settled(at);
     host.close();
 
     for (const gained of ["docs", ".agents", "design", "base", "theme.json", "AGENTS.md"]) {

@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 
 import { handle, route } from "../server/api/routes.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
+import { rewriteSkills } from "../server/workspace/framework.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
@@ -203,9 +204,14 @@ async function workspace() {
   const presets = makePresets({
     pages, tables, files, yaml,
     vaultSeed: makeFiles(seedRoot),
-    skill: makeFiles(skillDir),
   });
   const mirror = makeMirror(files, pages);
+  /** What the host does on open: the seeder's fill, then the framework's
+   *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
+  const furnish = async () => {
+    await presets.seedIfEmpty();
+    await rewriteSkills(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
+  };
 
   return {
     root,
@@ -214,6 +220,7 @@ async function workspace() {
     deps: { pages, design, docs, tables, presets, theme, mirror, vault: fakeVault(root, vault) },
     files,
     presets,
+    furnish,
     async drop() { await rm(root, { recursive: true, force: true }); },
   };
 }
@@ -243,7 +250,7 @@ const slot = (page: Page, section: string, part: string): string => {
 test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async () => {
   const w = await workspace();
   try {
-    await w.presets.seedIfEmpty();
+    await w.furnish();
 
     const first = await w.deps.pages.list();
     // The root page and nothing else. A new vault has no content: seeding

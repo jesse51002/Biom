@@ -29,7 +29,7 @@ description: >-
   list of plugin ids at all, and none of it is a `contracts/` edit — so a
   vault's own slot plugin (`plugins/<id>.js`) loads exactly as its own page
   plugin (`plugins/<id>/index.html`) does. Load this whenever you touch
-  `guest/runtime/registry.js`, `guest/plugins/*`, `server/workspace/plugins.ts`,
+  `guest/runtime/registry.js`, `guest/plugins/*`, `server/workspace/framework.ts`,
   `server/platform/shipped.ts`, or the `/plugin/` route in `server/main.ts`.
   Trigger on
   "plugin", "register", "mount", "ctx.use", "ctx.has", "ctx.options",
@@ -354,7 +354,7 @@ under the vault's route, where the per-file walk answers it. `/guest/plugins/`
 itself is refused by `locate()`, so there is one url per plugin.
 
 **WHAT A PERSON CAN READ IS `docs/plugins/`, and it is rewritten whole on every
-open.** `mirrorPlugins` in `server/workspace/plugins.ts` empties the folder and
+open.** `mirrorPlugins` in `server/workspace/framework.ts` empties the folder and
 writes the framework's set into it out of the same `Files` the rung reads, so
 what they open is byte for byte what draws their page. Whole every time rather
 than filled, which is the one-word difference from the seeder: `fill` skipped a
@@ -525,7 +525,7 @@ as long as the box does.
   read-only `Files` `makeHost` builds once as `pluginRoot`; `/guest/plugins/`
   is refused by `locate()` so there are never two urls for one plugin.
   **List that directory rather than trusting a roster here.**
-- **The mirror and the sweep on open:** `server/workspace/plugins.ts` —
+- **The mirror and the sweep on open:** `server/workspace/framework.ts` —
   `mirrorPlugins` writes `docs/plugins/` whole, `sweepShipped` deletes unedited
   shipped copies; `afterMount` in `server/main.ts` runs both off the mount path.
 - **What counts as shipped:** `server/platform/shipped.ts` — git's blob hash,
