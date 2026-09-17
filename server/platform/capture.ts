@@ -49,9 +49,16 @@ const internal = (message: string): Error => Object.assign(new Error(message), {
  * Draw `page` and answer its document as text.
  */
 export async function capturePage(at: CaptureAt, page: string): Promise<string> {
+  // A COMPUTED SPECIFIER ON PURPOSE. `bun build --compile` bundles every import
+  // it can see, and it can see a literal `import("playwright")` — which pulls
+  // the whole driver and its optional dependencies into a binary that never
+  // runs this line. A compiled build is handed no capture at all (the
+  // composition root says so), so the import is hidden from the bundler and
+  // resolved by the runtime, which is the one that will actually call it.
+  const specifier = ["play", "wright"].join("");
   let pw: typeof import("playwright");
   try {
-    pw = await import("playwright");
+    pw = await import(specifier);
   } catch {
     throw internal("this server cannot capture a page: playwright is not installed");
   }

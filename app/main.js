@@ -558,9 +558,18 @@ if (!app.requestSingleInstanceLock()) {
    *  so what comes out is what they were looking at. */
   ipcMain.handle(CAPTURE, async () => {
     if (!alive()) return "";
-    const frames = win.webContents.mainFrame.frames;
-    const box = frames.find((f) => f.url === "about:srcdoc" || f.url.startsWith("about:srcdoc"));
-    if (!box) return "";
+    // THE BOX IS THE ONE FRAME THAT IS NOT THE WINDOW. The client weaves exactly
+    // one iframe per page, so any frame under the main one is it; matching on
+    // its url was tried first and is not safe, because a sandboxed srcdoc
+    // frame reports its address differently across Electron versions. The
+    // whole subtree is walked rather than the direct children, so a page
+    // drawn one level down still counts, and the outermost one is taken.
+    const main = win.webContents.mainFrame;
+    const box = main.framesInSubtree.find((f) => f !== main);
+    if (!box) {
+      console.error("the page could not be captured: the window holds no box");
+      return "";
+    }
     let paper = "";
     try {
       paper = await win.webContents.executeJavaScript(
