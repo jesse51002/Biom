@@ -5,7 +5,7 @@ description: Give a page its moving figures, or brief an agent to build one. Use
 
 # Animations
 
-**A scene plays the passage through. A figure only shows it.** That is the whole test. Read the page back for the passage that argues a rule, a sequence, a stop, a comparison or a boundary, and build the scene that plays that passage: what moves, what is turned back, what lands, what runs out, what comes round again. Reach for a still figure only where nothing happens in the passage at all, and even then give it one motion that says the one thing it is for. A page of prose with nothing that moves has used none of what the format is for.
+**A scene plays the passage through. A figure only shows it.** That is the whole test. Read the page back a paragraph at a time for the passage that argues a rule, a sequence, a stop, a comparison or a boundary, and build the scene that plays that passage: what moves, what is turned back, what lands, what runs out, what comes round again. The cadence is one every paragraph or two — `biom-pages` carries the rule and the reason — so a page argued in nine paragraphs wants more than one scene, and each is the passage it sits under and not the page. Reach for a still figure only where nothing happens in the passage at all, and even then give it one motion that says the one thing it is for. A page of prose with nothing that moves has used none of what the format is for.
 
 **The grammar is the design page's, not this file's.** `design/` at the vault root says what a scene is made of here: the materials, the faces, the light and the verdict lights. Where this file and that page disagree, that page wins, and where a built scene disagrees with both, the file that draws is the evidence.
 

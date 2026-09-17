@@ -16,7 +16,7 @@
 
 **We are not a plain markdown framework, for a reason.** Every doc page gets its figures **without being asked**. Plain prose is an unfinished page: the format exists so a page can carry a drawing, a board, a figure, a live table, and a page that is only paragraphs has used none of it and could have been a markdown file in a folder.
 
-**What that obliges on every page: a figure, a board or a drawn section wherever the content has a shape** — a count, a sequence, a flow, a comparison, a boundary, a cycle. Look for the shape before writing the prose, not after.
+**What that obliges on every page: a figure, a board or a drawn section wherever the content has a shape** — a count, a sequence, a flow, a comparison, a boundary, a cycle — **at a cadence of one every paragraph or two.** A run of prose longer than that has skipped a shape it had; read it back a paragraph at a time and draw what each argues. Look for the shape before writing the prose, not after.
 
 **Chosen deliberately for THAT subject, and never decorative.** A figure that says nothing the prose does not is an ornament, and an ornament is worse than nothing because a reader stops to read it. The shape is picked per subject, against `design/` — [.agents/skills/biom-design/](.agents/skills/biom-design/SKILL.md) is whose taste wins — and never off a template.
 
