@@ -42,7 +42,7 @@ the CODE changed, or because WE changed our minds? Code is a doc; a decision is 
 skill; **a numbered rule is a skill whatever it is about**, because the number is
 the join between the prose and `check.ts` and moving half of that join breaks the
 pair. A passage lives in exactly one of the two and each links the other in a
-clause. `vault/.agents/skills/docs/SKILL.md` states that line for the vault and is
+clause. `vault/.agents/skills/biom-docs/SKILL.md` states that line for the vault and is
 the file to read before moving anything between them.
 
 **A doc's examples run against the build, and that is checkable rather than
@@ -329,9 +329,15 @@ vault/…                               what ships
 **The skills and the checker are the framework's inside a workspace, and they
 are REWRITTEN WHOLE on every open.** `rewriteSkills` in
 `server/workspace/framework.ts` runs off the mount path once a vault is up:
-every `.agents/skills/<skill>/` the framework ships, `check.ts` and `_lib/` are
-compared with what `vault/.agents/skills/` and `skill/` hold and rewritten where
-they differ, committed once naming the framework version. So a skill you edit
+every `.agents/skills/biom-<skill>/` the framework ships, `check.ts` and `_lib/`
+are compared with what `vault/.agents/skills/` and `skill/` hold and rewritten
+where they differ, committed once naming the framework version. **Every one of
+them wears `biom-`, and a new skill here takes the prefix too** — it is what
+keeps the framework's names from ever meeting a skill a workspace wrote, since a
+name the framework owns is rewritten and a name it does not is never touched;
+the frontmatter `name:` is the directory, so an agent routes on `biom-pages`
+and `tests/skill.test.ts` refuses a shipped skill without the prefix. A copy
+under the old bare name, unedited, is swept on open; an edited one stays. So a skill you edit
 here reaches every workspace on its next open, and **a change made to a
 framework skill inside a workspace is gone on that workspace's next open** —
 what is wanted everywhere goes here, and what is wanted in one workspace goes

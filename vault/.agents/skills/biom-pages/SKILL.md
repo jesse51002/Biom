@@ -23,11 +23,11 @@ description: "HOW A PAGE IS WRITTEN WELL, and the complete rule index for this w
 
 2. **Write `content.yaml`, because it IS the page.** Nothing in the directory exists until that file is there. It states `name` and `plugin` — and on a doc page `contents` as well, always, even when it is empty.
 
-3. **Give each section its own layout, and take that layout from `base/`.** A section is a div: full width, its own markup, its own CSS, and the reading measure lives inside the default section rather than on the sheet, so a full-bleed band costs a section nothing. `base/` holds starter sections — list it to see what is there. Copy a starter's `index.html` beside your `content.yaml` under a name that says what it is (`figure.html`, `masthead.html`), name that file in the section's `data:`, and change everything about it. **A copy is yours; nothing links back to the original.** [`../sections/SKILL.md`](../sections/SKILL.md) is where a section is written from scratch.
+3. **Give each section its own layout, and take that layout from `base/`.** A section is a div: full width, its own markup, its own CSS, and the reading measure lives inside the default section rather than on the sheet, so a full-bleed band costs a section nothing. `base/` holds starter sections — list it to see what is there. Copy a starter's `index.html` beside your `content.yaml` under a name that says what it is (`figure.html`, `masthead.html`), name that file in the section's `data:`, and change everything about it. **A copy is yours; nothing links back to the original.** [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) is where a section is written from scratch.
 
 4. **Put the words in `parts`, one entry per `data-g-part` slot the markup declares.** A bare string is markdown, and markdown already carries headings, lists, quotes, tables, fences and rules — so a run of prose is ONE slot however long it is and however many headings it contains. **Cut a second slot where the section PLACES or PAINTS the piece differently, never where the topic changes**; a new topic is a heading.
 
-   **A REPEATING THING IS ONE SLOT HOLDING A LIST.** Write the slot's value as an array, one entry per item, and the runtime draws one element per entry into that one slot. Never a slot per item: a slot per item is a ceiling at a number nobody chose. [`../sections/SKILL.md`](../sections/SKILL.md) has it worked end to end.
+   **A REPEATING THING IS ONE SLOT HOLDING A LIST.** Write the slot's value as an array, one entry per item, and the runtime draws one element per entry into that one slot. Never a slot per item: a slot per item is a ceiling at a number nobody chose. [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) has it worked end to end.
 
 5. **Put every number two people could argue about in `variables`, and read it with `{{name}}`.** A rate, a multiplier, a threshold, a rounding step, a currency symbol, a stage list. *What goes in them*, below, is the decision the rest of this file is downstream of.
 
@@ -93,7 +93,7 @@ contents:
 
 **Split a prose section only where a figure lands.** A run of paragraphs is one part however many headings it holds, and cutting it up so the page has more sections buys nothing and costs the edit, because a slot boundary is a wall a sentence cannot be moved across. A figure going between the halves is the good reason to cut; there are few others.
 
-**Let the figure read its state off the document's own words.** A status word in a row, a level named in a column, a number in a heading — the section finds that word and lights accordingly, so editing the words is the whole of editing the figure and there is no second copy to keep in step. Anything positional is computed rather than typed. [`../sections/SKILL.md`](../sections/SKILL.md) carries that mechanism in full, and the add, the delete and the reorder every figure owes its reader.
+**Let the figure read its state off the document's own words.** A status word in a row, a level named in a column, a number in a heading — the section finds that word and lights accordingly, so editing the words is the whole of editing the figure and there is no second copy to keep in step. Anything positional is computed rather than typed. [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) carries that mechanism in full, and the add, the delete and the reorder every figure owes its reader.
 
 **Ground it before you draw it.** A figure states a fact more confidently than a sentence does, and a reader believes a lit dot. Where the record does not support the granularity you had in mind, draw the coarser thing you can defend and say so in the note under it. The vault's own `AGENTS.md` says when grounding is required and what to run.
 
@@ -103,11 +103,11 @@ contents:
 
 **Deliberate, never templated, never decorative.** The shape is chosen for THIS subject — the same figure reached for twice in a row is the tell. A figure that says nothing the prose does not is an ornament, and an ornament is worse than nothing because a reader stops to read it.
 
-**Drawn in HTML, and animated.** A figure is elements in the section's own markup — grid and flex for the layout, borders and backgrounds on the palette's tokens for the ink — never a raster and never a screenshot of a chart. Its words come out of the section's `variables`, so the figure is edited in the document. And it moves when it arrives: the bars grow, the edge draws itself, the reached step lights. The animation is a reveal, once, on the `--motion` switch, so a reduced-motion reader gets the finished figure and nothing else; a loop that decorates is the same ornament as a figure that says nothing. `base/` holds starters that already do both — copy one rather than drawing the first bar from nothing. **A diagram of what connects to what is no exception**: it is the same drawing with boxes and edges in it, laid out by the section's own script from the nodes and edges in its `variables`, and `base/diagram/` is that starter — [`../diagrams/SKILL.md`](../diagrams/SKILL.md).
+**Drawn in HTML, and animated.** A figure is elements in the section's own markup — grid and flex for the layout, borders and backgrounds on the palette's tokens for the ink — never a raster and never a screenshot of a chart. Its words come out of the section's `variables`, so the figure is edited in the document. And it moves when it arrives: the bars grow, the edge draws itself, the reached step lights. The animation is a reveal, once, on the `--motion` switch, so a reduced-motion reader gets the finished figure and nothing else; a loop that decorates is the same ornament as a figure that says nothing. `base/` holds starters that already do both — copy one rather than drawing the first bar from nothing. **A diagram of what connects to what is no exception**: it is the same drawing with boxes and edges in it, laid out by the section's own script from the nodes and edges in its `variables`, and `base/diagram/` is that starter — [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md).
 
-**A drawing with even a small chance of being wanted on a second page is a PLUGIN and not a copy in this section** — `plugins/<id>.js`, from the start. That is the other rule at the top of `AGENTS.md`, and [`../plugins/SKILL.md`](../plugins/SKILL.md) §3 is the route.
+**A drawing with even a small chance of being wanted on a second page is a PLUGIN and not a copy in this section** — `plugins/<id>.js`, from the start. That is the other rule at the top of `AGENTS.md`, and [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §3 is the route.
 
-**What a figure LOOKS like is `design/`**, which is authoritative over your taste; read it before drawing one. [`../diagrams/SKILL.md`](../diagrams/SKILL.md) is the other family — what is connected to what.
+**What a figure LOOKS like is `design/`**, which is authoritative over your taste; read it before drawing one. [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) is the other family — what is connected to what.
 
 ---
 
@@ -135,7 +135,7 @@ what sits beside `pages/`. Read it once; the rules it produces are here.
 
 **R6 — the ids are the format.** A directory name is one segment of a page id and matches `^[A-Za-z0-9][A-Za-z0-9_-]*$`; the page's id is the segments from the root, joined with `/`. Case is part of the id and is kept, with one rule against it: two siblings may not differ only in case. A section name matches `^[a-z][a-z0-9_-]*$` and never contains a dot, and so does a slot id. A section the host cannot name is skipped and never draws, because a name is how the editor reorders it, how the runtime redraws it, and how every finding about it is addressed. *(FAIL)*
 
-The one other shape a section name takes is a **child key** — `@page-notes`, `@table-jobs` — derived by the host rather than written by anybody. See [`../children/SKILL.md`](../children/SKILL.md).
+The one other shape a section name takes is a **child key** — `@page-notes`, `@table-jobs` — derived by the host rather than written by anybody. See [`../biom-children/SKILL.md`](../biom-children/SKILL.md).
 
 **R45 — the page's words are in `content.yaml`.** There are no `.md` files and no `.mermaid` files: a markdown part carries its prose inline, and a diagram is a drawing in a section's own markup laid out from the section's own variables. A file of prose beside `content.yaml` is invisible — nothing reads it, and two copies of a paragraph is one of them going stale. What a page's directory holds besides the document is **markup** — a section's own HTML file, `child.html`, and `_assets/` under it — and **`markdown.yaml`**, this page's own type scale. *(FAIL)*
 
@@ -183,7 +183,7 @@ variables:
 
 **[`../../../docs/sections.md`](../../../docs/sections.md) is the mechanism** —
 what a section is, what `data:` names, how a slot is filled, the four part types,
-what a list slot is and how one is written. [`../sections/SKILL.md`](../sections/SKILL.md)
+what a list slot is and how one is written. [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md)
 is how to WRITE one. The judgement and the rules are here.
 
 **A SLOT HOLDS WHAT THE PAGE IS, NEVER A DESCRIPTION OF WHAT IT IS.** The reader is already looking at the view. A paragraph above a board explaining that it shows one card per person and one column per stage is a screen of reading that says nothing the board is not already saying — and it is the first thing a generated page reaches for. **A view with no prose on it at all is finished, not unfinished.**
@@ -198,7 +198,7 @@ Three shapes to delete on sight, because they are the ones that keep arriving: *
 
 **Leave a slot OUT of `parts` until there is something in it, rather than writing `cards: []`.** An empty list is kept and is a real answer, but it draws no items — so there is no region for a section's `+` to write through, and the section gets `false` in the console instead of a first card.
 
-**R56 — the markup carries no words.** All TEXT is markdown, in `content.yaml`, addressed by a `data-g-part` slot; raw HTML is for visuals and structure — layout, grids, rules, bands, drawings — and carries none of it. The reason travels with the rule: the framework edits markdown live and always, so **a word baked into a section's HTML file is a word nobody can ever edit.** The one exception is text inside an `<svg>`, which is part of a drawing. The rule, the trap that comes with it and a worked before/after are in [`../sections/SKILL.md`](../sections/SKILL.md), because that is where the markup is written. *(WARN, once per file, quoting the words it found.)*
+**R56 — the markup carries no words.** All TEXT is markdown, in `content.yaml`, addressed by a `data-g-part` slot; raw HTML is for visuals and structure — layout, grids, rules, bands, drawings — and carries none of it. The reason travels with the rule: the framework edits markdown live and always, so **a word baked into a section's HTML file is a word nobody can ever edit.** The one exception is text inside an `<svg>`, which is part of a drawing. The rule, the trap that comes with it and a worked before/after are in [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md), because that is where the markup is written. *(WARN, once per file, quoting the words it found.)*
 
 **A file named in `data:` that is not on disk falls back to the shipped default section.** The slots still draw, so the words are still on screen: the fault reads as a section that lost its layout rather than as a page that lost a section. It is a default section as far as the count is concerned, and the checker says which one it was. *(WARN)*
 
@@ -210,7 +210,7 @@ Three shapes to delete on sight, because they are the ones that keep arriving: *
 
 **R42 — the type and the data have to agree.** An `html` part naming a file that is not in the directory draws an EMPTY slot: the entry is visible and there is nothing in it. A `markdown` part whose `data` is a filename draws the filename as a paragraph. A `table` part names a table and a `child` part names one segment — a path is a page reaching past its own children, which the format does not have. And an HTML file on disk that no section and no part names is invisible, because the document is the only thing the host reads. *(FAIL; the unnamed file and the missing section file are WARNs)*
 
-**A diagram is drawn IN the page** — elements in a section's markup, over boxes and edges held as that section's `variables`, never a file beside it, because two files that have to be updated together are two files that drift. How one is drawn is [`../diagrams/SKILL.md`](../diagrams/SKILL.md); why the format offers no part type for one is [`../../../docs/sections.md`](../../../docs/sections.md).
+**A diagram is drawn IN the page** — elements in a section's markup, over boxes and edges held as that section's `variables`, never a file beside it, because two files that have to be updated together are two files that drift. How one is drawn is [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md); why the format offers no part type for one is [`../../../docs/sections.md`](../../../docs/sections.md).
 
 ---
 
@@ -333,7 +333,7 @@ Complete. The **Skill** column says which file carries the prose; the number is 
 | R60 | `inline-size` and `block-size` are container features, never media features | sections | FAIL |
 | R61 | The plugin a page names can draw it, and `contents:` is not left on a page a document is not drawing | pages | FAIL / WARN |
 
-**R50 is the one number in here that `.agents/skills/check.ts` does not cite.** It is checked where plugins register, in the box, rather than where pages are read — see [`../plugins/SKILL.md`](../plugins/SKILL.md).
+**R50 is the one number in here that `.agents/skills/check.ts` does not cite.** It is checked where plugins register, in the box, rather than where pages are read — see [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md).
 
 **The next number to spend is one past the highest that appears anywhere in this file** — this table and the retired one below, read together.
 
@@ -383,13 +383,13 @@ the checker will say. Every skill below links its doc and no passage is in both.
 
 | | |
 |---|---|
-| [`../sections/SKILL.md`](../sections/SKILL.md) | writing a section's markup, CSS and script: slots, `@scope`, the scroll toolkit, the sandbox, the house style |
-| [`../markdown/SKILL.md`](../markdown/SKILL.md) | `markdown.yaml`, the type scale: how big a heading is, on this page and in this workspace |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | what fills a slot, and when to write a plugin rather than a section script |
-| [`../children/SKILL.md`](../children/SKILL.md) | the tree: a child as what a slot holds, derived keys, the two ways to draw one |
-| [`../tables/SKILL.md`](../tables/SKILL.md) | columns and types, reading and writing, relationships, CSV |
-| [`../diagrams/SKILL.md`](../diagrams/SKILL.md) | a drawing of boxes and edges laid out from a section's own words, and the question to ask before drawing |
-| [`../design/SKILL.md`](../design/SKILL.md) | read FIRST on a new vault: the palette, the type and the design doc |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | writing a section's markup, CSS and script: slots, `@scope`, the scroll toolkit, the sandbox, the house style |
+| [`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) | `markdown.yaml`, the type scale: how big a heading is, on this page and in this workspace |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | what fills a slot, and when to write a plugin rather than a section script |
+| [`../biom-children/SKILL.md`](../biom-children/SKILL.md) | the tree: a child as what a slot holds, derived keys, the two ways to draw one |
+| [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | columns and types, reading and writing, relationships, CSV |
+| [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) | a drawing of boxes and edges laid out from a section's own words, and the question to ask before drawing |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | read FIRST on a new vault: the palette, the type and the design doc |
 
 ---
 

@@ -184,8 +184,10 @@ test("open-list hands its OWN options to the harness, because use() builds a fre
 // dropping them is not.
 
 const AGENTS = readFileSync(new URL("../vault/AGENTS.md", import.meta.url), "utf8");
+// Every framework skill's directory wears `biom-`, so its name can never meet
+// a skill a workspace wrote — see `SKILL_PREFIX` in `server/workspace/framework.ts`.
 const skill = (name) =>
-  readFileSync(new URL(`../vault/.agents/skills/${name}/SKILL.md`, import.meta.url), "utf8");
+  readFileSync(new URL(`../vault/.agents/skills/biom-${name}/SKILL.md`, import.meta.url), "utf8");
 
 test("the seeded AGENTS.md carries modularity, and the skills where the work happens echo it", () => {
   expect(AGENTS).toContain("even a small chance");

@@ -20,7 +20,7 @@
 // path, exactly as a file on disk does.
 //
 // WHAT A KEY IS: the file's path relative to the framework root, forward-
-// slashed — `client/index.html`, `vault/.agents/skills/pages/SKILL.md`. One key
+// slashed — `client/index.html`, `vault/.agents/skills/biom-pages/SKILL.md`. One key
 // space, spelled the way the repository spells it, so the static routes and the
 // seed roots below are two views of one map rather than two conventions.
 

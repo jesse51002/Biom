@@ -233,7 +233,7 @@ test("a vault is seeded out of the carried map with no directory read at all", a
     // The guide, a skill under it, the design doc, a base block and the checker
     // — everything `vault/` and `skill/` carry, out of the map.
     expect((await files("AGENTS.md")).length).toBeGreaterThan(0);
-    expect((await files(".agents/skills/pages/SKILL.md")).length).toBeGreaterThan(0);
+    expect((await files(".agents/skills/biom-pages/SKILL.md")).length).toBeGreaterThan(0);
     expect((await files("design/content.yaml")).length).toBeGreaterThan(0);
     expect((await files(".agents/skills/check.ts")).length).toBeGreaterThan(0);
     // The checker's own imports, which is what makes the copy runnable rather

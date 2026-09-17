@@ -182,7 +182,7 @@ the id.
 **There is no diagram type and no diagram file.** A diagram is a drawing the
 section makes — HTML over boxes and edges held in the section's own
 `variables` — which is
-[`.agents/skills/diagrams/`](../.agents/skills/diagrams/SKILL.md).
+[`.agents/skills/biom-diagrams/`](../.agents/skills/biom-diagrams/SKILL.md).
 
 ### A list slot
 
@@ -259,6 +259,6 @@ is also what makes it come back where it was rather than at the bottom.
 **Writing a section well** — what earns a section its own file, how many slots a
 thing wants, the add and delete every section owes its reader, and the numbered
 rules — is
-[`../.agents/skills/sections/SKILL.md`](../.agents/skills/sections/SKILL.md).
+[`../.agents/skills/biom-sections/SKILL.md`](../.agents/skills/biom-sections/SKILL.md).
 Values inside `{{…}}` are [`variables.md`](./variables.md); a section's `<script>`
 is [`code.md`](./code.md).

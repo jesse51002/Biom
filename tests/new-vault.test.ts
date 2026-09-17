@@ -153,7 +153,7 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
     // AND IT SAYS WHAT A DIAGRAM IS INSTEAD, which is the half a `not.toContain`
     // cannot assert: the drawing, the starter to copy, and the words it is laid
     // out from.
-    const skill = readFileSync(join(vault, ".agents/skills/diagrams/SKILL.md"), "utf8");
+    const skill = readFileSync(join(vault, ".agents/skills/biom-diagrams/SKILL.md"), "utf8");
     expect(skill).toContain("HTML elements in the section's own markup");
     expect(skill).toContain("base/diagram/");
     expect(skill).toContain("variables");

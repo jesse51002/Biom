@@ -294,7 +294,7 @@ second answer to *where does this sit*, and the two would disagree the first wee
 **Moving a table is the one operation with a second half.** The `contents` write
 says where it sits; the table's own parent says whose child it is. Without both, a
 dragged table leaves a key in the new page's order and stays listed under the old
-one — see [`../tables/SKILL.md`](../tables/SKILL.md).
+one — see [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md).
 
 ---
 
@@ -307,8 +307,8 @@ like toward what it holds.
 
 | | |
 |---|---|
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk, the part types, and the numbered rule index |
-| [`../sections/SKILL.md`](../sections/SKILL.md) | the section a child sits in: slots, `@scope`, scripts, what the box cannot do |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | how code reaches a slot, and the `ctx` a section script is handed |
-| [`../tables/SKILL.md`](../tables/SKILL.md) | the other kind of child, and everything behind it |
-| [`../design/SKILL.md`](../design/SKILL.md) | how a row is allowed to look before you draw one |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, the part types, and the numbered rule index |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | the section a child sits in: slots, `@scope`, scripts, what the box cannot do |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | how code reaches a slot, and the `ctx` a section script is handed |
+| [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | the other kind of child, and everything behind it |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | how a row is allowed to look before you draw one |

@@ -456,8 +456,8 @@ test("the checker and the skills are REWRITTEN rather than filled in, because th
 
   const shipped = readFileSync(join(import.meta.dir, "..", "skill", "check.ts"), "utf8");
   expect(readFileSync(join(root, ".agents", "skills", "check.ts"), "utf8")).toBe(shipped);
-  const pagesSkill = readFileSync(join(import.meta.dir, "..", "vault", ".agents", "skills", "pages", "SKILL.md"), "utf8");
-  expect(readFileSync(join(root, ".agents", "skills", "pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
+  const pagesSkill = readFileSync(join(import.meta.dir, "..", "vault", ".agents", "skills", "biom-pages", "SKILL.md"), "utf8");
+  expect(readFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
 
   // Everything else in the vault is somebody's to edit and is never written
   // over. These are not: the checker's whole job is to agree with a format that
@@ -468,16 +468,16 @@ test("the checker and the skills are REWRITTEN rather than filled in, because th
   // skill under a name of this workspace's own.
   writeFileSync(join(root, ".agents", "skills", "check.ts"), "// stale\n");
   writeFileSync(join(root, ".agents", "skills", "_lib", "wire.js"), "// stale\n");
-  writeFileSync(join(root, ".agents", "skills", "pages", "SKILL.md"), "# mine\n");
-  writeFileSync(join(root, ".agents", "skills", "pages", "notes.md"), "a file added inside the framework's skill\n");
+  writeFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "# mine\n");
+  writeFileSync(join(root, ".agents", "skills", "biom-pages", "notes.md"), "a file added inside the framework's skill\n");
   mkdirSync(join(root, ".agents", "skills", "ours"), { recursive: true });
   writeFileSync(join(root, ".agents", "skills", "ours", "SKILL.md"), "# ours\n");
   await furnish();
   expect(readFileSync(join(root, ".agents", "skills", "check.ts"), "utf8")).toBe(shipped);
   expect(readFileSync(join(root, ".agents", "skills", "_lib", "wire.js"), "utf8")).not.toBe("// stale\n");
-  expect(readFileSync(join(root, ".agents", "skills", "pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
+  expect(readFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
   // Whole: a file added inside a framework skill goes with the edit.
-  expect(existsSync(join(root, ".agents", "skills", "pages", "notes.md"))).toBe(false);
+  expect(existsSync(join(root, ".agents", "skills", "biom-pages", "notes.md"))).toBe(false);
   // And a skill under a name of the workspace's own is never looked at.
   expect(readFileSync(join(root, ".agents", "skills", "ours", "SKILL.md"), "utf8")).toBe("# ours\n");
   db.close();

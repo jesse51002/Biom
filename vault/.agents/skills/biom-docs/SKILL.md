@@ -31,7 +31,7 @@ between the prose and `.agents/skills/check.ts`, and moving half of that join
 breaks the pair. **A doc may say what the code does and may link the rule; it
 never states a rule number as its own.**
 
-The rule index in [`../pages/SKILL.md`](../pages/SKILL.md) stays the authority on
+The rule index in [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) stays the authority on
 which number means what.
 
 ## Where they live, and how they got here
@@ -44,10 +44,12 @@ you left it.** That is also the cost, stated rather than solved: a doc improved
 in the framework never reaches a workspace that already has its own copy.
 
 **The skills are the framework's, and they are rewritten whole every time the
-workspace opens** — every `.agents/skills/<skill>/` the framework ships, with
-`check.ts` and `_lib/` beside them. A skill cannot be overridden: an edit to one
-here is gone on the next open, and what you want kept goes into a skill under a
-name of your own, which is never touched. That is what keeps the skill an agent
+workspace opens** — every `.agents/skills/biom-<skill>/` the framework ships,
+with `check.ts` and `_lib/` beside them. A skill cannot be overridden: an edit
+to one here is gone on the next open, and what you want kept goes into a skill
+under a name of your own, which is never touched — and the `biom-` prefix is
+what keeps your names free: a `pages` skill of yours is yours, because the
+framework's is `biom-pages`. That is what keeps the skill an agent
 reads, and the checker it runs, the framework's current ones in every
 workspace.
 

@@ -57,6 +57,7 @@ import { APP_NAME, hostPlatform, install, installPlan } from "./install.ts";
 // the same module the application will.
 import { dataHome } from "../app/data.js";
 import { shippedHashes } from "../server/platform/shipped.ts";
+import { SHIPPED_DIRS } from "../server/workspace/framework.ts";
 import type { Shipped } from "../server/platform/shipped.ts";
 
 declare const Bun: {
@@ -219,10 +220,10 @@ export function manifestSource(keys: string[], shipped: Shipped = {}): string {
   keys.forEach((key, i) => lines.push(`  ${JSON.stringify(key)}: f${i},`));
   lines.push("};");
   lines.push("");
-  // EVERY VERSION OF EVERY PLUGIN THIS REPOSITORY EVER SHIPPED, by git blob
-  // hash, keyed by path under `guest/plugins/`. A binary has no `.git` beside it
-  // to ask, so the answer travels with it: the server's sweep on open checks a
-  // vault's copies against this and removes the ones nobody edited — see
+  // EVERY VERSION OF EVERY PLUGIN AND EVERY SKILL THIS REPOSITORY EVER SHIPPED,
+  // by git blob hash, keyed by framework-relative path. A binary has no `.git`
+  // beside it to ask, so the answer travels with it: the server's sweeps on open
+  // check a vault's copies against this and remove the ones nobody edited — see
   // `server/workspace/framework.ts`. Sorted, so two builds of one tree agree.
   lines.push("export const SHIPPED: Record<string, string[]> = {");
   for (const path of Object.keys(shipped).sort()) {
@@ -244,7 +245,7 @@ async function writeManifest(): Promise<number> {
     await copyFile(join(HERE, key), to);
   }
   await mkdir(DIST, { recursive: true });
-  await writeFile(MANIFEST, manifestSource(keys, await shippedHashes(HERE, "guest/plugins")), "utf8");
+  await writeFile(MANIFEST, manifestSource(keys, await shippedHashes(HERE, SHIPPED_DIRS)), "utf8");
   return keys.length;
 }
 

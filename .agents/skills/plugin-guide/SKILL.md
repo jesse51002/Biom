@@ -64,7 +64,7 @@ This skill owns the registry and the plugin contract. It does **not** own:
   `boundary-guide`.
 - **What a `Part` is before it reaches `mount`** → `page-format-guide`.
 - **How to WRITE a plugin as a vault author** — that is the vault's own
-  `.agents/skills/plugins/SKILL.md`, shipped inside the workspace. This skill is for
+  `.agents/skills/biom-plugins/SKILL.md`, shipped inside the workspace. This skill is for
   whoever changes the registry; that one is for whoever uses it.
 
 ---
@@ -577,7 +577,7 @@ as long as the box does.
 - **The measurement:** `vendor/README.md` (the browser run and its
   module-script negative control) and `tests/vendor.test.ts`.
 - **The author-facing counterpart, shipped inside a vault:**
-  `vault/.agents/skills/plugins/SKILL.md` — how to WRITE a plugin. When the
+  `vault/.agents/skills/biom-plugins/SKILL.md` — how to WRITE a plugin. When the
   registry or `ctx` changes, check whether it needs the same edit.
 - **Siblings:** where a plugin is mounted from → `section-runtime-guide`; what
   the box may say → `boundary-guide`; what a `Part` is → `page-format-guide`.
@@ -592,7 +592,7 @@ definition, a field added to `ctx`, a change to how a reserved id is decided, a
 plugin added to or removed from the framework's set, a change to which root
 wins, and above all **the day the sweep in §7 is sunset** —
 **update this skill in the same change** so it never goes stale, and check whether
-`vault/.agents/skills/plugins/SKILL.md` and `vault/docs/plugins.md` need the same
+`vault/.agents/skills/biom-plugins/SKILL.md` and `vault/docs/plugins.md` need the same
 edit for their own audience. If a rule here is what diverged, fix the rule; if
 the divergence is a mistake, fix the code. Either way they agree when you are
 done.

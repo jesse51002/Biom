@@ -151,7 +151,7 @@ declaration beside it.
 of its place here now.** No plugin in `guest/plugins/` draws a mermaid diagram
 any more and a fresh vault gets none: the whole point of this format is a custom
 drawing, so a figure is an inline `<svg>` a section writes and a diagram is that
-same drawing of relationships — `vault/.agents/skills/diagrams/SKILL.md`. What
+same drawing of relationships — `vault/.agents/skills/biom-diagrams/SKILL.md`. What
 stays is the route. A workspace that carries its own `plugins/mermaid.js` — a
 vault owns every plugin it draws with, and a copy of a retired one is still a
 copy it owns — reaches this file exactly as any section reaches `three`, and

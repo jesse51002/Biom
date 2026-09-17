@@ -165,7 +165,7 @@ function fakeTables(): Tables & TableTree & { boom: boolean } {
  *  rather than of the shipped copy. */
 const ROOT_SEED: Record<string, string> = {
   "AGENTS.md": "# This folder is a Biom workspace\n\nRead `.agents/skills/`.\n",
-  ".agents/skills/pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
+  ".agents/skills/biom-pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
   "design/content.yaml":
     "name: Design\nplugin: doc\nvariables:\n  mood: quiet\ncontents:\n" +
     "  - name: brand\n    parts:\n      body: |\n        # Brand\n        One accent.\n",
@@ -281,7 +281,7 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     // landed in the vault, the format guide lived in the framework repo and the
     // agent working in somebody else's folder never saw it.
     expect(await readFile(join(w.vault, "AGENTS.md"), "utf8")).toContain(".agents/skills/");
-    expect(existsSync(join(w.vault, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(w.vault, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     // A plain `.agents/skills/`, so the vault reads the same to Cursor and Codex.
     expect(existsSync(join(w.vault, ".claude"))).toBe(false);
     expect(existsSync(join(w.vault, "CLAUDE.md"))).toBe(false);

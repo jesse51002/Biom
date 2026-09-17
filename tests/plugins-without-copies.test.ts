@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { makeHost, pluginBundle, pluginFile, PLUGIN_DIR_ROUTE } from "../server/main.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { blobHash, isShipped, shippedHashes } from "../server/platform/shipped.ts";
-import { MIRROR_DIR, SKILLS_DIR, mirrorPlugins, rewriteSkills, sweepShipped } from "../server/workspace/framework.ts";
+import { MIRROR_DIR, SHIPPED_DIRS, SKILLS_DIR, mirrorPlugins, rewriteSkills, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
 import { manifestSource } from "../tools/app.ts";
 import { vaultBase } from "../contracts/wire.js";
 
@@ -196,20 +196,35 @@ test("blobHash is git's own hash of a file", () => {
   // `git hash-object` of an empty file, and of "hello\n", are known values.
   expect(blobHash("")).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
   expect(blobHash("hello\n")).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
-  expect(isShipped({ "a.js": [blobHash("x")] }, "a.js", "x")).toBe(true);
-  expect(isShipped({ "a.js": [blobHash("x")] }, "a.js", "x ")).toBe(false);
-  expect(isShipped({}, "a.js", "x")).toBe(false);
+  expect(isShipped({ "guest/plugins/a.js": [blobHash("x")] }, "guest/plugins/a.js", "x")).toBe(true);
+  expect(isShipped({ "guest/plugins/a.js": [blobHash("x")] }, "guest/plugins/a.js", "x ")).toBe(false);
+  expect(isShipped({}, "guest/plugins/a.js", "x")).toBe(false);
 });
 
-test("this repository's own history answers every current plugin, at its current bytes", async () => {
+test("this repository's own history answers every committed plugin and skill, at the tip's bytes", async () => {
   // The list a build carries is read out of git; a checkout reads the same
-  // history at run time. Either way the file as it sits in `guest/plugins/`
-  // today is one of the versions it has shipped — the tip is in the history.
-  const shipped = await shippedHashes(HERE, "guest/plugins");
+  // history at run time. Either way the file as the TIP holds it is one of the
+  // versions it has shipped. Read off the tip rather than the working tree, so
+  // an edit in progress is not a failure here — a working-tree edit is exactly
+  // the thing history does not yet know.
+  const { spawnSync } = await import("node:child_process");
+  const atTip = (path: string) => spawnSync("git", ["show", `HEAD:${path}`], { cwd: HERE, encoding: "utf8" }).stdout;
+  const shipped = await shippedHashes(HERE, SHIPPED_DIRS);
   for (const rel of ["markdown.js", "doc/index.html", "kanban/kanban.js"]) {
-    expect([rel, isShipped(shipped, rel, readFileSync(join(SEED, rel), "utf8"))]).toEqual([rel, true]);
+    expect([rel, isShipped(shipped, `guest/plugins/${rel}`, atTip(`guest/plugins/${rel}`))]).toEqual([rel, true]);
   }
-  expect(isShipped(shipped, "markdown.js", "// not a version anybody shipped")).toBe(false);
+  expect(isShipped(shipped, "guest/plugins/markdown.js", "// not a version anybody shipped")).toBe(false);
+  // AND THE SKILLS, under the names they had before the prefix as well as the
+  // names they have: the rename left the old paths in history, which is what
+  // lets the old-name sweep recognise an unedited copy in a vault seeded
+  // before it.
+  expect(Object.keys(shipped).some((k) => k.startsWith(`vault/${SKILLS_DIR}/pages/`))).toBe(true);
+  const tipPages = atTip(`vault/${SKILLS_DIR}/biom-pages/SKILL.md`) || atTip(`vault/${SKILLS_DIR}/pages/SKILL.md`);
+  expect(tipPages.length).toBeGreaterThan(0);
+  expect(
+    isShipped(shipped, `vault/${SKILLS_DIR}/biom-pages/SKILL.md`, tipPages)
+      || isShipped(shipped, `vault/${SKILLS_DIR}/pages/SKILL.md`, tipPages),
+  ).toBe(true);
 });
 
 test("a vault copy byte-identical to a shipped version is swept on open, and one changed byte keeps a file", async () => {
@@ -228,9 +243,9 @@ test("a vault copy byte-identical to a shipped version is swept on open, and one
   await writeFile(join(vault, "plugins/doc/index.html"), "<!doctype html><title>old doc</title>");
   await writeFile(join(vault, "plugins/board.js"), "// this vault's own");
   const shipped = {
-    "markdown.js": [blobHash(v1), blobHash(v2)],
-    "html.js": [blobHash(v1)],
-    "doc/index.html": [blobHash("<!doctype html><title>old doc</title>")],
+    "guest/plugins/markdown.js": [blobHash(v1), blobHash(v2)],
+    "guest/plugins/html.js": [blobHash(v1)],
+    "guest/plugins/doc/index.html": [blobHash("<!doctype html><title>old doc</title>")],
   };
   const host = await makeHost({
     vault,
@@ -273,7 +288,7 @@ test("the sweep commits before it deletes, so what went is one revert away", asy
   // commit before a write exists to keep.
   await writeFile(join(vault, "notes.md"), "half a thought");
   try {
-    const gone = await sweepShipped(files, { "markdown.js": [blobHash("// shipped once")] });
+    const gone = await sweepShipped(files, { "guest/plugins/markdown.js": [blobHash("// shipped once")] });
     expect(gone).toEqual(["plugins/markdown.js"]);
     expect(existsSync(join(vault, "plugins/markdown.js"))).toBe(false);
     // The commit before the deletion holds the file, and the half-written note.
@@ -296,7 +311,7 @@ test("a sweep with nothing to delete commits nothing", async () => {
   const { initVault } = await import("../server/platform/files.ts");
   await initVault(vault);
   try {
-    expect(await sweepShipped(files, { "mine.js": [blobHash("// not this")] })).toEqual([]);
+    expect(await sweepShipped(files, { "guest/plugins/mine.js": [blobHash("// not this")] })).toEqual([]);
     const { spawnSync } = await import("node:child_process");
     const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" });
     expect(log.stdout).not.toContain("unedited plugin copies");
@@ -346,9 +361,9 @@ test("the manifest carries the shipped hashes beside the files, sorted, and the 
 async function frameworkSkills(): Promise<{ vaultSeed: string; skill: string; lib: string }> {
   const vaultSeed = await frameworkWith({
     "AGENTS.md": "# the guide",
-    ".agents/skills/pages/SKILL.md": "# pages v1",
-    ".agents/skills/pages/extra.md": "more on pages",
-    ".agents/skills/sections/SKILL.md": "# sections v1",
+    ".agents/skills/biom-pages/SKILL.md": "# pages v1",
+    ".agents/skills/biom-pages/extra.md": "more on pages",
+    ".agents/skills/biom-sections/SKILL.md": "# sections v1",
   });
   const skill = await frameworkWith({ "check.ts": "// the checker v1" });
   const lib = await frameworkWith({ "contracts/wire.js": "// wire v1", "contracts/types.ts": "// types v1", "contracts/scale.ts": "// scale v1" });
@@ -362,7 +377,7 @@ test("a framework skill edited in a vault is the framework's again on the next o
     const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
     // First open: everything the framework owns lands, and it says so.
     expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
-    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
     expect(readFileSync(join(vault, SKILLS_DIR, "check.ts"), "utf8")).toBe("// the checker v1");
     expect(readFileSync(join(vault, SKILLS_DIR, "_lib/wire.js"), "utf8")).toBe("// wire v1");
     // AGENTS.md is the seeder's and the person's; the rewrite never touches it.
@@ -372,37 +387,43 @@ test("a framework skill edited in a vault is the framework's again on the next o
 
     // An edit to the framework's skill, a file added inside it, and a skill of
     // the vault's own beside them.
-    await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# pages, but mine");
-    await writeFile(join(vault, SKILLS_DIR, "pages/notes.md"), "added here");
+    await writeFile(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "# pages, but mine");
+    await writeFile(join(vault, SKILLS_DIR, "biom-pages/notes.md"), "added here");
+    // A workspace skill of its own — and one called `pages`, which is exactly the
+    // name the prefix exists to leave free.
     await mkdir(join(vault, SKILLS_DIR, "ours"), { recursive: true });
     await writeFile(join(vault, SKILLS_DIR, "ours/SKILL.md"), "# ours");
+    await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
+    await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# a workspace's own pages skill");
     expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
     // The framework's name is the framework's again, whole.
-    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
-    expect(existsSync(join(vault, SKILLS_DIR, "pages/notes.md"))).toBe(false);
-    // The vault's own is untouched, and the untouched framework skill was not rewritten.
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/notes.md"))).toBe(false);
+    // The vault's own are untouched, the bare `pages` included, and the
+    // untouched framework skill was not rewritten.
     expect(readFileSync(join(vault, SKILLS_DIR, "ours/SKILL.md"), "utf8")).toBe("# ours");
-    expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# a workspace's own pages skill");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"), "utf8")).toBe("# sections v1");
 
     // The framework moves: the next open carries the new version.
-    await writeFile(join(f.vaultSeed, ".agents/skills/sections/SKILL.md"), "# sections v2");
+    await writeFile(join(f.vaultSeed, ".agents/skills/biom-sections/SKILL.md"), "# sections v2");
     expect(await rewriteSkills(makeFiles(vault), ...roots)).toBe(true);
-    expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v2");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"), "utf8")).toBe("# sections v2");
   } finally {
     await rm(vault, { recursive: true, force: true });
     for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
   }
 });
 
-test("a vault directory carrying a framework skill's name holds the framework's contents after the next open", async () => {
+test("a vault directory carrying a framework skill's prefixed name holds the framework's contents after the next open", async () => {
   const f = await frameworkSkills();
   const vault = await scratch();
-  await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
-  await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# a skill somebody wrote under the framework's name");
+  await mkdir(join(vault, SKILLS_DIR, "biom-pages"), { recursive: true });
+  await writeFile(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "# a skill somebody wrote under the framework's name");
   try {
     await rewriteSkills(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
-    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v1");
-    expect(readFileSync(join(vault, SKILLS_DIR, "pages/extra.md"), "utf8")).toBe("more on pages");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/extra.md"), "utf8")).toBe("more on pages");
   } finally {
     await rm(vault, { recursive: true, force: true });
     for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
@@ -424,7 +445,7 @@ test("on a real open the skills land off the mount path, are committed once nami
     await host.settled(vault);
     // Every skill the framework ships, byte for byte.
     const shipped = join(HERE, "vault", SKILLS_DIR);
-    for (const rel of ["pages/SKILL.md", "sections/SKILL.md", "plugins/SKILL.md"]) {
+    for (const rel of ["biom-pages/SKILL.md", "biom-sections/SKILL.md", "biom-plugins/SKILL.md"]) {
       expect(readFileSync(join(vault, SKILLS_DIR, rel), "utf8")).toBe(readFileSync(join(shipped, rel), "utf8"));
     }
     expect(readFileSync(join(vault, SKILLS_DIR, "check.ts"), "utf8")).toBe(readFileSync(join(HERE, "skill/check.ts"), "utf8"));
@@ -440,5 +461,36 @@ test("on a real open the skills land off the mount path, are committed once nami
   } finally {
     host.close();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a copy under a skill's OLD name, unedited, goes on open; an edited one stays and the log says so", async () => {
+  // A vault seeded before the framework's skills wore `biom-` holds `pages/`;
+  // the rewrite puts `biom-pages/` beside it. Unedited, the old one is the
+  // framework's to take back, and it is recognised by the old path's hashes,
+  // which the rename left in history.
+  const f = await frameworkSkills();
+  const vault = await scratch();
+  await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
+  await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# pages v0, as it shipped once");
+  await mkdir(join(vault, SKILLS_DIR, "sections"), { recursive: true });
+  await writeFile(join(vault, SKILLS_DIR, "sections/SKILL.md"), "# sections v0, with my notes");
+  const shipped = {
+    [`vault/${SKILLS_DIR}/pages/SKILL.md`]: [blobHash("# pages v0, as it shipped once")],
+    [`vault/${SKILLS_DIR}/sections/SKILL.md`]: [blobHash("# sections v0")],
+  };
+  try {
+    await rewriteSkills(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
+    expect(await sweepOldSkills(makeFiles(vault), makeFiles(f.vaultSeed), shipped)).toEqual([`${SKILLS_DIR}/pages`]);
+    expect(existsSync(join(vault, SKILLS_DIR, "pages"))).toBe(false);
+    expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"))).toBe(true);
+    // Edited: kept, under a name the framework no longer uses.
+    expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v0, with my notes");
+    expect(existsSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"))).toBe(true);
+    // Nothing to sweep the second time.
+    expect(await sweepOldSkills(makeFiles(vault), makeFiles(f.vaultSeed), shipped)).toEqual([]);
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
   }
 });

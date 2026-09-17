@@ -51,7 +51,7 @@ contents:
 
 **Take this by default.** It is the cheapest route, it looks the same on every page in the workspace, and a person who learns to read one grid can read all of them. The rest of this file is what to do when the default does not fit.
 
-**Give the grid a sentence only where the sentence carries a fact the grid cannot.** A table dropped onto a page on its own can leave the reader working out why it is here — but the cure is a line saying **what to notice in these rows**, which is a judgement the grid cannot make for itself. *"Everything quoted this month; the three over ten days are the ones to chase"* is content. *"This grid shows the jobs table and updates when the rows change"* is narration — it restates what is already on screen, and the page is better with it deleted. See **A slot holds what the page is, never a description of what it is** in [`../pages/SKILL.md`](../pages/SKILL.md). **Give the section a real layout either way**: two slots one under another in a plain box is a cut markdown did not need, which the checker reports as R57.
+**Give the grid a sentence only where the sentence carries a fact the grid cannot.** A table dropped onto a page on its own can leave the reader working out why it is here — but the cure is a line saying **what to notice in these rows**, which is a judgement the grid cannot make for itself. *"Everything quoted this month; the three over ten days are the ones to chase"* is content. *"This grid shows the jobs table and updates when the rows change"* is narration — it restates what is already on screen, and the page is better with it deleted. See **A slot holds what the page is, never a description of what it is** in [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md). **Give the section a real layout either way**: two slots one under another in a plain box is a cut markdown did not need, which the checker reports as R57.
 
 ---
 
@@ -63,11 +63,11 @@ Ask these before you name one. **Any yes is a table:**
 - **Will somebody add to it a row at a time, after this page is written?** Rows arrive; prose does not.
 - **Does a person want to sort, filter or count them?** A grid does that; a paragraph does not.
 
-**All no, and it is this page's own handful of figures — then it is variables, and `{{name}}` in the prose.** A page that states one rate, one date and one total does not want a two-column grid of them; it wants those values in the document, editable in place. See *Variables* in [`../pages/SKILL.md`](../pages/SKILL.md).
+**All no, and it is this page's own handful of figures — then it is variables, and `{{name}}` in the prose.** A page that states one rate, one date and one total does not want a two-column grid of them; it wants those values in the document, editable in place. See *Variables* in [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md).
 
 **Three things compared side by side are not a table either.** A comparison the reader looks ACROSS is one section holding a LIST of three items — the `list` starter in `base/` is that shape already. A workspace table is for many rows of the same shape, not for three columns of prose.
 
-**And if each "row" wants different fields, they are pages, not rows.** A table has one shape for every row. A set of things that each want their own layout and their own words are children of this page — see [`../children/SKILL.md`](../children/SKILL.md).
+**And if each "row" wants different fields, they are pages, not rows.** A table has one shape for every row. A set of things that each want their own layout and their own words are children of this page — see [`../biom-children/SKILL.md`](../biom-children/SKILL.md).
 
 ---
 
@@ -133,8 +133,8 @@ file is whether to reach for it.
 
 | | |
 |---|---|
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk, the part types, variables, and the numbered rule index |
-| [`../sections/SKILL.md`](../sections/SKILL.md) | the section a grid sits in: slots, scripts, R28, what the box cannot do |
-| [`../children/SKILL.md`](../children/SKILL.md) | pointing at a table instead of embedding it, and drawing children your own way |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | writing a plugin of your own that draws from rows |
-| [`../design/SKILL.md`](../design/SKILL.md) | how anything here is allowed to look |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, the part types, variables, and the numbered rule index |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | the section a grid sits in: slots, scripts, R28, what the box cannot do |
+| [`../biom-children/SKILL.md`](../biom-children/SKILL.md) | pointing at a table instead of embedding it, and drawing children your own way |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | writing a plugin of your own that draws from rows |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | how anything here is allowed to look |

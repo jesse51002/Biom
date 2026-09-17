@@ -7,9 +7,9 @@
 // and a vault whose background work has not finished draws exactly as it will
 // a second later. `main.ts` runs all three once the mount has returned.
 //
-// THE SKILLS. `.agents/skills/<skill>/` for every skill the framework ships,
-// with `check.ts` and its `_lib/` beside them, are REWRITTEN WHOLE on every
-// open. They cannot take the plugin design below, because an agent reads the
+// THE SKILLS. `.agents/skills/biom-<skill>/` for every skill the framework
+// ships, with `check.ts` and its `_lib/` beside them, are REWRITTEN WHOLE on
+// every open. They cannot take the plugin design below, because an agent reads the
 // folder and not the server: a skill is a file Claude Code, Cursor or Codex
 // opens directly, before the server has been asked anything and in a clone the
 // server has never opened — so it has to be on disk, in the vault, current. And
@@ -18,8 +18,14 @@
 // than a request — a change to a framework skill made in a vault is gone on
 // the next open, and what is wanted everywhere goes into the framework's
 // `vault/.agents/skills/` first. A directory under any other name is the
-// workspace's and is never touched; nothing is ever removed. When anything
-// changed, `main.ts` commits it as one diff naming the framework version.
+// workspace's and is never touched — WHICH IS WHAT THE PREFIX IS FOR: a
+// workspace that wrote a `pages` skill of its own would otherwise have it
+// rewritten as the framework's on the next open, so every framework skill wears
+// `biom-` and a workspace's names are free. Nothing is ever removed, with one
+// bridge: a copy under the name a skill had BEFORE the prefix, byte for byte a
+// version the framework shipped, goes — a vault must not carry a skill twice,
+// and an unedited copy is the framework's to take back. When anything changed,
+// `main.ts` commits it as one diff naming the framework version.
 //
 // THE MIRROR is `docs/plugins/`: the framework's whole plugin set, written out
 // of the same `Files` the fallback rung reads, so the folder a person opens is
@@ -56,6 +62,18 @@ import type { Shipped } from "../platform/shipped.ts";
  *  same path to leave it OUT of the vault-root walk, and a test holds the two
  *  equal. */
 export const SKILLS_DIR = ".agents/skills";
+/** WHAT EVERY FRAMEWORK SKILL DIRECTORY STARTS WITH, and why: a framework skill
+ *  is rewritten in every vault on open, and a workspace's own skill is never
+ *  touched, so the two sets of names must not be able to meet. `pages` is a
+ *  name anybody would give a skill; `biom-pages` is not. The frontmatter
+ *  `name:` of each shipped skill is the directory, so the name an agent routes
+ *  on carries the prefix too. Spelled here and in `tests/skill.test.ts`, which
+ *  holds the two equal and refuses a shipped skill without it. */
+export const SKILL_PREFIX = "biom-";
+/** The directories the framework owns inside a vault, framework-relative —
+ *  what `tools/app.ts` reads the shipped hashes for, and what a source run asks
+ *  its own history about. */
+export const SHIPPED_DIRS: readonly string[] = ["guest/plugins", "vault/.agents/skills"];
 /** The checker, beside the skills so an agent working in a vault can run it
  *  against a page it just wrote. */
 export const CHECK = "check.ts";
@@ -143,6 +161,47 @@ export async function rewriteSkills(vault: Files, vaultSeed: Files, skill: Files
   return changed;
 }
 
+/** THE BRIDGE FOR THE PREFIX. A vault seeded before the framework's skills wore
+ *  `biom-` holds `pages/`, `sections/` and the rest under those bare names, and
+ *  the rewrite above puts `biom-pages/` beside them rather than over them — so
+ *  without this an agent finds every framework skill twice, once stale. For
+ *  each skill the framework ships, the directory under its OLD name is removed
+ *  if every file in it is byte for byte a version the framework shipped there:
+ *  unedited, the framework's to take back. One changed byte, or a file the
+ *  framework never shipped, keeps the directory — it is somebody's now, under a
+ *  name the framework no longer uses, and the log says so. Answers what went. */
+export async function sweepOldSkills(vault: Files, vaultSeed: Files, shipped: Shipped): Promise<string[]> {
+  const gone: string[] = [];
+  let shippedDirs: FileEntry[];
+  try {
+    shippedDirs = await vaultSeed.list(SKILLS_DIR);
+  } catch {
+    return gone;
+  }
+  for (const entry of shippedDirs) {
+    if (!entry.dir || !entry.name.startsWith(SKILL_PREFIX)) continue;
+    const old = entry.name.slice(SKILL_PREFIX.length);
+    const at = `${SKILLS_DIR}/${old}`;
+    const held = await filesUnder(vault, at);
+    if (held.length === 0) continue;
+    let unedited = true;
+    for (const rel of held) {
+      const text = await vault.read(`${at}/${rel}`);
+      if (text === null || !isShipped(shipped, `vault/${at}/${rel}`, text)) {
+        unedited = false;
+        break;
+      }
+    }
+    if (!unedited) {
+      console.log(`skills  →  ${at} is a skill the framework now ships as ${entry.name}; it was edited here and is left alone`);
+      continue;
+    }
+    await vault.remove(at);
+    gone.push(at);
+  }
+  return gone;
+}
+
 /** Is what the vault holds at `at` exactly `wanted` — the same files, the same
  *  bytes, and nothing else? */
 async function same(vault: Files, at: string, wanted: Map<string, string>): Promise<boolean> {
@@ -224,10 +283,11 @@ export async function sweepShipped(vault: Files, shipped: Shipped): Promise<stri
   const gone: string[] = [];
   const candidates: string[] = [];
   for (const rel of await filesUnder(vault, "plugins")) {
-    if (!(rel in shipped)) continue;
+    const key = `guest/plugins/${rel}`;
+    if (!(key in shipped)) continue;
     const text = await vault.read(`plugins/${rel}`);
     if (text === null) continue;
-    if (isShipped(shipped, rel, text)) candidates.push(rel);
+    if (isShipped(shipped, key, text)) candidates.push(rel);
   }
   if (candidates.length === 0) return gone;
   await vault.commit("Before the framework's unedited plugin copies are removed");

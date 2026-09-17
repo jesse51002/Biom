@@ -162,7 +162,7 @@ test("the furniture still seeds, because none of it is content", async () => {
   // THE SKILLS ARE THE FRAMEWORK'S, rewritten on every open rather than filled
   // once — `framework.ts` — and the checker travels the same way; skill/ stays
   // the source of truth.
-  expect(existsSync(join(root, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+  expect(existsSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
   expect(existsSync(join(root, ".agents", "skills", "check.ts"))).toBe(true);
   expect(existsSync(join(SKILL, "check.ts"))).toBe(true);
 
@@ -197,7 +197,7 @@ test("seeding twice adds what is missing and leaves an edit alone", async () => 
   mine.contents = [{ name: "brand", parts: { body: "## Brand\n\nQuiet, dense, no gradients.\n" } }];
   writeFileSync(join(root, "design", "content.yaml"), format(mine));
   // And a vault made before a skill existed is simulated by deleting one.
-  rmSync(join(root, ".agents", "skills", "pages", "SKILL.md"));
+  rmSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"));
   rmSync(join(root, "AGENTS.md"));
 
   const second = boot(root);
@@ -209,7 +209,7 @@ test("seeding twice adds what is missing and leaves an edit alone", async () => 
   // because one file now holds the doc's words as well as its shape, so
   // overwriting it would take somebody's prose with it. The skill comes back
   // by the other rule: it is the framework's, and is rewritten.
-  expect(existsSync(join(root, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+  expect(existsSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
   expect(existsSync(join(root, "AGENTS.md"))).toBe(true);
   expect(docOnDisk(root).name).toBe("Ours");
   expect(docOnDisk(root).contents.map((c) => c.name)).toEqual(["brand"]);

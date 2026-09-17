@@ -79,7 +79,7 @@ contents:
 
 **The plate wants `overflow-x: auto`.** The page's one frame IS the scroller for the whole document, so a drawing left to widen the page would drag every section on it sideways.
 
-**Slots only where the section PLACES them differently.** Head across the top, picture and argument side by side. Slots stacked one under another with nothing to tell them apart are one markdown part that has been cut up for no reason — that is R57, in [`../sections/SKILL.md`](../sections/SKILL.md).
+**Slots only where the section PLACES them differently.** Head across the top, picture and argument side by side. Slots stacked one under another with nothing to tell them apart are one markdown part that has been cut up for no reason — that is R57, in [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md).
 
 ---
 
@@ -88,7 +88,7 @@ contents:
 **A diagram answers one question: what is connected to what.** Ask whether that is the question the reader has.
 
 - **Is the point the RELATIONSHIP between named things** — what flows into what, what contains what, what happens after what? Then draw it.
-- **Would every node carry two or three facts?** That is a table, not a diagram. Boxes and arrows cannot hold figures. See [`../tables/SKILL.md`](../tables/SKILL.md) — and a table here is a real table with typed columns, not a picture of one.
+- **Would every node carry two or three facts?** That is a table, not a diagram. Boxes and arrows cannot hold figures. See [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) — and a table here is a real table with typed columns, not a picture of one.
 - **Is it a sequence with no branching?** Six boxes in a vertical line is a numbered list that took longer to write and is harder to edit. Write the list.
 - **Would you have to invent the relationships to fill it out?** Then there is nothing to draw yet. A diagram that is mostly guesses reads as authoritative and is the most expensive kind of wrong on a page.
 
@@ -146,7 +146,7 @@ contents:
 
 **The drawing goes in the section's own `<script>`** — handed the same `ctx` a named plugin gets — **when it is genuinely about this one section's content.**
 
-**Write `plugins/<id>.js` the moment a second page might want the same drawing.** A workspace's own plugin file loads: the server reads `plugins/` and hands the page every `.js` in it, so the choice is between a script that belongs to one section and a plugin that belongs to the workspace, and nothing else decides it. [`../plugins/SKILL.md`](../plugins/SKILL.md) is that contract in full, and §3 is the decision.
+**Write `plugins/<id>.js` the moment a second page might want the same drawing.** A workspace's own plugin file loads: the server reads `plugins/` and hands the page every `.js` in it, so the choice is between a script that belongs to one section and a plugin that belongs to the workspace, and nothing else decides it. [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) is that contract in full, and §3 is the decision.
 
 **A drawing that has to DO something is the same question one step on.** Respond to a click, filter itself, read rows out of a table and redraw when they change, be dragged or zoomed — that is a verb, and a verb belongs in a plugin the moment it is worth having twice. **A large graph that only needs ROOM needs none of that**: give it its own section at whatever width that section chooses, and let the plate scroll sideways inside itself.
 
@@ -168,7 +168,7 @@ contents:
 
 ## Traps
 
-**R30 — nothing sets a raw colour.** Every line takes `--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. A hex written into a drawing is the one thing on screen that stops matching the morning somebody changes the scheme. **A colour inside a fence in `content.yaml` is the checker's blind spot** — it reads section files, not prose — so nothing will tell you. R30 itself is in [`../design/SKILL.md`](../design/SKILL.md).
+**R30 — nothing sets a raw colour.** Every line takes `--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. A hex written into a drawing is the one thing on screen that stops matching the morning somebody changes the scheme. **A colour inside a fence in `content.yaml` is the checker's blind spot** — it reads section files, not prose — so nothing will tell you. R30 itself is in [`../biom-design/SKILL.md`](../biom-design/SKILL.md).
 
 **R25 — nothing in the drawing has a width in pixels.** The boxes take the column they are given and the lanes between them are `rem`; the moment a pixel width goes on, the drawing has stopped reflowing.
 
@@ -183,10 +183,10 @@ contents:
 | | |
 |---|---|
 | `base/diagram/` | the starter: the lists, the layout, the reveal, the fault slot. Copy it |
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk, the part types, and the numbered rule index |
-| [`../sections/SKILL.md`](../sections/SKILL.md) | the section a diagram sits in: slots, R56, `/vendor/`, what the box cannot do |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | the contract a section's script and a `plugins/<id>.js` share |
-| [`../markdown/SKILL.md`](../markdown/SKILL.md) | how the prose around a diagram is sized |
-| [`../tables/SKILL.md`](../tables/SKILL.md) | where the facts go when the answer was never a picture |
-| [`../design/SKILL.md`](../design/SKILL.md) | the palette a diagram draws in, and R30 |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, the part types, and the numbered rule index |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | the section a diagram sits in: slots, R56, `/vendor/`, what the box cannot do |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | the contract a section's script and a `plugins/<id>.js` share |
+| [`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) | how the prose around a diagram is sized |
+| [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | where the facts go when the answer was never a picture |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | the palette a diagram draws in, and R30 |
 | [`../../../docs/plugins.md`](../../../docs/plugins.md) | the mechanism under a plugin, and the fence hand-off |

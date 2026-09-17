@@ -165,7 +165,7 @@ about the whole stack rather than about one div is a section script marked
 
 **A classic script, an IIFE, no imports, and registration at the top level**, so
 `document.currentScript` is that file while it runs. The worked file is in
-[`../.agents/skills/plugins/SKILL.md`](../.agents/skills/plugins/SKILL.md); this
+[`../.agents/skills/biom-plugins/SKILL.md`](../.agents/skills/biom-plugins/SKILL.md); this
 is what `register` takes.
 
 | | |
@@ -252,7 +252,7 @@ is drawn by your `plugins/flow.js`, with nothing else to wire up.
 
 **Nothing ships that draws a diagram from a fence.** A diagram here is HTML a
 section draws for itself, which is what
-[`.agents/skills/diagrams/`](../.agents/skills/diagrams/SKILL.md) is about; the
+[`.agents/skills/biom-diagrams/`](../.agents/skills/biom-diagrams/SKILL.md) is about; the
 hand-off above is for a workspace that genuinely wants a diagram language and
 brings its own.
 
@@ -260,6 +260,6 @@ brings its own.
 
 **When to write a plugin rather than a section script, and the four things a
 plugin owes every page in the workspace**, are
-[`../.agents/skills/plugins/SKILL.md`](../.agents/skills/plugins/SKILL.md).
+[`../.agents/skills/biom-plugins/SKILL.md`](../.agents/skills/biom-plugins/SKILL.md).
 **Whether a drawing earns being made at all** is
-[`../.agents/skills/diagrams/SKILL.md`](../.agents/skills/diagrams/SKILL.md).
+[`../.agents/skills/biom-diagrams/SKILL.md`](../.agents/skills/biom-diagrams/SKILL.md).

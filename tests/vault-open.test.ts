@@ -314,7 +314,7 @@ test("opening an empty folder sets it up, furniture and all", async () => {
     // skills and the checker land off the mount path, so they are waited on.
     await host.settled(second);
     expect(existsSync(join(second, "AGENTS.md"))).toBe(true);
-    expect(existsSync(join(second, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(second, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     expect(existsSync(join(second, "design", "content.yaml"))).toBe(true);
     // `base/`, the starter sections, on the same two-level walk as the rest —
     // and `base/child/index.html` in particular, because `pages.create` copies

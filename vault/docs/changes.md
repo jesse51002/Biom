@@ -98,4 +98,4 @@ blank in the mirror.
 **What the loop asks of a page** — that it must be correct from a cold start, that
 it must draw before the host answers, and that a page is patched rather than
 regenerated — is
-[`../.agents/skills/pages/SKILL.md`](../.agents/skills/pages/SKILL.md).
+[`../.agents/skills/biom-pages/SKILL.md`](../.agents/skills/biom-pages/SKILL.md).

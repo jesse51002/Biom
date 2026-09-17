@@ -35,7 +35,7 @@ code: { face: gauge, size: 0.9em }
 pre:  { face: gauge, size: 0.875rem, leading: 1.5, above: 1.25rem, below: 1.25rem }
 ```
 
-**Which properties this workspace's prose actually wants is a design decision**, so it is settled with the design language rather than after it — see [`../design/SKILL.md`](../design/SKILL.md).
+**Which properties this workspace's prose actually wants is a design decision**, so it is settled with the design language rather than after it — see [`../biom-design/SKILL.md`](../biom-design/SKILL.md).
 
 ---
 
@@ -98,6 +98,6 @@ palette work.** This file is which one to reach for.
 
 | | |
 |---|---|
-| [`../design/SKILL.md`](../design/SKILL.md) | the design language this scale is one expression of, the palette, and the type roles `face:` names |
-| [`../sections/SKILL.md`](../sections/SKILL.md) | a section's own `<style>`, which always wins, and the measure the default section file asks for |
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what else a page directory holds, and the complete rule index |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | the design language this scale is one expression of, the palette, and the type roles `face:` names |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | a section's own `<style>`, which always wins, and the measure the default section file asks for |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what else a page directory holds, and the complete rule index |

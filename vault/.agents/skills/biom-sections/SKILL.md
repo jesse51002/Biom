@@ -1,6 +1,6 @@
 ---
 name: biom-sections
-description: "WRITING A SECTION WELL — the entries in `contents` and the HTML file each one names. The MECHANISM is `docs/` at the vault root: `sections.md` for what a section is and what the runtime does to your file, `code.md` for what its `<script>` is handed and what the sandboxed box cannot do, `styling.md` for the tokens and the type scale. This file is the BRIEF and the numbered rules, and it links those rather than restating them. Use whenever the task is to build or repair a page layout, write a `hero.html` or any other section file, add a slot, place a plugin, write a section `<script>`, drive a scroll effect, or give a section its own adding and removing. OPENS WITH THE BRIEF THAT OUTRANKS THE REST: THERE IS NO EDIT MODE, a page is editable the instant it is drawn, and NOTHING IS DRAWN OVER YOUR PAGE — no section menu, no grip, no seam `+`, no drag — so three things must be possible on every section (add a part, take one away, change the order), every one of them yours to DESIGN at the same time as the columns and the type, never bolted on afterwards. A section that cannot gain a part or lose one is unfinished however good it looks. THEN A WORKED EXAMPLE THAT PASSES THE CHECKER: every word a markdown part, one slot holding a LIST rather than a slot per item, the section drawing its own `+` and `✕` as splices of that array; ANYTHING POSITIONAL IS COMPUTED AND NEVER TYPED, because an item can be moved; the controls hold their space and come up on `:hover`/`:focus-within`, with `visibility` and not `opacity` alone, and staying up under `@media (hover: none)`. SAYS WHY THERE IS NO SEPARATOR, carries the question that decides how many slots — could this page ever want one more of these — and the hard case of a NUMBER per item. Carries R9, R13–R35, R56, R57, R58, R59, R60 IN FULL with the boundary of what each rule cannot see, why the shipped default is a floor and not a template, when a coordinated effect is one section and what that costs, and the house rules a section file is checked against. Read `../pages/SKILL.md` first, and `../plugins/SKILL.md` for what to reach for before writing any code at all."
+description: "WRITING A SECTION WELL — the entries in `contents` and the HTML file each one names. The MECHANISM is `docs/` at the vault root: `sections.md` for what a section is and what the runtime does to your file, `code.md` for what its `<script>` is handed and what the sandboxed box cannot do, `styling.md` for the tokens and the type scale. This file is the BRIEF and the numbered rules, and it links those rather than restating them. Use whenever the task is to build or repair a page layout, write a `hero.html` or any other section file, add a slot, place a plugin, write a section `<script>`, drive a scroll effect, or give a section its own adding and removing. OPENS WITH THE BRIEF THAT OUTRANKS THE REST: THERE IS NO EDIT MODE, a page is editable the instant it is drawn, and NOTHING IS DRAWN OVER YOUR PAGE — no section menu, no grip, no seam `+`, no drag — so three things must be possible on every section (add a part, take one away, change the order), every one of them yours to DESIGN at the same time as the columns and the type, never bolted on afterwards. A section that cannot gain a part or lose one is unfinished however good it looks. THEN A WORKED EXAMPLE THAT PASSES THE CHECKER: every word a markdown part, one slot holding a LIST rather than a slot per item, the section drawing its own `+` and `✕` as splices of that array; ANYTHING POSITIONAL IS COMPUTED AND NEVER TYPED, because an item can be moved; the controls hold their space and come up on `:hover`/`:focus-within`, with `visibility` and not `opacity` alone, and staying up under `@media (hover: none)`. SAYS WHY THERE IS NO SEPARATOR, carries the question that decides how many slots — could this page ever want one more of these — and the hard case of a NUMBER per item. Carries R9, R13–R35, R56, R57, R58, R59, R60 IN FULL with the boundary of what each rule cannot see, why the shipped default is a floor and not a template, when a coordinated effect is one section and what that costs, and the house rules a section file is checked against. Read `../biom-pages/SKILL.md` first, and `../biom-plugins/SKILL.md` for what to reach for before writing any code at all."
 ---
 
 # Sections
@@ -33,7 +33,7 @@ The second half is what this file is organised around. Everything below is eithe
 
 **A page is DRAWN and not merely written.** We are not a plain markdown framework, for a reason: a section exists so a page can carry a drawing, a board, a figure, a live table. So a doc page gets its figures without being asked, wherever the content has a shape — a count, a sequence, a flow, a comparison, a boundary, a cycle — chosen deliberately for that subject and never decorative. **And drawn means HTML that animates on reveal** — elements in this file, laid out with grid and flex, inked with borders and backgrounds on the palette's tokens (R30), reflowing rather than sized in pixels (R25), its words out of the section's `variables`, and its motion behind `--motion` so stillness is one switch away. A picture pasted in is not a figure, and a figure that only sits there has spent its one chance to read faster than the sentence beside it.
 
-**And a drawing with even a small chance of being wanted on a second page is a PLUGIN, not a section script.** A section's `<script>` is for a drawing that is genuinely about this one section's own content. Everything else goes in `plugins/<id>.js` from the start — see [`../plugins/SKILL.md`](../plugins/SKILL.md) §3 — because the alternative is measured: one drawing became eighty-eight copies in eleven shapes in a workspace whose agents had this file open.
+**And a drawing with even a small chance of being wanted on a second page is a PLUGIN, not a section script.** A section's `<script>` is for a drawing that is genuinely about this one section's own content. Everything else goes in `plugins/<id>.js` from the start — see [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §3 — because the alternative is measured: one drawing became eighty-eight copies in eleven shapes in a workspace whose agents had this file open.
 
 **These moves were worked out together and they fit together. A section that makes every one of them is a section somebody can use without you.**
 
@@ -260,7 +260,7 @@ A slot holds markdown, so a chart that needs one figure per row cannot read its
 figures out of a list slot without parsing them back out of prose — which is the
 separator problem wearing a different hat. The other home is **parallel
 variables**: `walls: [...]`, `weeks: [...]`, `problems: [...]`, one entry each per
-row, read in that order. `../pages/SKILL.md` blesses that shape and it is what a
+row, read in that order. `../biom-pages/SKILL.md` blesses that shape and it is what a
 data drawing should use.
 
 **What it costs is the `+`.** Variables are edited in the page's own config
@@ -741,7 +741,7 @@ block. `base/reveal/` is the worked example.
 
 **Write a slot as an empty element**, because a plugin FILLS the node and a placeholder you put inside one does not survive the first draw. Anything a section wants to show BESIDE an empty slot — a rule, an icon, a shape — goes next to it in the markup, where nothing overwrites it. **A placeholder made of WORDS is R56 whatever it sits next to**: put the sentence in `parts`.
 
-**Use `data-g-plugin` for a visual that is part of the layout; use a markdown part with a fence for a diagram somebody will change** — see [`../diagrams/SKILL.md`](../diagrams/SKILL.md).
+**Use `data-g-plugin` for a visual that is part of the layout; use a markdown part with a fence for a diagram somebody will change** — see [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md).
 
 ---
 
@@ -830,7 +830,7 @@ checked against.
 <script src="/vendor/three.min.js"></script>     <!-- window.THREE,   706KB -->
 ```
 
-**`biom.plugins.ids()` is not the answer here** — that lists plugins, not libraries — so list `/vendor/` in the repo or ask, rather than guessing at a name. Adding one is a change to the framework and not something a page can do. **Nothing shipped loads any of them**: a library is a workspace's own choice, taken in its own plugin or its own section, and the drawing this format is for needs none — [`../diagrams/SKILL.md`](../diagrams/SKILL.md). **Never load one unconditionally** — megabytes fetched for a page that takes no branch through them is a page that is slow for nothing; fetch on the branch that needs it, and share one fetch between two sections the way [`../../../docs/code.md`](../../../docs/code.md) describes. *(WARN on an unconditional `/vendor/` load; FAIL for any `src` outside it.)*
+**`biom.plugins.ids()` is not the answer here** — that lists plugins, not libraries — so list `/vendor/` in the repo or ask, rather than guessing at a name. Adding one is a change to the framework and not something a page can do. **Nothing shipped loads any of them**: a library is a workspace's own choice, taken in its own plugin or its own section, and the drawing this format is for needs none — [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md). **Never load one unconditionally** — megabytes fetched for a page that takes no branch through them is a page that is slow for nothing; fetch on the branch that needs it, and share one fetch between two sections the way [`../../../docs/code.md`](../../../docs/code.md) describes. *(WARN on an unconditional `/vendor/` load; FAIL for any `src` outside it.)*
 
 **A WebGL section must still be a section without WebGL.** The machine may have no GPU, the context may be lost, the 706KB may not arrive. Draw the words first and add the canvas when the library is there — a page whose argument is inside a `<canvas>` is a page that is sometimes blank, and it is unreadable to anything that is not an eye.
 
@@ -908,7 +908,7 @@ The words stay editable, the failure is legible to the person who can fix it, an
 
 **R30 — no hex, no `rgb()`, `hsl()`, `oklch()`, no named colour**, in the CSS or on an SVG `fill` or `stroke` attribute. Every colour resolves to a palette token and every face to a `--*-face` stack, because the token is what the Theme page rewrites and a literal stays wrong on every palette but the one it was written against. *(FAIL)*
 
-**The token names, how the palette reaches the box, and how a tint is mixed rather than sampled** are in [`../../../docs/styling.md`](../../../docs/styling.md); what this workspace wants them used FOR is [`../design/SKILL.md`](../design/SKILL.md).
+**The token names, how the palette reaches the box, and how a tint is mixed rather than sampled** are in [`../../../docs/styling.md`](../../../docs/styling.md); what this workspace wants them used FOR is [`../biom-design/SKILL.md`](../biom-design/SKILL.md).
 
 **The controls a section draws take tokens like everything else.** `--nonrepro` is the one that exists for them: guides, outlines and anything that is furniture rather than page.
 
@@ -926,13 +926,13 @@ scale. This folder is how we WRITE one.
 
 | | |
 |---|---|
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk: the directory, `content.yaml`, ids, variables, the rule index |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | what to reach for before writing code, and what a plugin owes every page |
-| [`../design/SKILL.md`](../design/SKILL.md) | what this workspace wants those tokens used for. Read it before any UI work |
-| [`../markdown/SKILL.md`](../markdown/SKILL.md) | `markdown.yaml`, the type scale a markdown slot starts from — which this file's `<style>` always beats |
-| [`../diagrams/SKILL.md`](../diagrams/SKILL.md) | a fence or a plugin, and the question to ask before drawing either |
-| [`../tables/SKILL.md`](../tables/SKILL.md) | a slot holding a table, and everything behind it |
-| [`../children/SKILL.md`](../children/SKILL.md) | a slot holding a child, and how child keys are derived |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk: the directory, `content.yaml`, ids, variables, the rule index |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | what to reach for before writing code, and what a plugin owes every page |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | what this workspace wants those tokens used for. Read it before any UI work |
+| [`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) | `markdown.yaml`, the type scale a markdown slot starts from — which this file's `<style>` always beats |
+| [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) | a fence or a plugin, and the question to ask before drawing either |
+| [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | a slot holding a table, and everything behind it |
+| [`../biom-children/SKILL.md`](../biom-children/SKILL.md) | a slot holding a child, and how child keys are derived |
 
 **When you are done, run the checker** — `bun run .agents/skills/check.ts pages/<id>` — and answer or note every warning rather than silencing it. It is a report and never a gate: a page that fails every rule still draws, and its raw-YAML fallback still opens.
 

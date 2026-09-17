@@ -1,5 +1,5 @@
 ---
-name: animations
+name: biom-animations
 description: Give a page its moving figures, or brief an agent to build one. Use whenever a passage argues something that happens over time or has a shape, whenever a page's figures are being reviewed, or whenever an agent is briefed to draw. The default is a scene that plays the passage through on a loop; a still figure is the exception and still has to move in one way that says the one thing it is for. Carries what makes a scene clear, the loop and its one cycle, in view or paused, the icon rule, the verdict rule for the lights, the caption strip, the lean rule, the reduced-motion frame, the checks a scene passes before it is done, and the traps each of those cost.
 ---
 
@@ -46,7 +46,7 @@ description: Give a page its moving figures, or brief an agent to build one. Use
 
 Give an agent one page and only that page's directory to write into.
 
-1. **Read first**: the workspace `AGENTS.md`, then `.agents/skills/pages/`, `.agents/skills/sections/`, this file, `.agents/skills/plugins/`, `design/content.yaml` with the figure section file beside it, then the built scenes on the page it is working on, then the page's own `content.yaml`, slowly.
+1. **Read first**: the workspace `AGENTS.md`, then `.agents/skills/biom-pages/`, `.agents/skills/biom-sections/`, this file, `.agents/skills/biom-plugins/`, `design/content.yaml` with the figure section file beside it, then the built scenes on the page it is working on, then the page's own `content.yaml`, slowly.
 2. **Build one scene for the strongest passage**, and a second only where a second passage clearly earns it. The scene is a section: an `.html` file beside `content.yaml` named for what it shows, and an entry in `contents` placed exactly where the passage sits. Split prose only at a paragraph boundary and only so the scene lands; keep every word; rewrite none.
 3. **Every word a reader reads outside the plate is a markdown part.** A repeating thing is one slot holding a list, with the `items` plugin for the add and the delete.
 4. **Verify**: `bun run .agents/skills/check.ts pages/<the page>` reports nothing; then watch the scene in the real browser at two or three points in its cycle, wide and at a phone width, and once with reduced motion. One screenshot proves nothing about a loop.

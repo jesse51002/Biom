@@ -1,6 +1,6 @@
 ---
 name: biom-design
-description: "WHOSE TASTE WINS, and the file to read before any page is written. Opens with the one instruction that applies every time — read `design/` first, and where it disagrees with what you would have done, it wins — then what to do when it is still the doc the workspace shipped with: design is step one on a new vault, because everything generated here comes out of `theme.json` and `design/` and a page is not skinned afterwards. Use whenever the task is to set a workspace up, to make something look right, to decide how something should read, or to work out whether a visual choice is yours to make at all. Carries what `design/` is (a page, in the vault root, beside `pages/` rather than in it) and why it is authoritative over your taste; what 'decided' means — palette, type roles, type scale, design doc — and which of those belong to the user to choose rather than to you; GIVING `design/` A SECTION OF ITS OWN, with a worked example that passes the checker; patching it rather than regenerating it; how to use the Impeccable skill inside a vault — no `PRODUCT.md`, and `design/` stands in for `DESIGN.md`; R30 — nothing sets a raw colour, with the token names and the tint in `docs/styling.md` rather than here; the pointer to `../markdown/SKILL.md` for type SIZES, which this file deliberately does not carry; the division of labour between `theme.json`, which is colour and type, and `design/`, which is brand, voice, patterns and density; and R53, which WARNs once at the end of a run when a workspace still has the design language it shipped with."
+description: "WHOSE TASTE WINS, and the file to read before any page is written. Opens with the one instruction that applies every time — read `design/` first, and where it disagrees with what you would have done, it wins — then what to do when it is still the doc the workspace shipped with: design is step one on a new vault, because everything generated here comes out of `theme.json` and `design/` and a page is not skinned afterwards. Use whenever the task is to set a workspace up, to make something look right, to decide how something should read, or to work out whether a visual choice is yours to make at all. Carries what `design/` is (a page, in the vault root, beside `pages/` rather than in it) and why it is authoritative over your taste; what 'decided' means — palette, type roles, type scale, design doc — and which of those belong to the user to choose rather than to you; GIVING `design/` A SECTION OF ITS OWN, with a worked example that passes the checker; patching it rather than regenerating it; how to use the Impeccable skill inside a vault — no `PRODUCT.md`, and `design/` stands in for `DESIGN.md`; R30 — nothing sets a raw colour, with the token names and the tint in `docs/styling.md` rather than here; the pointer to `../biom-markdown/SKILL.md` for type SIZES, which this file deliberately does not carry; the division of labour between `theme.json`, which is colour and type, and `design/`, which is brand, voice, patterns and density; and R53, which WARNs once at the end of a run when a workspace still has the design language it shipped with."
 ---
 
 # Design
@@ -88,7 +88,7 @@ contents:
 <div data-g-part="rule"></div>
 ```
 
-**The shipped `design/` is the starting shape, not a template to imitate.** Its prose sections — brand, voice, patterns, density — take the shipped default and say what this workspace is like; replace their words with this workspace's. **The three worlds above them are specimens and are meant to go**: once the palette and the type are settled, the world that was chosen becomes `theme.json` and the design doc's own words, and the bands that were not chosen are sections to delete. What replaces them is a section of this workspace's own, like the one above. Everything in [`../sections/SKILL.md`](../sections/SKILL.md) applies to every section here unchanged.
+**The shipped `design/` is the starting shape, not a template to imitate.** Its prose sections — brand, voice, patterns, density — take the shipped default and say what this workspace is like; replace their words with this workspace's. **The three worlds above them are specimens and are meant to go**: once the palette and the type are settled, the world that was chosen becomes `theme.json` and the design doc's own words, and the bands that were not chosen are sections to delete. What replaces them is a section of this workspace's own, like the one above. Everything in [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) applies to every section here unchanged.
 
 **A world is worth reading before you write one of your own**, because each is the same week of an invented business drawn three ways and every difference between them is a decision this file is about: which type role carries the reading, how tight the leading is, whether a figure is counted, plotted or metered, what is allowed to be coloured. **A band's palette lives in that section's own `variables`** and is declared onto the workspace's own token names, so nothing inside one spells a colour and R30 holds there as it holds everywhere else. **Every ink a world declares clears 4.5:1 on both of that world's own stocks**, and it is measured rather than judged: `tests/theme.test.js` reads the three palettes straight out of `vault/design/content.yaml` and fails on any figure under it, which is the bar the shipped palette is held to as well. A label at three to one reads as a deliberately quiet grey and is simply unreadable — three of these were, and nothing but the measurement said so.
 
@@ -98,7 +98,7 @@ contents:
 
 **When the design language genuinely moves, update `design/` in the same change.** It is a living document, not a read-only brief. When you and the user settle on a pattern — how an empty state reads, how a figure sits beside its prose, what a destructive control looks like — the settlement belongs in `design/` or it is lost the next time anybody generates anything.
 
-**Patch it; never regenerate it.** It is a page, so [`../pages/SKILL.md`](../pages/SKILL.md) binds it exactly as it binds any other, and a rewrite silently drops what the user wrote and renames the section names and slot ids their edits are attached to.
+**Patch it; never regenerate it.** It is a page, so [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) binds it exactly as it binds any other, and a rewrite silently drops what the user wrote and renames the section names and slot ids their edits are attached to.
 
 ---
 
@@ -150,7 +150,7 @@ For real design work — a surface being shaped, a redesign, a critique — use 
 
 **In a plugin it is worse by exactly the number of pages in the workspace.** A seeded plugin that inks a face has done it for every page in every vault, for people who never saw the decision. A plugin sets a `data-*` attribute and inserts controls; what any of it LOOKS like is the section's.
 
-**Where it does not apply: something that cannot read a custom property at all** — a canvas, a shader, a library that writes literal fills into its own output. `biom.theme()` hands back the raw values for exactly those. A figure here is ordinary HTML and is NOT one of them — every line takes `--rule` and every label `--ink`, so the drawing repaints when the palette does; see [`../diagrams/SKILL.md`](../diagrams/SKILL.md). Reach for it when the thing you are painting has no CSS to read, and **never as a way around the rule.**
+**Where it does not apply: something that cannot read a custom property at all** — a canvas, a shader, a library that writes literal fills into its own output. `biom.theme()` hands back the raw values for exactly those. A figure here is ordinary HTML and is NOT one of them — every line takes `--rule` and every label `--ink`, so the drawing repaints when the palette does; see [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md). Reach for it when the thing you are painting has no CSS to read, and **never as a way around the rule.**
 
 ---
 
@@ -164,7 +164,7 @@ For real design work — a surface being shaped, a redesign, a critique — use 
 
 **It is part of deciding the design, and it is written where it can be checked and where a control could one day drive it.** Do not restate a size here in prose and do not write one into a section that every page would want — a number in two places is one of them going stale, and the one in the file is the one that draws.
 
-**[`../markdown/SKILL.md`](../markdown/SKILL.md) is which of the three places a type decision belongs in**, and [`../../../docs/styling.md`](../../../docs/styling.md) is how the scale works.
+**[`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) is which of the three places a type decision belongs in**, and [`../../../docs/styling.md`](../../../docs/styling.md) is how the scale works.
 
 ---
 
@@ -200,9 +200,9 @@ reach a page.** This file is who decides what they should be.
 
 | | |
 |---|---|
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk, and the numbered rule index |
-| [`../sections/SKILL.md`](../sections/SKILL.md) | writing a section: layout, `@scope`, the palette tokens, the scroll toolkit |
-| [`../markdown/SKILL.md`](../markdown/SKILL.md) | which of the three places a type decision belongs in |
-| [`../plugins/SKILL.md`](../plugins/SKILL.md) | what fills a slot, and how a plugin is allowed to look |
-| [`../diagrams/SKILL.md`](../diagrams/SKILL.md) | a diagram's colours, which come from the palette and never from the library |
-| [`../children/SKILL.md`](../children/SKILL.md) | how a page appears inside another one, which is a design decision as much as a format one |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, and the numbered rule index |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | writing a section: layout, `@scope`, the palette tokens, the scroll toolkit |
+| [`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) | which of the three places a type decision belongs in |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | what fills a slot, and how a plugin is allowed to look |
+| [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) | a diagram's colours, which come from the palette and never from the library |
+| [`../biom-children/SKILL.md`](../biom-children/SKILL.md) | how a page appears inside another one, which is a design decision as much as a format one |

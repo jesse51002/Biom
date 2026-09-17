@@ -22,7 +22,10 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 
-/** Path under the directory asked about → every blob hash it has ever had. */
+/** Framework-relative path → every blob hash it has ever had. Keyed the way
+ *  the repository spells a path — `guest/plugins/markdown.js`,
+ *  `vault/.agents/skills/biom-pages/SKILL.md` — so one map answers for every
+ *  directory the framework owns inside a vault. */
 export type Shipped = Readonly<Record<string, readonly string[]>>;
 
 /** Nothing shipped. What a binary built without a history, or a checkout with
@@ -36,39 +39,40 @@ export function blobHash(text: string): string {
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
-/** Every blob hash each file under `dir` has ever had in the history of the
- *  repository at `root`, keyed by path relative to `dir`.
+/** Every blob hash each file under any of `dirs` has ever had in the history
+ *  of the repository at `root`, keyed by framework-relative path.
  *
  *  EVERY COMMIT, NOT ONLY THE TIP. A vault seeded three releases ago holds the
  *  file as it was then; the tip alone would call that an edit. `--all` so a
  *  branch that shipped and was merged still counts. Renames are not followed:
  *  a file that moved is a different path, and a copy of it in a vault is a copy
- *  of the old path, which is still in history under the old name. */
-export async function shippedHashes(root: string, dir: string): Promise<Shipped> {
-  const commits = await git(root, ["rev-list", "--all", "--", dir]);
-  if (commits.code !== 0) return NOTHING_SHIPPED;
+ *  of the old path, which is still in history under the old name — which is
+ *  exactly what lets a skill directory a release renamed be recognised in a
+ *  vault under the name it had. */
+export async function shippedHashes(root: string, dirs: readonly string[]): Promise<Shipped> {
   const out: Record<string, string[]> = {};
-  const prefix = dir.replace(/\/+$/, "") + "/";
-  for (const sha of commits.out.split("\n").map((s) => s.trim()).filter(Boolean)) {
-    const tree = await git(root, ["ls-tree", "-r", sha, "--", dir]);
-    if (tree.code !== 0) continue;
-    for (const line of tree.out.split("\n")) {
-      // `<mode> blob <hash>\t<path>`
-      const m = /^\d+ blob ([0-9a-f]{40})\t(.+)$/.exec(line);
-      if (m === null) continue;
-      const path = m[2]!;
-      if (!path.startsWith(prefix)) continue;
-      const rel = path.slice(prefix.length);
-      const had = (out[rel] ??= []);
-      if (!had.includes(m[1]!)) had.push(m[1]!);
+  for (const dir of dirs) {
+    const commits = await git(root, ["rev-list", "--all", "--", dir]);
+    if (commits.code !== 0) continue;
+    for (const sha of commits.out.split("\n").map((s) => s.trim()).filter(Boolean)) {
+      const tree = await git(root, ["ls-tree", "-r", sha, "--", dir]);
+      if (tree.code !== 0) continue;
+      for (const line of tree.out.split("\n")) {
+        // `<mode> blob <hash>\t<path>`
+        const m = /^\d+ blob ([0-9a-f]{40})\t(.+)$/.exec(line);
+        if (m === null) continue;
+        const had = (out[m[2]!] ??= []);
+        if (!had.includes(m[1]!)) had.push(m[1]!);
+      }
     }
   }
   return out;
 }
 
-/** Is `text`, sitting at `rel`, a version the framework shipped at that path? */
-export function isShipped(shipped: Shipped, rel: string, text: string): boolean {
-  const had = shipped[rel];
+/** Is `text`, sitting at framework-relative `path`, a version the framework
+ *  shipped at that path? */
+export function isShipped(shipped: Shipped, path: string, text: string): boolean {
+  const had = shipped[path];
   if (had === undefined || had.length === 0) return false;
   return had.includes(blobHash(text));
 }

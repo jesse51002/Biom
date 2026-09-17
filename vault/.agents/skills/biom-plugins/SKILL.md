@@ -1,6 +1,6 @@
 ---
 name: biom-plugins
-description: "HOW CODE REACHES A SLOT, and the decision order to take before writing any. START HERE BEFORE WRITING ANY CODE THAT DRAWS SOMETHING: most slots need none — a part\'s kind names the plugin that fills it — and where code IS the answer it goes in the section\'s own `<script>`, which is handed the same `ctx` a named plugin gets. The MECHANISM is `docs/plugins.md` at the vault root: where a plugin comes from and how it is resolved, the registration contract, `ctx.use`, `data-g-plugin`, the part kinds that are spoken for, and the fence hand-off. This file is the DECISION and the rules, and it links that rather than restating it. Use whenever the task is to fill a slot with something the plugins in `plugins/` do not draw, to place a `data-g-plugin` node, or to read or repair a plugin. Carries the order to try things in, the rule that decides the rest — if there is even a small chance somebody else will use it, it is a plugin and not a copy inside a section — the four-point bar a plugin has to meet because every one of them is global to every page in the workspace, the shape of a plugin file as a worked example, and R50: a plugin may never claim a PART KIND. Read `../sections/SKILL.md` for the section a plugin is mounted from."
+description: "HOW CODE REACHES A SLOT, and the decision order to take before writing any. START HERE BEFORE WRITING ANY CODE THAT DRAWS SOMETHING: most slots need none — a part\'s kind names the plugin that fills it — and where code IS the answer it goes in the section\'s own `<script>`, which is handed the same `ctx` a named plugin gets. The MECHANISM is `docs/plugins.md` at the vault root: where a plugin comes from and how it is resolved, the registration contract, `ctx.use`, `data-g-plugin`, the part kinds that are spoken for, and the fence hand-off. This file is the DECISION and the rules, and it links that rather than restating it. Use whenever the task is to fill a slot with something the plugins in `plugins/` do not draw, to place a `data-g-plugin` node, or to read or repair a plugin. Carries the order to try things in, the rule that decides the rest — if there is even a small chance somebody else will use it, it is a plugin and not a copy inside a section — the four-point bar a plugin has to meet because every one of them is global to every page in the workspace, the shape of a plugin file as a worked example, and R50: a plugin may never claim a PART KIND. Read `../biom-sections/SKILL.md` for the section a plugin is mounted from."
 ---
 
 # Plugins
@@ -31,7 +31,7 @@ contents:
 <div data-g-part="figures"></div>
 ```
 
-The part kinds and what `data` means for each are in [`../pages/SKILL.md`](../pages/SKILL.md). **`data-g-plugin="id"` is the other door**: it mounts a plugin with no stored content at all, configured entirely by its own `data-g-*` attributes, which is how a section places a rule, a wash or a diagram without inventing a slot in `content.yaml` for something nobody will ever edit — see [`../sections/SKILL.md`](../sections/SKILL.md).
+The part kinds and what `data` means for each are in [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md). **`data-g-plugin="id"` is the other door**: it mounts a plugin with no stored content at all, configured entirely by its own `data-g-*` attributes, which is how a section places a rule, a wash or a diagram without inventing a slot in `content.yaml` for something nobody will ever edit — see [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md).
 
 **Ask this before writing any code at all: is the thing I want a run of prose, a grid of rows, a child's row or a diagram?** If yes, it is a part or a `data-g-plugin` node and you are finished. **`biom.plugins.ids()` answers what is actually registered in this workspace**, which is the only listing that cannot go stale, and `plugins/` on disk is the same set as files.
 
@@ -71,7 +71,7 @@ example and everything else the box does and does not give a script is
 
 **Where this is the wrong answer: when the same drawing has even a small chance of being wanted on a second page, or by a second person.** A section script belongs to one section file, so a second page means a second copy, and two copies drift — that is not a prediction, it is what happened: one drawing became eighty-eight copies in eleven different shapes in a workspace that had this exact instruction. **Write it as a plugin in `plugins/` from the start** — §3, and the rule at the top of the vault's `AGENTS.md`. A section script is for a drawing that is genuinely about this one section's own content.
 
-Everything a section script may do, and what the box cannot do at all, is [`../sections/SKILL.md`](../sections/SKILL.md). Everything it is *handed* is the `ctx` table below.
+Everything a section script may do, and what the box cannot do at all, is [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md). Everything it is *handed* is the `ctx` table below.
 
 ---
 
@@ -130,7 +130,7 @@ workspace has one, and draws an ordinary code block where it does not.
 
 **What `ctx.read` and `ctx.write` are FOR** — a section that draws its own `+`,
 `✕` and reordering, with no ceiling on how many items it holds — is
-[`../sections/SKILL.md`](../sections/SKILL.md).
+[`../biom-sections/SKILL.md`](../biom-sections/SKILL.md).
 
 ---
 
@@ -182,7 +182,7 @@ What a file in `plugins/` looks like, both to write one and to read the ones alr
 })();
 ```
 
-**Every colour it sets resolves to a palette token and every face to a `--*-face` stack** — the tokens are re-declared inside the box because custom properties do not cross a document boundary, so `var(--ink)` works there and a literal is wrong on every palette but one. R30 is in [`../design/SKILL.md`](../design/SKILL.md) and the token list is in [`../../../docs/styling.md`](../../../docs/styling.md).
+**Every colour it sets resolves to a palette token and every face to a `--*-face` stack** — the tokens are re-declared inside the box because custom properties do not cross a document boundary, so `var(--ink)` works there and a literal is wrong on every palette but one. R30 is in [`../biom-design/SKILL.md`](../biom-design/SKILL.md) and the token list is in [`../../../docs/styling.md`](../../../docs/styling.md).
 
 ---
 
@@ -195,8 +195,8 @@ one at all.
 
 | | |
 |---|---|
-| [`../sections/SKILL.md`](../sections/SKILL.md) | where code actually goes: slots, `data-g-plugin`, section scripts, the sandbox |
-| [`../pages/SKILL.md`](../pages/SKILL.md) | what a page is on disk, the part kinds, and the numbered rule index |
-| [`../tables/SKILL.md`](../tables/SKILL.md) | reading and writing rows, which is most of what a data drawing does |
-| [`../diagrams/SKILL.md`](../diagrams/SKILL.md) | a drawing laid out from a section's own words, and the question to ask before drawing |
-| [`../design/SKILL.md`](../design/SKILL.md) | how anything here is allowed to look |
+| [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | where code actually goes: slots, `data-g-plugin`, section scripts, the sandbox |
+| [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, the part kinds, and the numbered rule index |
+| [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | reading and writing rows, which is most of what a data drawing does |
+| [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) | a drawing laid out from a section's own words, and the question to ask before drawing |
+| [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | how anything here is allowed to look |
