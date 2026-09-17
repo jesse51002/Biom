@@ -1,6 +1,5 @@
-/* The layers over the workspace: the side panels, the New-page dialog, the
-   prompt card the History panel hands out, and the one popover every menu in
-   the app is drawn with.
+/* The layers over the workspace: the New-page dialog, and the one popover every
+   menu in the app is drawn with.
 
    The class names came across from the deleted mock's panels.css and the popover
    half of its content.css — `client/widgets/popover.js` says outright
@@ -17,61 +16,6 @@
    gets a stylesheet of its own, this block moves there whole.
 
    Nothing below names a colour. */
-
-/* ---------- side panels ---------- */
-
-.panel-side{
-  border-left:1px solid var(--stock-edge); background:var(--stock);
-  display:flex; flex-direction:column; min-height:0; overflow-y:auto;
-}
-.panel-h{
-  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
-  padding:.6rem .75rem .6rem 1rem; border-bottom:1px solid var(--stock-edge);
-  font-size:.875rem; font-weight:500; color:var(--ink); position:sticky; top:0;
-  background:var(--stock);
-}
-.panel-h b{color:var(--ink-3); font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-
-.panel-body{padding:1rem; display:grid; gap:.75rem; align-content:start; font-size:.875rem}
-.panel-body p{margin:0; line-height:1.5; color:var(--ink-2)}
-.panel-body p.lead{color:var(--ink)}
-.panel-body h5{margin:.5rem 0 -.35rem; font-size:.75rem; font-weight:500; color:var(--ink-3)}
-
-/* the path the agent works in, and the line you would type. Selectable, because
-   the only useful thing to do with either is copy it. */
-.panel-body code.path{
-  display:block; padding:.5rem .65rem; background:var(--stock-lo);
-  border:1px solid var(--rule-soft); border-radius:6px; color:var(--ink);
-  font-family:var(--mono-face); font-size:.75rem; line-height:1.5; overflow-wrap:anywhere; user-select:all;
-}
-.panel-body ul.says{list-style:none; margin:0; padding:0; display:grid; gap:.35rem}
-.panel-body ul.says li{
-  padding:.4rem .65rem; border:1px solid var(--rule); border-radius:6px;
-  color:var(--ink); line-height:1.4;
-}
-/* what this panel is not. Said plainly rather than drawn as a disabled control:
-   a greyed-out Undo is a claim, and this build cannot back it. */
-.panel-body .notyet{
-  font-size:.75rem; line-height:1.5; color:var(--ink-3);
-  border-top:1px solid var(--rule-soft); padding-top:.65rem; margin-top:.25rem;
-}
-
-/* ---------- the prompt card ---------- */
-
-/* A sentence to hand the agent, and a button that copies it. It is a card
-   because it is the one thing on the panel meant to leave it. */
-.promptcard{
-  display:grid; gap:.6rem; padding:.75rem .85rem; border:1px solid var(--rule);
-  border-radius:6px; background:var(--stock-lo);
-}
-.promptcard h5{margin:0; font-size:.75rem; font-weight:500; color:var(--ink-3)}
-.promptbody{margin:0; font-size:.875rem; line-height:1.5; color:var(--ink)}
-.promptcard .full{
-  justify-self:start; padding:.3rem .7rem; font-size:.8rem;
-  border:1px solid var(--rule); background:var(--stock); color:var(--ink);
-  border-radius:4px; cursor:pointer;
-}
-.promptcard .full:hover{background:var(--field)}
 
 /* ---------- the dialog ---------- */
 

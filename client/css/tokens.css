@@ -131,7 +131,6 @@
      is reach, and it is pulled back out of the layout by its own margin so the
      rail is exactly as wide as it says it is. */
   --grip-w:11px;
-  --panel-w:20rem;
 }
 
 *{box-sizing:border-box}

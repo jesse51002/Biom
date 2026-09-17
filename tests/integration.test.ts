@@ -12,10 +12,12 @@
 // write failed and no unit test could see it. An integration test is the only
 // place that class of fault shows up, which is exactly why it is written against
 // the CONTRACT rather than against either side: `WorkspaceStore` in
-// contracts/types.ts names `writeSlot`, `setSections`, `patchVariables`,
-// `readDocRaw` and `writeDocRaw`, and the route answers `section.write`,
-// `section.order`, `variables.patch`, `doc.raw` and `doc.writeRaw`. If the two
-// ever name different things again, this file is where it shows.
+// contracts/types.ts names `writeSlot`, `setSections` and `patchVariables`, and
+// the route answers `section.write`, `section.order` and `variables.patch`. If
+// the two ever name different things again, this file is where it shows. The
+// route also answers `doc.raw` and `doc.writeRaw`, which the store stopped
+// calling when the Config screen went (2026-09-17); they are the API's and are
+// exercised here as the API.
 
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
@@ -97,6 +99,19 @@ const partOf = (page: Page | null | undefined, section: string, slot = "body"): 
 let seq = 0;
 const req = (o: Record<string, unknown>): ApiRequest => ({ id: `i${++seq}`, g: PROTOCOL, ...o }) as ApiRequest;
 
+/** WRITE A PAGE'S DOCUMENT WHOLE, over the wire, and have the store re-read
+ *  whatever it holds of that page. The store used to carry this itself as
+ *  `writeDocRaw`, for the Config screen's raw editor; that screen went on
+ *  2026-09-17 and the wire kind stayed, because the API is not a screen. A test
+ *  writing a whole page is writing it the way an agent's tool would: through
+ *  the API, with the store told afterwards. */
+async function writeRaw(w: { ws: ReturnType<typeof makeWorkspace>; transport: { call: (r: ApiRequest) => Promise<ApiResponse> } },
+  id: PageId, text: string): Promise<void> {
+  const res = await w.transport.call(req({ kind: "doc.writeRaw", page: id, text }));
+  if (!res.ok) throw new Error(res.error.message);
+  if (w.ws.get().page?.id === id) await w.ws.reloadPage(id);
+}
+
 /** The directory a page id names: `a/b` is `pages/a/children/b`. */
 const dirOf = (dir: string, id: PageId): string => join(dir, "pages", id.split("/").join("/children/"));
 
@@ -129,7 +144,7 @@ test("a slot write lands on ONE scope, and the section it belongs to carries it"
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Rates" });
   await first.ws.writeFile(page.id, "calc.html", '<div data-g-part="total"></div>');
-  await first.ws.writeDocRaw(page.id, doc("Rates",
+  await writeRaw(first, page.id, doc("Rates",
     "variables:\n  rate: 62\ncontents:\n" +
     prose("intro", "The base rate is {{rate}}.") +
     "  - name: calc\n    data: calc.html\n    parts:\n      total: |\n        0\n"));
@@ -168,7 +183,7 @@ test("a slot write lands on ONE scope, and the section it belongs to carries it"
 test("prose survives a reload, which is the thing the mock could not do", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Team notes" });
-  await first.ws.writeDocRaw(page.id, doc("Team notes",
+  await writeRaw(first, page.id, doc("Team notes",
     "contents:\n" + prose("title", "# Team notes\n\nRates went up in March.")));
   first.db.close();
 
@@ -192,7 +207,7 @@ test("prose survives a reload, which is the thing the mock could not do", async 
 test("A TYPED PARAGRAPH SURVIVES A FULL REBUILD FROM THE SAME DIRECTORY", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Team notes" });
-  await first.ws.writeDocRaw(page.id, doc("Team notes",
+  await writeRaw(first, page.id, doc("Team notes",
     "contents:\n" + prose("title", "# Team notes") + prose("note", "Nothing yet.")));
   await first.ws.loadPage(page.id);
 
@@ -225,7 +240,7 @@ test("a paragraph holding {{rate}} round-trips the braces and never the number",
   // the paragraph it was in.
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Rates" });
-  await first.ws.writeDocRaw(page.id, doc("Rates",
+  await writeRaw(first, page.id, doc("Rates",
     "variables:\n  rate: 62\ncontents:\n" + prose("intro", "The base rate is {{rate}}.")));
 
   await first.ws.writeSlot(page.id, "intro", "body", "The base rate is {{rate}} an hour, still.\n");
@@ -243,7 +258,7 @@ test("a paragraph holding {{rate}} round-trips the braces and never the number",
 test("a reorder keeps every word, and a removal takes the words with it", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Notes" });
-  await first.ws.writeDocRaw(page.id, doc("Notes",
+  await writeRaw(first, page.id, doc("Notes",
     "contents:\n" + prose("a", "First words.") + prose("b", "Second words.") + prose("c", "Third words.")));
   await first.ws.loadPage(page.id);
 
@@ -315,15 +330,16 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
     presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
-  const ws = makeWorkspace({
+  const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
       return handle(r, deps as never);
     },
-  });
+  };
+  const ws = makeWorkspace(transport);
 
   const page = await ws.createPage({ name: "Notes" });
-  await ws.writeDocRaw(page.id, doc("Notes",
+  await writeRaw({ ws, transport }, page.id, doc("Notes",
     "contents:\n" + prose("title", "# Notes") + prose("note", "Nothing yet.")));
   await ws.loadPage(page.id);
   kinds.length = 0;
@@ -364,7 +380,7 @@ test("a row written through the store survives a reload", async () => {
 test("contents IS the order, and it survives a reload", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Notes" });
-  await first.ws.writeDocRaw(page.id, doc("Notes",
+  await writeRaw(first, page.id, doc("Notes",
     "contents:\n" + prose("b", "two") + prose("a", "one") + prose("title", "# Notes")));
   first.db.close();
 
@@ -389,7 +405,7 @@ test("contents IS the order, and it survives a reload", async () => {
 test("what a slot holds is stated in the document, not inferred from a directory listing", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Rates" });
-  await first.ws.writeDocRaw(page.id, doc("Rates", "contents:\n" + prose("calc", "placeholder")));
+  await writeRaw(first, page.id, doc("Rates", "contents:\n" + prose("calc", "placeholder")));
 
   let read = await first.ws.reloadPage(page.id);
   expect(partOf(read, "calc")?.kind).toBe("markdown");
@@ -407,7 +423,7 @@ test("what a slot holds is stated in the document, not inferred from a directory
   // Saying so in the document is. Two writes, one file each, and both are things
   // Claude Code does without knowing anything about our data model. A slot that
   // is a map is a full `Content`; a section's `data` is the file it draws with.
-  await first.ws.writeDocRaw(page.id, doc("Rates",
+  await writeRaw(first, page.id, doc("Rates",
     "contents:\n  - name: calc\n    data: calc.html\n    parts:\n      total: { type: html, data: calc.html }\n"));
   read = await first.ws.reloadPage(page.id);
   expect(partOf(read, "calc", "total")).toMatchObject({ kind: "html", file: "calc.html" });
@@ -419,8 +435,8 @@ test("what a slot holds is stated in the document, not inferred from a directory
 test("the vault is a git repo, so an agent write is recoverable without a snapshot mechanism", async () => {
   const first = boot(root);
   const page = await first.deps.pages.create({ name: "Notes" });
-  await first.ws.writeDocRaw(page.id, doc("Notes", "contents:\n" + prose("title", "# Before")));
-  await first.ws.writeDocRaw(page.id, doc("Notes", "contents:\n" + prose("title", "# After")));
+  await writeRaw(first, page.id, doc("Notes", "contents:\n" + prose("title", "# Before")));
+  await writeRaw(first, page.id, doc("Notes", "contents:\n" + prose("title", "# After")));
   first.db.close();
 
   const log = Bun.spawnSync(["git", "log", "--oneline"], { cwd: root });
@@ -433,17 +449,19 @@ test("a reorder is visible immediately, without a reload", async () => {
   // old order on screen until the page was re-opened by hand. `sections` is
   // derived from `contents` by the server, so a store that swapped only the
   // document's values left every consumer drawing from stale structure.
-  const { ws, db } = boot(root);
+  const w = boot(root);
+  const { ws, db } = w;
   const page = await ws.createPage({ name: "Notes" });
   const three = (order: string[]) =>
     doc("Notes", `contents:\n${order.map((n) => prose(n, n)).join("")}`);
 
-  await ws.writeDocRaw(page.id, three(["a", "b", "title"]));
+  await writeRaw(w, page.id, three(["a", "b", "title"]));
   await ws.loadPage(page.id);
   expect(ws.get().page?.sections.map((s) => s.name)).toEqual(["a", "b", "title"]);
 
-  // No reloadPage, no second boot: the same store instance must show it.
-  await ws.writeDocRaw(page.id, three(["b", "title", "a"]));
+  // No second boot: the same store instance, re-read once, shows the order the
+  // server derived from the new `contents` — structure, not only values.
+  await writeRaw(w, page.id, three(["b", "title", "a"]));
   expect(ws.get().page?.sections.map((s) => s.name)).toEqual(["b", "title", "a"]);
   db.close();
 });
@@ -496,12 +514,13 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
     presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
-  const ws = makeWorkspace({
+  const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
       return handle(r, deps as never);
     },
-  });
+  };
+  const ws = makeWorkspace(transport);
 
   const page = await ws.createPage({ name: "Rates" });
   await ws.loadPage(page.id);
@@ -510,11 +529,12 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   await ws.patchVariables(page.id, null, { heading: "Our rates" });
   expect(kinds).toEqual(["variables.patch"]);
 
-  // The raw fallback is the opposite case and says so: it replaces the whole
-  // file, so the name and every section may have moved at once, and it re-reads
-  // on purpose.
+  // A whole document rewritten is the opposite case: it replaces the file, so
+  // the name and every section may have moved at once, and the store is asked
+  // to re-read on purpose — `reloadPage`, which is the one read that throws
+  // away what the layers above built.
   kinds.length = 0;
-  await ws.writeDocRaw(page.id, doc("Rates", "contents:\n" + prose("title", "# Rates")));
+  await writeRaw({ ws, transport }, page.id, doc("Rates", "contents:\n" + prose("title", "# Rates")));
   expect(kinds[0]).toBe("doc.writeRaw");
   expect(kinds).toContain("page.read");
   db.close();
@@ -523,14 +543,16 @@ test("a variables patch puts one request on the wire, and page.read is not the s
 test("the change feed says what moved, so an artifact can be told", async () => {
   // An artifact lives in an opaque-origin frame and can observe nothing outside
   // itself. This feed is the only way it learns its data moved.
-  const { ws, deps, db } = boot(root);
+  const w = boot(root);
+  const { ws, deps, db } = w;
   const seen: Change[] = [];
   ws.onChange((c) => seen.push(c));
 
   const page = await ws.createPage({ name: "Notes" });
-  // The whole document rewritten: the SHAPE moved, so a consumer holding derived
-  // structure has to rebuild rather than patch.
-  await ws.writeDocRaw(page.id, doc("Notes", "contents:\n" + prose("title", "# Notes")));
+  await ws.loadPage(page.id);
+  // The whole document rewritten and the page re-read: the SHAPE moved, so a
+  // consumer holding derived structure has to rebuild rather than patch.
+  await writeRaw(w, page.id, doc("Notes", "contents:\n" + prose("title", "# Notes")));
   expect(seen.at(-1)).toEqual({ page: page.id, shape: true });
 
   // One value on one scope, and the shape is not mentioned at all — there is no

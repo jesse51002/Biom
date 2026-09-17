@@ -1276,8 +1276,6 @@ export interface WorkspaceStore {
 
   /** `section` null is the page's own variables; a name is that section's. */
   patchVariables(id: PageId, section: BlockId | null, patch: VarPatch): Promise<PageDoc>;
-  readDocRaw(id: PageId): Promise<string>;
-  writeDocRaw(id: PageId, text: string): Promise<PageDoc>;
 
   loadTable(name: TableName, q?: RowQuery): Promise<TableView | null>;
   insertRow(name: TableName, row: RowInput): Promise<RowId>;
@@ -1317,10 +1315,14 @@ export interface WorkspaceStore {
  *  like `design`, and it is the one addition this union has taken since. */
 export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map";
 
+/** THE FIFTH CONTRACTS EDIT, taken at its own barrier on 2026-09-17, was a
+ *  removal: `pageView` and `panel` left this state, and `readDocRaw` and
+ *  `writeDocRaw` left `WorkspaceStore`, when the Config screen and the two side
+ *  panels were deleted. A field nothing reads is a door any caller can open;
+ *  a method nothing calls is a promise the store need not keep. The `doc.raw`
+ *  and `doc.writeRaw` wire kinds stayed — the API is not a screen. */
 export interface UiState {
   route: { view: ViewName; id: string };
-  pageView: "page" | "config";
-  panel: null | "agent" | "history";
   inserting: number | null;
   dialog: boolean;
   /** Which page the New dialog will make something inside. Set by the plus on a
