@@ -60,6 +60,14 @@ const dataUrl = (name: string, bytes: Uint8Array): string =>
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
+/** The five entities a serialiser writes into an attribute value, undone. */
+const unescapeAttr = (s: string): string =>
+  s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** The same, forward, for the quote the attribute is wrapped in. */
+const escapeAttr = (s: string, q: string): string =>
+  s.replace(/&/g, "&amp;").replace(q === '"' ? /"/g : /'/g, q === '"' ? "&quot;" : "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** Is this something a relative resolution would have sent to the base? A
  *  scheme, a root-relative path, a fragment and a data url all resolve on
  *  their own and are left alone. */
@@ -77,6 +85,25 @@ const relative = (src: string): boolean =>
 export async function standalone(html: string, from: Sources): Promise<Standalone> {
   const left: string[] = [];
   let out = html;
+
+  // 0. A PAGE INSIDE THE PAGE. `page.embed` draws another page in a nested
+  //    box, and that box arrives as an <iframe srcdoc="…"> whose whole document
+  //    is an attribute value, entity-escaped — so every font url, every
+  //    <base> and every <script> in it is invisible to the passes below, which
+  //    read the text as markup. It is a document, so it is treated as one:
+  //    decoded, rewritten by this same function, its scripts taken out the way
+  //    the capture took the outer page's, and encoded back. What is left over
+  //    in it is reported with the rest.
+  const nested = /(<iframe\b[^>]*\ssrcdoc=)(["'])([\s\S]*?)\2/gi;
+  const inner: Array<{ whole: string; attr: string; q: string; doc: string }> = [];
+  for (const m of out.matchAll(nested)) inner.push({ whole: m[0], attr: m[1] ?? "", q: m[2] ?? '"', doc: m[3] ?? "" });
+  for (const i of inner) {
+    const decoded = unescapeAttr(i.doc);
+    const made = await standalone(decoded, from);
+    const clean = made.html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "");
+    left.push(...made.left.map((l) => `embedded: ${l}`));
+    out = out.replace(i.whole, `${i.attr}${i.q}${escapeAttr(clean, i.q)}`);
+  }
 
   // 1. FONTS. `faceCss` wrote them absolute — `url(http://host/fonts/x.woff2)`
   //    — so the match is on the origin the box was woven with.

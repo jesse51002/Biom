@@ -65,6 +65,35 @@ test("an asset that is not there is left pointing where it pointed and named onc
   expect(out.left).toEqual(["assets/a.png"]);
 });
 
+test("a page embedded in the page is rewritten as a document of its own, scripts and all", async () => {
+  // `page.embed` draws another page into a nested box whose whole document is a
+  // srcdoc attribute, entity-escaped. Measured on a real share: eleven font
+  // urls survived the rewrite inside one, and the nested page kept its runtime.
+  const inside = `<!doctype html><html><head><base href="${BASE}">` +
+    `<style>@font-face{font-family:A;src:url("${ORIGIN}/fonts/a.woff2")}</style>` +
+    `<script>alive()</script></head><body><img src="in.png"><p>"quoted" &amp; <b>bold</b></p></body></html>`;
+  const esc = inside.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const html = `<html><body><iframe title="x" sandbox="allow-scripts" srcdoc="${esc}"></iframe><img src="out.png"></body></html>`;
+  const out = await standalone(html, sources({ "a.woff2": "FONT", "in.png": "IN", "out.png": "OUT" }));
+  expect(out.left).toEqual([]);
+  expect(out.html).not.toContain("localhost");
+  expect(out.html).not.toContain("&lt;base");
+  expect(out.html).not.toContain("&lt;script");
+  // The nested document is still an attribute, still escaped, and still whole.
+  expect(out.html).toContain(`srcdoc="&lt;!doctype html&gt;`);
+  expect(out.html).toContain(`data:font/woff2;base64,${b64("FONT")}`.replace(/"/g, "&quot;"));
+  expect(out.html).toContain(`src=&quot;data:image/png;base64,${b64("IN")}&quot;`);
+  expect(out.html).toContain(`src="data:image/png;base64,${b64("OUT")}"`);
+  expect(out.html).toContain("&lt;p&gt;&quot;quoted&quot; &amp;amp; &lt;b&gt;bold&lt;/b&gt;&lt;/p&gt;");
+});
+
+test("what an embedded page could not fold in is named as its own", async () => {
+  const inside = `<html><head><base href="${BASE}"></head><body><img src="gone.png"></body></html>`;
+  const esc = inside.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = await standalone(`<iframe srcdoc="${esc}"></iframe>`, sources());
+  expect(out.left).toEqual(["embedded: assets/gone.png"]);
+});
+
 /* ── the sharer ─────────────────────────────────────────────────────────── */
 
 const fakePages = (has: boolean): Pages => ({
