@@ -552,17 +552,20 @@ test("THE PAGE IS NAMED BY THE BREADCRUMB IN THE RAIL, not by a heading over the
   expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Design"]);
 });
 
-test("the bar holds Reload and nothing else, in both builds, on a page and off it", async () => {
+test("the bar holds Reload, and Share on a page, in both builds", async () => {
   // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload is the one action
-  // a page adds; Agent Terminal joins it when this window has a workspace to run
-  // one in (tests/terminal-store.test.js and the dock tests cover that). There
-  // is no menu, no Config, no History and no Modify page: the owner decided
-  // (2026-09-17) that the three go rather than hide, so this is asserted in the
-  // development build as well as the built one.
+  // every route adds; Share joins it on a page, because a page is the thing a
+  // share captures and the design doc is not shared. Agent Terminal joins them
+  // when this window has a workspace to run one in (tests/terminal-store.test.js
+  // and the dock tests cover that). There is no menu, no Config, no History and
+  // no Modify page: the owner decided (2026-09-17) that the three go rather than
+  // hide, so this is asserted in the development build as well as the built one
+  // — and Share is in both builds too, because it is a product feature and not
+  // a diagnostic.
   for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
     await tick();
     const tools = find(g.rail, (el) => has(el, "tools"));
-    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload"]);
+    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Share"]);
     expect(find(tools, (el) => has(el, "more"))).toBeNull();
     expect(find(tools, (el) => has(el, "viewsw"))).toBeNull();
     g.ui.go("design", "");

@@ -59,6 +59,9 @@ const CLOSE = "biom:window-close";
 const STATE = "biom:window-state";
 /** The only channel carrying something the page did not ask for. */
 const CHANGED = "biom:window-changed";
+/** The page as it is drawn, read out of the box by the main process — the one
+ *  thing a page in this window cannot read for itself. */
+const CAPTURE = "biom:capture-page";
 
 /** DOES THE PLATFORM DRAW THE WINDOW'S OWN CONTROLS. macOS does: the window is
  *  made `hiddenInset`, so the traffic lights are still there, sitting inside
@@ -83,6 +86,14 @@ contextBridge.exposeInMainWorld("biomShell", {
    *  which is better than a broken image in the corner of the window.
    *  @returns {Promise<string>} */
   logo: () => ipcRenderer.invoke(LOGO),
+
+  /** THE DRAWN PAGE, AS TEXT. The box has an opaque origin and the page around
+   *  it cannot read it — that is the boundary working — but the main process
+   *  is not bound by it, so this is how Share gets the document it uploads.
+   *  Answers the serialised document, or an empty string when there is no
+   *  box on screen to read.
+   *  @returns {Promise<string>} */
+  capturePage: () => ipcRenderer.invoke(CAPTURE),
 
   /** THIS WINDOW. Its presence is what tells the client to draw a title bar at
    *  all, so it is one object rather than six loose keys: the client tests for

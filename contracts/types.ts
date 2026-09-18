@@ -1026,9 +1026,32 @@ export type ApiRequest =
         | { kind: "design.patch"; section: BlockId | null; patch: VarPatch }
         | { kind: "design.writeFile"; file: string; text: string }
 
+        /** SHARE A PAGE: capture it as it is drawn and put the file somewhere a
+         *  link reaches. The FIFTH contracts edit, taken at its own barrier on
+         *  2026-09-17. It is here and not in `HostRequest` because the box never
+         *  asks for it — the workspace UI does — so no page in the wild can say
+         *  it and no guard learned it. The answer is a `Share`.
+         *
+         *  `html` is the page's drawn document, when the caller could read it
+         *  itself: the desktop shell can reach into the box, so it captures
+         *  from the person's own window and the server only rewrites and
+         *  uploads. Absent, the server draws the page in a browser of its own,
+         *  which a development server can do and a compiled one cannot. */
+        | { kind: "page.share"; page: PageId; html?: string }
+
       ));
 
 export type ApiResponse = HostResponse;
+
+/** WHAT A SHARE COMES BACK AS. `url` is the link; `key` is the object's name in
+ *  the bucket, which is the whole of the secret; `left` names every resource
+ *  the capture could not fold into the file and left pointing at the server,
+ *  so a person can see what a stranger will not. */
+export interface Share {
+  url: string;
+  key: string;
+  left: string[];
+}
 
 /* ── the module interfaces that cross an ownership boundary ────────────── */
 //

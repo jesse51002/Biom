@@ -44,7 +44,7 @@
 
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
-const { mkdirSync, readFileSync } = require("node:fs");
+const { mkdirSync, readFileSync, rmSync } = require("node:fs");
 const { join } = require("node:path");
 
 const { dataHome } = require("./data.js");
@@ -74,6 +74,11 @@ const STATE = "biom:window-state";
  *  double-click on our bar, the desktop's own keyboard shortcut, a tiling
  *  manager — so the icon that says which it is has to flip. */
 const CHANGED = "biom:window-changed";
+/** The drawn page, read out of the box. The page cannot read it — the frame
+ *  has an opaque origin, and the host is on the other side of that wall by
+ *  design — and the main process can, through `webContents.mainFrame.frames`.
+ *  Which is why the capture lives here and not in the client. */
+const CAPTURE = "biom:capture-page";
 
 /** THE LOGO, AND THERE IS ONE FILE OF IT. Beside this one, copied into the
  *  staging directory with the rest of the shell, so the path resolves the same
@@ -133,6 +138,10 @@ const PARENT = "BIOM_SHELL";
  *  second pass knows it already has the cache it asked for. Spelled here and
  *  nowhere else — nothing but `ownFontCache()` reads it. */
 const OWN_CACHE = "BIOM_OWN_CACHE";
+/** THE SECOND CHANCE. Set on the one restart that follows a launch which
+ *  never drew, so a launch that never draws twice says so rather than
+ *  restarting forever. */
+const HEALED = "BIOM_HEALED_CACHE";
 
 /** CHROMIUM READS A FONT CACHE OF THE APPLICATION'S OWN, and getting it one
  *  means starting this program over.
@@ -218,6 +227,35 @@ function ownFontCache() {
 }
 
 ownFontCache();
+
+/** DELETE THE PRIVATE FONT CACHE AND START AGAIN, ONCE. Answers true when the
+ *  restart was issued (and nothing after it runs), false when this is not the
+ *  first try, not Linux, not a cache of our own, or the restart could not be
+ *  made — in which case the caller goes on to say why nothing drew. */
+function healFontCache() {
+  if (process.platform !== "linux") return false;
+  if (process.env[OWN_CACHE] !== "1") return false;
+  if (process.env[HEALED] === "1") return false;
+  if (typeof process.execve !== "function") return false;
+  const cache = join(dataHome(), "cache", "fontconfig");
+  try {
+    rmSync(cache, { recursive: true, force: true });
+  } catch (e) {
+    console.error("the application’s own font cache could not be cleared", e);
+    return false;
+  }
+  console.error("biom: cleared the application’s own font cache and is starting again");
+  try {
+    process.execve(process.execPath, [process.execPath, ...process.argv.slice(1)], {
+      ...process.env,
+      [HEALED]: "1",
+    });
+    return true;
+  } catch (e) {
+    console.error("Biom could not restart after clearing its font cache", e);
+    return false;
+  }
+}
 
 /** SINGLE INSTANCE, and it is Electron's own lock. A second launch focuses the
  *  window that is open — the server already holds several vaults at once and
@@ -353,6 +391,18 @@ if (!app.requestSingleInstanceLock()) {
 
     // ONE SENTENCE, on stderr, for whoever launched this from a terminal.
     console.error(`biom: the window never drew — ${why}`);
+
+    // THE CACHE OF OUR OWN CAN BE POISONED TOO, and the fix is ours to apply.
+    // The private cache keeps Chromium off the caches under the person's home,
+    // but two launches from two environments — the desktop and a container
+    // sharing that home — write into ONE private cache with two fontconfigs,
+    // and the next launch aborts exactly as it did before the cache existed.
+    // So the first time a launch never draws, the private cache is deleted
+    // and the program restarts itself once, the way `ownFontCache` restarted
+    // it; a person sees a second's delay instead of a dead launch. Only once:
+    // a launch that never draws with a clean cache is a different failure and
+    // gets the sentence and the dialog below.
+    if (healFontCache()) return;
 
     const linux = process.platform === "linux";
     const body =
@@ -542,6 +592,79 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle(CLOSE, () => { if (alive()) win.close(); });
   ipcMain.handle(STATE, () => stateOf());
   ipcMain.handle(LOGO, () => logoUrl());
+
+  /** THE DRAWN PAGE, READ OUT OF THE BOX. Every frame in the window is walked
+   *  and the one that is the page — the only frame the client weaves — is
+   *  asked to serialise itself: scripts out, every canvas turned into the
+   *  picture it was showing, every section marked in view so a scene below the
+   *  fold plays for a stranger, and the sheet's own ground written in, because
+   *  the box is transparent and the app paints the paper around it. The page
+   *  has already been drawn and scrolled by a person, so what comes out is what
+   *  they were looking at.
+   *
+   *  THE SERIALIZER IS A FUNCTION, STRINGIFIED, and not a template literal
+   *  holding source: a `\n` written into a template is a backslash and an `n`
+   *  in the injected code rather than a newline escape, which is a syntax error
+   *  the box reports and the person sees as "the window has to hand one over".
+   *  `Function.prototype.toString` hands over exactly what is written here. */
+  function serialise(paper) {
+    var root = document.documentElement.cloneNode(true);
+    Array.prototype.forEach.call(root.querySelectorAll("script"), function (s) { s.remove(); });
+    // EVERYTHING THAT PLAYS ONCE HAS PLAYED. Three things in a workspace hide
+    // until an observer sees them, and each says so with one class: a section
+    // that reveals itself (`is-seen`, the reveal plugin's default and what
+    // every section script of that shape adds), a grid of cards (`g-seen`),
+    // and a scene that pauses off screen (`in-view`). A capture is read from
+    // wherever the person had scrolled to, so anything below that had not been
+    // seen and would rest invisible for a stranger forever; marked seen, it
+    // rests on its landed frame, which is the frame that tells the story.
+    Array.prototype.forEach.call(root.querySelectorAll("[data-g-section]"), function (el) { el.classList.add("in-view", "is-seen"); });
+    Array.prototype.forEach.call(root.querySelectorAll(".g-cards"), function (el) { el.classList.add("g-seen"); });
+    if (paper) {
+      root.style.setProperty("--paper", paper);
+      var ground = document.createElement("style");
+      ground.textContent = "html{background:var(--paper)}";
+      (root.querySelector("head") || root).prepend(ground);
+    }
+    var live = Array.prototype.slice.call(document.querySelectorAll("canvas"));
+    Array.prototype.forEach.call(root.querySelectorAll("canvas"), function (c, i) {
+      var src = live[i];
+      var img = document.createElement("img");
+      try { img.src = src ? src.toDataURL() : ""; } catch (e) { img.src = ""; }
+      img.width = src ? src.width : 0;
+      img.height = src ? src.height : 0;
+      img.setAttribute("class", c.getAttribute("class") || "");
+      c.replaceWith(img);
+    });
+    return "<!doctype html>" + String.fromCharCode(10) + root.outerHTML;
+  }
+
+  ipcMain.handle(CAPTURE, async () => {
+    if (!alive()) return "";
+    // THE BOX IS THE ONE FRAME THAT IS NOT THE WINDOW. The client weaves exactly
+    // one iframe per page, so any frame under the main one is it. The whole
+    // subtree is walked rather than the direct children, so a page drawn one
+    // level down still counts, and the outermost one is taken.
+    const main = win.webContents.mainFrame;
+    const box = main.framesInSubtree.find((f) => f !== main);
+    if (!box) {
+      console.error("the page could not be captured: the window holds no box");
+      return "";
+    }
+    let paper = "";
+    try {
+      paper = await win.webContents.executeJavaScript(
+        'getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()', true);
+    } catch {
+      // No paper is a white sheet, which is still a page.
+    }
+    try {
+      return await box.executeJavaScript(`(${serialise.toString()})(${JSON.stringify(paper)})`, true);
+    } catch (e) {
+      console.error("the page could not be captured", e);
+      return "";
+    }
+  });
 
   app.whenReady().then(() => {
     // Before anything is spawned and long before `open` runs, because a menu set

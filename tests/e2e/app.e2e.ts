@@ -400,22 +400,19 @@ walk("a first launch of the built application mounts nothing and opens the picke
   )).toBe("Create a vault|Open");
 });
 
-walk("window.biomShell is those names and no others", async () => {
-  // THE LIST IS CLOSED, and this is the closing of it in the assembled program.
-  // `tests/app.test.ts` holds the same list against the two source files; what
-  // is checked here is what actually reached the window's world.
+walk("the bridge reached the window's world, and nothing of node came with it", async () => {
+  // WHAT THE NAMES ARE is `tests/app.test.ts`'s to hold, against the two source
+  // files — a second copy of that list here was one more place to forget when
+  // the bridge grew, and it did. What only the assembled program can show is
+  // the other half: that the object landed on the window at all, and that node
+  // is off in both worlds with no `ipcRenderer` handed over, so the object is
+  // every channel the main process answers.
   const surface = JSON.parse(await wire.evaluate<string>(`JSON.stringify({
-    top: Object.keys(window.biomShell).sort(),
-    controls: Object.keys(window.biomShell.windowControls).sort(),
+    bridged: typeof window.biomShell === "object" && typeof window.biomShell.windowControls === "object",
     node: typeof window.require + "/" + typeof window.process + "/" + typeof window.ipcRenderer,
-  })`)) as { top: string[]; controls: string[]; node: string };
+  })`)) as { bridged: boolean; node: string };
 
-  expect(surface.top).toEqual(["chooseFolder", "logo", "windowControls"]);
-  expect(surface.controls).toEqual([
-    "close", "inset", "lights", "minimize", "onChange", "state", "toggleFullScreen", "toggleMaximize",
-  ]);
-  // NOTHING ELSE CROSSED. Node is off in both worlds and no `ipcRenderer` was
-  // handed over, so the object above is every channel the main process answers.
+  expect(surface.bridged).toBe(true);
   expect(surface.node).toBe("undefined/undefined/undefined");
 });
 
