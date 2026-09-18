@@ -392,12 +392,32 @@ only("endAll on the way out ends every live run as shutdown", async () => {
   expect(w.runs.live()).toBe(0);
 });
 
+only("killAll is synchronous: every live group is killed outright and every row marked, for the process's exit handler", async () => {
+  const w = await world({ manifest: "name: Sleeper\ncommand: [sh, -c, \"trap '' TERM; sleep 30 & wait\"]\n" });
+  const a = await w.runs.start(PAGE, "pull", {}, null);
+  const b = await w.runs.start(PAGE, "pull", {}, null);
+  await wait(200);
+  expect(w.runs.live()).toBe(2);
+  // No await: this is what an `exit` handler can do, and all it can do.
+  w.runs.killAll("shutdown");
+  expect(w.runs.live()).toBe(0);
+  for (const r of [a, b]) {
+    const row = w.runs.get(r.id)!;
+    expect([row.status, row.endedBy, row.signal]).toEqual(["killed", "shutdown", "SIGKILL"]);
+    expect(row.ended).not.toBeNull();
+  }
+  await wait(150);
+  const pg = Bun.spawn(["pgrep", "-g", String(a.pgid)], { stdout: "pipe", stderr: "ignore" });
+  expect((await new Response(pg.stdout).text()).trim()).toBe("");
+});
+
 test("reconcile marks a running row whose process is gone as lost, and leaves a live one alone", async () => {
   // A fake runner: `alive` says what the test says, and nothing is spawned.
   const alivePids = new Set<number>([4242]);
   const fake: ProcessRunner = {
     start: () => ({ pid: 4242, pgid: 4242, done: new Promise(() => {}) }),
     end: async () => {},
+    killNow: (pgid) => { alivePids.delete(pgid); },
     alive: (pid) => alivePids.has(pid),
   };
   const w = await world({ manifest: "name: Fake\ncommand: [whatever]\n", process: fake });
@@ -418,6 +438,7 @@ test("a kill on a row this server never held a process for finishes the row itse
   const fake: ProcessRunner = {
     start: () => ({ pid: 999999, pgid: 999999, done: new Promise(() => {}) }),
     end: async () => {},
+    killNow: () => {},
     alive: () => false,
   };
   const w = await world({ manifest: "name: Fake\ncommand: [whatever]\n", process: fake });
@@ -468,6 +489,7 @@ test("a row round-trips every column", async () => {
   const fake: ProcessRunner = {
     start: () => ({ pid: 7, pgid: 7, done: Promise.resolve({ exit: 2, signal: null }) }),
     end: async () => {},
+    killNow: () => {},
     alive: () => false,
   };
   const w = await world({ manifest: "name: Fake\ncommand: [x, \"{tag}\"]\ninputs:\n  - { name: tag, type: text, required: true }\n", process: fake });

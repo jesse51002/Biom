@@ -498,6 +498,9 @@ export interface Host {
    *  server that exits — the window closed, Ctrl-C, the shell gone — leaves no
    *  process of any automation behind. */
   endRuns(): Promise<void>;
+  /** KILL EVERY RUN NOW, synchronously, for the process's `exit` handler —
+   *  the one ending every route passes through, where nothing can be awaited. */
+  killRuns(): void;
   /** Release every database handle. The server never calls it; a test that
    *  stood a host up does. */
   close(): void;
@@ -1402,6 +1405,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         } catch {
           // A mount that failed has no runs; one that cannot be reached now
           // has nothing this can do for it.
+        }
+      }
+    },
+    killRuns() {
+      for (const held of settledMounts) {
+        try {
+          held.runs.killAll("shutdown");
+        } catch {
+          /* a registry that cannot be written now; the process is going anyway */
         }
       }
     },
@@ -2359,15 +2371,18 @@ export const PARENT_ENV = "BIOM_SHELL";
 /** END EVERY RUN, THEN EXIT, on the signals that still run a handler. Armed
  *  once; a second signal while the first is being honoured exits at once
  *  rather than waiting again, because somebody pressing Ctrl-C twice means it. */
-function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM" | "SIGHUP")[]): void {
+function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
   let ending = false;
   for (const sig of signals) {
     process.on(sig, () => {
+      // Pressed twice means it: the `exit` handler kills what is left.
       if (ending) process.exit(130);
       ending = true;
       const alive = host.live();
       if (alive > 0) console.log(`ending ${alive} run${alive === 1 ? "" : "s"} before stopping`);
-      void host.endRuns().finally(() => process.exit(sig === "SIGINT" ? 130 : 0));
+      // The exit codes main's terminal handlers used to answer with, so a
+      // signal still reads as the signal it was.
+      void host.endRuns().finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
     });
   }
 }
@@ -2462,9 +2477,13 @@ if (import.meta.main) {
   // into an exit so that handler runs; without one a signal ends the process and
   // runs nothing of ours. SIGHUP is deliberately left alone: `make up` starts
   // this under `nohup`, and a handler here would undo that.
-  process.on("exit", () => terminals.killAll());
-  process.on("SIGINT", () => process.exit(130));
-  process.on("SIGTERM", () => process.exit(143));
+  // AND EVERY RUN GOES WITH THEM, in the same handler: an automation is a
+  // process group of its own, and a signal that ends this process reaches
+  // none of it. `killRuns` is synchronous for the reason `killAll` is. Where
+  // there is time — a signal, the parent's pipe closing — `endRunsOn` and
+  // `exitWhenTheParentGoes` below end them gracefully first, TERM then KILL,
+  // and this handler finds nothing left to do.
+  process.on("exit", () => { terminals.killAll(); host.killRuns(); });
 
   const server = Bun.serve({
     port: PORT,
@@ -2617,12 +2636,15 @@ if (import.meta.main) {
   host.listen(server.port, TOKEN);
   // AND NO RUN OUTLIVES THE SERVER. Every automation is a process group of its
   // own, so a Ctrl-C at the terminal does not reach it and a shell quitting
-  // this process does not either — the registry has to end them, and these are
-  // the three ways this process is asked to stop that still run a handler.
-  // The shell's own way, the stdin pipe, is `exitWhenTheParentGoes` below and
-  // ends them too. An abort runs nothing, and what that leaves is marked
-  // `lost` on the next mount.
-  endRunsOn(host, ["SIGINT", "SIGTERM", "SIGHUP"]);
+  // this process does not either — the registry has to end them. These two
+  // signals are ended gracefully, TERM then KILL, and then the process exits
+  // — which is also what the terminal handlers above turned them into, so one
+  // handler here stands for both. SIGHUP is left alone on the terminals'
+  // argument: `make up` starts this under `nohup`. The shell's own way, the
+  // stdin pipe, is `exitWhenTheParentGoes` below and ends them too; the
+  // `exit` handler kills whatever any of those did not reach. An abort runs
+  // nothing, and what that leaves is marked `lost` on the next mount.
+  endRunsOn(host, ["SIGINT", "SIGTERM"]);
   // AND THE LIFETIME, from this end. Armed after the port is open so a launch
   // that ends the moment it begins still says what it was — see
   // `exitWhenTheParentGoes`, which does nothing at all unless a parent said it

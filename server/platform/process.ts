@@ -138,6 +138,10 @@ export function makeProcessRunner(): ProcessRunner {
       while (alive(pgid) && Date.now() < gone) await sleep(20);
     },
 
+    killNow(pgid) {
+      signal(pgid, "SIGKILL");
+    },
+
     alive,
   };
 }

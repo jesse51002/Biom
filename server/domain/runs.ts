@@ -703,6 +703,19 @@ export function makeRuns(d: RunsDeps): Runs {
       }
     },
 
+    killAll(by) {
+      // SYNCHRONOUS, because this is the process's `exit` handler: no timer
+      // runs after it and nothing can be awaited. Every live group is killed
+      // outright and every row marked here, so a server the shell ended with
+      // a signal — which exits before any async ending could run — leaves
+      // nothing behind and nothing reading `running` on the next mount.
+      const when = now();
+      for (const r of db.all<Raw>(`SELECT * FROM runs WHERE status = 'running'`)) {
+        if (r.pgid !== null) d.process.killNow(r.pgid);
+        db.run(`UPDATE runs SET ended = ?, status = 'killed', exit = NULL, signal = 'SIGKILL', ended_by = ? WHERE id = ?`, [when, by, r.id]);
+      }
+    },
+
     async pageFiles(page) {
       const ref = await d.refOf(page);
       if (ref === null) throw bad("not_found", "no such page");

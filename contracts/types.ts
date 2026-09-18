@@ -1410,6 +1410,8 @@ export interface ProcessRunner {
   /** TERM the group, wait `grace` ms, KILL what is left. Resolves when the
    *  group is gone. */
   end(pgid: number, grace: number): Promise<void>;
+  /** KILL the group now, no grace, synchronously — for a process exit handler. */
+  killNow(pgid: number): void;
   alive(pid: number): boolean;
 }
 
@@ -1435,8 +1437,13 @@ export interface Runs {
   reconcile(): number;
   /** How many rows are `running` in this vault. */
   live(): number;
-  /** End every live run, on the way out. */
+  /** End every live run, on the way out: TERM, the grace, KILL, and every row
+   *  marked. For the endings that leave time. */
   endAll(by: "shutdown"): Promise<void>;
+  /** KILL every live group NOW, synchronously, and mark every row — for the
+   *  process's own `exit` handler, where no timer runs after and nothing can
+   *  be awaited. The one ending every route passes through. */
+  killAll(by: "shutdown"): void;
   /** The files a page's screens may open and write. */
   pageFiles(page: PageId): Promise<VaultFile[]>;
   readPageFile(page: PageId, file: string): Promise<string | null>;

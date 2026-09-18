@@ -224,6 +224,7 @@ async function workspace() {
   const runner: ProcessRunner = {
     start: () => ({ pid: 4242, pgid: 4242, done: new Promise(() => {}) }),
     end: async (pgid) => { alive.delete(pgid); },
+    killNow: (pgid) => { alive.delete(pgid); },
     alive: (pid) => alive.has(pid),
   };
   const changes: string[] = [];
