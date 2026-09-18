@@ -55,7 +55,7 @@
 /** @import { TerminalView } from "../views/terminal.js" */
 
 import { remember } from "../platform/dom.js";
-import { closePopover } from "../widgets/popover.js";
+import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
