@@ -562,34 +562,21 @@ test("THE PAGE IS NAMED BY THE BREADCRUMB IN THE RAIL, not by a heading over the
   expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Design"]);
 });
 
-<<<<<<< HEAD
-test("the bar holds Reload and the page's two screens and nothing else, in both builds; off a page, Reload alone", async () => {
-  // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload, then the page's
-  // two screens — Instructions and Automations — and Agent Terminal joins them
-  // when this window has a workspace to run one in (the rightmost-action test
-  // below covers that). There is no menu, no Config, no History and no Modify
-  // page: the owner decided (2026-09-17) that the three go rather than hide,
-  // so this is asserted in the development build as well as the built one.
-  for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
-    await tick();
-    const tools = find(g.rail, (el) => has(el, "tools"));
-    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Instructions", "Automations"]);
-=======
-test("the bar holds Reload, and Share on a page, in both builds", async () => {
+test("the bar holds Reload, and Share and the page's two screens on a page, in both builds", async () => {
   // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload is the one action
   // every route adds; Share joins it on a page, because a page is the thing a
-  // share captures and the design doc is not shared. Agent Terminal joins them
-  // when this window has a workspace to run one in (tests/terminal-store.test.js
-  // and the dock tests cover that). There is no menu, no Config, no History and
-  // no Modify page: the owner decided (2026-09-17) that the three go rather than
-  // hide, so this is asserted in the development build as well as the built one
-  // — and Share is in both builds too, because it is a product feature and not
-  // a diagnostic.
+  // share captures and the design doc is not shared, and the page's two
+  // screens — Instructions and Automations — come after it. Agent Terminal
+  // joins them when this window has a workspace to run one in (the
+  // rightmost-action test below covers that). There is no menu, no Config, no
+  // History and no Modify page: the owner decided (2026-09-17) that the three
+  // go rather than hide, so this is asserted in the development build as well
+  // as the built one — and Share and the two screens are in both builds too,
+  // because they are product features and not diagnostics.
   for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
     await tick();
     const tools = find(g.rail, (el) => has(el, "tools"));
-    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Share"]);
->>>>>>> origin/main
+    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Share", "Instructions", "Automations"]);
     expect(find(tools, (el) => has(el, "more"))).toBeNull();
     expect(find(tools, (el) => has(el, "viewsw"))).toBeNull();
     g.ui.go("design", "");
