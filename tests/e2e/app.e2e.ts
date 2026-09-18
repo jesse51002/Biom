@@ -410,7 +410,7 @@ walk("window.biomShell is those names and no others", async () => {
     node: typeof window.require + "/" + typeof window.process + "/" + typeof window.ipcRenderer,
   })`)) as { top: string[]; controls: string[]; node: string };
 
-  expect(surface.top).toEqual(["chooseFolder", "logo", "windowControls"]);
+  expect(surface.top).toEqual(["capturePage", "chooseFolder", "logo", "windowControls"]);
   expect(surface.controls).toEqual([
     "close", "inset", "lights", "minimize", "onChange", "state", "toggleFullScreen", "toggleMaximize",
   ]);
