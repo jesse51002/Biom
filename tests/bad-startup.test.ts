@@ -38,7 +38,7 @@ import { test, expect } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { makeHost } from "../server/main.ts";
 import { makeDb } from "../server/platform/db.ts";
@@ -353,19 +353,22 @@ test("a workspace made by an older build gains what it lacks and keeps what it h
   const root = await scratch();
   try {
     // A VAULT FROM BEFORE ANY OF THE FURNITURE EXISTED: pages and nothing else.
-    // No `plugins/`, no `docs/`, no `.agents/`, no `design/`, no theme — every
-    // one of which a page now needs to draw at all.
+    // No `docs/`, no `.agents/`, no `design/`, no theme. It gains all of those;
+    // it does NOT gain a `plugins/`, because the framework's plugins are the
+    // rung under the vault's rather than a copy inside it.
     const at = await workspaceAt(join(root, "OldBuild"));
     const rootDoc = join(at, "pages", "home", "content.yaml");
     const asWritten = readFileSync(rootDoc, "utf8");
 
     const host = await hostAt(root, at);
     expect(host.open()).toEqual([at]);
+    await host.settled(at);
     host.close();
 
-    for (const gained of ["plugins", "docs", ".agents", "design", "base", "theme.json", "AGENTS.md"]) {
+    for (const gained of ["docs", ".agents", "design", "base", "theme.json", "AGENTS.md"]) {
       expect([gained, existsSync(join(at, gained))]).toEqual([gained, true]);
     }
+    expect(existsSync(join(at, "plugins"))).toBe(false);
     // AND THE PAGE IS BYTE FOR BYTE WHAT IT WAS. Every write the seeder makes is
     // additive file by file: an old workspace gains a skill or a plugin on the
     // next start, and anything edited stays edited.
@@ -464,30 +467,40 @@ test("a folder that will not mount still answers the kinds that are about vaults
 
 /* ══ what a vault can lose and get back ══════════════════════════════════ */
 
-test("a deleted doc plugin comes back on the next start, and an edited one is kept", async () => {
+test("an override of the doc plugin is kept across opens, and removing it hands the page back to the framework's", async () => {
   const root = await scratch();
   try {
     const at = join(root, "ws");
     (await hostAt(root, at)).close();
     const doc = join(at, "plugins", "doc", "index.html");
-    const shipped = readFileSync(doc, "utf8");
+    // NOTHING IS IN `plugins/` UNTIL THE PERSON PUTS SOMETHING THERE. The
+    // framework's own `doc` draws every doc page in this workspace through the
+    // fallback rung, and the copy to read is in `docs/plugins/`.
+    expect(existsSync(doc)).toBe(false);
 
-    // NOTHING IS SHIPPED, so `plugins/doc/index.html` is what draws every doc
-    // page in this workspace — and a person can delete it, because it is a file
-    // in their folder like every other. Every write the seeder makes is additive
-    // file by file, so the gap is filled rather than the folder being rebuilt.
-    await rm(doc);
-    (await hostAt(root, at)).close();
-    expect(readFileSync(doc, "utf8")).toBe(shipped);
-
-    // AND THE OTHER HALF OF THE SAME PROPERTY, which is the one that makes the
-    // first safe: a copy is the person's, so a plugin they have changed is never
-    // written over. It is also the cost, stated rather than solved — a framework
-    // fix never reaches a plugin already copied into a vault.
+    // A FILE AT THE FRAMEWORK'S PATH IS AN OVERRIDE, and an override is the
+    // person's: it is never written over, whatever the framework does next.
     const theirs = "<!doctype html><p>mine</p>";
+    await mkdir(dirname(doc), { recursive: true });
     await writeFile(doc, theirs);
-    (await hostAt(root, at)).close();
+    const held = await hostAt(root, at);
+    await held.settled(at);
+    held.close();
     expect(readFileSync(doc, "utf8")).toBe(theirs);
+
+    // AND THE OTHER HALF: deleting it is how you go back. There is no seeder to
+    // write it again, so the framework's own draws on the next open.
+    await rm(doc);
+    const after = await hostAt(root, at);
+    await after.settled(at);
+    try {
+      expect(existsSync(doc)).toBe(false);
+      const deps = await after.deps(at);
+      expect((await deps.pages.read("home"))!.html).not.toContain("Nothing draws this page");
+      expect((await deps.pages.read("home"))!.html).not.toContain("mine");
+    } finally {
+      after.close();
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

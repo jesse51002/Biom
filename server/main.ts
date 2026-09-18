@@ -36,11 +36,13 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
+import { DOC_PLUGIN } from "../contracts/types.ts";
+import { mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format } from "./platform/yaml.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, makePages } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages } from "./domain/pages.ts";
 import { makeDocs } from "./domain/docs.ts";
 import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
 import { makeTables } from "./domain/tables.ts";
@@ -70,6 +72,7 @@ import type { PageId } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultOf } from "../contracts/wire.js";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
@@ -256,6 +259,20 @@ async function carriedFiles(): Promise<EmbeddedMap> {
   }
 }
 
+/** WHICH FRAMEWORK THIS IS, for a commit message and nothing else. Read out of
+ *  `package.json` beside the program in a checkout; a compiled binary has no
+ *  such file beside it and says so in the one word it has. It is not `BIOM_ENV`
+ *  and must not become a switch: nothing below asks it a question. */
+async function frameworkVersion(): Promise<string> {
+  try {
+    const text = await Bun.file(join(HERE, "package.json")).text();
+    const version = (JSON.parse(text) as { version?: unknown }).version;
+    return typeof version === "string" && version !== "" ? `framework ${version}` : "the framework";
+  } catch {
+    return "the framework";
+  }
+}
+
 const CARRIED = await carriedFiles();
 
 /** WHICH MAP A HOST READS ITS OWN FILES OUT OF. One question, one answer, and
@@ -315,10 +332,12 @@ const VAULT_SEED = join(HERE, "vault");
 // from `skill/` — and a copy travels into each vault as `.agents/skills/check.ts` so an
 // agent working in one can run it.
 const SKILL = join(HERE, "skill");
-// EVERY PLUGIN, as a seed root rather than a served directory. `guest/plugins/`
-// is copied into each vault's own `plugins/` and drawn from there; nothing is
-// shipped and `/guest/plugins/` is no longer served at all.
-const PLUGIN_SEED = join(HERE, PLUGINS_DIR);
+// THE FRAMEWORK'S OWN PLUGINS, as the fallback rung rather than a seed root.
+// `guest/plugins/` is read for any plugin a vault's own `plugins/` has not got,
+// served to the box at `/v/<enc>/plugin/…` behind the vault's own files, and
+// mirrored into every vault's `docs/plugins/` on open so a person can read it.
+// `/guest/plugins/` itself is still not served: one url per plugin.
+const PLUGIN_ROOT = join(HERE, PLUGINS_DIR);
 // In the per-user data directory and never inside a vault: it is about vaults,
 // so it cannot live in one. `VAULTS` stays the override, because a test must
 // never write the developer's own list.
@@ -357,9 +376,11 @@ export interface HostPaths {
   /** The framework root, read for the two modules `check.ts` imports so the copy
    *  in a vault can actually load. Defaults to this directory. */
   checkerLib?: string;
-  /** `guest/plugins/` as it ships, copied into the vault's own `plugins/`.
-   *  Defaulted for the same reason the roots above are. */
-  pluginSeed?: string;
+  /** `guest/plugins/` as it ships: the fallback rung a page's document and a
+   *  slot plugin are resolved from when the vault has no file at that path, and
+   *  what `docs/plugins/` is mirrored from on open. Defaulted for the same
+   *  reason the roots above are. */
+  pluginRoot?: string;
   /** WHAT THE PROGRAM CARRIES, when it was compiled with its files inside it.
    *  Given one, every path above is ignored and the seed roots are read out of
    *  the map instead. Defaults to whatever this build embedded, which is nothing
@@ -403,6 +424,15 @@ export interface Host {
    *  mode — it is the request that has not chosen a folder yet, which is how the
    *  picker is reachable on a first run. */
   deps(path?: string): Promise<Deps>;
+  /** THE FRAMEWORK'S OWN PLUGINS, read-only, the same set every mount falls back
+   *  to. The routes read it for the loader's bundle and for a plugin file the
+   *  vault has not got. */
+  pluginRoot: Files;
+  /** THE BACKGROUND WORK OF ONE MOUNT — the skills rewrite and the mirror
+   *  into `docs/plugins/` — as a promise a caller can wait on. Nothing a page
+   *  draws waits on it; a test does. Resolves for a folder that is not
+   *  mounted, because there is nothing to wait for. */
+  settled(path: string): Promise<void>;
   /** The vaults mounted right now, absolute. The tests read it to prove that
    *  asking for one folder did not quietly mount another. */
   open(): string[];
@@ -441,6 +471,10 @@ interface Mounted {
    *  is the only thing that compares. */
   seen: Seen;
   deps: Omit<Deps, "vault" | "production">;
+  /** See `Host.settled`. Set by `hold` once the mount has answered. */
+  settled: Promise<void>;
+  /** The vault's own files, held for the work `hold` starts after the mount. */
+  files: Files;
 }
 
 /** Does this file parse? A half-written `content.yaml` is a normal intermediate
@@ -584,6 +618,44 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   const seedRoot = (root: string, path: string) =>
     embedded ? makeEmbeddedFiles(carried, root) : makeFiles(path);
 
+  /** THE FRAMEWORK'S OWN PLUGINS, one read-only root for every mount. Built
+   *  once here rather than per vault because it is the same set whichever
+   *  folder is open — the routes read it too, through `Host.pluginRoot`. */
+  const pluginRoot = seedRoot(PLUGINS_DIR, at.pluginRoot ?? PLUGIN_ROOT);
+
+  /** THE THREE ROOTS THE FRAMEWORK OWNS INSIDE A VAULT, read-only, built once.
+   *  `vaultSeed` for the skills as they ship, `skill` for the checker, and the
+   *  framework itself for the modules the checker imports. The seeder is handed
+   *  the first for everything else at the vault root. */
+  const skillsSeed = seedRoot("vault", at.vaultSeed ?? VAULT_SEED);
+  const checkerSeed = seedRoot("skill", at.skill ?? SKILL);
+  const checkerLibSeed = seedRoot("", at.checkerLib ?? HERE);
+
+  /** THE WORK AFTER A MOUNT, off the mount path on purpose: a page draws from
+   *  the framework's plugins the instant the vault is open, so nothing here is
+   *  anything a page waits for. First the skills, so an agent pointed at the
+   *  folder reads the framework's current ones; then the mirror, so what a
+   *  person can read is current. Nothing the vault holds under its own names
+   *  is touched — a plugin copy under `plugins/`, a skill under a name the
+   *  framework no longer uses — because the framework cannot tell an edit
+   *  from a stale seed and does not try. Each failure is a sentence in the log
+   *  and never a mount that did not happen — a folder whose `docs/` cannot be
+   *  written is still a workspace. */
+  async function afterMount(files: Files): Promise<void> {
+    try {
+      if (await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed)) {
+        await files.commit(`The framework's guide, docs, skills and checker, as ${await frameworkVersion()} ships them`);
+      }
+    } catch (e) {
+      console.warn("the framework's skills could not be written into .agents/skills/", e);
+    }
+    try {
+      await mirrorPlugins(files, pluginRoot);
+    } catch (e) {
+      console.warn("the plugin mirror in docs/plugins/ could not be written", e);
+    }
+  }
+
   /** THE LIST. Every module in the server, constructed against one folder.
    *  Called once on boot and once per `open`, which is what makes the vault
    *  swappable at all — there is no state above this to migrate, because
@@ -650,7 +722,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   async function build(path: string, db: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
     const yaml = { parse, parseAny, format };
     const tables = makeTables(db);
-    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage);
+    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot);
     // Rooted at `design/` rather than at the vault: the design doc is ONE page
     // and it sits beside `pages/`, so the module reads its `content.yaml` and
     // its sections from the root of what it is handed. That placement is what
@@ -668,11 +740,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         return {};
       }
     };
-    // THE `doc` PLUGIN'S DOCUMENT, out of this vault's own `plugins/`. The design
-    // module's files are rooted at `design/` and correctly cannot reach it, so it
-    // is handed a way to ask — read live, so editing the plugin changes the
-    // design doc on the next draw exactly as it changes every other doc page.
-    const docDocument = async () => (await files.read(DOC_PLUGIN_DOCUMENT)) ?? "";
+    // THE `doc` PLUGIN'S DOCUMENT, resolved the way `pages.ts` resolves every
+    // plugin document: this vault's own `plugins/doc/index.html` if it has one,
+    // the framework's otherwise. The design module's files are rooted at
+    // `design/` and correctly cannot reach either, so it is handed a way to ask
+    // — read live, so editing the plugin changes the design doc on the next
+    // draw exactly as it changes every other doc page.
+    const docDocument = async () =>
+      (await files.read(DOC_PLUGIN_DOCUMENT)) ?? (await pluginRoot.read(frameworkPlugin(DOC_PLUGIN))) ?? "";
     // THE SAME BASELINE AS THE VAULT'S OWN FILES, rooted a level down. A write
     // into `design/` is this process's write wherever it was made from, and two
     // baselines over one tree would make half of them look like somebody else's.
@@ -685,17 +760,11 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const presets = makePresets({
       pages, tables, files, yaml,
       seed: seedRoot("presets", at.presets),
-      // The vault's own furniture: `AGENTS.md`, `.agents/skills/` and `design/`, copied
-      // file by file and never over anything already there.
-      vaultSeed: seedRoot("vault", at.vaultSeed ?? VAULT_SEED),
-      skill: seedRoot("skill", at.skill ?? SKILL),
-      // The framework itself, read for the two modules the checker imports. It is
-      // the only Files here rooted above a single concern, which is what makes
-      // it the composition root's business rather than the seeder's.
-      checkerLib: seedRoot("", at.checkerLib ?? HERE),
-      // EVERY PLUGIN, into the vault's own `plugins/`. Nothing is shipped, so
-      // this root is what makes a page draw at all.
-      pluginSeed: seedRoot(PLUGINS_DIR, at.pluginSeed ?? PLUGIN_SEED),
+      // The vault's own furniture: `INSTRUCTIONS.md`, `design/` and `base/`,
+      // copied file by file and never over anything already there. The same
+      // root's `AGENTS.md`, `docs/` and `.agents/skills/` are the framework's
+      // and go through `rewriteOwned` in `afterMount` instead.
+      vaultSeed: skillsSeed,
     });
 
     // The rows live in SQLite and the pages live in git. A binary file rewritten
@@ -742,7 +811,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
 
     await memory.remember(path);
-    return { path, db, seen, deps: { pages, design, docs, tables, presets, theme, mirror } };
+    return { path, db, seen, deps: { pages, design, docs, tables, presets, theme, mirror }, settled: Promise.resolve(), files };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -774,7 +843,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const had = mounted.get(abs);
     if (had) return await had;
 
-    const started = mount(abs);
+    const started = mount(abs).then((m) => {
+      // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
+      // caller awaits resolves with the mount; the rewrite and the mirror start
+      // from here and are reachable through `settled` for whoever has to wait.
+      m.settled = afterMount(m.files);
+      return m;
+    });
     mounted.set(abs, started);
     try {
       return await started;
@@ -1101,6 +1176,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       return mounted.size > 0 ? null : trouble;
     },
     vault: vaultAt(null),
+    pluginRoot,
+    async settled(path: string): Promise<void> {
+      const held = mounted.get(resolve(path));
+      if (held === undefined) return;
+      await (await held).settled;
+    },
     async deps(path?: string): Promise<Deps> {
       if (path === undefined) return { ...NO_VAULT, production, vault: vaultAt(null) };
       let held;
@@ -1318,7 +1399,7 @@ export const PLUGIN_DIR_ROUTE = "/plugin/";
  *  is replaced by the sentence saying so. One broken plugin is one broken plugin.
  *
  *  @param vault the absolute path of the folder being served */
-export async function pluginBundle(vault: string): Promise<Response> {
+export async function pluginBundle(vault: string, framework: Files | null = null): Promise<Response> {
   const dir = join(vault, PLUGINS_DIR_VAULT);
   let files: { name: string; mtimeMs: number; size: number }[];
   try {
@@ -1339,16 +1420,40 @@ export async function pluginBundle(vault: string): Promise<Response> {
     files = [];
   }
 
+  // THE FRAMEWORK'S OWN, MINUS EVERY NAME THE VAULT ALSO HAS. The union is
+  // computed here by filename and nowhere else: a vault `markdown.js` means the
+  // framework's `markdown.js` never enters the script, so the registry never
+  // sees two registrations of one id and its refusal never fires for this. The
+  // framework's go FIRST, so a vault plugin that `ctx.use`s one finds it
+  // registered. Read by content rather than stat'd — `Files` has no stat, the
+  // set is a handful of small files, and reading them is what keeps the
+  // edit-and-reload loop live for `guest/plugins/` in a checkout.
+  const mine = new Set(files.map((f) => f.name));
+  const theirs: { name: string; source: string }[] = [];
+  if (framework !== null) {
+    const entries = (await framework.list(".")).filter((e) => !e.dir && e.name.endsWith(".js") && !mine.has(e.name));
+    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const source = await framework.read(e.name);
+      if (source !== null) theirs.push({ name: e.name, source });
+    }
+  }
+
   // THE FOLDER AS IT STANDS, AS ONE STRING. Every page in a vault carries this
   // tag, so a rail of twenty pages is twenty requests that read and compile every
   // plugin in the folder on a server with one thread. The key is the listing plus
   // each file's mtime and size, so a write through the app, an editor save, a
-  // delete and a reseed all miss the memo and nothing else does.
-  const key = files.map((f) => `${f.name}:${f.mtimeMs}:${f.size}`).join("\n");
+  // delete and a reseed all miss the memo and nothing else does — and the
+  // framework's half by a hash of what was read, for the same reason.
+  const key = files.map((f) => `${f.name}:${f.mtimeMs}:${f.size}`).join("\n")
+    + "\n--\n" + theirs.map((t) => `${t.name}:${createHash("sha1").update(t.source).digest("hex")}`).join("\n");
   const had = bundles.get(vault);
   if (had !== undefined && had.key === key) return pluginResponse(had.body);
 
   const parts: string[] = [PLUGIN_BUNDLE_HEAD];
+  for (const { name, source } of theirs) {
+    parts.push(`/* framework/${name} */`);
+    parts.push(compiled(name, "framework", source, null));
+  }
   for (const { name, size } of files) {
     parts.push(`/* plugins/${name} */`);
     let broken: string | null = null;
@@ -1361,21 +1466,32 @@ export async function pluginBundle(vault: string): Promise<Response> {
       broken = `${Math.round(size / 1024)}KB is larger than a plugin may be (${Math.round(PLUGIN_MAX_BYTES / 1024)}KB) — a plugin is a file you can read, and a library belongs in its own script`;
     } else {
       source = await Bun.file(join(dir, name)).text();
-      try {
-        // Compiles the source and runs none of it.
-        new Function(source);
-      } catch (e) {
-        broken = e instanceof Error ? e.message : String(e);
-      }
     }
-    if (broken === null) parts.push(`file(${JSON.stringify(name)}, function () {\n${source}\n});`);
-    else parts.push(`fail(${JSON.stringify(name)}, ${JSON.stringify(broken)});`);
+    parts.push(compiled(name, "plugins", source, broken));
   }
   parts.push("})();");
 
   const body = parts.join("\n");
   bundles.set(vault, { key, body });
   return pluginResponse(body);
+}
+
+/** ONE PLUGIN'S SEGMENT OF THE BUNDLE. Compiled here with `new Function` —
+ *  which parses and runs nothing — so a file that does not parse is replaced by
+ *  the sentence saying so instead of taking every other plugin down with it.
+ *  `root` is what the failure names, `plugins/` or `framework/`, so a reader
+ *  knows which copy broke; the bare file name is what the registry reads to
+ *  bind a part kind, and it is the same whichever root it came from. */
+function compiled(name: string, root: "plugins" | "framework", source: string, broken: string | null): string {
+  if (broken === null) {
+    try {
+      new Function(source);
+    } catch (e) {
+      broken = e instanceof Error ? e.message : String(e);
+    }
+  }
+  if (broken === null) return `file(${JSON.stringify(name)}, ${JSON.stringify(root)}, function () {\n${source}\n});`;
+  return `fail(${JSON.stringify(name)}, ${JSON.stringify(root)}, ${JSON.stringify(broken)});`;
 }
 
 /** The largest a single `plugins/*.js` may be. Generous for a file somebody is
@@ -1408,20 +1524,21 @@ function pluginResponse(body: string): Response {
  *  `rt.pluginFile` is what `whereFrom()` in the registry reads, and it is restored
  *  afterwards rather than cleared, so a plugin that registers another from inside
  *  its own body is still attributed to the file it is in. */
-const PLUGIN_BUNDLE_HEAD = `/* <vault>/plugins/ — this workspace's own plugins, in id order.
-   Served whole by the server that read the folder; every file gets a function of
-   its own, so one plugin that fails is one plugin that fails. */
+const PLUGIN_BUNDLE_HEAD = `/* The slot plugins this workspace draws with: the framework's own, then
+   <vault>/plugins/ — each in id order, and a vault file shadows the framework's
+   of the same name. Served whole by the server that read both; every file gets
+   a function of its own, so one plugin that fails is one plugin that fails. */
 (function () {
   var rt = globalThis.__gRuntime || (globalThis.__gRuntime = {});
-  function fail(file, e) {
-    var message = "plugins/" + file + " did not load: " + ((e && e.message) || e);
+  function fail(file, root, e) {
+    var message = root + "/" + file + " did not load: " + ((e && e.message) || e);
     if (typeof rt.report === "function") rt.report(message);
     else console.error("[biom] " + message);
   }
-  function file(name, run) {
+  function file(name, root, run) {
     var was = rt.pluginFile;
     rt.pluginFile = name;
-    try { run(); } catch (e) { fail(name, e); } finally { rt.pluginFile = was; }
+    try { run(); } catch (e) { fail(name, root, e); } finally { rt.pluginFile = was; }
   }`;
 
 /** The routes that resolve INSIDE a vault, so they only exist on a request that
@@ -1437,11 +1554,34 @@ const PLUGIN_BUNDLE_HEAD = `/* <vault>/plugins/ — this workspace's own plugins
  *  `plugins/` is this WORKSPACE's own plugins, served to the box as classic
  *  scripts exactly as `/guest/` and `/vendor/` are. It is per-vault for the
  *  obvious reason the other two are not: a plugin somebody wrote for their
- *  workspace lives in it. */
+ *  workspace lives in it. A path under it the vault has NOT got falls back to
+ *  the framework's own file of that name — see `pluginFile` — which is the same
+ *  nearest-first walk `pages.ts` makes for a page's document, applied per file:
+ *  a vault holding only `plugins/kanban/index.html` still gets the framework's
+ *  `kanban/kanban.js` underneath it. */
 function inVault(rest: string, vault: string): string | null {
   if (rest.startsWith(PLUGIN_DIR_ROUTE)) return under(join(vault, PLUGINS_DIR_VAULT), rest.slice(PLUGIN_DIR_ROUTE.length));
   if (rest.startsWith("/asset/")) return under(join(vault, "assets"), rest.slice("/asset/".length));
   return null;
+}
+
+/** ONE PLUGIN FILE, the vault's if it has it and the framework's if not.
+ *  Answered as text through the read-only root rather than as a path, because
+ *  a carried file has no path a route may hand out and a plugin is text. */
+export async function pluginFile(rel: string, vault: string, framework: Files): Promise<Response> {
+  const mine = under(join(vault, PLUGINS_DIR_VAULT), rel);
+  if (mine !== null && (await Bun.file(mine).exists())) return await deliver(mine);
+  let theirs: string | null = null;
+  try {
+    theirs = await framework.read(rel);
+  } catch {
+    theirs = null;
+  }
+  if (theirs === null) return new Response("Not found", { status: 404 });
+  const ext = rel.slice(rel.lastIndexOf(".") + 1);
+  return new Response(theirs, {
+    headers: { "content-type": TYPES[ext] ?? "application/octet-stream", "cache-control": "no-store" },
+  });
 }
 
 /** THE ONE THING IN THE DOCUMENT THE CLIENT CANNOT WORK OUT FOR ITSELF.
@@ -1589,12 +1729,13 @@ const escapeAttribute = (text: string): string =>
 export function locate(pathname: string): string | null {
   if (pathname === "/" || pathname === "") return INDEX;
   if (pathname === SHIM_ROUTE) return `${GUEST}/biom.js`;
-  // `guest/plugins/` IS A SEED ROOT AND NOT A SERVED ONE. Every plugin is copied
-  // into the vault and served from `/v/<enc>/plugin/`; serving it here as well
-  // would leave two urls for one plugin, and the one a page happened to name
-  // would decide whether the person's own copy drew or the install's did. It is
-  // refused explicitly rather than by the directory simply being absent, because
-  // in a checkout it is very much present.
+  // `guest/plugins/` IS THE FALLBACK RUNG AND NOT A SERVED ROOT. A plugin is
+  // reached at `/v/<enc>/plugin/…`, where the vault's own file answers first and
+  // the framework's second; serving it here as well would leave two urls for
+  // one plugin, and the one a page happened to name would decide whether the
+  // person's override drew or the framework's did. It is refused explicitly
+  // rather than by the directory simply being absent, because in a checkout it
+  // is very much present.
   if (pathname.startsWith(`/${GUEST}/plugins/`)) return null;
   for (const [prefix, base] of STATIC) {
     if (!pathname.startsWith(prefix)) continue;
@@ -2067,7 +2208,7 @@ if (import.meta.main) {
     vaultSeed: VAULT_SEED,
     skill: SKILL,
     production: PRODUCTION,
-    pluginSeed: PLUGIN_SEED,
+    pluginRoot: PLUGIN_ROOT,
   });
 
   // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
@@ -2198,7 +2339,8 @@ if (import.meta.main) {
         // the loader's answer — every plugin this vault has, as one script — and
         // it has to be caught here, because `under()` resolves it to the folder
         // itself and `deliver` cannot read a directory.
-        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path);
+        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path, host.pluginRoot);
+        if (rel.startsWith(PLUGIN_DIR_ROUTE)) return await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot);
         const inside = inVault(rel, named.path);
         if (inside !== null) return await deliver(inside);
         // Anything else under the prefix is the client itself: a deep link like

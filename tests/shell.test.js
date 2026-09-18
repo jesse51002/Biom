@@ -720,7 +720,7 @@ test("no store write moves a frame on the page — whatever it was that changed"
   const writes = {
     // patchVariables: the page's own values are swapped, its sections are not
     "a value the runtime wrote itself": () => { g.ws.state.page = { ...g.ws.state.page, variables: { rate: 90 } }; },
-    // writeFile / writeDocRaw: the page is re-read, so every section object is new
+    // writeFile / reloadPage: the page is re-read, so every section object is new
     "a paragraph typed on the same page": () => { g.ws.state.page = reread(g.ws.state.page); },
     // insertRow / updateRow: the table list is rebuilt around the new count
     "a row written into a table": () => { g.ws.state.tables = g.ws.state.tables.map((t) => ({ ...t, rows: t.rows + 1 })); },

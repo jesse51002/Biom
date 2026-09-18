@@ -36,13 +36,20 @@
 //     `guest/pages/welcome.html` — so what a stranger meets is a shape rather
 //     than a stack of sections. `ensureRoot` in pages.ts owns the whole of it.
 //
-//   · AGENTS.md AND .agents/skills/, copied from vault/. A Biom vault is a
-//     folder somebody points Claude Code, Cursor or Codex at directly, and the
-//     format guide has to be IN the folder — one that lives in this repo is one
-//     the agent working in somebody else's vault never sees, which made "point
-//     an agent at the folder and it just works" false. A plain `.agents/skills/`, not
-//     `.claude/skills/`: the vault must read the same to every agent, and
-//     `AGENTS.md` is what points at it.
+//   · INSTRUCTIONS.md, copied from vault/: the person's own guide, a stub that
+//     says what goes in it, theirs from the moment it lands and filled once like
+//     everything below.
+//
+//   · NOT AGENTS.md, NOT docs/, NOT .agents/skills/. The guide, the manual, the
+//     skills, the checker and its `_lib/` are the FRAMEWORK's inside a vault, not
+//     the person's: they are rewritten whole on every open by
+//     `server/workspace/framework.ts`, off the mount path, so a framework release
+//     reaches every vault and a change made in one is gone on the next open. A
+//     Biom vault is a folder somebody points Claude Code, Cursor or Codex at
+//     directly, and the format guide has to be IN the folder and CURRENT — one
+//     seeded once went stale exactly as a skill did. The walk below leaves all
+//     three out on purpose; `AGENTS.md`'s first line sends the agent to
+//     `INSTRUCTIONS.md`.
 //
 //   · design/ — the design doc, copied from vault/design/. One page,
 //     beside `pages/` rather than inside it, holding the workspace's own design
@@ -64,13 +71,13 @@
 //     starts from that — and it is why this walk failing is worth a sentence
 //     rather than a silence, since what is lost is a file on every future page.
 //
-//   · plugins/ — EVERY PLUGIN, copied out of `guest/plugins/`. Nothing is
-//     shipped: the page plugins (`doc`, `kanban`, `mindmap`) and the slot
-//     plugins (`markdown`, `html`, `table`, `child` and the rest) all live in
-//     the vault, are served to the box from it, and are the person's to open and
-//     change. It rides the same `fill` as everything else, so a vault made
-//     before this existed gains them on the next start and one that wrote its
-//     own `plugins/doc/index.html` keeps it.
+//   · NOT plugins/. The framework's plugins used to be copied in here too, and
+//     the cost — named at the time — was that a framework fix never reached a
+//     copy already made. They are the FALLBACK RUNG now: `pages.ts` reads the
+//     vault's `plugins/` first and the framework's own set second, so a vault
+//     holds only what it wrote or overrode. What a person can open to read is
+//     the mirror `server/workspace/framework.ts` writes into `docs/plugins/` on
+//     every open, and what they can change is a copy of it in `plugins/`.
 //
 //   · The THEME.
 //
@@ -129,48 +136,17 @@ export interface PresetDeps {
    *  directory of presets should say so by omitting the root rather than by
    *  pointing at one that is not there. */
   seed?: Files;
-  /** Rooted at vault/, which MIRRORS THE VAULT ROOT: `AGENTS.md`,
-   *  `.agents/skills/`, `design/` and `base/`, in exactly the shape they take on disk in
-   *  a workspace. Copying it is therefore a walk rather than a translation, and
-   *  adding a skill is adding a file. Read, never written.
+  /** Rooted at vault/, which MIRRORS THE VAULT ROOT: `INSTRUCTIONS.md`,
+   *  `design/` and `base/`, in exactly the shape they take on disk in a
+   *  workspace. Copying it is therefore a walk rather than a translation. Its
+   *  `AGENTS.md`, `docs/` and `.agents/skills/` are skipped here and rewritten
+   *  by `framework.ts` instead. Read, never written.
    *
    *  OPTIONAL because `contracts/` is frozen, this interface is not, and a
    *  required field would fail the build of a caller that predates it. A
    *  workspace handed no seed root says so once and opens without the guide —
    *  which is a state, not an error. */
   vaultSeed?: Files;
-  /** Rooted at skill/. Only `check.ts` travels, landing in the vault as
-   *  `.agents/skills/check.ts`. It STAYS here as the source of truth — the repo's own
-   *  tests import it from `skill/` — and the vault gets a copy so an agent
-   *  working in one can run it. Read, never written. */
-  skill?: Files;
-  /** Rooted at the framework itself, and read for exactly the modules `check.ts`
-   *  imports — `CHECK_LIB` below is the list. Copying the checker alone SHIPPED
-   *  A COMMAND THAT COULD NOT RUN: it reaches into `contracts/`, and a vault has
-   *  no `contracts/`, so the one command `AGENTS.md` tells every agent to run
-   *  died on a module resolution error. The checker's imports go through
-   *  `skill/_lib/`, which is a re-export shim here and a verbatim copy of each
-   *  named file in a vault. Read, never written. */
-  checkerLib?: Files;
-  /** Rooted at `guest/plugins/`, and copied verbatim into the vault's
-   *  own `plugins/`. EVERY PLUGIN IS A FILE IN THE VAULT — `doc`, `kanban` and
-   *  `mindmap` are page plugins with an `index.html` each, `markdown`, `html`,
-   *  `table`, `child` and the rest are slot plugins and are classic scripts —
-   *  and after this copy there is no shipped set left to fall back to. The point
-   *  is the copy: a person can open the file that drew their page where they
-   *  stand, and change it.
-   *
-   *  IT IS A SECOND SEED ROOT RATHER THAN A DIRECTORY UNDER `vault/`,
-   *  because the runtime's own plugins would then exist twice in one repository
-   *  and the copy that fell behind would be somebody's page drawing the old
-   *  drawing. Nothing under `server/` may import `guest/`, so the composition
-   *  root hands it down exactly as it hands down `vaultSeed` and `skill`.
-   *
-   *  WHAT THE COPY COSTS IS NAMED AND NOT SOLVED: `fill` never writes over a file
-   *  that is there, so a framework fix to a plugin never reaches a vault that has
-   *  already been seeded. That is the base-moves-under-the-extension problem and
-   *  it is deferred. Read, never written. */
-  pluginSeed?: Files;
   yaml: YamlCodec;
 }
 
@@ -185,53 +161,13 @@ export interface ThemeStore {
 
 const THEME_FILE = "theme.json";
 
-/** A workspace's OWN plugins, a root sibling of `pages/`. The server already
- *  serves this folder to the box as classic scripts and already reads a page's
- *  document out of it; seeding into it is what makes both of those the ONLY
- *  route rather than the second one. */
-const PLUGINS_DIR = "plugins";
-
 /* ── what a vault gets at its root ──────────────────────────────────────── */
 
-/** `.agents/skills/`, which is the CROSS-CLIENT convention in the Agent Skills
- *  spec — the path a compliant client scans alongside its own `.<client>/skills/`.
- *  A vendor-shaped directory would make one agent first-class and the rest guests
- *  in a folder that is supposed to be neither.
- *
- *  IT WAS A PLAIN `.agents/skills/` FIRST, and that was worse than either. Neutral, and
- *  discovered by nothing: every agent had to be TOLD to list the folder by
- *  `AGENTS.md`, and the one that did not read far enough built pages from memory
- *  — which is the exact failure these files exist to prevent. Being findable is
- *  not a convenience here; it is whether the skill is read at all. */
-const SKILLS_DIR = ".agents/skills";
-/** The checker, copied in beside the skills so an agent working in a vault can
- *  run it against a page it just wrote. */
-const CHECK = "check.ts";
-/** `_` is reserved for the host by the vault format, so nothing a person writes
- *  can collide with it. */
-const LIB_DIR = "_lib";
-/** Framework path → the name it takes beside the checker. The checker's own
- *  `./_lib/` imports are what fix the names on the right; changing one means
- *  changing the import in `skill/check.ts` and the shim beside it, together.
- *
- *  IT IS EXACTLY WHAT `check.ts` IMPORTS, and this list is the only thing that
- *  says so — a row nothing imports is a file in every vault forever.
- *  `server/platform/yaml.ts` used to be here and is not, because the checker
- *  stopped borrowing the server's parser and carries its own reader. Copying it
- *  anyway would be worse than dead weight: it imports the bare specifier `yaml`,
- *  which this repo resolves through `paths` at a vendored file that no vault
- *  has, so the copy would sit there ready to turn `bun run .agents/skills/check.ts` into
- *  an unpinned install off npm the moment anything imported it — and it would
- *  fail offline, in the folder whose whole promise is that it is just files.
- *  Everything here imports nothing at all, which is the bar for landing. That is
- *  what let `scale.ts` join: the checker reports what the page reader threw away
- *  out of a `markdown.yaml`, and it can only do that honestly by calling the same
- *  walk the reader calls. */
-const CHECK_LIB: readonly (readonly [string, string])[] = [
-  ["contracts/wire.js", "wire.js"],
-  ["contracts/types.ts", "types.ts"],
-  ["contracts/scale.ts", "scale.ts"],
-];
+/** What under vault/ the walk below leaves alone: the framework's guide, its
+ *  manual and its skills are rewritten by `framework.ts` rather than filled
+ *  here. Spelled here as well as there because this module may not import a
+ *  sibling; a test holds the two equal. */
+const NOT_FILLED: readonly string[] = ["AGENTS.md", "docs", ".agents/skills"];
 
 /* ── the default theme ──────────────────────────────────────────────────── */
 
@@ -369,7 +305,7 @@ const str = (v: string | string[] | undefined): string | null =>
 /* ── the module ─────────────────────────────────────────────────────────── */
 
 export function makePresets(deps: PresetDeps): Presets {
-  const { pages, files, seed, vaultSeed, skill, checkerLib, pluginSeed } = deps;
+  const { pages, files, seed, vaultSeed } = deps;
 
   /** Domain failures carry one of the contract's closed error codes, so the API
    *  layer answers with it rather than falling back to `internal`. The message
@@ -475,52 +411,13 @@ export function makePresets(deps: PresetDeps): Presets {
     }
 
     for (const entry of here) {
+      if (NOT_FILLED.includes(entry.name)) continue;
       if (!entry.dir) {
         await fill(entry.name, await vaultSeed.read(entry.name));
         continue;
       }
-      await walk(vaultSeed, entry.name, "");
+      await walk(vaultSeed, entry.name, "", NOT_FILLED);
     }
-  }
-
-  /** EVERY PLUGIN, INTO `<vault>/plugins/`, and nothing is shipped any more.
-   *
-   *  It is the same walk and the same `fill` as the vault root, pointed at a
-   *  second root — which is why this piece needed no new machinery. Three things
-   *  follow from `fill` and are the whole behaviour:
-   *
-   *  · A vault made before this existed gains the set on its next start. No
-   *    migration, no version marker, no prompt — the same property the skills
-   *    and the design doc were given.
-   *  · A vault that has its own `plugins/doc/index.html` keeps it, byte for
-   *    byte, and gains the plugins it has not got. The walk is FILE BY FILE
-   *    rather than directory by directory, so a partial copy is the case that
-   *    works rather than the case that breaks.
-   *  · A plugin somebody deleted comes back on the next start, because a missing
-   *    file is a file `fill` writes.
-   *
-   *  THE EMPTY SEED IS SAID OUT LOUD, exactly as `seedVaultRoot` says it. A root
-   *  that is handed over but has nothing in it seeds nothing, and there is no
-   *  shipped rung left to fall back to — so every page in the workspace draws
-   *  MISSING_DOCUMENT and the log is silent about why. The `undefined` case was
-   *  already a sentence; this is the same failure reached by a different route
-   *  and it gets the same one. */
-  async function seedPlugins(): Promise<void> {
-    if (pluginSeed === undefined) {
-      console.warn("vault: no plugins were handed to this workspace — no page will draw");
-      return;
-    }
-    // Listed here rather than left to `walk`, because what is being asked is a
-    // question `walk` has no answer for: it copies what it is given and an empty
-    // directory is a legitimate thing to copy. A list that THROWS is not caught
-    // anywhere on this path — a seed root that cannot be read is a broken
-    // install, and a mount that carried on would hand somebody a workspace in
-    // which nothing draws.
-    if ((await pluginSeed.list(".")).length === 0) {
-      console.warn("vault: nothing on disk to seed the vault's plugins with — no page will draw");
-      return;
-    }
-    await walk(pluginSeed, ".", PLUGINS_DIR);
   }
 
   /** Copy a directory of the seed, whatever depth it turns out to be.
@@ -539,46 +436,18 @@ export function makePresets(deps: PresetDeps): Presets {
    *  install: a directory that cannot be read, a disk that failed. Swallowing
    *  those seeds half a vault and says nothing, which is the one outcome worse
    *  than refusing to mount. */
-  async function walk(root: Files, dir: string, into: string): Promise<void> {
+  async function walk(root: Files, dir: string, into: string, skip: readonly string[] = []): Promise<void> {
     for (const entry of await root.list(dir)) {
       // `.` is the root of a seed and is not a path segment. Spelled with the
       // format's own forward slash and never `path.join`: these are vault-
       // relative logical paths, and a backslash in one is a file Windows would
       // put somewhere else.
       const rel = dir === "." ? entry.name : `${dir}/${entry.name}`;
-      if (entry.dir) await walk(root, rel, into);
+      // WHAT IS NOT THE PERSON'S. The framework's guide, manual and skills are
+      // rewritten on every open rather than filled once.
+      if (skip.includes(rel)) continue;
+      if (entry.dir) await walk(root, rel, into, skip);
       else await fill(into === "" ? rel : `${into}/${rel}`, await root.read(rel));
-    }
-  }
-
-  /** THE ONE THING IN THE VAULT THAT IS REFRESHED RATHER THAN FILLED IN.
-   *
-   *  Everything else here is additive and never overwrites, because everything
-   *  else is somebody's to edit: the guide, the skills, the design doc, the base
-   *  blocks. The checker is not. It is CODE, and its whole job is to agree with
-   *  a format that keeps moving — so a copy frozen at the moment a vault was
-   *  made goes wrong quietly and stays wrong forever, reporting failures against
-   *  rules the format no longer has.
-   *
-   *  It bit immediately: `child.html` arrived, every newly created page reported
-   *  seven failures, the fix landed in this repo, and no existing vault could
-   *  ever have seen it. So `check.ts` and every module it imports are
-   *  rewritten on every start. Nothing a person edits is, which is the line —
-   *  and the only reason it is safe to draw it here is that editing the checker
-   *  was never the point of having one. */
-  async function seedChecker(): Promise<void> {
-    if (skill === undefined) return;
-    const checker = await skill.read(CHECK);
-    if (checker !== null) await files.write(`${SKILLS_DIR}/${CHECK}`, checker);
-    if (checkerLib === undefined) return;
-    // The modules `check.ts` imports, landing where its `./_lib/` spelling
-    // resolves. Without these the copy above is a file that throws on load, and
-    // they are refreshed for the same reason it is — a stale constant or a stale
-    // type is the same bug one layer down. Nothing more than what it imports:
-    // see CHECK_LIB.
-    for (const [from, to] of CHECK_LIB) {
-      const text = await checkerLib.read(from);
-      if (text !== null) await files.write(`${SKILLS_DIR}/${LIB_DIR}/${to}`, text);
     }
   }
 
@@ -612,13 +481,6 @@ export function makePresets(deps: PresetDeps): Presets {
       // folder is and where the skills are, and reads a skill when it needs to
       // go deeper. Before this, that knowledge lived only in the framework repo.
       await seedVaultRoot();
-      await seedChecker();
-
-      // AND EVERY PLUGIN, BEFORE ANYTHING READS A PAGE. There is no shipped set
-      // left, so until this returns the vault has nothing that can draw — which
-      // is why it sits here, where the format gate already sits, and for the
-      // same reason.
-      await seedPlugins();
 
       // THE ROOT PAGE, which is guaranteed rather than seeded: pages.ts conjures
       // it the instant anything asks for the page list, because every ordering

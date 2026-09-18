@@ -49,7 +49,7 @@ This skill owns the runtime's mechanics. It does **not** own:
 - **The stored format** — `content.yaml`, `Section`, `Content`, resolution →
   `page-format-guide`.
 - **How to WRITE a section as a vault author** — that is the vault's own
-  `.agents/skills/sections/SKILL.md`, which ships inside the workspace. This skill is for
+  `.agents/skills/biom-sections/SKILL.md`, which ships inside the workspace. This skill is for
   whoever changes the runtime; that one is for whoever uses it.
 
 ---
@@ -449,7 +449,7 @@ data-g-part="title">`, or an `<h1>` renders inside an `<h1>`), and every CSS rul
 aimed at a slot moves one level down onto the block markdown produced —
 `.title h1`, `.kicker p { margin: 0 }`.
 
-`vault/.agents/skills/sections/SKILL.md` is where an author reads this, with the
+`vault/.agents/skills/biom-sections/SKILL.md` is where an author reads this, with the
 worked before/after; `skill/check.ts` WARNs on it as **R56**. This guide states
 it because the rule is a property of `edit.js`, not of taste.
 
@@ -611,7 +611,7 @@ announced the change and so nothing redrew.
   were deleted rather than moved.
 - **What a `DrawnSection` and a `Part` are:** `contracts/types.ts`.
 - **The author-facing counterpart, shipped inside a vault:**
-  `vault/.agents/skills/sections/SKILL.md` — how to WRITE a section. It and this
+  `vault/.agents/skills/biom-sections/SKILL.md` — how to WRITE a section. It and this
   skill describe the same mechanisms from opposite sides and must not disagree;
   when the runtime changes, check whether that file needs the same edit.
 - **Siblings:** the box and the ports → `boundary-guide`; `register` / `mount` /
@@ -627,6 +627,6 @@ runtime genuinely changes — a new draw step, a change to how a section's CSS i
 scoped or its scripts are bound, a new `data-g-*` attribute, a change to teardown
 or replay, a change to how the slots are claimed, a narrowed redraw — **update this
 skill in the same change** so it never goes stale, and check whether
-`vault/.agents/skills/sections/SKILL.md` needs the same edit for its own
+`vault/.agents/skills/biom-sections/SKILL.md` needs the same edit for its own
 audience. If a rule here is what diverged, fix the rule; if the divergence is a
 mistake, fix the code. Either way they agree when you are done.

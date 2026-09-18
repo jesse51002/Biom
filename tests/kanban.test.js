@@ -20,7 +20,7 @@ const glob = /** @type {any} */ (globalThis);
 function kanban() {
   delete glob.biom;
   delete glob.__gKanban;
-  new Function(readFileSync(new URL("../guest/plugins/kanban/kanban.js", import.meta.url), "utf8"))();
+  new Function(readFileSync(new URL("../guest/plugins/biom-kanban/kanban.js", import.meta.url), "utf8"))();
   return glob.__gKanban;
 }
 

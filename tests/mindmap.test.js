@@ -22,7 +22,7 @@ const glob = /** @type {any} */ (globalThis);
 function mindmap() {
   delete glob.biom;
   delete glob.__gMindmap;
-  new Function(readFileSync(new URL("../guest/plugins/mindmap/mindmap.js", import.meta.url), "utf8"))();
+  new Function(readFileSync(new URL("../guest/plugins/biom-mindmap/mindmap.js", import.meta.url), "utf8"))();
   return glob.__gMindmap;
 }
 
@@ -31,7 +31,7 @@ const mm = mindmap();
 test("the rail's map and the plugin's own document are one string, said twice", () => {
   // The host cannot import `guest/` and the box cannot fetch, so `page.js`
   // carries the document again. This is what stops the copy drifting.
-  const own = readFileSync(new URL("../guest/plugins/mindmap/index.html", import.meta.url), "utf8");
+  const own = readFileSync(new URL("../guest/plugins/biom-mindmap/index.html", import.meta.url), "utf8");
   expect(MAP_DOCUMENT).toBe(own);
 });
 

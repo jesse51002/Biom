@@ -226,5 +226,5 @@ page that uses it — is one write to one page's `contents`.
 **Writing a page well** — the paved path for making one, what earns a section its
 own file, what a page that holds pages should look like, and the numbered rules
 the checker reports — is
-[`../.agents/skills/pages/SKILL.md`](../.agents/skills/pages/SKILL.md) and
-[`../.agents/skills/children/SKILL.md`](../.agents/skills/children/SKILL.md).
+[`../.agents/skills/biom-pages/SKILL.md`](../.agents/skills/biom-pages/SKILL.md) and
+[`../.agents/skills/biom-children/SKILL.md`](../.agents/skills/biom-children/SKILL.md).
