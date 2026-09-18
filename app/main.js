@@ -319,9 +319,14 @@ if (!app.requestSingleInstanceLock()) {
    *  Copy, paste, select all and undo inside a web page are Chromium's on Linux
    *  and Windows and the MENU'S on macOS — a null application menu there is a
    *  window where ⌘C does nothing. So macOS gets a menu holding exactly the edit
-   *  roles and nothing else, hidden, so the accelerators are registered and no
-   *  bar of ours is drawn. macOS draws its own application menu regardless of
-   *  what is set here, and no program can remove that one.
+   *  roles and nothing else — and that menu is VISIBLE. A hidden one registers
+   *  nothing: measured on Electron 44 with a real ⌘V sent through System Events,
+   *  an Edit menu marked `visible: false` pastes nothing, and so does one whose
+   *  items are hidden with `acceleratorWorksWhenHidden`, while the same menu
+   *  shown pastes. It costs no bar of ours: macOS draws its menu at the top of
+   *  the screen, not in the window, and draws its own application menu there
+   *  regardless of what is set here — Edit simply sits beside it, as it does in
+   *  every Mac application.
    *
    *  WHAT REPLACED THE MENU IS NOT NOTHING. The window has no desktop title bar
    *  either — see `chromeOf()` — and the client draws one, carrying the mark,
@@ -334,7 +339,7 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { role: "editMenu", visible: false },
+      { role: "editMenu" },
       // macOS has its own full screen — the green light — and the accelerator
       // for it lives on a menu role, so the role rides in the hidden menu too.
       { role: "viewMenu", visible: false, submenu: [{ role: "togglefullscreen" }] },
