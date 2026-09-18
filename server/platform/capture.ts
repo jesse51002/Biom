@@ -86,12 +86,20 @@ export async function capturePage(at: CaptureAt, page: string): Promise<string> 
     let drawn = false;
     while (Date.now() - t0 < DRAW_MS) {
       const strip = await tab.locator("span.status").innerText({ timeout: 1_000 }).catch(() => "");
-      if (/Drawn\s*\d+/.test(strip.replace(/\s+/g, " "))) { drawn = true; break; }
+      // A NUMBER, OR THE DASH. A doc page reports how many sections it drew;
+      // an html page or a board declares none, so the strip says `—` for it
+      // the moment its box is mounted — and a capture that waited for a digit
+      // there waited the whole bound and answered nothing. Measured on the
+      // root page, which is an html page.
+      if (/Drawn\s*(\d+|\u2014)/.test(strip.replace(/\s+/g, " "))) { drawn = true; break; }
       await sleep(250);
     }
     if (!drawn) throw internal("the page did not draw in time");
 
-    const frame = tab.frames().find((f) => f !== tab.mainFrame());
+    // THE BOX IS THE MAIN FRAME'S OWN CHILD, asked for as such. `frames()` is a
+    // flat list of every frame in the tab, a nested `page.embed` included, so
+    // the first non-main entry is the box only by luck of creation order.
+    const frame = tab.mainFrame().childFrames()[0];
     if (!frame) throw internal("the page drew but there is no box to read");
 
     // Seen once, end to end, then back to the top so the capture starts

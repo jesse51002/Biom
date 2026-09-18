@@ -102,7 +102,12 @@ export async function standalone(html: string, from: Sources): Promise<Standalon
     const made = await standalone(decoded, from);
     const clean = made.html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "");
     left.push(...made.left.map((l) => `embedded: ${l}`));
-    out = out.replace(i.whole, `${i.attr}${i.q}${escapeAttr(clean, i.q)}`);
+    // A FUNCTION, NOT A STRING. `replace` reads `$&` and `$1` in a string
+    // replacement as patterns, and the replacement here is a page's own prose
+    // — a price, a regex example — measured: "$1 and $&" re-inserted the whole
+    // iframe tag into itself. A function's answer is taken verbatim.
+    const put = `${i.attr}${i.q}${escapeAttr(clean, i.q)}`;
+    out = out.replace(i.whole, () => put);
   }
 
   // 1. FONTS. `faceCss` wrote them absolute — `url(http://host/fonts/x.woff2)`
@@ -132,10 +137,16 @@ export async function standalone(html: string, from: Sources): Promise<Standalon
 
   const srcs = /(\s(?:src|href)=)(["'])([^"']*)\2/gi;
   const wanted = new Map<string, Promise<Uint8Array | null>>();
+  /** A percent-escape that will not decode is left exactly as it was, and
+   *  named, rather than failing the whole share: the contract of this pass
+   *  is that a resource it cannot resolve stays put and is reported. */
+  const decode = (src: string): string | null => {
+    try { return decodeURIComponent(src); } catch { return null; }
+  };
   /** The vault-relative path a `src` names, or null when it is not one. */
   const relOf = (src: string): string | null => {
-    if (relative(src)) return decodeURIComponent(src);
-    if (assetPrefix && src.startsWith(assetPrefix + "/")) return decodeURIComponent(src.slice(assetPrefix.length + 1));
+    if (relative(src)) return decode(src);
+    if (assetPrefix && src.startsWith(assetPrefix + "/")) return decode(src.slice(assetPrefix.length + 1));
     return null;
   };
   for (const m of out.matchAll(srcs)) {
@@ -146,7 +157,11 @@ export async function standalone(html: string, from: Sources): Promise<Standalon
   for (const [rel, job] of wanted) assetData.set(rel, await job);
   out = out.replace(srcs, (whole, attr: string, q: string, src: string) => {
     const rel = relOf(src);
-    if (rel === null) return whole;
+    if (rel === null) {
+      // Relative, but its escapes will not decode: named so a person knows.
+      if (/src=$/i.test(attr) && (relative(src) || (assetPrefix !== null && src.startsWith(assetPrefix + "/")))) left.push(`assets/${src}`);
+      return whole;
+    }
     // Only a `src` is a resource; an `href` that is relative is a link into
     // the vault, which the file cannot follow and which is out of scope.
     if (!/src=$/i.test(attr)) return whole;

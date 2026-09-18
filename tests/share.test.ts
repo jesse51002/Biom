@@ -94,6 +94,25 @@ test("what an embedded page could not fold in is named as its own", async () => 
   expect(out.left).toEqual(["embedded: assets/gone.png"]);
 });
 
+test("a dollar sequence in an embedded page's prose is written back verbatim", async () => {
+  // `String.replace` with a string replacement reads `$&` and `$1` as patterns.
+  // Measured: "$1 and $&" re-inserted the whole iframe tag into itself.
+  const inside = `<html><body><p>Price is $1 and $& and $$ here</p></body></html>`;
+  const esc = inside.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = await standalone(`<div><iframe srcdoc="${esc}"></iframe></div>`, sources());
+  expect(out.html).toContain("Price is $1 and $&amp; and $$ here");
+  expect(out.html.split("<iframe").length - 1).toBe(1);
+  expect(out.html).toContain("</iframe></div>");
+});
+
+test("a src whose percent-escape will not decode is left in place and named, not fatal", async () => {
+  const html = `<base href="${BASE}"><img src="photo%E0%A4%A.jpg"><img src="ok.png">`;
+  const out = await standalone(html, sources({ "ok.png": "OK" }));
+  expect(out.html).toContain(`src="photo%E0%A4%A.jpg"`);
+  expect(out.html).toContain(`src="data:image/png;base64,${b64("OK")}"`);
+  expect(out.left).toEqual(["assets/photo%E0%A4%A.jpg"]);
+});
+
 /* ── the sharer ─────────────────────────────────────────────────────────── */
 
 const fakePages = (has: boolean): Pages => ({

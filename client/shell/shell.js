@@ -989,12 +989,19 @@ export function makeShell(deps) {
       sharing = false;
       paint();
     }
-    const again = /** @type {HTMLElement | null} */ (root && root.querySelector(".tools button[aria-haspopup='menu'][title^='Capture']"));
-    showShare(again || anchor);
+    showShare(anchor);
   }
 
-  /** The link, Copy, Open, and what was left out. @param {HTMLElement} anchor */
-  function showShare(anchor) {
+  /** The Share button as it is on screen now. `paint()` rebuilds the tool
+   *  strip, so a button held across an await is a detached node by the time
+   *  the answer lands; the menu hangs from the live one, and the one held is
+   *  the fallback for a strip that no longer offers Share. */
+  const shareButton = () =>
+    /** @type {HTMLElement | null} */ (root && root.querySelector(".tools button[aria-haspopup='menu'][title^='Capture']"));
+
+  /** The link, Copy, Open, and what was left out. @param {HTMLElement} held */
+  function showShare(held) {
+    const anchor = shareButton() || held;
     popover(anchor, (close) => {
       if (!shared) return [h("p.poplabel", shareSaid || "Not shared.")];
       const url = shared.url;
