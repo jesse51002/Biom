@@ -56,9 +56,6 @@ import { APP_NAME, hostPlatform, install, installPlan } from "./install.ts";
 // machine keeps its Biom data. The install lands beside it, so the build reads
 // the same module the application will.
 import { dataHome } from "../app/data.js";
-import { shippedHashes } from "../server/platform/shipped.ts";
-import { SHIPPED_DIRS } from "../server/workspace/framework.ts";
-import type { Shipped } from "../server/platform/shipped.ts";
 
 declare const Bun: {
   env: Record<string, string | undefined>;
@@ -201,7 +198,7 @@ export async function carried(root = HERE): Promise<string[]> {
 /** The module the composition root imports. One module rather than one per
  *  directory: it is read exactly once, by one line, and a file per directory
  *  would be six imports to keep in step for no reader's benefit. */
-export function manifestSource(keys: string[], shipped: Shipped = {}): string {
+export function manifestSource(keys: string[]): string {
   const lines = [
     // TYPECHECKED BY NOTHING, on purpose. `tsc` pulls this file into the program
     // the moment the composition root's import resolves — `exclude` only filters
@@ -224,17 +221,6 @@ export function manifestSource(keys: string[], shipped: Shipped = {}): string {
   keys.forEach((key, i) => lines.push(`  ${JSON.stringify(key)}: f${i},`));
   lines.push("};");
   lines.push("");
-  // EVERY VERSION OF EVERY PLUGIN AND EVERY SKILL THIS REPOSITORY EVER SHIPPED,
-  // by git blob hash, keyed by framework-relative path. A binary has no `.git`
-  // beside it to ask, so the answer travels with it: the server's sweeps on open
-  // check a vault's copies against this and remove the ones nobody edited — see
-  // `server/workspace/framework.ts`. Sorted, so two builds of one tree agree.
-  lines.push("export const SHIPPED: Record<string, string[]> = {");
-  for (const path of Object.keys(shipped).sort()) {
-    lines.push(`  ${JSON.stringify(path)}: ${JSON.stringify([...shipped[path]!].sort())},`);
-  }
-  lines.push("};");
-  lines.push("");
   return lines.join("\n");
 }
 
@@ -249,7 +235,7 @@ async function writeManifest(): Promise<number> {
     await copyFile(join(HERE, key), to);
   }
   await mkdir(DIST, { recursive: true });
-  await writeFile(MANIFEST, manifestSource(keys, await shippedHashes(HERE, SHIPPED_DIRS)), "utf8");
+  await writeFile(MANIFEST, manifestSource(keys), "utf8");
   return keys.length;
 }
 

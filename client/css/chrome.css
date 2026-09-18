@@ -191,26 +191,16 @@
 .tool:hover{background:var(--field); color:var(--ink)}
 .tool[aria-pressed="true"]{background:var(--field); color:var(--ink)}
 .tool[disabled]{opacity:.6; cursor:progress}
-/* the page's own menu: Config, and whatever comes next */
-.tool.more{padding:.3rem .45rem; font-size:1rem; line-height:1; letter-spacing:.02em}
-
 /* the reload button IS the change loop — Claude Code writes the file, you press
    this — so it says so while it is working rather than sitting inert */
 .tool.busy{color:var(--cyan-t)}
 
-/* THE ONE FILLED BUTTON, for the one control that talks to the agent. */
-.tool.spot{
-  background:var(--magenta); color:var(--on-spot); margin-left:.35rem;
-  padding:.3rem .65rem; font-weight:500;
-}
-.tool.spot:hover, .tool.spot[aria-pressed="true"]{background:var(--magenta-t); color:var(--on-spot)}
-
 /* THE PRIMARY CONTROL ON THE BAR, in the palette's primary accent — `cyan` is
    the fill the picker's Open and Make, a table's `.op.on` and `.tick.on` all
-   take, and `spot` above is deliberately the SECOND accent so that a page pill
-   and a person pill never share a colour. Agent Terminal is the one action on
-   the bar in a built application that starts something, so it is the one
-   drawn this way. */
+   take; `magenta` is deliberately the SECOND accent, kept for the close control
+   and a person pill, so that a page pill and a person pill never share a
+   colour. Agent Terminal is the one action on the bar that starts something,
+   so it is the one drawn this way. */
 .tool.prime{
   background:var(--cyan); color:var(--on-spot); margin-left:.35rem;
   padding:.3rem .65rem; font-weight:500;
@@ -223,7 +213,6 @@
    a sibling of the rack rather than a child of it — the rack scrolls, and a
    handle that scrolls away is a handle nobody finds twice. */
 .bed{display:grid; grid-template-columns:var(--rack-w) minmax(0,1fr); min-height:0; position:relative}
-.bed.with-panel{grid-template-columns:var(--rack-w) minmax(0,1fr) var(--panel-w)}
 
 /* ---------- the rail's width ---------- */
 
@@ -406,12 +395,6 @@
    page.css owns that name for something else entirely. */
 .plate{padding:2.5rem 3.5rem 3.5rem; min-height:100%}
 
-/* A HOST SCREEN IS A FORM, and a form pinned to one edge of a wide screen reads
-   as a mistake. Config is the only view left that the host draws into a reading
-   column; the vault picker takes the same measure lower down for the same
-   reason. */
-.plate[data-face="config"]{max-width:calc(46rem + 7rem); margin:0 auto}
-
 /* A PAGE IS ONE BOX AND IT ALWAYS FILLS. There is no second treatment and no
    measure: the box is handed the canvas height, scrolls inside itself, and never
    reports a height back — which is what makes it its own viewport, and being its
@@ -572,7 +555,9 @@
   margin:0 0 .5rem; font-size:.6875rem; font-weight:700; letter-spacing:.16em;
   text-transform:uppercase; color:var(--ink-3); padding-left:.7rem;
 }
-.vault .portsnote{margin:.1rem 0 .9rem; padding-left:.7rem; font-size:.8rem; color:var(--ink-3)}
+/* The picker's groups and notes carry the `.pgroup` and `.portsnote` names the
+   Config screen used to share; that screen is gone, and these are the rules. */
+.vault .portsnote{margin:.1rem 0 .9rem; padding-left:.7rem; font-size:.8rem; color:var(--ink-3); max-width:34rem}
 
 .vault .vpath{font-family:var(--mono-face); font-size:.6875rem; line-height:1.4; color:var(--ink-3); overflow-wrap:anywhere}
 

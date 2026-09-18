@@ -10,6 +10,13 @@ thing two pages have to agree about, the thing that has to still be readable aft
 the page that wrote it was rewritten, and the thing somebody expects to still be
 there next year.
 
+**A page can also hold a table of its own, in the document.** That is a `grid`
+part — rows as data in `content.yaml`, edited on the page a cell at a time — and
+it is the last section of this file. It is for rows that belong to one page: a
+spec's list of pieces, a comparison, a schedule. Rows two pages share, rows
+somebody adds to over time, rows a person wants to sort and count, are a table
+in `workspace.db`, which is what everything above that section is about.
+
 ## What a table is
 
 A name, a kind, and an ordered list of columns.
@@ -99,7 +106,9 @@ that matched.
 table *is* editable — in the app's own grid, which speaks the same calls a page
 does. A second editing surface inside the box would be a second set of rules about
 what a cell may hold, and the two would drift. If a page needs a reader to change
-data, it draws the control itself and calls `biom.update`.
+data, it draws the control itself and calls `biom.update`. A table the page
+holds itself is the other thing, and IS edited on the page — see the `grid`
+part at the end of this file.
 
 ## Reading
 
@@ -191,6 +200,80 @@ that landed whole** — a row with one field that could not be read is still
 inserted and deliberately not counted, because reporting a row whose date was
 silently nulled as *imported* is the quiet half of a data loss. A count short of
 the file's row count is a prompt to look, not a failure.
+
+## A table the document holds: the `grid` part
+
+**A `grid` part is a table whose rows live in `content.yaml`**, beside the prose,
+and not in `workspace.db`. It has no name and no schema; it has `rows`, a list of
+lists of markdown strings, and `head`, whether the first row is the header:
+
+```yaml
+contents:
+  - name: pieces
+    parts:
+      body:
+        type: grid
+        rows:
+          - [Piece, Where, What changes]
+          - [The part, "`contracts/types.ts`", A fifth part kind beside the four]
+          - [The drawing, "`plugins/biom-grid.js`", "Draws the rows as a board"]
+```
+
+`head` is true when left out, because every markdown table has a header and that
+is where a grid comes from; `head: false` is a grid of plain rows. A row shorter
+than the widest is padded with empty cells on the right when the page is read.
+There is no `data` on a grid, and `rows` on any other type is refused by name.
+The rows are written back one per line, `- [Piece, Where, What changes]`, so
+the file reads as the table it holds; a cell holding a comma, a pipe or a line
+break is quoted on that line.
+
+**It is drawn as a board by the framework's `biom-grid`** — or by a
+`plugins/grid.js` of this workspace's own, which wins by existing — a header band, the cells in
+the sheet face, one hairline — and it needs no section file: a section with no
+`data:` takes the shipped default, which widens from the reading measure to the
+figure width when its slot holds a grid, and the board scrolls sideways inside
+its own box only past that. A section of your own says its own width.
+
+**It is edited on the page, a cell at a time.** Click a cell and it opens as its
+raw markdown, braces and all; Enter or leaving the cell writes the rows back
+whole over `section.write`, Escape puts the cell back. The cell is re-rendered
+where it stands and the document is written only when the value changed, so the
+next cell opens on the next click — a write from the board does not redraw the
+page. A pipe typed into a cell is kept as a character; nothing splits a cell.
+
+**A row or a column is added or removed from the gutter outside the board**,
+and every control says what it does: *Delete row* beside each row, *Delete
+column* over each column, *Add row* under the last row, *Add column* beside the
+last. Deleting the last row under a header leaves the header; deleting the last
+column is refused in words, because a grid with no columns is not a grid. A
+section that reads the rows itself gets them from `ctx.read(part)` as an array
+of arrays and puts them back with `ctx.write(part, rows)`, which is the same
+door the board uses.
+
+**In the mirror it is a markdown table again.** The projection writes the rows
+as `| Piece | Where |` lines under a delimiter row, a pipe inside a cell
+escaped as `\|` and a line break inside one as `<br>`, so Obsidian draws it and
+a brain reads it. A `table` part, by contrast, projects as its name only,
+because its rows change without the page changing.
+
+**A markdown table in a prose part becomes one the next time the page is
+drawn.** The doc plugin cuts the table out and rewrites the document once, in
+place: the prose before keeps the section's name and its file, the table
+becomes a section named `<section>-table` with no file whose `body` is the
+grid, and the prose after becomes `<section>-after`. Both new sections carry
+the section's own `variables` with the part's own over them, so a `{{name}}`
+in a cell or in the prose after still resolves. A section that held nothing but the table — no file, no other
+slot — gives its place to the grid section rather than staying as an empty
+band. What that means for writing is that a run of pipes in a paragraph is
+never the final shape of anything: write the grid, or write the pipes and let
+the draw convert them, and never style the pipes.
+
+**Which to reach for.** A grid is one page's own rows — a spec's pieces, a
+comparison, a schedule, anything whose cells are prose and whose home is this
+page. A table is rows with a shape: shared by pages, added to over time,
+sorted, counted, typed. The question that decides it is
+[`../.agents/skills/tables/SKILL.md`](../.agents/skills/tables/SKILL.md), and
+so are the three rules the checker reports on a grid — R62, R63 and R64.
 
 ---
 

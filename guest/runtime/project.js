@@ -60,10 +60,37 @@
       return items.length ? items.join("\n\n") : null;
     }
     if (one.kind === "table") return `*(table: ${one.table})*`;
+    if (one.kind === "grid") return grid(one.rows, one.head, one.vars || vars);
     if (one.kind === "child") {
       return one.child.kind === "page" ? linkTo(one.child) : `*(table: ${one.child.id})*`;
     }
     return null;
+  }
+
+  /** A GRID IS A MARKDOWN TABLE AGAIN in the mirror, which is the one place a run
+   *  of pipes is the right shape: Obsidian draws it and a brain reads it. Cells
+   *  are interpolated as prose is. A pipe inside a cell is escaped, because in a
+   *  cell it is a character and in this line it would be a column; a line break
+   *  inside one becomes `<br>`, which every markdown table reader takes and a
+   *  raw newline would end the row. A grid with no header still gets the
+   *  delimiter row a table needs to be one, under an empty header. */
+  /** @param {string[][]} rows @param {boolean} head @param {Record<string, any>} vars @returns {string | null} */
+  function grid(rows, head, vars) {
+    const width = rows.reduce((/** @type {number} */ w, row) => Math.max(w, row.length), 0);
+    if (width === 0) return null;
+    /** @param {string} text @returns {string} */
+    const cell = (text) =>
+      interpolate(text, vars).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>").trim();
+    /** @param {string[]} row @returns {string} */
+    const line = (row) => {
+      const cells = row.slice(0, width).map(cell);
+      while (cells.length < width) cells.push("");
+      return `| ${cells.join(" | ")} |`;
+    };
+    const rule = `|${" --- |".repeat(width)}`;
+    const first = head && rows.length > 0 ? line(/** @type {string[]} */ (rows[0])) : `|${" |".repeat(width)}`;
+    const body = (head ? rows.slice(1) : rows).map(line);
+    return [first, rule, ...body].join("\n");
   }
 
   /** One section, projected, or null where it says nothing. */

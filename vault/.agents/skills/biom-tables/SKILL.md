@@ -1,6 +1,6 @@
 ---
 name: biom-tables
-description: "WHETHER THE THING IN FRONT OF YOU IS A TABLE AT ALL, and what a page should say beside one. The MECHANISM — what a table is, every column type and what each does in a page\'s grid, reading and writing, a section placing its own grid, retyping, renaming and CSV — is `docs/tables.md` at the vault root, and this file links it rather than restating it. Read whenever a page shows figures, rows, a list somebody keeps adding to, or anything a second page will also need; whenever a column\'s type or meaning is in question; or whenever data is coming in from CSV. Leads with the shape that works — a section whose slot holds a `table` part, drawn by the `table` plugin — then the question that decides whether the page wants a table at all or just its own variables, why three things compared side by side are a LIST and not a table, why rows that each want different fields are PAGES and not rows, what to do when the table does not exist yet (a page cannot create one: check first, then say exactly what you need, and write the page anyway), the narration rule for the sentence beside a grid, R19 — prefer the row calls to `sql` — and the fact that a table is a child in the tree with a parent page, exactly as a page is."
+description: "WHETHER THE THING IN FRONT OF YOU IS A TABLE AT ALL, and what a page should say beside one. The MECHANISM — what a table is, every column type and what each does in a page\'s grid, reading and writing, a section placing its own grid, retyping, renaming and CSV — is `docs/tables.md` at the vault root, and this file links it rather than restating it. Read whenever a page shows figures, rows, a list somebody keeps adding to, or anything a second page will also need; whenever a column\'s type or meaning is in question; or whenever data is coming in from CSV. Leads with the shape that works — a section whose slot holds a `table` part, drawn by the `table` plugin — then the question that decides whether the page wants a table at all or just its own variables, why three things compared side by side are a LIST and not a table, why rows that each want different fields are PAGES and not rows, what to do when the table does not exist yet (a page cannot create one: check first, then say exactly what you need, and write the page anyway), the narration rule for the sentence beside a grid, THE OTHER KIND OF TABLE — a `grid` part, the document\'s own rows, edited on the page a cell at a time, which is what every markdown table in a paragraph becomes — and when a page wants that rather than a table in the database, R19 — prefer the row calls to `sql` — the fact that a table is a child in the tree with a parent page, exactly as a page is, and R62 to R64, what the checker says about a grid."
 ---
 
 # Tables
@@ -65,6 +65,24 @@ Ask these before you name one. **Any yes is a table:**
 
 **All no, and it is this page's own handful of figures — then it is variables, and `{{name}}` in the prose.** A page that states one rate, one date and one total does not want a two-column grid of them; it wants those values in the document, editable in place. See *Variables* in [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md).
 
+**All no, and it is still rows — a spec's list of pieces, a comparison the reader looks DOWN, a schedule, anything with a header and cells of prose that belongs to this page — then it is a `grid` part: the document's own table.** Its rows are data in `content.yaml`, it is edited on the page a cell at a time, and it needs no section file of its own. It is the shape below, and it is what the doc plugin makes out of every markdown table it finds in a paragraph, so a run of pipes is never the final shape of anything.
+
+```yaml
+contents:
+  - name: pieces
+    parts:
+      body:
+        type: grid
+        rows:
+          - [Piece, Where, What changes]
+          - [The part, "`contracts/types.ts`", A fifth part kind beside the four]
+          - [The drawing, "`plugins/biom-grid.js`", Draws the rows as a board]
+```
+
+**The line between the two is who else needs the rows and what happens to them.** Rows a second page names, rows that arrive one at a time over months, rows somebody sorts, filters or counts, rows with a type per column — a table, in the database, with a name. Rows that are this page's own argument, whose cells are sentences, and that change when the page changes — a grid, in the document. A grid holds words; a table holds values. The mechanism of a grid — the shape on disk, the board, the cell edit, the four controls, the mirror, and what the conversion does to a document — is the last section of [`../../../docs/tables.md`](../../../docs/tables.md).
+
+**And never style the pipes.** A markdown table inside a prose part is converted the next time the page is drawn, so a section written to make one look like a board is styling a thing that is about to leave. Write the grid.
+
 **Three things compared side by side are not a table either.** A comparison the reader looks ACROSS is one section holding a LIST of three items — the `list` starter in `base/` is that shape already. A workspace table is for many rows of the same shape, not for three columns of prose.
 
 **And if each "row" wants different fields, they are pages, not rows.** A table has one shape for every row. A set of things that each want their own layout and their own words are children of this page — see [`../biom-children/SKILL.md`](../biom-children/SKILL.md).
@@ -118,11 +136,17 @@ the first time somebody renames one.
 
 ---
 
-## Two rules
+## The rules
 
 **R19 — prefer `table`, `insert` and `update` to `sql`.** `biom.sql` resolves for real; this workspace grants unrestricted access. It is still the call to avoid. A page written on SQL is a page that has to be rewritten the day access is scoped, and nobody using this workspace should have to read a `SELECT` to understand their own data. **Where it is genuinely the only answer** — an aggregate the row calls cannot express, a one-off count across tables — take it knowingly, keep it to one call, and draw from its result rather than building the page on it. *(WARN)*
 
 **A table is a child in the tree, exactly as a page is.** It has a parent page and sits under the page that uses it, rather than in a section of the workspace of its own — which is the grouping the tree exists to make possible. A page asks what it holds and gets pages and tables back in one answer, and a slot can hold a table as a **child** — which points at it and opens it — rather than as a `table` part, which embeds the rows. **Point at it when the table is somewhere the reader goes; embed it when the rows are what this page is about.** The two are different acts and the format keeps them apart.
+
+**R62 — a grid is square.** Every row has as many cells as the widest, empty ones written as `""`. The reader pads a short row on the right, so the page draws either way — but a cell that was meant for a later column has moved left, which is a wrong table that looks like a right one. A row that is not a list, or a cell that is a map or a list, is refused by the parser: a cell is markdown. *(WARN for a ragged row; FAIL for a row or a cell that is not what a row or a cell is.)*
+
+**R63 — a head is a row.** `head` is true or false, and absent reads as true, because a grid comes from a markdown table and every markdown table has a header. A grid with `head` true and no rows has a header that is not there: write the header row, or say `head: false` for a grid that starts empty. *(FAIL for a head that is not true or false; WARN for a header with no row.)*
+
+**R64 — a bare pipe in a cell is a note.** A cell holds its pipe as a character — nothing splits a cell on anything, which is the whole reason a grid is a part kind and not a markdown table dressed up — and the mirror escapes it on the way out. But a bare pipe in a cell is nearly always a table row pasted into one cell, so the checker says so and leaves it. If it was meant to be several cells, make them entries of the row. A pipe inside a `[[id|alias]]` link or a code span is the link's or the code's and is never reported: linking with an alias is how this format writes a link, in a cell as anywhere. *(WARN)*
 
 ---
 

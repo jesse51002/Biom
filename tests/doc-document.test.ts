@@ -185,7 +185,11 @@ function board(kids: { kind: string; id: string; name: string }[]) {
     open() {},
   };
 
-  const script = [...DOC.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)?.[1] ?? "";
+  // THE BOARD'S OWN SCRIPT, found by what it draws rather than by position:
+  // the document carries a second script now — the conversion of a markdown
+  // table into a grid section, verified in tests/grid.test.ts — and a test
+  // that took the last one would be evaluating that.
+  const script = [...DOC.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? "").find((s) => s.includes("g-holds")) ?? "";
   new Function(script)();
 
   /** The names on screen, in the order they were drawn. */

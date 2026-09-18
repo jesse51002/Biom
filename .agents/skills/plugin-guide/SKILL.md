@@ -20,8 +20,8 @@ description: >-
   `<vault>/plugins/` first and `guest/plugins/` second, nothing is copied into a
   vault unasked, a vault file at the framework's path is an OVERRIDE, the
   framework's set is mirrored into `docs/plugins/` on every open for a person to
-  read, and a copy nobody edited is swept on open against the framework's git
-  history as a bridge — `guest/plugins/` is not served as a root of its own, and
+  read, and a copy already under `plugins/` is left there, stale or not, for
+  the person to delete — `guest/plugins/` is not served as a root of its own, and
   no file in a vault may name `/guest/` — and THE LOADER: the server answers
   `GET /v/<enc>/plugin/` with the framework's `*.js` minus every file name the
   vault also has, then the vault's `plugins/*.js`, each in id order, each
@@ -34,13 +34,12 @@ description: >-
   so a workspace's plugin can never be refused as the duplicate of one the
   framework ships later. Load this whenever you touch
   `guest/runtime/registry.js`, `guest/plugins/*`, `server/workspace/framework.ts`,
-  `server/platform/shipped.ts`, or the `/plugin/` route in `server/main.ts`.
+  or the `/plugin/` route in `server/main.ts`.
   Trigger on
   "plugin", "register", "mount", "ctx.use", "ctx.has", "ctx.options",
   "data-g-plugin", "page plugin", "shipped plugin", "vault plugin", "reserved
   id", "duplicate plugin id", "document.currentScript", "markdown plugin",
-  "mermaid", "classic script", "override", "docs/plugins", "sweep", "stale
-  plugin", "no imports in the box", "/plugin/ route", or any change to what can
+  "mermaid", "classic script", "override", "docs/plugins", "stale plugin", "no imports in the box", "/plugin/ route", or any change to what can
   fill a node.
 ---
 
@@ -137,8 +136,8 @@ which the editor draws as gaps of its own, so a person's blank lines come back a
 they left them. It is re-read on every keystroke, which is how typing `# ` in
 front of a paragraph makes it a heading as you type.
 
-**`markdown`, `html`, `table` and `child` are spoken for by the format itself**,
-because a slot's plugin is named by its part's `kind`. That is not a special case
+**`markdown`, `html`, `table`, `child` and `grid` are spoken for by the format
+itself**, because a slot's plugin is named by its part's `kind`. That is not a special case
 in the runtime: `fillSlots` looks up `rt.plugins.get(content.kind)` exactly as it
 looks up a `data-g-plugin` node's id, and a part kind nothing draws fails inside
 that node with a sentence saying so.
@@ -284,8 +283,8 @@ by which root a file was read from and never by a url. That took the old
 first-past-the-post rule's teeth with it, and this section is what replaced them.
 
 **What it must not take is the case the rule was written for.** `markdown`,
-`html`, `table` and `child` are not plugins the framework happens to ship: they
-are the **part kinds**, and a slot's plugin is named by its part's `kind`. A
+`html`, `table`, `child` and `grid` are not plugins the framework happens to
+ship: they are the **part kinds**, and a slot's plugin is named by its part's `kind`. A
 second file registering `markdown` does not add a plugin — it replaces the
 drawing of every markdown slot in the workspace, on every page, including pages
 its author never opened.
@@ -415,28 +414,22 @@ version is shadowed until the copy is deleted. **A route and a Config row for
 the same copy are not built**: a write has to go through the guarded API, which
 is a wire kind and a `contracts/` edit, and `contracts/` waits for a barrier.
 
-**AND A COPY NOBODY EDITED GOES ON OPEN — a bridge, and it says so.**
-`sweepShipped` in the same module walks `plugins/` and, for every file the
-framework also has, asks whether it is byte for byte a version the framework
-EVER shipped: `server/platform/shipped.ts` computes git's own blob hash of the
-file and checks it against every hash that path has had in `guest/plugins/`'s
-history — read out of the checkout's `.git` in a source run, carried as
-`SHIPPED` in `dist/embedded.ts` by `tools/app.ts` in a build, which has no
-`.git` beside it. A match was never edited by anybody, and it goes: committed
-first, exactly as every agent write is, so the deletion is one readable diff and
-one `git revert` away, and a page plugin's directory goes with its last file.
-One changed byte keeps a file. **What it costs is named rather than solved**: a
-person who kept an OLD version on purpose, unedited, has a file that matches and
-loses it — the stale-copy cost taken away when it was silent. It exists so that
-no vault seeded before this, and no vault whose owner never reads about it, goes
-on carrying stale copies; once every vault on this side of the change has been
-opened once, it is sunset and the rung and the mirror are the whole mechanism.
-**A vault seeded from a version that is not in this repository's history is not
-matched** — the history is the public repository's, and this project's own
-workspace predates it, so that one is migrated by hand.
+**AND A COPY THAT IS ALREADY THERE IS LEFT THERE.** A vault seeded before the
+rung holds the old set under `plugins/`, and every one of those files is an
+override now — the nearest rung, drawing in place of the framework's, however
+far behind it is. Nothing on open touches them. Telling a copy nobody edited
+from one somebody did would mean carrying every version the framework ever
+shipped — that was done once, as git blob hashes read out of the checkout's
+history and carried in the manifest, and taken out again: a carve-out for a
+handful of vaults, bought with a hash table in every build, a full-depth
+checkout in CI, and a deletion on open that a person had to read a log to
+learn about. **This is a breaking change, and it is said as one**: whoever
+owns the folder deletes the copies they did not mean to keep, and the
+framework's draw from then on. This project's own workspace is cleaned by
+hand the same way.
 
 **Neither job is on the mount path.** `afterMount` in `server/main.ts` starts
-both once `hold` has the mount, a page draws from the rung the instant the vault
+the skills rewrite and the mirror once `hold` has the mount, a page draws from the rung the instant the vault
 is open, and each failure is a sentence in the log rather than a mount that did
 not happen. `Host.settled(path)` is the promise a test waits on.
 
@@ -569,12 +562,10 @@ as long as the box does.
   read-only `Files` `makeHost` builds once as `pluginRoot`; `/guest/plugins/`
   is refused by `locate()` so there are never two urls for one plugin.
   **List that directory rather than trusting a roster here.**
-- **The mirror and the sweep on open:** `server/workspace/framework.ts` —
-  `mirrorPlugins` writes `docs/plugins/` whole, `sweepShipped` deletes unedited
-  shipped copies; `afterMount` in `server/main.ts` runs both off the mount path.
-- **What counts as shipped:** `server/platform/shipped.ts` — git's blob hash,
-  and every hash a path has had in `guest/plugins/`'s history; `tools/app.ts`
-  carries the list as `SHIPPED` in `dist/embedded.ts`.
+- **The mirror on open:** `server/workspace/framework.ts` — `mirrorPlugins`
+  writes `docs/plugins/` whole; `afterMount` in `server/main.ts` runs it off
+  the mount path, after the skills rewrite. Nothing under `plugins/` is
+  touched.
   `markdown.js` is the
   reference implementation and the worked example of `ctx.has` + `ctx.use`
   (fence → diagram), the UMD-not-module rule, and "a missing library draws the
@@ -594,10 +585,10 @@ as long as the box does.
   `MAP_PAGE` (`@map`), which `server/domain/pages.ts` answers as a bare plugin
   page with no directory; `client/views/page.js` carries the plugin's document
   again as `MAP_DOCUMENT` and `tests/mindmap.test.js` holds the two equal. The
-  Map ROW is not in a production build and `#/map` does not route there either —
-  a whole-workspace map is a drawing of a tree a stranger's vault does not have
-  yet — but the plugin itself ships in both, so a page saying `plugin: mindmap`
-  draws everywhere.
+  Map row and its route are in EVERY build — it was withheld from the built
+  application because a one-page vault maps to one light, and the owner decided
+  on 2026-09-17 that one light is what a one-page workspace looks like — and a
+  page saying `plugin: mindmap` draws everywhere too.
 - **The vault-plugin route:** `inVault()` and the `STATIC` table in
   `server/main.ts` — `/v/<enc>/plugin/<rel>` → `<vault>/plugins/<rel>`,
   `/guest/` → `guest/`, `/vendor/` → `vendor/`, and `under()`
@@ -634,8 +625,7 @@ This skill is the single source of truth for the plugin registry and the plugin
 contract. Whenever either genuinely changes — a field added to a plugin
 definition, a field added to `ctx`, a change to how a reserved id is decided, a
 plugin added to or removed from the framework's set, a change to which root
-wins, and above all **the day the sweep in §7 is sunset** —
-**update this skill in the same change** so it never goes stale, and check whether
+wins — **update this skill in the same change** so it never goes stale, and check whether
 `vault/.agents/skills/biom-plugins/SKILL.md` and `vault/docs/plugins.md` need the same
 edit for their own audience. If a rule here is what diverged, fix the rule; if
 the divergence is a mistake, fix the code. Either way they agree when you are

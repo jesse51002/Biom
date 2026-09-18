@@ -76,7 +76,17 @@ export type ContentType =
   | "table"
   /** `data` is the direct child's segment — `notes`, never a path. Placed by
    *  reconciliation rather than written by hand. */
-  | "child";
+  | "child"
+  /** A TABLE THAT IS THE DOCUMENT'S OWN. `rows` is a list of lists of markdown
+   *  strings and `head` says whether the first row is the header; `data` is
+   *  empty and never written. It is the one type whose value is not a string,
+   *  because a cell is a cell and never a string somebody splits — the shape a
+   *  markdown table draws as, a run of pipes inside a paragraph, is what this
+   *  replaces. Not the same as `table`, which names rows the server holds in
+   *  `workspace.db`: a grid holds its own rows in the document, so they travel
+   *  with the page, are edited one cell at a time, and are projected into the
+   *  mirror as a markdown table. */
+  | "grid";
 
 /** WHAT A SLOT HOLDS. It has no `name`: a slot's id is the key it sits under
  *  in `Section.parts`, so there is no second statement of it to disagree. */
@@ -97,6 +107,14 @@ export interface Content {
    *  than the page is a call rather than a template — see `variables` on the
    *  host surface. */
   variables?: Variables;
+  /** A GRID'S ROWS, and only a grid's: one list per row, one markdown string per
+   *  cell. Every row is as long as the first — the codec pads a short one and
+   *  the checker reports a ragged one — so a column is a column all the way
+   *  down. A cell holds its pipe as a character; nothing splits it. */
+  rows?: string[][];
+  /** Whether a grid's first row is its header. Absent reads as true, because
+   *  every markdown table has one and that is where a grid comes from. */
+  head?: boolean;
 }
 
 /** WHAT A PAGE HOLDS, AND THE ONLY THING A PAGE HOLDS.
@@ -163,7 +181,7 @@ export interface Section {
  *  inline svg laid out by the section's own script from its variables — or a
  *  fence handed to whichever plugin its info string names; a file type was a
  *  mechanism invented for a case that already had one. */
-export type PartKind = "markdown" | "html" | "table" | "child";
+export type PartKind = "markdown" | "html" | "table" | "child" | "grid";
 
 export type Part =
   /** `md` is RAW, with `{{name}}` still in it. Interpolation happens where the
@@ -193,6 +211,12 @@ export type Part =
    *  A parent's own `@page-<id>.html` still wins: the parent is looking at this
    *  particular arrangement and the child is not. */
   | { kind: "child"; child: Child; draw?: { file: string; html: string } }
+  /** THE DOCUMENT'S OWN TABLE, resolved: the rows padded square, `head` settled,
+   *  and the scopes gathered because a cell is markdown and `{{name}}` in one
+   *  resolves where it is drawn, exactly as a markdown part's does. The cells
+   *  are RAW for the same reason `md` is: a cell opens under the caret and
+   *  writes back. */
+  | { kind: "grid"; rows: string[][]; head: boolean; vars: Variables }
   /** A LIST, resolved. Each item is a `Part` in its own right, drawn in order
    *  into the one slot and edited as its own region — so adding, removing and
    *  reordering are operations on an array rather than on a separator somebody
@@ -316,7 +340,7 @@ export interface PageRef {
    *  every page that has none on mount, and named by every run a page starts,
    *  so a page moved under another parent still owns the runs it started.
    *  Absent only on a page whose document would not parse — the tolerant
-   *  listing has no file to read it out of. The SIXTH contracts edit, taken
+   *  listing has no file to read it out of. The SEVENTH contracts edit, taken
    *  with the automation kinds below on 2026-09-17. */
   uid?: string;
 }
@@ -819,7 +843,7 @@ export type HostRequest = Envelope &
      *  `vault.recent` stay in the outer ring: each of those is about a folder
      *  OTHER than this one, and an artifact has no business reaching for one. */
     | { kind: "vault.info" }
-    /** AUTOMATIONS AND RUNS, IN THE INNER RING, and the SIXTH contracts edit,
+    /** AUTOMATIONS AND RUNS, IN THE INNER RING, and the SEVENTH contracts edit,
      *  taken at its own barrier on 2026-09-17.
      *
      *  A page may see every automation in the workspace, start any of them,
@@ -1023,12 +1047,17 @@ export type RuntimeRequest =
         /** `data` is the slot's markdown, or an ARRAY of it when the slot holds a
        *  list. A list is written WHOLE: what the document holds is the array, and
        *  a wire that carried one item plus an index would have to be right about
-       *  the index at a moment when another edit may have moved it. */
+       *  the index at a moment when another edit may have moved it.
+       *
+       *  OR A LIST OF LISTS, when the slot holds a grid: its rows, written whole
+       *  for the reason a list is. `head` is not on the wire — a grid's rows
+       *  change from the page and its header does not — so the row list replaces
+       *  `rows` and leaves the rest of the content as it was. */
       /** `section` is null on a page that has no sections: an html page's slots
        *  are bound to the page's own top-level keys, so the key IS the part and
        *  there is nothing between it and the document. The same spelling
        *  `variables.patch` already uses for the page's own scope. */
-      | { kind: "section.write"; page: PageId; section: BlockId | null; part: string; data: string | string[] }
+      | { kind: "section.write"; page: PageId; section: BlockId | null; part: string; data: string | string[] | string[][] }
         /** THE ORDER, AND WHAT IS IN IT. Adding, reordering, duplicating and
          *  removing are one kind because they are one edit to one list:
          *  `contents` IS the order, so there is no second place for a name to
@@ -1304,7 +1333,7 @@ export interface Pages {
   removeSection(id: PageId, section: BlockId): Promise<BlockId[]>;
   /** One SLOT'S text, and nothing else on the page. The prose write path.
    *  `section` null is a top-level key of a page that has no sections. */
-  writeSlot(id: PageId, section: BlockId | null, part: string, data: string | string[]): Promise<void>;
+  writeSlot(id: PageId, section: BlockId | null, part: string, data: string | string[] | string[][]): Promise<void>;
   /** The whole list, in order. Adding, reordering, duplicating and removing at
    *  once, because `contents` IS the order and they are one edit to one list. */
   setSections(id: PageId, sections: Section[]): Promise<Section[]>;
@@ -1560,8 +1589,6 @@ export interface WorkspaceStore {
 
   /** `section` null is the page's own variables; a name is that section's. */
   patchVariables(id: PageId, section: BlockId | null, patch: VarPatch): Promise<PageDoc>;
-  readDocRaw(id: PageId): Promise<string>;
-  writeDocRaw(id: PageId, text: string): Promise<PageDoc>;
 
   loadTable(name: TableName, q?: RowQuery): Promise<TableView | null>;
   insertRow(name: TableName, row: RowInput): Promise<RowId>;
@@ -1626,14 +1653,19 @@ export interface WorkspaceStore {
  *  like `design`, and it is the one addition this union has taken since. */
 export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map" | "runs" | "instructions";
 
+/** THE FIFTH CONTRACTS EDIT, taken at its own barrier on 2026-09-17, was a
+ *  removal: `pageView` and `panel` left this state, and `readDocRaw` and
+ *  `writeDocRaw` left `WorkspaceStore`, when the Config screen and the two side
+ *  panels were deleted. A field nothing reads is a door any caller can open;
+ *  a method nothing calls is a promise the store need not keep. The `doc.raw`
+ *  and `doc.writeRaw` wire kinds stayed — the API is not a screen. */
 export interface UiState {
   route: { view: ViewName; id: string };
-  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE. `page` is the box;
+  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE — the seventh edit put
+   *  it back, three members wide and in every build: `page` is the box;
    *  `instructions` is one editor over the page's `INSTRUCTIONS.md`;
-   *  `automation` is the page's automations — manifest, files, runs; `config`
-   *  is the ports screen, offered in development only. */
-  pageView: "page" | "instructions" | "automation" | "config";
-  panel: null | "agent" | "history";
+   *  `automation` is the page's automations — manifest, files, runs. */
+  pageView: "page" | "instructions" | "automation";
   inserting: number | null;
   dialog: boolean;
   /** Which page the New dialog will make something inside. Set by the plus on a

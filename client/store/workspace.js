@@ -620,29 +620,6 @@ export function makeWorkspace(transport) {
       return doc;
     },
 
-    async readDocRaw(id) {
-      // The ugly, always-available fallback for a page whose document did not
-      // come out right. It matters MORE than it did: the prose is in there now,
-      // so this is the only way back to a page whose one bad character took its
-      // words with it. Nothing is cached — it is read to be edited, and a stale
-      // copy of it is worse than a round trip.
-      return /** @type {string} */ (await ask({ ...env(), kind: "doc.raw", page: id }));
-    },
-
-    async writeDocRaw(id, text) {
-      const merged = /** @type {PageDoc} */ (
-        await ask({ ...env(), kind: "doc.writeRaw", page: id, text })
-      );
-      // Always re-read: the raw fallback replaces the whole file, so the
-      // sections, their order and the name may all have moved at once. It is the
-      // hand-edit escape hatch and it is not on any hot path, so the round trip
-      // costs nothing worth counting.
-      if (page && page.id === id) page = await readPage(id);
-      await readChildren();
-      emit();
-      changed({ page: id, shape: true });
-      return merged;
-    },
 
     /* ── tables ──────────────────────────────────────────────────────── */
 

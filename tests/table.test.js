@@ -491,8 +491,8 @@ function grid(schema, rows = [], production = false) {
     importCsv: async () => ({ added: 0 }),
   };
   const ui = {
-    get: () => ({ route: { view: "table", id: schema.name }, pageView: "page",
-      panel: null, inserting: null, dialog: false, expanded: new Set() }),
+    get: () => ({ route: { view: "table", id: schema.name },
+      inserting: null, dialog: false, expanded: new Set() }),
     set: () => {}, go: () => {}, on: () => () => {},
   };
   const el = makeTableView({ ws, ui, production })({ schema, rows, total: rows.length });

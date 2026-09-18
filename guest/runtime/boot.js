@@ -639,6 +639,13 @@
     }
     if (!parts || !parts[part]) return;
     const was = parts[part];
+    // A grid's rows, written whole: the held copy takes them so the projection
+    // reads the table as it now is.
+    if (Array.isArray(data) && data.length > 0 && data.every((row) => Array.isArray(row))) {
+      if (was.kind !== "grid") return;
+      was.rows = data.map((row) => /** @type {string[]} */ (row).map((cell) => String(cell)));
+      return;
+    }
     if (Array.isArray(data)) {
       if (was.kind !== "list") return;
       was.items = data.map((md, i) => ({
@@ -690,8 +697,9 @@
      *  `data` is the slot's markdown, or an ARRAY of it when the slot holds a
      *  list — a list is written whole, because what the document holds is the
      *  array and an index on the wire is the thing that goes wrong when two
-     *  edits cross.
-     *  @param {string} section @param {string} part @param {string | string[]} data */
+     *  edits cross — or an ARRAY OF ARRAYS when it holds a grid, its rows,
+     *  whole for the same reason.
+     *  @param {string} section @param {string} part @param {string | string[] | string[][]} data */
     write(section, part, data) {
       if (!runtime) return Promise.reject(new Error("no port"));
       writesInFlight++;

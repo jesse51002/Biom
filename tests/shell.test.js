@@ -20,7 +20,7 @@
 import { test, expect, beforeEach, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS, PRODUCTION_VIEWS } from "../client/shell/shell.js";
+import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS } from "../client/shell/shell.js";
 import {
   makeRack, rackWidth, autoCeiling,
   RACK_MIN, RACK_BASE, RACK_SHARE, RACK_KEY, RACK_STEP,
@@ -193,6 +193,10 @@ function findAll(root, ok) {
 }
 
 const byText = (root, text) => find(root, (el) => flat(el) === text);
+/** A BUTTON BY ITS WORDS. `byText` is depth-first, so a container whose only
+ *  child says the words is handed back before the button inside it — which is
+ *  what the bar became once Reload was the one action on it. */
+const byButton = (root, text) => find(root, (el) => el.tagName === "BUTTON" && flat(el) === text);
 /** Class-exact, because a container's flattened text starts with its first
  *  child's and a depth-first search would hand back the box rather than the
  *  button inside it. */
@@ -338,14 +342,13 @@ function fakeFrameHost() {
  *  element each time — which is what makes "the body was not rebuilt" provable
  *  rather than assumed. */
 function fakeViews() {
-  const drawn = { tree: 0, page: 0, config: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0, runs: 0, instructions: 0, pageInstructions: 0, automation: 0 };
+  const drawn = { tree: 0, page: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0, runs: 0, instructions: 0, pageInstructions: 0, automation: 0 };
   const one = (name, cls) => (...args) => { drawn[name]++; return h("div." + cls, String(args[0] ?? "")); };
   return {
     drawn,
     views: {
       tree: one("tree", "tree"),
       page: (p) => { drawn.page++; return h("div.pagebody", p.id); },
-      config: one("config", "ports"),
       table: one("table", "tbl"),
       vault: one("vault", "vaultpick"),
       design: one("design", "designdoc"),
@@ -489,12 +492,18 @@ test("the canvas holds the view the route names", async () => {
   expect(g.plate.firstChild.className).toBe("pagebody");
 });
 
-test("the config face of a page is a different view, not a different route", async () => {
-  const g = harness();
-  g.ui.set({ pageView: "config" });
-  await tick();
-  expect(g.plate.firstChild.className).toBe("ports");
-  expect(g.plate.attrs["data-face"]).toBe("config");
+test("a page has one face, and nothing on the store can put another on the plate", async () => {
+  // THERE WAS A CONFIG FACE — `pageView` on the store, a `···` menu on the bar
+  // to flip it, and a screen made for ports the framework does not have. The
+  // owner decided (2026-09-17) that it goes. The field is gone from the store,
+  // so the one thing left to hold is that the plate wears the page's face and
+  // draws the page, in both builds.
+  for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
+    await tick();
+    expect(g.plate.firstChild.className).toBe("pagebody");
+    expect(g.plate.attrs["data-face"]).toBe("page");
+    expect(g.drawn.page).toBe(1);
+  }
 });
 
 test("a page the route names but the store has not got is fetched once", async () => {
@@ -538,7 +547,7 @@ test("THE PAGE IS NAMED BY THE BREADCRUMB IN THE RAIL, not by a heading over the
   expect(crumbs[0].attrs["aria-current"]).toBeUndefined();
   // Nothing in the canvas draws it: the plate holds the page and only the page.
   expect(find(g.plate, (el) => has(el, "ptitle"))).toBeNull();
-  // The path on disk is the agent's question, and the Modify page panel answers
+  // The path on disk is the agent's question, and the seeded root page answers
   // it; the bar no longer carries a PAGE label with the path beside it.
   expect(find(g.rail, (el) => has(el, "rail-job"))).toBeNull();
 
@@ -553,15 +562,24 @@ test("THE PAGE IS NAMED BY THE BREADCRUMB IN THE RAIL, not by a heading over the
   expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Design"]);
 });
 
-test("Config is behind the page's own menu, not a tab beside its name", async () => {
-  const g = harness();
-  const tools = find(g.rail, (el) => has(el, "tools"));
-  expect(find(tools, (el) => has(el, "viewsw"))).toBeNull();
-  expect(find(tools, (el) => has(el, "more"))).not.toBeNull();
-  // Off a page there is nothing to configure, so there is no menu.
-  g.ui.go("design", "");
-  await tick();
-  expect(find(g.rail, (el) => has(el, "more"))).toBeNull();
+test("the bar holds Reload and the page's two screens and nothing else, in both builds; off a page, Reload alone", async () => {
+  // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload, then the page's
+  // two screens — Instructions and Automations — and Agent Terminal joins them
+  // when this window has a workspace to run one in (the rightmost-action test
+  // below covers that). There is no menu, no Config, no History and no Modify
+  // page: the owner decided (2026-09-17) that the three go rather than hide,
+  // so this is asserted in the development build as well as the built one.
+  for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
+    await tick();
+    const tools = find(g.rail, (el) => has(el, "tools"));
+    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Instructions", "Automations"]);
+    expect(find(tools, (el) => has(el, "more"))).toBeNull();
+    expect(find(tools, (el) => has(el, "viewsw"))).toBeNull();
+    g.ui.go("design", "");
+    await tick();
+    expect(findAll(find(g.rail, (el) => has(el, "tools")), (el) => el.tagName === "BUTTON").map(flat))
+      .toEqual(["Reload"]);
+  }
 });
 
 /* ── there is no edit toggle ───────────────────────────────────────────── */
@@ -601,11 +619,11 @@ test("a repaint with unchanged content does not replace the root node", async ()
   expect(g.drawn.page).toBe(1);
 
   // Every emit a page can produce while nothing about it moved: a store emit
-  // that changed something else, a panel opening, a no-op ui write.
+  // that changed something else, the rail re-sorting, a no-op ui write.
   g.ws.emit();
   g.ws.emit();
-  g.ui.set({ panel: "agent" });
-  g.ui.set({ panel: null });
+  g.ui.set({ treeOrder: "desc" });
+  g.ui.set({ treeOrder: "asc" });
   g.shell.repaint();
   await tick();
 
@@ -712,7 +730,7 @@ test("no store write moves a frame on the page — whatever it was that changed"
   const writes = {
     // patchVariables: the page's own values are swapped, its sections are not
     "a value the runtime wrote itself": () => { g.ws.state.page = { ...g.ws.state.page, variables: { rate: 90 } }; },
-    // writeFile / writeDocRaw: the page is re-read, so every section object is new
+    // writeFile / reloadPage: the page is re-read, so every section object is new
     "a paragraph typed on the same page": () => { g.ws.state.page = reread(g.ws.state.page); },
     // insertRow / updateRow: the table list is rebuilt around the new count
     "a row written into a table": () => { g.ws.state.tables = g.ws.state.tables.map((t) => ({ ...t, rows: t.rows + 1 })); },
@@ -777,7 +795,7 @@ test("the box does not restart itself when the page it is drawing saves", async 
 
 test("reload re-reads the page and re-lists the tree", async () => {
   const g = harness();
-  byText(g.rail, "Reload").fire("click");
+  byButton(g.rail, "Reload").fire("click");
   await tick();
   await tick();
 
@@ -785,7 +803,7 @@ test("reload re-reads the page and re-lists the tree", async () => {
   // The tree matters as much as the page: a page Claude Code has just CREATED
   // has to turn up without refreshing the browser.
   expect(g.ws.calls).toContain("loadTree");
-  expect(byText(g.rail, "Reload")).not.toBeNull();
+  expect(byButton(g.rail, "Reload")).not.toBeNull();
   // AND THE READER'S PLACE IS KEPT THROUGH IT. `keep` is said for the page on
   // the route, and it is said BEFORE the teardown — the realm that reported
   // where it was scrolled to is the one `reloadPage` is about to replace.
@@ -838,7 +856,7 @@ test("an external change re-runs Reload, and the redraw goes through reloadPage"
   // so there is no path by which the box's pending text can reach a file.
   expect(g.ws.calls.filter((c) => /^(write|createPage|movechild|patch)/i.test(c))).toEqual([]);
   // The button is still there and still says what it does.
-  expect(byText(g.rail, "Reload")).not.toBeNull();
+  expect(byButton(g.rail, "Reload")).not.toBeNull();
 });
 
 test("a change landing mid-reload is read once more, not queued up", async () => {
@@ -860,53 +878,14 @@ test("a change landing mid-reload is read once more, not queued up", async () =>
 
 /* ── the panels, which are chrome and say so ───────────────────────────── */
 
-test("the panels open beside the canvas and never disturb it", async () => {
-  const g = harness();
-  const node = g.plate.firstChild;
-
-  byText(g.rail, "Modify page").fire("click");
-  await tick();
-  // the rack, the canvas, the rail's own grip, and now the panel
-  expect(g.bed.children).toHaveLength(4);
-  expect(g.bed.className).toBe("bed with-panel");
-  expect(g.plate.firstChild).toBe(node);
-
-  // honest rather than dead: it names the path the agent works in, and offers
-  // no control that cannot work. One more tick, because the path is the VAULT'S
-  // and the shell reads that on its own — until it answers the panel says
-  // `<vault>` rather than a folder it has not been told about.
-  await tick();
-  const panel = find(g.bed, (el) => has(el, "panel-side"));
-  // THE VAULT'S OWN PATH, absolute, because the agent is a separate program in
-  // a separate terminal — and because several folders are open at once, so a
-  // hardcoded `workspace/` would send somebody to `cd` into the wrong one.
-  // The vault root is where the agent opens, and the page's own folder is shown
-  // separately as where the page is — never glued onto the root as the place to
-  // start, because an agent started there never finds the vault's AGENTS.md.
-  expect(flat(find(panel, (el) => has(el, "path")))).toBe("/w/one/");
-  expect(flat(panel)).toContain("pages/notes/");
-  expect(flat(panel)).toContain("Nothing here calls a model.");
-  expect(byText(panel, "Send")).toBeNull();
-  expect(byText(panel, "Undo")).toBeNull();
-
-  byText(g.rail, "History").fire("click");
-  await tick();
-  const hist = find(g.bed, (el) => has(el, "panel-side"));
-  // Undoing is a sentence you hand the agent, not a command you run: nobody
-  // using this touches the repo directly, and a panel that sent them to a
-  // terminal would be describing a different product.
-  expect(flat(hist)).toContain("revert");
-  expect(flat(hist)).toContain("Copy the prompt");
-  expect(flat(hist)).not.toContain("git");
-  expect(byText(hist, "Restore")).toBeNull();
-});
-
-// THE ONE CLAIM THIS PANEL HAD NO RIGHT TO MAKE. "Every version is kept" was
-// printed unconditionally, so a workspace on a machine with no git — which has
-// no undo at all — was told by the one surface that mentions versions that it
-// had them. `VaultInfo.history` is the fact, and only the bad news is ever said:
-// a vault that IS keeping versions goes on saying what it said.
-test("a workspace with no history says so, in the panel and on the strip", async () => {
+// THE ONE CLAIM THE APPLICATION HAS NO RIGHT TO MAKE. A workspace on a machine
+// with no git has no undo at all, and the person is entitled to know.
+// `VaultInfo.history` is the fact, and only the bad news is ever said: a vault
+// that IS keeping versions goes on saying nothing. The strip is the one surface
+// that says it — there was a History panel that said it too, and the owner
+// decided (2026-09-17) that the panel goes; a version list, when one is built,
+// is its own spec and reads the same fact.
+test("a workspace with no history says so on the strip, once", async () => {
   const g = harness(DOC, { view: "page", id: "notes" });
   g.ws.history = false;
   // The shell reads `vaultInfo` off its own paint, so the answer is in hand
@@ -914,16 +893,6 @@ test("a workspace with no history says so, in the panel and on the strip", async
   await tick();
   await tick();
 
-  byText(g.rail, "History").fire("click");
-  await tick();
-  const hist = find(g.bed, (el) => has(el, "panel-side"));
-  expect(flat(hist)).not.toContain("Every version is kept");
-  expect(flat(hist)).toContain("not being kept");
-  // The prompt stays: it is what to say once there is something to revert to,
-  // and a panel that said only that something was wrong would be less useful.
-  expect(flat(hist)).toContain("revert");
-
-  // And the strip says it wherever they are looking, once.
   const said = flat(g.strip);
   expect(said).toContain("are not being kept");
   expect(said.split("are not being kept").length - 1).toBe(1);
@@ -937,9 +906,6 @@ test("a workspace that is keeping versions says nothing about it", async () => {
   await tick();
   await tick();
   expect(flat(g.strip)).not.toContain("not being kept");
-  byText(g.rail, "History").fire("click");
-  await tick();
-  expect(flat(find(g.bed, (el) => has(el, "panel-side")))).toContain("Every version is kept");
 });
 
 /* ── the New-page dialog, which is the screen a stranger reaches first ─── */
@@ -1032,23 +998,6 @@ test("New names the page it is making inside by its name, not its id", async () 
   await tick();
   const dlg = find(g.root, (el) => el.className === "dialog");
   expect(flat(find(dlg, (el) => el.tagName === "H2"))).toBe("New inside Job board");
-});
-
-test("Modify page sends the agent to the vault root and names the page to change", async () => {
-  const g = harness(DOC, { view: "page", id: "notes" });
-  g.ui.set({ panel: "agent" });
-  await tick();
-  const panel = find(g.root, (el) => el.attrs && el.attrs["aria-label"] === "Modify page");
-  expect(panel).not.toBeNull();
-  const said = flat(panel);
-  // Where to open the agent is the vault, never the page's own folder: an agent
-  // started in `pages/notes/` never finds the vault's AGENTS.md or its skills.
-  expect(said).toContain("Open your agent in");
-  const where = find(panel, (el) => has(el, "path"));
-  expect(flat(where)).not.toContain("pages/");
-  // The page is still named, with its folder as where it is.
-  expect(said).toContain("pages/notes/");
-  expect(said).toContain("turn my page named Notes into");
 });
 
 test("Table makes one and lands you on it", async () => {
@@ -1418,7 +1367,7 @@ test("nothing in the snapshot rebuilds the design doc, and Reload re-reads it", 
   // the shell may take this screen apart — an artifact on the design doc would
   // be restarted by an unrelated keystroke somewhere else.
   g.ws.emit();
-  g.ui.set({ panel: "agent" });
+  g.ui.set({ treeOrder: "desc" });
   await tick();
   expect(g.plate.firstChild).toBe(node);
   expect(g.drawn.design).toBe(1);
@@ -1560,7 +1509,7 @@ test("a repaint never rebuilds the picker under the walk you are half-way throug
   expect(g.drawn.vault).toBe(1);
 
   g.ws.emit();
-  g.ui.set({ panel: "agent" });
+  g.ui.set({ treeOrder: "desc" });
   await tick();
 
   expect(g.plate.firstChild).toBe(node);
@@ -2175,24 +2124,35 @@ test("the Map is a route like Design, and it takes the canvas whole", async () =
 // "is this row put in the list", constructed with `production` rather than set
 // on the runner. Nothing is deleted and nothing is a second code path, so the
 // development assertion beside each one is the real proof that it still is not.
+//
+// THE LIST HOLDS NO SCREEN. It held the Map row, the History panel and the
+// Modify page panel until 2026-09-17, when the owner decided that the built
+// application hides no screen: Map is in every build, and the two panels — and
+// the Config screen behind the `···` menu — are deleted rather than withheld.
+// What is left on the list is the strip's diagnostics and the failure screen's
+// `make dev`, below; the first test here holds the other direction, that no
+// screen or row differs between the builds.
 
-test("the Map row and its route are both gone in production, and both there without it", async () => {
-  const dev = harness();
-  await tick();
-  const devFoot = find(dev.rack, (el) => has(el, "rackfoot"));
-  expect(findAll(devFoot, (el) => el.tagName === "A").map(flat))
-    .toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
-
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
-  await tick();
-  const foot = find(built.rack, (el) => has(el, "rackfoot"));
-  // The whole-workspace mind map is a drawing of a tree a stranger's vault does
-  // not have yet: a one-page workspace maps to one light. INSTRUCTIONS AND
-  // AUTOMATIONS STAY: what an agent is told and what is running are the
-  // person's, in every build.
-  expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Instructions", "Automations", "Close workspace"]);
-  expect(findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]))
-    .toEqual(["design", "instructions", "runs", "close"]);
+test("the Map row and its route are in every build", async () => {
+  // THE ROW AND THE ROUTE TOGETHER: a row without the route would be a row
+  // whose click falls back to a page, and a route without the row a hidden
+  // feature rather than an offered one. Both are held in both builds, and the
+  // foot's rows are the same list either way.
+  for (const production of [false, true]) {
+    const g = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    const foot = find(g.rack, (el) => has(el, "rackfoot"));
+    expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
+    expect(findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]))
+      .toEqual(["design", "instructions", "runs", "map", "close"]);
+    // Every row's route is in the vocabulary, and `close` is the start page.
+    for (const kind of ["design", "instructions", "runs", "map", "close"]) expect(VIEWS.has(kind === "close" ? "vault" : kind)).toBe(true);
+  }
+  // ONE VOCABULARY. `parseHash` takes the hash and nothing else, so there is no
+  // second argument for a build to pass and no second set for it to read.
+  expect(parseHash("#/map")).toEqual({ view: "map", id: "" });
+  expect(parseHash.length).toBe(1);
+  for (const view of VIEWS) expect(parseHash("#/" + view).view).toBe(view);
 });
 
 test("the Instructions and Automations rows open their screens, in both builds", async () => {
@@ -2212,8 +2172,8 @@ test("the Instructions and Automations rows open their screens, in both builds",
     expect(w.plate.firstChild.className).toBe("overview");
     expect(w.plate.attrs["data-face"]).toBe("runs");
     // And both are in the route vocabulary of both builds: a typed hash reaches them.
-    expect(parseHash("#/runs", production).view).toBe("runs");
-    expect(parseHash("#/instructions", production).view).toBe("instructions");
+    expect(parseHash("#/runs").view).toBe("runs");
+    expect(parseHash("#/instructions").view).toBe("instructions");
   }
 });
 
@@ -2241,7 +2201,7 @@ test("a page's bar carries Instructions and Automations, each taking the canvas 
   }
 });
 
-test("Agent Terminal is the rightmost action on a page's bar, after Instructions and Automations; only development's menu follows it", async () => {
+test("Agent Terminal is the rightmost action on a page's bar, after Instructions and Automations, in both builds", async () => {
   // A REAL TERMINAL STORE over a link that never opens, and a view that is a
   // box the dock can hold: what the bar reads is `store.get()`, `store.live()`
   // and `toggle()`, and what the dock wants is `view.el`. The owner asked
@@ -2266,138 +2226,9 @@ test("Agent Terminal is the rightmost action on a page's bar, after Instructions
     expect(at("Instructions")).toBeGreaterThan(-1);
     expect(at("Automations")).toBe(at("Instructions") + 1);
     expect(at("Agent Terminal")).toBe(at("Automations") + 1);
-    // Production: nothing after it. Development: the one menu, and nothing else.
-    expect(tools.slice(at("Agent Terminal") + 1)).toEqual(production ? [] : ["\u22EF"]);
+    // Nothing after it, in either build: there is no menu any more.
+    expect(tools.slice(at("Agent Terminal") + 1)).toEqual([]);
   }
-});
-
-test("the Config screen and the menu that reached it are development's; a typed pageView of config draws the page in production", async () => {
-  const dev = harness(DOC, { view: "page", id: DOC.id });
-  await tick();
-  expect(find(dev.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBeTruthy();
-  dev.ui.set({ pageView: "config" });
-  await tick();
-  expect(dev.plate.firstChild.className).toBe("ports");
-  expect(dev.plate.attrs["data-face"]).toBe("config");
-
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
-  await tick();
-  expect(find(built.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBe(null);
-  // THE SECOND DOOR: the field is anybody's to set, and the shell answers with
-  // the page rather than the screen.
-  built.ui.set({ pageView: "config" });
-  await tick();
-  expect(built.plate.firstChild.className).toBe("pagebody");
-  expect(built.plate.attrs["data-face"]).toBe("page");
-});
-
-test("a typed #/map does not open the map in production", () => {
-  // THE ROW GOING WITHOUT THE ROUTE GOING would leave the screen reachable by
-  // typing, which is a hidden feature rather than an absent one. Out of the
-  // vocabulary it falls back exactly as any other unknown view already does.
-  expect(parseHash("#/map", true)).toEqual({ view: "page", id: "" });
-  expect(parseHash("#/map", false)).toEqual({ view: "map", id: "" });
-  expect(parseHash("#/map")).toEqual({ view: "map", id: "" });
-  // The rest of the vocabulary is untouched: the picker in particular, which is
-  // the one screen that can fix a workspace that did not open.
-  for (const view of ["page", "table", "vault", "design"]) {
-    expect(parseHash("#/" + view, true).view).toBe(view);
-  }
-});
-
-test("the production vocabulary is the development one minus what the rail drops", async () => {
-  // TWO LISTS ARE TWO PLACES A VIEW CAN BE ADDED, and the one that gets
-  // forgotten is the second — a route in the built application with no row to
-  // reach it, or a row whose route falls back to a page. The production set is
-  // derived from the full one, so the only thing left to hold is that the
-  // subtraction and the rail agree about what is gone.
-  for (const view of PRODUCTION_VIEWS) expect(VIEWS.has(view)).toBe(true);
-  expect(PRODUCTION_VIEWS.size).toBeLessThan(VIEWS.size);
-
-  // Every view still in the vocabulary routes in production; every view taken
-  // out of it falls back exactly as any other unknown view does.
-  for (const view of VIEWS) {
-    expect(parseHash("#/" + view, true).view).toBe(PRODUCTION_VIEWS.has(view) ? view : "page");
-    expect(parseHash("#/" + view, false).view).toBe(view);
-  }
-
-  // And what the rail offers in production is inside it. The foot's rows are
-  // the views reachable by clicking rather than by typing; `page` and `table`
-  // are reached from the tree above and have no row of their own.
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
-  await tick();
-  const foot = find(built.rack, (el) => has(el, "rackfoot"));
-  const rows = findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]);
-  for (const kind of rows) {
-    // `close` is the Close workspace row's glyph, and where it goes is the start
-    // page — the `vault` route, reached by navigating rather than by `ui.go`,
-    // because leaving a workspace loads a document with no folder in its
-    // address.
-    const view = kind === "close" ? "vault" : kind;
-    expect(PRODUCTION_VIEWS.has(view)).toBe(true);
-  }
-  // The other direction: a view the vocabulary dropped has no row either.
-  for (const view of VIEWS) {
-    if (PRODUCTION_VIEWS.has(view)) continue;
-    expect(rows).not.toContain(view);
-  }
-});
-
-test("the History panel is not offered in production, and no other route opens it", async () => {
-  const dev = harness();
-  await tick();
-  expect(byText(dev.rail, "History")).toBeTruthy();
-  dev.ui.set({ panel: "history" });
-  await tick();
-  expect(find(dev.root, (el) => el.attrs && el.attrs["aria-label"] === "History")).toBeTruthy();
-
-  // It reads the vault's git log, and the vault being a repo is an
-  // implementation detail: the way to undo is a sentence handed to an agent.
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
-  await tick();
-  expect(byText(built.rail, "History")).toBe(null);
-  // Reload is what is left of the two, and it is still there.
-  expect(byText(built.rail, "Reload")).toBeTruthy();
-
-  // THE ROW GOING WITHOUT THE PANEL GOING would leave it one `ui.set` away —
-  // the same hidden-rather-than-absent feature a typed `#/map` would be. This
-  // and Modify page are both one name in `HIDDEN_PANELS`, which the row and the
-  // paint read through the same predicate, so the two cannot come to disagree.
-  // The bed does not widen for it either.
-  built.ui.set({ panel: "history" });
-  await tick();
-  expect(find(built.root, (el) => el.attrs && el.attrs["aria-label"] === "History")).toBe(null);
-  expect(built.bed.className).toBe("bed");
-});
-
-test("the Modify page panel is not offered in production, and no other route opens it", async () => {
-  const dev = harness();
-  await tick();
-  expect(byText(dev.rail, "Modify page")).toBeTruthy();
-  dev.ui.set({ panel: "agent" });
-  await tick();
-  expect(find(dev.root, (el) => el.attrs && el.attrs["aria-label"] === "Modify page")).toBeTruthy();
-
-  // It draws a path to `cd` into and a prompt to paste into a coding agent in a
-  // terminal beside this window — an instruction written for whoever has one
-  // open. The owner decided (2026-09-14) that a built application does not
-  // offer it.
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
-  await tick();
-  expect(byText(built.rail, "Modify page")).toBe(null);
-  // The `···` menu is gone with it — Config is a developer's screen too now —
-  // and the page's own screens are the two controls on the bar instead.
-  expect(find(built.rail, (el) => el.attrs && el.attrs["aria-label"] === "More")).toBe(null);
-  expect(find(built.rail, (el) => has(el, "tool") && flat(el) === "Instructions")).toBeTruthy();
-  expect(find(built.rail, (el) => has(el, "tool") && flat(el) === "Automations")).toBeTruthy();
-
-  // THE ROW GOING WITHOUT THE PANEL GOING would leave it one `ui.set` away —
-  // the same hidden-rather-than-absent feature a typed `#/map` would be. The
-  // bed does not widen for it either.
-  built.ui.set({ panel: "agent" });
-  await tick();
-  expect(find(built.root, (el) => el.attrs && el.attrs["aria-label"] === "Modify page")).toBe(null);
-  expect(built.bed.className).toBe("bed");
 });
 
 test("the status strip stops reporting on the page and keeps reporting on the data", async () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// State that is never persisted: the route, the panel, the edit toggle, the
-// inserter, the dialog, and which folders are open in the tree.
+// State that is never persisted: the route, the inserter, the dialog, and
+// which folders are open in the tree.
 //
 // It is a separate store from the workspace and the reason is structural rather
 // than tidy: ephemeral UI state and a cached replica of server state have
@@ -27,7 +27,6 @@ export function makeUi(initial) {
   let state = {
     route: { view: "page", id: "" },
     pageView: "page",
-    panel: null,
     inserting: null,
     dialog: false,
     dialogParent: null,
@@ -70,9 +69,9 @@ export function makeUi(initial) {
 
     go(view, id) {
       // Lifted from the mock: opening something closes the inserter and drops
-      // back to the page's own face rather than its config. `route` is a fresh
-      // object, so a navigation always repaints — a view may want to scroll to
-      // the top even when it lands where it already was.
+      // back to the page's own face rather than one of its screens. `route`
+      // is a fresh object, so a navigation always repaints — a view may want to
+      // scroll to the top even when it lands where it already was.
       apply({
         ...state,
         route: { view, id },

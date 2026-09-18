@@ -69,6 +69,22 @@
   reaches them; no `!important`, and nothing is deleted from the DOM that the
   edit wave might be holding.
 
+  AND THE CONVERSION, which is the other thing here that writes. A markdown
+  table is a run of pipes inside a paragraph: drawn as a thin strip of wrapped
+  sentences, edited by retyping the pipes, and impossible to add a row to
+  without knowing where the row goes. So when this document has drawn a page
+  and a prose part on it holds a markdown table, the table is cut out and the
+  document rewritten, once, in place: the prose before keeps the section's
+  name, the table becomes a section of its own whose one slot is a `grid` part
+  — the rows as data, edited one cell at a time by `plugins/biom-grid.js` — and the
+  prose after gets a section of its own. Nobody retypes anything. It goes
+  through the RUNTIME'S port, `section.write` and `section.order`, which is
+  the door a section can never reach; and it runs on a page only when that
+  page is drawn, so a document nobody has opened is never touched, and a
+  document with no table in any prose part is left exactly as it was. The
+  script is the second one below, on its own so the pure half of it can be
+  verified outside a browser.
+
   IT IS DELIBERATELY PLAIN, and the reason is NOT the one `base/README.md` gives
   about starters — a starter is copied and then owned, so it is free to draw, and
   those do. This one is not copied at all: it is the board every vault draws
@@ -409,6 +425,236 @@
           });
         }, { root: null, threshold: 0.05 });
         io.observe(holds);
+      })();
+    </script>
+
+    <!-- THE CONVERSION. A markdown table found in a prose part becomes a grid
+         section, once, in place. See the head of this file. -->
+    <script>
+      (function () {
+        "use strict";
+
+        /* THE RUNTIME'S OWN NAMESPACE, which carries the privileged page
+           surface — `rt.page.write` and `rt.page.order` go down the runtime's
+           port. This document is the page the runtime draws into, not a
+           section drawn on it, which is why it may reach them; a section is
+           handed `biom` and cannot. That is a closure and not a browser
+           guarantee, and it says so in the runtime. */
+        var glob = /** @type {any} */ (globalThis);
+        var rt = glob.__gRuntime || (glob.__gRuntime = {});
+
+        /* ── finding a table ─────────────────────────────────────────────── */
+
+        var FENCE = /^\s{0,3}(```|~~~)/;
+        var DELIM_CELL = /^\s*:?-+:?\s*$/;
+
+        /* The cells of one table line: split on a pipe that is not escaped,
+           the outer pipes dropped, `\|` read as the character it escapes.
+           A pipe inside a `[[wikilink|alias]]` or a `code span` is that
+           cell's — a link with an alias is the one form this workspace
+           writes, and a table reader that cut it in half would turn every
+           aliased link in a table into two broken cells. Nothing else in a
+           cell is touched — a cell is markdown. */
+        function cellsOf(line) {
+          var out = [], cur = "", i = 0, t = line.trim();
+          if (t.charAt(0) === "|") t = t.slice(1);
+          if (t.charAt(t.length - 1) === "|" && t.charAt(t.length - 2) !== "\\") t = t.slice(0, -1);
+          for (; i < t.length; i++) {
+            var ch = t.charAt(i);
+            if (ch === "\\" && t.charAt(i + 1) === "|") { cur += "|"; i++; continue; }
+            if (ch === "[" && t.charAt(i + 1) === "[") {
+              var close = t.indexOf("]]", i + 2);
+              if (close >= 0) { cur += t.slice(i, close + 2); i = close + 1; continue; }
+            }
+            if (ch === "`") {
+              var tick = t.indexOf("`", i + 1);
+              if (tick >= 0) { cur += t.slice(i, tick + 1); i = tick; continue; }
+            }
+            if (ch === "|") { out.push(cur.trim()); cur = ""; continue; }
+            cur += ch;
+          }
+          out.push(cur.trim());
+          return out;
+        }
+
+        /* A delimiter row carries a pipe as the header does. Without that a
+           `---` under a line that happens to end in a pipe — a setext heading,
+           a rule — reads as a one-column table and the heading is cut out. */
+        function isDelimiter(line) {
+          if (line.indexOf("-") < 0 || line.indexOf("|") < 0) return false;
+          var cells = cellsOf(line);
+          return cells.length > 0 && cells.every(function (c) { return DELIM_CELL.test(c); });
+        }
+
+        /* WHERE THE TABLES ARE in one part's markdown, as line ranges, `end`
+           exclusive. A table is a header line holding a pipe, a delimiter line
+           under it with the same number of cells, and every following line
+           holding a pipe until a blank one — the shape every markdown reader
+           agrees on. A fence is skipped whole, because a table inside a code
+           block is an example of one and not one. */
+        function tablesIn(md) {
+          var lines = String(md).split("\n");
+          var found = [], fence = null, i = 0;
+          for (; i < lines.length; i++) {
+            var line = lines[i];
+            var m = FENCE.exec(line);
+            if (m) { if (fence === null) fence = m[1]; else if (m[1] === fence) fence = null; continue; }
+            if (fence !== null) continue;
+            if (line.indexOf("|") < 0 || i + 1 >= lines.length) continue;
+            var next = lines[i + 1];
+            if (!isDelimiter(next)) continue;
+            var width = cellsOf(line).length;
+            if (width === 0 || cellsOf(next).length !== width) continue;
+            var end = i + 2;
+            while (end < lines.length && lines[end].trim() !== "" && lines[end].indexOf("|") >= 0 && !FENCE.test(lines[end])) end++;
+            found.push({ start: i, end: end, width: width });
+            i = end - 1;
+          }
+          return found;
+        }
+
+        /* ONE PART, CUT AROUND ITS TABLES: prose, grid, prose, grid, prose. A
+           prose segment keeps every word and loses only the blank lines that
+           were there to separate it from the table; a grid segment is the
+           rows, squared to the header's width the way a markdown reader
+           squares them, the header first. */
+        function split(md) {
+          var lines = String(md).split("\n");
+          var tables = tablesIn(md);
+          if (tables.length === 0) return null;
+          var out = [], at = 0;
+          tables.forEach(function (t) {
+            out.push({ kind: "prose", text: prose(lines.slice(at, t.start)) });
+            var rows = lines.slice(t.start, t.end).filter(function (_, k) { return k !== 1; }).map(function (line) {
+              var cells = cellsOf(line).slice(0, t.width);
+              while (cells.length < t.width) cells.push("");
+              return cells;
+            });
+            out.push({ kind: "grid", rows: rows });
+            at = t.end;
+          });
+          out.push({ kind: "prose", text: prose(lines.slice(at)) });
+          return out;
+        }
+
+        /* Prose keeps its own newlines and ends with one, the way a block
+           scalar does, or is empty. */
+        function prose(lines) {
+          var text = lines.join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
+          return text === "" ? "" : text + "\n";
+        }
+
+        /* ── rewriting the document ──────────────────────────────────────── */
+
+        var NAME = /^[a-z][a-z0-9_-]*$/;
+
+        /* A name for a section born from another, unique on the page. */
+        function nameFor(base, suffix, taken) {
+          var stem = base + "-" + suffix;
+          var name = stem, n = 2;
+          while (taken.has(name)) { name = stem + "-" + String(n); n++; }
+          taken.add(name);
+          return name;
+        }
+
+        /* THE PLAN: given the drawn sections, the writes that put the prose
+           before back into its slot and the whole new `contents` list — or
+           null when no prose part holds a table, which is every page most of
+           the time. Pure, so it can be verified outside a browser.
+
+           A section keeps its name, its file and its other slots; the slot the
+           table was in keeps the prose before it. The grid becomes
+           `<name>-table` (`<name>-<slot>-table` when the slot is not `body`)
+           and the prose after becomes `<name>-after`, both with no file of
+           their own and both carrying the section's own variables with the
+           part's own over them, so a `{{name}}` in a cell or in the prose
+           after still resolves. A second table in the same part is `-table-2`
+           and `-after-2`.
+
+           THE ONE CASE THE SECTION DOES NOT KEEP ITS NAME: a bare section — no
+           file, this one slot and nothing else — whose part opens with the
+           table. There is no prose before to keep the name for, and a section
+           left holding an empty slot is a blank band on the page, so the
+           section is dropped from the list and the grid section takes its
+           place. A section with a file, or with other slots, is kept whole
+           even then, because the file and the slots are somebody's. */
+        function plan(sections) {
+          var drawn = (sections || []).filter(function (one) { return one && one.source && typeof one.name === "string"; });
+          var taken = new Set(drawn.map(function (one) { return String(one.name); }));
+          var writes = [], contents = [], any = false;
+
+          drawn.forEach(function (one) {
+            var name = String(one.name);
+            var source = one.source;
+            if (name.charAt(0) === "@" || !NAME.test(name)) { contents.push(source); return; }
+            var parts = one.parts || {};
+            var born = [];
+            var keep = true;
+
+            Object.keys(parts).forEach(function (slot) {
+              var part = parts[slot];
+              if (!part || part.kind !== "markdown" || typeof part.md !== "string") return;
+              var segments = split(part.md);
+              if (segments === null) return;
+              any = true;
+              var before = segments[0].text;
+              var stem = slot === "body" ? name : name + "-" + slot;
+              var bare = !source.data && Object.keys(source.parts || {}).length === 1;
+              if (before === "" && bare) keep = false;
+              else writes.push({ section: name, part: slot, text: before });
+              /* THE SCOPES A CELL RESOLVED IN, carried over: the section's own
+                 values with the part's own on top, in the order the runtime
+                 merges them. A part written in the long spelling can hold
+                 values of its own, and a `{{rate}}` in the prose after or in a
+                 cell would draw as a hole without them. */
+              var stored = (source.parts || {})[slot];
+              var own = stored && typeof stored === "object" && !Array.isArray(stored) && stored.variables ? stored.variables : null;
+              var vars = source.variables || own ? Object.assign({}, source.variables || {}, own || {}) : null;
+              var k = 0;
+              for (var i = 1; i < segments.length; i += 2) {
+                k++;
+                var suffix = k === 1 ? "" : "-" + String(k);
+                var grid = { name: nameFor(stem, "table" + suffix, taken), parts: { body: { type: "grid", head: true, rows: segments[i].rows } } };
+                if (vars) grid.variables = vars;
+                born.push(grid);
+                var after = segments[i + 1] ? segments[i + 1].text : "";
+                if (after !== "") {
+                  var rest = { name: nameFor(stem, "after" + suffix, taken), parts: { body: after } };
+                  if (vars) rest.variables = vars;
+                  born.push(rest);
+                }
+              }
+            });
+
+            if (keep) contents.push(source);
+            born.forEach(function (b) { contents.push(b); });
+          });
+
+          return any ? { writes: writes, contents: contents } : null;
+        }
+
+        /* ── running it ──────────────────────────────────────────────────── */
+
+        var busy = false;
+        function convert() {
+          if (busy || !rt.page || typeof rt.page.sections !== "function") return;
+          var todo = plan(rt.page.sections());
+          if (todo === null) return;
+          busy = true;
+          /* The prose before goes back into its slot first — a write the box
+             does not redraw for — and then the list is rewritten, which comes
+             back as a change to the page's shape and draws the page again
+             from disk, three sections where there was one. */
+          Promise.all(todo.writes.map(function (w) { return rt.page.write(w.section, w.part, w.text); }))
+            .then(function () { return rt.page.order(todo.contents); })
+            .then(function () { busy = false; }, function (e) {
+              busy = false;
+              if (typeof rt.report === "function") rt.report("a table could not be made into a grid section: " + String((e && e.message) || e));
+            });
+        }
+
+        rt.convert = { tablesIn: tablesIn, split: split, plan: plan, cellsOf: cellsOf };
+        if (rt.page && typeof rt.page.onDraw === "function") rt.page.onDraw(convert);
       })();
     </script>
   </body>
