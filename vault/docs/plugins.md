@@ -49,15 +49,15 @@ isolation.
 **Deleting an override is how you go back.** Nothing writes the file again, and
 the framework's own draws on the next read.
 
-**A copy nobody edited is removed on open.** Workspaces made before this existed
-were seeded with a copy of every plugin, and those copies went stale. So on
-every open, in the background, the server checks each file in `plugins/` that
-the framework also has: one that is byte for byte a version the framework ever
-shipped was never edited by anybody, and it is deleted — committed first, so it
-is one revert away — and the framework's current one draws instead. One changed
-byte keeps a file. What this costs: a person who kept an old version on purpose,
-unedited, loses it. This is a bridge for the workspaces that were seeded, and it
-is sunset once they have all been opened.
+**A copy that was already in `plugins/` stays there, and it is yours now.**
+Workspaces made before this existed were seeded with a copy of every plugin,
+under the bare names, and those copies went stale. Nothing on open removes
+them: a file in `plugins/` is a file of yours, whether you wrote it or a seed
+did, and a bare copy of `markdown.js` draws in place of the framework's
+`biom-markdown.js` — as it stood the day it was copied. If you never edited
+those copies, delete them, and the framework's current plugins draw from then
+on; if you edited one, keep it as the override it already is. This is a
+breaking change, made once, and the delete is the whole migration.
 
 ## How a slot plugin gets loaded
 

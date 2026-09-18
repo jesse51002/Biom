@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Layer 3 — WHAT THE FRAMEWORK OWNS INSIDE A VAULT, kept current on every open.
 //
-// Three jobs, none on the mount path. A page draws from the framework's own
+// Two jobs, neither on the mount path. A page draws from the framework's own
 // plugins the moment the vault is open — `pages.ts` reads the vault's file and
-// falls back to the framework's — so nothing a page needs waits on any of them,
-// and a vault whose background work has not finished draws exactly as it will
-// a second later. `main.ts` runs all three once the mount has returned.
+// falls back to the framework's — so nothing a page needs waits on either of
+// them, and a vault whose background work has not finished draws exactly as it
+// will a second later. `main.ts` runs both once the mount has returned.
 //
 // WHAT THE FRAMEWORK OWNS IN A VAULT: `.agents/skills/biom-<skill>/` for every
 // skill it ships, with `check.ts` and its `_lib/` beside them; `AGENTS.md`; and
-// every doc under `docs/`. All of it is REWRITTEN WHOLE on every open. They cannot take the plugin design below, because an agent reads the
-// folder and not the server: a skill is a file Claude Code, Cursor or Codex
-// opens directly, before the server has been asked anything and in a clone the
+// every doc under `docs/`. All of it is REWRITTEN WHOLE on every open. They
+// cannot take the plugin design below, because an agent reads the folder and
+// not the server: a skill is a file Claude Code, Cursor or Codex opens
+// directly, before the server has been asked anything and in a clone the
 // server has never opened — so it has to be on disk, in the vault, current. And
 // they cannot be overridden: a workspace adds skills under names of its own and
 // never edits the framework's. The rewrite is what makes that a fact rather
@@ -21,11 +22,16 @@
 // workspace's and is never touched — WHICH IS WHAT THE PREFIX IS FOR: a
 // workspace that wrote a `pages` skill of its own would otherwise have it
 // rewritten as the framework's on the next open, so every framework skill wears
-// `biom-` and a workspace's names are free. Nothing is ever removed, with one
-// bridge: a copy under the name a skill had BEFORE the prefix, byte for byte a
-// version the framework shipped, goes — a vault must not carry a skill twice,
-// and an unedited copy is the framework's to take back. When anything changed,
-// `main.ts` commits it as one diff naming the framework version.
+// `biom-` and a workspace's names are free. NOTHING IS EVER REMOVED. A vault
+// seeded before the prefix holds `pages/` and `sections/` beside `biom-pages/`
+// and `biom-sections/`; those are under names the framework no longer uses, so
+// they are the workspace's now, and whoever owns the folder deletes them. The
+// same goes for a copy of a framework plugin under `plugins/`: it is the
+// workspace's own, it draws in place of the framework's, and it stays until
+// somebody deletes it. Telling an unedited copy from an edited one would mean
+// carrying every version the framework ever shipped, and the framework does
+// not: this is a breaking change. When anything changed, `main.ts` commits it
+// as one diff naming the framework version.
 //
 // `AGENTS.md` IS THE FRAMEWORK'S, AND `INSTRUCTIONS.md` IS THE PERSON'S. The
 // guide used to be one file with two owners — the framework's paragraphs seeded
@@ -33,15 +39,13 @@
 // stale exactly as a skill did and the person's half could never be rewritten.
 // Now `AGENTS.md` is the format, rewritten like a skill, and its first line
 // sends the agent to `INSTRUCTIONS.md`, which the seeder fills once as a stub
-// and nothing here ever touches. THE BRIDGE for a vault that already had an
-// `AGENTS.md`: unedited — byte for byte a version the framework shipped — it is
-// rewritten; edited, it is RENAMED to `INSTRUCTIONS.md`, whole, and the
-// framework's written in its place, because that is the move the person would
-// make by hand, nothing of theirs is lost, and an edited guide left alone would
-// be stale forever for anyone who does not read a log. A vault that already
-// has both is left alone, with a line in the log: two files cannot be made one
-// without reading them. `docs/` takes the skills rule outright — it is the
-// manual, written for the person and not by them.
+// and nothing here ever touches. A vault that already had an `AGENTS.md` of
+// its own gets the framework's written over it, like any unit — the vault is
+// committed first, so what was there is one `git show` away, and whoever owns
+// the folder moves what was theirs into `INSTRUCTIONS.md` by hand. That is
+// the breaking change again, and it is not carved around: the framework does
+// not read a guide to decide whose it is. `docs/` takes the skills rule
+// outright — it is the manual, written for the person and not by them.
 //
 // THE MIRROR is `docs/plugins/`: the framework's whole plugin set, written out
 // of the same `Files` the fallback rung reads, so the folder a person opens is
@@ -51,23 +55,8 @@
 // what let a copy drift. Nothing serves the mirror, nothing resolves a page
 // against it, and a file edited there is gone on the next open. `docs/` is
 // not a watched directory, so writing it redraws nothing.
-//
-// THE SWEEP is a bridge and says so. It walks `plugins/`, and every file that
-// is byte for byte a version the framework ever shipped — the blob hash is in
-// git's history for that path — is a seeded copy nobody edited, and it goes,
-// committed first so the deletion is one readable diff and one revert away.
-// One changed byte keeps a file. What it costs: a person who kept an OLD
-// version on purpose, unedited, loses it, and the framework's current one
-// draws instead. That is the stale-copy problem the framework used to have,
-// taken away when it was silent, and it exists so that no vault seeded before
-// this — or whose owner never reads about it — goes on carrying stale copies.
-// Once every vault on this side of the change has been opened once, it is
-// sunset and the fallback rung is the whole mechanism. The mirror and the
-// skills rewrite stay.
 
 import type { FileEntry, Files } from "../../contracts/types.ts";
-import { NOTHING_SHIPPED, isShipped } from "../platform/shipped.ts";
-import type { Shipped } from "../platform/shipped.ts";
 
 /* ── the skills ─────────────────────────────────────────────────────────── */
 
@@ -86,15 +75,12 @@ export const SKILLS_DIR = ".agents/skills";
  *  on carries the prefix too. Spelled here and in `tests/skill.test.ts`, which
  *  holds the two equal and refuses a shipped skill without it. */
 export const SKILL_PREFIX = "biom-";
-/** The directories the framework owns inside a vault, framework-relative —
- *  what `tools/app.ts` reads the shipped hashes for, and what a source run asks
- *  its own history about. */
-export const SHIPPED_DIRS: readonly string[] = ["guest/plugins", "vault/.agents/skills", "vault/AGENTS.md", "vault/docs"];
 /** The guide every agent reads first, and it is the framework's: the format,
  *  rewritten on every open. */
 export const AGENTS = "AGENTS.md";
 /** The person's own guide, which `AGENTS.md` sends the agent to before
- *  anything else. Filled once by the seeder; never touched here. */
+ *  anything else. Filled once by the seeder; never read or written here —
+ *  named so the pair is spelled in one place. */
 export const INSTRUCTIONS = "INSTRUCTIONS.md";
 /** The manual for the format, for the person whose folder this is — the
  *  framework's, rewritten file by file. `docs/plugins/` inside it is the mirror
@@ -189,21 +175,16 @@ function units(want: Map<string, string>): Set<string> {
  *  — and rewritten only when the two differ, so an open that changes nothing
  *  writes nothing. A unit is emptied before it is written, so a file somebody
  *  added inside `biom-sections/` goes with the edit; a name the framework does
- *  not own is never looked at. Answers whether anything was written, so the
- *  caller can commit it as one diff.
- *
- *  `AGENTS.md` IS THE ONE UNIT WITH A BRIDGE, decided by `shipped`: an edited
- *  guide — one that is not byte for byte a version the framework ever shipped —
- *  is renamed to `INSTRUCTIONS.md` before the framework's is written, and left
- *  alone with a line in the log if that file is already there. Handed no
- *  history, every guide that differs reads as edited, which is the safe side:
- *  nothing is ever written over. */
+ *  not own is never looked at. The vault is COMMITTED BEFORE THE FIRST WRITE,
+ *  exactly as every agent write is, so whatever stood at a framework name —
+ *  an `AGENTS.md` somebody wrote before it was the framework's — is in the
+ *  history rather than gone. Answers whether anything was written, so the
+ *  caller can commit it as one diff. */
 export async function rewriteOwned(
   vault: Files,
   vaultSeed: Files,
   skill: Files | null = null,
   checkerLib: Files | null = null,
-  shipped: Shipped = NOTHING_SHIPPED,
 ): Promise<boolean> {
   const want = await owned(vaultSeed, skill, checkerLib);
   if (want.size === 0) return false;
@@ -212,79 +193,12 @@ export async function rewriteOwned(
     const wanted = new Map<string, string>();
     for (const [path, text] of want) if (path === at || path.startsWith(at + "/")) wanted.set(path, text);
     if (await same(vault, at, wanted)) continue;
-    if (at === AGENTS && !(await guideMayGo(vault, await vaultSeed.read(INSTRUCTIONS), shipped))) continue;
+    if (!changed) await vault.commit("Before the framework's guide, docs, skills and checker are rewritten");
     await vault.remove(at);
     for (const [path, text] of wanted) await vault.write(path, text);
     changed = true;
   }
   return changed;
-}
-
-/** May the vault's `AGENTS.md` be written over? Yes if there is none, or if
- *  it is unedited — a version the framework shipped. An EDITED one is the
- *  person's: it is moved to `INSTRUCTIONS.md` first, whole, and the answer is
- *  still yes — unless an `INSTRUCTIONS.md` of the person's is already there,
- *  in which case nothing is touched and the log says why.
- *
- *  THE STUB DOES NOT COUNT AS THEIRS. The seeder fills `INSTRUCTIONS.md` on
- *  the mount path, before this runs, so on the first open of a vault with an
- *  edited guide the file is always there — holding exactly the stub, which is
- *  the framework's words and nobody's yet. That, or any version of the stub
- *  the framework ever shipped, is written over by the move. */
-async function guideMayGo(vault: Files, stub: string | null, shipped: Shipped): Promise<boolean> {
-  const held = await vault.read(AGENTS);
-  if (held === null) return true;
-  if (isShipped(shipped, `vault/${AGENTS}`, held)) return true;
-  const theirs = await vault.read(INSTRUCTIONS);
-  const untouched = theirs === null || theirs === stub || isShipped(shipped, `vault/${INSTRUCTIONS}`, theirs);
-  if (!untouched) {
-    console.log(`guide   →  ${AGENTS} was edited here and ${INSTRUCTIONS} already exists, so neither is touched; ${AGENTS} is the framework's and ${INSTRUCTIONS} is yours — move what is yours across and delete the rest`);
-    return false;
-  }
-  await vault.write(INSTRUCTIONS, held);
-  console.log(`guide   →  ${AGENTS} was edited here, so it is now ${INSTRUCTIONS}, which is yours; ${AGENTS} is the framework's and is rewritten on every open`);
-  return true;
-}
-
-/** THE BRIDGE FOR THE PREFIX. A vault seeded before the framework's skills wore
- *  `biom-` holds `pages/`, `sections/` and the rest under those bare names, and
- *  the rewrite above puts `biom-pages/` beside them rather than over them — so
- *  without this an agent finds every framework skill twice, once stale. For
- *  each skill the framework ships, the directory under its OLD name is removed
- *  if every file in it is byte for byte a version the framework shipped there:
- *  unedited, the framework's to take back. One changed byte, or a file the
- *  framework never shipped, keeps the directory — it is somebody's now, under a
- *  name the framework no longer uses, and the log says so. Answers what went. */
-export async function sweepOldSkills(vault: Files, vaultSeed: Files, shipped: Shipped): Promise<string[]> {
-  const gone: string[] = [];
-  let shippedDirs: FileEntry[];
-  try {
-    shippedDirs = await vaultSeed.list(SKILLS_DIR);
-  } catch {
-    return gone;
-  }
-  for (const entry of shippedDirs) {
-    if (!entry.dir || !entry.name.startsWith(SKILL_PREFIX)) continue;
-    const old = entry.name.slice(SKILL_PREFIX.length);
-    const at = `${SKILLS_DIR}/${old}`;
-    const held = await filesUnder(vault, at);
-    if (held.length === 0) continue;
-    let unedited = true;
-    for (const rel of held) {
-      const text = await vault.read(`${at}/${rel}`);
-      if (text === null || !isShipped(shipped, `vault/${at}/${rel}`, text)) {
-        unedited = false;
-        break;
-      }
-    }
-    if (!unedited) {
-      console.log(`skills  →  ${at} is a skill the framework now ships as ${entry.name}; it was edited here and is left alone`);
-      continue;
-    }
-    await vault.remove(at);
-    gone.push(at);
-  }
-  return gone;
 }
 
 /** Is what the vault holds at `at` exactly `wanted` — the same files, the same
@@ -356,37 +270,4 @@ async function ignoreMirror(vault: Files): Promise<void> {
   if (lines.includes(MIRROR_IGNORE) || lines.includes(MIRROR_DIR)) return;
   const joined = had === "" || had.endsWith("\n") ? had : had + "\n";
   await vault.write(".gitignore", `${joined}${MIRROR_IGNORE}\n`);
-}
-
-/* ── the sweep ──────────────────────────────────────────────────────────── */
-
-/** Delete every file in `plugins/` that is byte for byte a version the
- *  framework shipped at that path. Answers what went, vault-relative, so the
- *  caller can say so. Commits BEFORE the first deletion, exactly as every
- *  agent write does, and only when there is something to delete. */
-export async function sweepShipped(vault: Files, shipped: Shipped): Promise<string[]> {
-  const gone: string[] = [];
-  const candidates: string[] = [];
-  for (const rel of await filesUnder(vault, "plugins")) {
-    const key = `guest/plugins/${rel}`;
-    if (!(key in shipped)) continue;
-    const text = await vault.read(`plugins/${rel}`);
-    if (text === null) continue;
-    if (isShipped(shipped, key, text)) candidates.push(rel);
-  }
-  if (candidates.length === 0) return gone;
-  await vault.commit("Before the framework's unedited plugin copies are removed");
-  for (const rel of candidates) {
-    await vault.remove(`plugins/${rel}`);
-    gone.push(`plugins/${rel}`);
-  }
-  // A page plugin's directory with nothing left in it is an empty folder that
-  // reads as a plugin with no document. Take it with the last file.
-  for (const rel of candidates) {
-    const cut = rel.indexOf("/");
-    if (cut < 0) continue;
-    const dir = `plugins/${rel.slice(0, cut)}`;
-    if ((await vault.list(dir)).length === 0) await vault.remove(dir);
-  }
-  return gone;
 }
