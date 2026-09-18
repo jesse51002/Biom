@@ -10,13 +10,11 @@
 //     A file under `/plugin/` the vault has not got is answered from the
 //     framework, per file, which is what lets a partial override work.
 //
-//   · THE SWEEP. A vault file that is byte for byte a version the framework
-//     ever shipped was never edited: it is a seeded copy that fell behind or
-//     will, and it goes on open, committed first. One changed byte keeps it.
-//
-//   · THE HASH IS GIT'S. `blobHash` is what `git hash-object` answers, so the
-//     list a build carries and the list a checkout reads out of its own history
-//     are the same numbers.
+//   · WHAT THE VAULT HOLDS UNDER ITS OWN NAMES STAYS. A copy of a framework
+//     plugin under `plugins/`, a skill under a name the framework no longer
+//     uses: the framework cannot tell an edit from a stale seed and does not
+//     try, so nothing of the vault's is ever removed. Whoever owns the folder
+//     deletes what they do not want, and a copy draws until they do.
 //
 //   · THE SKILLS ARE THE FRAMEWORK'S, and the same rule reaches them the only
 //     way it can: an agent reads the folder, not the server, so there is no
@@ -34,10 +32,8 @@ import { join } from "node:path";
 
 import { makeHost, pluginBundle, pluginFile, PLUGIN_DIR_ROUTE } from "../server/main.ts";
 import { makeFiles } from "../server/platform/files.ts";
-import { blobHash, isShipped, shippedHashes } from "../server/platform/shipped.ts";
-import { AGENTS, INSTRUCTIONS, MIRROR_DIR, SHIPPED_DIRS, SKILL_PREFIX, SKILLS_DIR, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "../server/workspace/framework.ts";
+import { AGENTS, INSTRUCTIONS, MIRROR_DIR, SKILL_PREFIX, SKILLS_DIR, mirrorPlugins, rewriteOwned } from "../server/workspace/framework.ts";
 import { OURS, frameworkPlugin } from "../server/domain/pages.ts";
-import { manifestSource } from "../tools/app.ts";
 import { vaultBase } from "../contracts/wire.js";
 
 const HERE = join(import.meta.dir, "..");
@@ -198,76 +194,24 @@ test("a plugin's sibling file the vault has not got is served from the framework
   }
 });
 
-/* ══ the sweep ═══════════════════════════════════════════════════════════ */
+/* ══ what the vault holds stays ══════════════════════════════════════════ */
 
-test("blobHash is git's own hash of a file", () => {
-  // `git hash-object` of an empty file, and of "hello\n", are known values.
-  expect(blobHash("")).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
-  expect(blobHash("hello\n")).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
-  expect(isShipped({ "guest/plugins/a.js": [blobHash("x")] }, "guest/plugins/a.js", "x")).toBe(true);
-  expect(isShipped({ "guest/plugins/a.js": [blobHash("x")] }, "guest/plugins/a.js", "x ")).toBe(false);
-  expect(isShipped({}, "guest/plugins/a.js", "x")).toBe(false);
-});
-
-test("this repository's own history answers every committed plugin and skill, at the tip's bytes", async () => {
-  // The list a build carries is read out of git; a checkout reads the same
-  // history at run time. Either way the file as the TIP holds it is one of the
-  // versions it has shipped. Read off the tip rather than the working tree, so
-  // an edit in progress is not a failure here — a working-tree edit is exactly
-  // the thing history does not yet know.
-  const { spawnSync } = await import("node:child_process");
-  const atTip = (path: string) => spawnSync("git", ["show", `HEAD:${path}`], { cwd: HERE, encoding: "utf8" }).stdout;
-  // A SHALLOW CLONE HAS NO HISTORY TO ANSWER FROM, and this test is the one that
-  // would notice. It is not skipped here — a checkout with one commit in it is
-  // exactly the checkout that must not build a release, and the CI workflow
-  // fetches full depth for that reason — so a shallow clone fails this test by
-  // name rather than by a missing key.
-  const shallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: HERE, encoding: "utf8" }).stdout.trim();
-  expect(shallow, "a shallow clone cannot answer what this repository shipped; fetch the full history (fetch-depth: 0 in CI)").toBe("false");
-  const shipped = await shippedHashes(HERE, SHIPPED_DIRS);
-  // The tip may hold a plugin under its `biom-` name or, before the rename is
-  // committed, under the bare one — either way its bytes are in history.
-  for (const rel of ["markdown.js", "doc/index.html", "kanban/kanban.js"]) {
-    const bytes = atTip(`guest/plugins/biom-${rel}`) || atTip(`guest/plugins/${rel}`);
-    expect(bytes.length).toBeGreaterThan(0);
-    expect([rel, isShipped(shipped, `guest/plugins/biom-${rel}`, bytes) || isShipped(shipped, `guest/plugins/${rel}`, bytes)]).toEqual([rel, true]);
-  }
-  expect(isShipped(shipped, "guest/plugins/biom-markdown.js", "// not a version anybody shipped")).toBe(false);
-  // AND THE SKILLS, under the names they had before the prefix as well as the
-  // names they have: the rename left the old paths in history, which is what
-  // lets the old-name sweep recognise an unedited copy in a vault seeded
-  // before it.
-  expect(Object.keys(shipped).some((k) => k.startsWith(`vault/${SKILLS_DIR}/pages/`))).toBe(true);
-  const tipPages = atTip(`vault/${SKILLS_DIR}/biom-pages/SKILL.md`) || atTip(`vault/${SKILLS_DIR}/pages/SKILL.md`);
-  expect(tipPages.length).toBeGreaterThan(0);
-  expect(
-    isShipped(shipped, `vault/${SKILLS_DIR}/biom-pages/SKILL.md`, tipPages)
-      || isShipped(shipped, `vault/${SKILLS_DIR}/pages/SKILL.md`, tipPages),
-  ).toBe(true);
-});
-
-test("a vault copy byte-identical to a shipped version is swept on open, and one changed byte keeps a file", async () => {
+test("a vault's copy of a framework plugin stays on open, whatever version it is, and draws in place of the framework's", async () => {
   const root = await scratch();
   const vault = join(root, "v");
   await mkdir(join(vault, "pages/home"), { recursive: true });
   await writeFile(join(vault, "pages/home/content.yaml"), "name: Home\nplugin: doc\ncontents: []\n");
   await mkdir(join(vault, "plugins/doc"), { recursive: true });
-  // Invented versions of an invented framework: v1 shipped, v2 shipped, and a
-  // person's edit of neither.
-  const v1 = "// markdown v1";
-  const v2 = "// markdown v2";
-  const edited = "// markdown v1 — but mine";
-  await writeFile(join(vault, "plugins/markdown.js"), v1);
+  // A seeded copy that fell behind, a copy somebody edited, and a file the
+  // framework never shipped: the framework cannot tell the first two apart and
+  // does not try, so all three are the vault's and none of them moves.
+  const stale = "// markdown, as it shipped once";
+  const edited = "// markdown — but mine";
+  const oldDoc = "<!doctype html><title>old doc</title>";
+  await writeFile(join(vault, "plugins/markdown.js"), stale);
   await writeFile(join(vault, "plugins/html.js"), edited);
-  await writeFile(join(vault, "plugins/doc/index.html"), "<!doctype html><title>old doc</title>");
+  await writeFile(join(vault, "plugins/doc/index.html"), oldDoc);
   await writeFile(join(vault, "plugins/board.js"), "// this vault's own");
-  const shipped = {
-    // Under the OLD bare names, which is where a seeded copy sits and where the
-    // history the rename left behind still answers for it.
-    "guest/plugins/markdown.js": [blobHash(v1), blobHash(v2)],
-    "guest/plugins/html.js": [blobHash(v1)],
-    "guest/plugins/doc/index.html": [blobHash("<!doctype html><title>old doc</title>")],
-  };
   const host = await makeHost({
     vault,
     memory: join(root, "vaults.json"),
@@ -275,68 +219,27 @@ test("a vault copy byte-identical to a shipped version is swept on open, and one
     vaultSeed: join(HERE, "vault"),
     skill: join(HERE, "skill"),
     checkerLib: HERE,
-    shipped,
   });
   try {
     await host.settled(vault);
-    // An old shipped version, unedited: gone, and the framework's draws now.
-    expect(existsSync(join(vault, "plugins/markdown.js"))).toBe(false);
-    // A shipped page plugin's document, unedited: gone, and its now-empty
-    // directory with it, so nothing reads as a plugin with no document.
-    expect(existsSync(join(vault, "plugins/doc"))).toBe(false);
-    // One changed byte is an edit, and an edit is the person's.
+    expect(readFileSync(join(vault, "plugins/markdown.js"), "utf8")).toBe(stale);
     expect(readFileSync(join(vault, "plugins/html.js"), "utf8")).toBe(edited);
-    // A file at no framework path is the vault's own and is never looked at.
+    expect(readFileSync(join(vault, "plugins/doc/index.html"), "utf8")).toBe(oldDoc);
     expect(readFileSync(join(vault, "plugins/board.js"), "utf8")).toBe("// this vault's own");
-    // And the page still draws — on the framework's doc, through the rung.
+    // The vault's copy is the nearest rung, so it is what draws — the stale
+    // document included. That is the breaking change, and the person's to fix
+    // by deleting the copy.
     const deps = await host.deps(vault);
-    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
+    expect((await deps.pages.read("home"))!.html).toBe(oldDoc);
+    // And the background work left no commit about plugins: nothing of the
+    // vault's was touched, so there was nothing to say.
+    const { spawnSync } = await import("node:child_process");
+    const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" }).stdout;
+    expect(log).not.toContain("plugin copies");
+    // What the person can read is current all the same.
+    expect(readFileSync(join(vault, MIRROR_DIR, "biom-markdown.js"), "utf8")).toBe(readFileSync(join(SEED, "biom-markdown.js"), "utf8"));
   } finally {
     host.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("the sweep commits before it deletes, so what went is one revert away", async () => {
-  const root = await scratch();
-  const vault = join(root, "v");
-  await mkdir(join(vault, "plugins"), { recursive: true });
-  await writeFile(join(vault, "plugins/markdown.js"), "// shipped once");
-  const files = makeFiles(vault);
-  const { initVault } = await import("../server/platform/files.ts");
-  await initVault(vault);
-  // Something the person was in the middle of, uncommitted — which is what the
-  // commit before a write exists to keep.
-  await writeFile(join(vault, "notes.md"), "half a thought");
-  try {
-    const gone = await sweepShipped(files, { "guest/plugins/markdown.js": [blobHash("// shipped once")] });
-    expect(gone).toEqual(["plugins/markdown.js"]);
-    expect(existsSync(join(vault, "plugins/markdown.js"))).toBe(false);
-    // The commit before the deletion holds the file, and the half-written note.
-    const { spawnSync } = await import("node:child_process");
-    const git = (...args: string[]) => spawnSync("git", args, { cwd: vault, encoding: "utf8" }).stdout;
-    expect(git("log", "--format=%s")).toContain("Before the framework's unedited plugin copies are removed");
-    expect(git("show", "HEAD:plugins/markdown.js")).toBe("// shipped once");
-    expect(git("show", "HEAD:notes.md")).toBe("half a thought");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a sweep with nothing to delete commits nothing", async () => {
-  const root = await scratch();
-  const vault = join(root, "v");
-  await mkdir(join(vault, "plugins"), { recursive: true });
-  await writeFile(join(vault, "plugins/mine.js"), "// mine");
-  const files = makeFiles(vault);
-  const { initVault } = await import("../server/platform/files.ts");
-  await initVault(vault);
-  try {
-    expect(await sweepShipped(files, { "guest/plugins/mine.js": [blobHash("// not this")] })).toEqual([]);
-    const { spawnSync } = await import("node:child_process");
-    const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" });
-    expect(log.stdout).not.toContain("unedited plugin copies");
-  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -362,17 +265,6 @@ test("the mirror is the framework's set, whole, and the ignore line is appended 
     await rm(framework, { recursive: true, force: true });
     await rm(vault, { recursive: true, force: true });
   }
-});
-
-/* ══ what a build carries ════════════════════════════════════════════════ */
-
-test("the manifest carries the shipped hashes beside the files, sorted, and the stub carries none", () => {
-  const source = manifestSource(["client/index.html"], { "markdown.js": ["bbb", "aaa"], "doc/index.html": ["ccc"] });
-  expect(source).toContain("export const SHIPPED: Record<string, string[]> = {");
-  expect(source).toContain('"doc/index.html": ["ccc"],');
-  expect(source).toContain('"markdown.js": ["aaa","bbb"],');
-  expect(source.indexOf('"doc/index.html"')).toBeLessThan(source.indexOf('"markdown.js"'));
-  expect(manifestSource([])).toContain("export const SHIPPED: Record<string, string[]> = {\n};");
 });
 
 /* ══ the skills ══════════════════════════════════════════════════════════ */
@@ -476,7 +368,10 @@ test("on a real open the skills land off the mount path, are committed once nami
     const { spawnSync } = await import("node:child_process");
     const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" }).stdout;
     expect(log).toContain("The framework's guide, docs, skills and checker, as framework ");
-    expect(log.split("\n").filter((l) => l.includes("skills and checker")).length).toBe(1);
+    expect(log.split("\n").filter((l) => l.startsWith("The framework's guide")).length).toBe(1);
+    // And no commit before it: a fresh vault was committed as seeded on the
+    // mount path, so there was nothing for the rewrite to keep first.
+    expect(log).not.toContain("Before the framework's");
     // And the copy RUNS, which is the assertion that has caught a copied
     // checker before: it imports through `_lib/`, and a vault has no `contracts/`.
     const ran = spawnSync("bun", ["run", join(SKILLS_DIR, "check.ts"), "pages/home"], { cwd: vault, encoding: "utf8" });
@@ -487,31 +382,25 @@ test("on a real open the skills land off the mount path, are committed once nami
   }
 });
 
-test("a copy under a skill's OLD name, unedited, goes on open; an edited one stays and the log says so", async () => {
+test("a copy under a skill's OLD name stays beside the framework's biom- one, whatever it holds", async () => {
   // A vault seeded before the framework's skills wore `biom-` holds `pages/`;
-  // the rewrite puts `biom-pages/` beside it. Unedited, the old one is the
-  // framework's to take back, and it is recognised by the old path's hashes,
-  // which the rename left in history.
+  // the rewrite puts `biom-pages/` beside it and leaves the old one where it
+  // stands — it is under a name the framework no longer uses, so it is the
+  // workspace's now, and the workspace deletes it.
   const f = await frameworkSkills();
   const vault = await scratch();
   await mkdir(join(vault, SKILLS_DIR, "pages"), { recursive: true });
   await writeFile(join(vault, SKILLS_DIR, "pages/SKILL.md"), "# pages v0, as it shipped once");
   await mkdir(join(vault, SKILLS_DIR, "sections"), { recursive: true });
   await writeFile(join(vault, SKILLS_DIR, "sections/SKILL.md"), "# sections v0, with my notes");
-  const shipped = {
-    [`vault/${SKILLS_DIR}/pages/SKILL.md`]: [blobHash("# pages v0, as it shipped once")],
-    [`vault/${SKILLS_DIR}/sections/SKILL.md`]: [blobHash("# sections v0")],
-  };
   try {
-    await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib));
-    expect(await sweepOldSkills(makeFiles(vault), makeFiles(f.vaultSeed), shipped)).toEqual([`${SKILLS_DIR}/pages`]);
-    expect(existsSync(join(vault, SKILLS_DIR, "pages"))).toBe(false);
-    expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"))).toBe(true);
-    // Edited: kept, under a name the framework no longer uses.
+    expect(await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib))).toBe(true);
+    expect(readFileSync(join(vault, SKILLS_DIR, "pages/SKILL.md"), "utf8")).toBe("# pages v0, as it shipped once");
     expect(readFileSync(join(vault, SKILLS_DIR, "sections/SKILL.md"), "utf8")).toBe("# sections v0, with my notes");
-    expect(existsSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"))).toBe(true);
-    // Nothing to sweep the second time.
-    expect(await sweepOldSkills(makeFiles(vault), makeFiles(f.vaultSeed), shipped)).toEqual([]);
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"), "utf8")).toBe("# pages v1");
+    expect(readFileSync(join(vault, SKILLS_DIR, "biom-sections/SKILL.md"), "utf8")).toBe("# sections v1");
+    // The second open changes nothing and says so.
+    expect(await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib))).toBe(false);
   } finally {
     await rm(vault, { recursive: true, force: true });
     for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
@@ -549,66 +438,34 @@ test("a fresh vault has the framework's AGENTS.md and the person's INSTRUCTIONS.
   }
 });
 
-test("an edited AGENTS.md is renamed to INSTRUCTIONS.md and the framework's written in its place; an unedited one is simply rewritten", async () => {
+test("an AGENTS.md of the person's own is written over with the framework's, committed first, and INSTRUCTIONS.md beside it is never touched", async () => {
+  // A vault from before `AGENTS.md` was the framework's holds a guide somebody
+  // wrote. It is rewritten like any unit — no history is read to decide whose
+  // it is — but the vault is committed before the first write, so what stood
+  // there is one `git show` away and the person moves it across by hand.
   const f = await frameworkSkills();
-  const vault = await scratch();
+  const root = await scratch();
+  const vault = join(root, "v");
+  await mkdir(vault, { recursive: true });
+  const { initVault } = await import("../server/platform/files.ts");
+  await initVault(vault);
   const theirs = "# Our company\n\nEverything we know, and how we write it.\n";
   await writeFile(join(vault, AGENTS), theirs);
-  try {
-    const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
-    // Edited — nothing in `shipped` matches it — so it moves across, whole.
-    expect(await rewriteOwned(makeFiles(vault), ...roots, {})).toBe(true);
-    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe(theirs);
-    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
-    // Next open: both present, the guide is current, nothing moves.
-    expect(await rewriteOwned(makeFiles(vault), ...roots, {})).toBe(false);
-    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe(theirs);
-
-    // An UNEDITED old guide — a version the framework shipped — is rewritten
-    // and never moved: there is nothing of the person's in it.
-    await writeFile(join(vault, AGENTS), "# the guide, as it shipped once");
-    await rm(join(vault, INSTRUCTIONS));
-    const shipped = { [`vault/${AGENTS}`]: [blobHash("# the guide, as it shipped once")] };
-    expect(await rewriteOwned(makeFiles(vault), ...roots, shipped)).toBe(true);
-    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
-    expect(existsSync(join(vault, INSTRUCTIONS))).toBe(false);
-  } finally {
-    await rm(vault, { recursive: true, force: true });
-    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
-  }
-});
-
-test("the seeded stub does not count as the person's INSTRUCTIONS.md, so an edited guide still moves across on the first open", async () => {
-  // The order on a real open: the seeder fills the stub on the mount path,
-  // then the rewrite meets the edited guide with the stub already beside it.
-  const f = await frameworkSkills();
-  await writeFile(join(f.vaultSeed, INSTRUCTIONS), "# the stub");
-  const vault = await scratch();
-  await writeFile(join(vault, AGENTS), "# mine, edited");
-  await writeFile(join(vault, INSTRUCTIONS), "# the stub");
-  try {
-    expect(await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib), {})).toBe(true);
-    expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe("# mine, edited");
-    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
-  } finally {
-    await rm(vault, { recursive: true, force: true });
-    for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
-  }
-});
-
-test("an edited AGENTS.md beside an INSTRUCTIONS.md that already exists is left alone, because two files cannot be made one without reading them", async () => {
-  const f = await frameworkSkills();
-  const vault = await scratch();
-  await writeFile(join(vault, AGENTS), "# mine, edited");
   await writeFile(join(vault, INSTRUCTIONS), "# also mine");
   try {
-    await rewriteOwned(makeFiles(vault), makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib), {});
-    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# mine, edited");
+    const roots = [makeFiles(f.vaultSeed), makeFiles(f.skill), makeFiles(f.lib)] as const;
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(true);
+    expect(readFileSync(join(vault, AGENTS), "utf8")).toBe("# the guide");
     expect(readFileSync(join(vault, INSTRUCTIONS), "utf8")).toBe("# also mine");
-    // The skills beside it were still written: one unit's refusal is not another's.
-    expect(existsSync(join(vault, SKILLS_DIR, "biom-pages/SKILL.md"))).toBe(true);
+    const { spawnSync } = await import("node:child_process");
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: vault, encoding: "utf8" }).stdout;
+    expect(git("log", "--format=%s")).toContain("Before the framework's guide, docs, skills and checker are rewritten");
+    expect(git("show", `HEAD:${AGENTS}`)).toBe(theirs);
+    // Next open: the guide is current, nothing is written and nothing is committed.
+    expect(await rewriteOwned(makeFiles(vault), ...roots)).toBe(false);
+    expect(git("log", "--format=%s").split("\n").filter((l) => l.startsWith("Before the framework's")).length).toBe(1);
   } finally {
-    await rm(vault, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
     for (const d of [f.vaultSeed, f.skill, f.lib]) await rm(d, { recursive: true, force: true });
   }
 });

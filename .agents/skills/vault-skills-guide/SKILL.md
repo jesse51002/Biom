@@ -331,17 +331,19 @@ workspace, and they are REWRITTEN WHOLE on every open.** `rewriteOwned` in
 `server/workspace/framework.ts` runs off the mount path once a vault is up:
 `AGENTS.md`, every `docs/*.md`, every `.agents/skills/biom-<skill>/` the
 framework ships, `check.ts` and `_lib/` are compared with what `vault/` and
-`skill/` hold and rewritten where they differ, committed once naming the
-framework version. **`AGENTS.md` sends the agent to `INSTRUCTIONS.md` in its
-first line, and that file is the person's** — seeded once as a stub, never
-touched; an edited `AGENTS.md` from before this rule is renamed across on the
-first open rather than written over. **Every one of
+`skill/` hold and rewritten where they differ, committed before the first
+write and once after naming the framework version. **`AGENTS.md` sends the
+agent to `INSTRUCTIONS.md` in its first line, and that file is the person's** —
+seeded once as a stub, never touched; an `AGENTS.md` somebody wrote before this
+rule is written over like any unit, kept in the commit before, and moved into
+`INSTRUCTIONS.md` by hand. **Every one of
 them wears `biom-`, and a new skill here takes the prefix too** — it is what
 keeps the framework's names from ever meeting a skill a workspace wrote, since a
 name the framework owns is rewritten and a name it does not is never touched;
 the frontmatter `name:` is the directory, so an agent routes on `biom-pages`
 and `tests/skill.test.ts` refuses a shipped skill without the prefix. A copy
-under the old bare name, unedited, is swept on open; an edited one stays. So a skill you edit
+under the old bare name is left where it stands — a name the framework no
+longer uses is the workspace's, and the workspace deletes it. So a skill you edit
 here reaches every workspace on its next open, and **a change made to a
 framework skill inside a workspace is gone on that workspace's next open** —
 what is wanted everywhere goes here, and what is wanted in one workspace goes
