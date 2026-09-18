@@ -55,7 +55,7 @@
 /** @import { TerminalView } from "../views/terminal.js" */
 
 import { remember } from "../platform/dom.js";
-import { closePopover } from "../widgets/popover.js";
+import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
@@ -230,6 +230,16 @@ export function makeShell(deps) {
   /** @type {HTMLElement | null} */ let dialogEl = null;
   /** The reload button is the change loop; it says so while it is working. */
   let reloading = false;
+  /** SHARE IS ONE PRESS AND ONE LINK. The button says so while the server is
+   *  capturing — a headless browser takes a few seconds — and the link lands
+   *  in a menu hung from the button, with Copy and Open beside it. What the
+   *  capture could not fold in is named there too, so the person can see what
+   *  a stranger will not. Kept per page: navigating away drops it. */
+  let sharing = false;
+  /** @type {{ page: PageId, url: string, left: string[] } | null} */
+  let shared = null;
+  /** Why the last share did not happen, in a sentence, or "". */
+  let shareSaid = "";
   /** How many times Reload has been pressed. The only screen that reads it is
    *  Design, whose doc is not in the snapshot and so cannot be seen to move. */
   let reloads = 0;
@@ -544,6 +554,23 @@ export function makeShell(deps) {
       disabled: reloading ? "" : null,
     }, reloading ? "Reloading…" : "Reload");
     tools.push(reload);
+
+    // SHARE A PAGE — the stop-gap until the hosted server makes every page a
+    // URL. The page as it is drawn goes to the server, which makes the file
+    // stand alone and puts it in a bucket under a random id; the link comes
+    // back here. In the desktop application the shell reads the drawn page
+    // out of the box and hands it over; in a browser tab the server draws the
+    // page in a browser of its own. Either way it is one press.
+    if (page) {
+      const share = h("button.tool" + (sharing ? ".busy" : ""), {
+        type: "button",
+        title: "Capture this page as it is drawn and get a link",
+        disabled: sharing ? "" : null,
+        "aria-haspopup": "menu",
+        onclick: () => { void doShare(share); },
+      }, sharing ? "Sharing…" : "Share");
+      tools.push(share);
+    }
 
     // THERE IS NO EDIT TOGGLE, AND THAT IS THE POINT. A page is editable the
     // moment it is drawn — the words take a caret, the sections and their items
@@ -998,6 +1025,80 @@ export function makeShell(deps) {
    *  gets — so this is a call and nothing else, and the two cannot drift. */
   function heard() {
     void doReload();
+  }
+
+  /** Why the share did not happen, in words somebody can act on. The same
+   *  line the dialog keeps; a sibling cannot be imported, so it is said twice.
+   *  @param {unknown} err @returns {string} */
+  const reason = (err) => (err instanceof Error && err.message ? err.message : "the server refused it");
+
+  /** One press: ask the server, then hang the answer off the button.
+   *  @param {HTMLElement} anchor */
+  async function doShare(anchor) {
+    const page = openPage();
+    if (!page) return;
+    // A second press with a link already made shows it again rather than
+    // capturing again: sharing the same page twice is a new id each time and
+    // that is a decision, not a reflex.
+    if (shared && shared.page === page.id) { showShare(anchor); return; }
+    if (sharing) return;
+    sharing = true;
+    shareSaid = "";
+    paint();
+    try {
+      // THE SHELL CAN SEE INTO THE BOX AND THIS PAGE CANNOT, so where there is
+      // a shell the capture is the person's own window, as they are looking at
+      // it. Where there is none the server draws the page itself.
+      const shell = /** @type {{ biomShell?: { capturePage?: () => Promise<string> } }} */ (/** @type {unknown} */ (globalThis)).biomShell;
+      const html = shell && typeof shell.capturePage === "function" ? await shell.capturePage() : undefined;
+      const made = await ws.sharePage(page.id, html && html !== "" ? html : undefined);
+      shared = { page: page.id, url: made.url, left: made.left };
+    } catch (err) {
+      console.error("the page was not shared", err);
+      shareSaid = "Not shared: " + reason(err);
+      shared = null;
+    } finally {
+      sharing = false;
+      paint();
+    }
+    showShare(anchor);
+  }
+
+  /** The Share button as it is on screen now. `paint()` rebuilds the tool
+   *  strip, so a button held across an await is a detached node by the time
+   *  the answer lands; the menu hangs from the live one, and the one held is
+   *  the fallback for a strip that no longer offers Share. */
+  const shareButton = () =>
+    /** @type {HTMLElement | null} */ (root && root.querySelector(".tools button[aria-haspopup='menu'][title^='Capture']"));
+
+  /** The link, Copy, Open, and what was left out. @param {HTMLElement} held */
+  function showShare(held) {
+    const anchor = shareButton() || held;
+    popover(anchor, (close) => {
+      if (!shared) return [h("p.poplabel", shareSaid || "Not shared.")];
+      const url = shared.url;
+      const field = /** @type {HTMLInputElement} */ (h("input.popfield", { type: "text", readonly: "", value: url, "aria-label": "The link" }));
+      // COPY KEEPS THE MENU OPEN. Copying is not the end of the act — the
+      // person still wants to see the link, open it, or copy it again — so the
+      // row says it copied and stays; only Open and Escape put the menu away.
+      const copyRow = popItem("Copy link", async () => {
+        try { await navigator.clipboard.writeText(url); } catch { field.select(); document.execCommand("copy"); }
+        const name = copyRow.querySelector(".popname");
+        if (name) name.textContent = "Copied";
+        setTimeout(() => { if (name && name.isConnected) name.textContent = "Copy link"; }, 1400);
+      });
+      const rows = [
+        h("p.poplabel", "Anyone with this link can open the page as it was captured."),
+        field,
+        copyRow,
+        popItem("Open in a new tab", () => { window.open(url, "_blank", "noopener"); close(); }),
+        popItem("Share again", () => { shared = null; close(); void doShare(anchor); }),
+      ];
+      if (shared.left.length) {
+        rows.push(h("p.poplabel", "Left pointing at this server: " + shared.left.join(", ")));
+      }
+      return rows;
+    }, { center: true, width: "26rem" });
   }
 
   async function doReload() {

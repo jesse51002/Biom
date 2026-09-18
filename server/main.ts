@@ -47,6 +47,9 @@ import { makeDesign } from "./domain/design.ts";
 import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir } from "./domain/pages.ts";
 import { makeDocs } from "./domain/docs.ts";
 import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
+import { makeSharer } from "./domain/share.ts";
+import { capturePage } from "./platform/capture.ts";
+import { makeBucket } from "./platform/bucket.ts";
 import { makeTables } from "./domain/tables.ts";
 import { BIOM_DIR, RUNS_DB, VAULT_SKILLS, makeRuns } from "./domain/runs.ts";
 import { checkVaultFormat } from "./workspace/migrate.ts";
@@ -78,7 +81,7 @@ import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -612,6 +615,7 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   theme: refuses(why, code),
   mirror: refuses(why, code),
   runs: refuses(why, code),
+  share: refuses(why, code),
 });
 
 /** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
@@ -627,6 +631,34 @@ const NO_VAULT = refusing("this request names no workspace");
  * Build the whole server against `at.vault`, and hand back the thing that can
  * do it again against a different folder.
  */
+/** WHERE THIS PROCESS IS LISTENING, once it is. Set by the composition root
+ *  after `Bun.serve` answers and read late by the share capture, which opens
+ *  the server's own address in a browser of its own. Null until then. */
+let served: { origin: string; token: string | null } | null = null;
+
+/** THE FIVE NAMES THE BUCKET NEEDS, out of the environment — and out of
+ *  `~/.config/biom/share.env` when the environment has none of them. That file
+ *  is what the provisioning script writes and is never in a repository. A
+ *  compiled application reads it too: a desktop launcher hands the process no
+ *  environment of the person's, and the file beside their other config is the
+ *  one place they can put the key. */
+function shareEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  if (env.BIOM_SHARE_BUCKET) return env;
+  const file = join(homedir(), ".config", "biom", "share.env");
+  if (!existsSync(file)) return env;
+  try {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      const name = m?.[1], value = m?.[2];
+      if (name !== undefined && value !== undefined && !env[name]) env[name] = value.replace(/^"(.*)"$/, "$1");
+    }
+  } catch {
+    // An unreadable file is the same as no file.
+  }
+  return env;
+}
+
 export async function makeHost(at: HostPaths): Promise<Host> {
   const memory = makeVaultMemory(at.memory);
   /** ONE RUNNER FOR EVERY VAULT. It knows no vault; a run is a command in a
@@ -924,7 +956,44 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
 
     await memory.remember(path);
-    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs }, settled: Promise.resolve(), files };
+    // SHARE A PAGE. The capture opens THIS server's own address, which is not
+    // known until `Bun.serve` has answered — so the origin is read late, off
+    // `served`, and never at mount. The fonts are the framework's, read off the
+    // disk beside the program; the assets are the vault's, path-guarded.
+    const share = makeSharer({
+      pages,
+      // A COMPILED BUILD DRAWS NOTHING ITSELF: Playwright is a development
+      // dependency, and the shell hands the drawn page over instead.
+      capture: PRODUCTION ? null : (page) => {
+        if (served === null) throw Object.assign(new Error("the server is not listening yet"), { code: "internal" });
+        return capturePage({ origin: served.origin, vault: path, token: served.token }, page);
+      },
+      sources: () => ({
+        origin: served === null ? "" : served.origin,
+        // THROUGH `source()`, WHICH IS WHERE A FRAMEWORK FILE IS DECIDED TO BE.
+        // Reading `client/fonts` off the disk beside the program answered null
+        // for every font in the compiled application, which carries its files
+        // inside the binary and has no directory beside it — measured: a share
+        // from the built application left all eleven fonts naming the server.
+        font: async (name) => {
+          const abs = under(join(HERE, CLIENT, "fonts"), name);
+          if (abs === null) return null;
+          const where = source(relative(HERE, abs).split(sep).join("/"));
+          if (where === null) return null;
+          const f = Bun.file(where);
+          return (await f.exists()) ? new Uint8Array(await f.arrayBuffer()) : null;
+        },
+        asset: async (rel) => {
+          const abs = under(join(path, "assets"), rel);
+          if (abs === null) return null;
+          const f = Bun.file(abs);
+          return (await f.exists()) ? new Uint8Array(await f.arrayBuffer()) : null;
+        },
+      }),
+      upload: makeBucket(shareEnv()),
+    });
+
+    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs, share }, settled: Promise.resolve(), files };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -2609,6 +2678,7 @@ if (import.meta.main) {
   // answer to port 0 and the token is this launch's — neither is predictable,
   // and neither is written to a file, because a file is a thing left behind when
   // the application is killed.
+  served = { origin: `http://localhost:${server.port}`, token: TOKEN };
   if (TOKEN !== null) console.log(`biom ready ${JSON.stringify({ port: server.port, token: TOKEN })}`);
   // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
   // this launch's token, into every run's `BIOM_API` from here on.

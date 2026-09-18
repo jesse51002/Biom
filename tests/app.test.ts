@@ -249,7 +249,7 @@ test("a vault is seeded out of the carried map with no directory read at all", a
 
 /* ── the bridge, and the window it works ───────────────────────────────── */
 
-test("the preload exposes one object with three keys, and nothing else crosses", async () => {
+test("the preload exposes one object with four keys, and nothing else crosses", async () => {
   // THE SHELL USED TO INJECT NOTHING, then one function, and it is three keys
   // now because the application draws its own title bar: a page that draws the
   // window's controls has to be able to work them, and minimising a window is
@@ -268,7 +268,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
   // inside the one nested object, so the two lists come apart on indentation.
   const surface = preload.slice(preload.indexOf("exposeInMainWorld"));
   expect([...surface.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]))
-    .toEqual(["chooseFolder", "logo", "windowControls"]);
+    .toEqual(["chooseFolder", "logo", "capturePage", "windowControls"]);
   expect([...surface.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]))
     .toEqual(["minimize", "toggleMaximize", "toggleFullScreen", "close", "state", "onChange", "onClosing", "lights", "inset"]);
 
@@ -291,6 +291,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
     "biom:choose-folder", "biom:logo", "biom:window-minimize", "biom:window-maximize",
     "biom:window-fullscreen", "biom:window-close", "biom:window-state", "biom:window-changed",
     "biom:window-closing",
+    "biom:capture-page",
   ];
   for (const channel of channels) {
     expect([channel, preload.includes(JSON.stringify(channel))]).toEqual([channel, true]);
@@ -299,7 +300,7 @@ test("the preload exposes one object with three keys, and nothing else crosses",
 
   // ONE `ipcMain.handle` PER ACT, and the push channel is a send rather than a
   // handle — it is the only thing the main process says without being asked.
-  for (const name of ["CHOOSE", "LOGO", "MINIMIZE", "MAXIMIZE", "FULLSCREEN", "CLOSE", "STATE"]) {
+  for (const name of ["CHOOSE", "LOGO", "MINIMIZE", "MAXIMIZE", "FULLSCREEN", "CLOSE", "STATE", "CAPTURE"]) {
     expect([name, main.includes(`ipcMain.handle(${name}`)]).toEqual([name, true]);
   }
   expect(main).not.toContain("ipcMain.handle(CHANGED");
@@ -615,6 +616,27 @@ test("the window's Chromium is given a font cache of the application's own", asy
   // AND IT NEVER REFUSES TO START. Every way it can fail ends in a line on
   // stderr and the launch every version before this one made.
   expect(main).toContain('if (typeof process.execve !== "function") {');
+
+  // THE CACHE OF OUR OWN HEALS ITSELF, ONCE. Two launches from two environments
+  // sharing one home — a desktop and a container — write two fontconfigs' files
+  // into the one private cache, and the next launch aborts exactly as it did
+  // before the cache existed. So a launch that never draws clears the private
+  // cache and restarts itself, under a second marker so it happens once; a
+  // launch that never draws with a clean cache gets the dialog.
+  expect(main).toContain("function healFontCache()");
+  expect(main).toContain('const HEALED = "BIOM_HEALED_CACHE";');
+  expect(main).toContain('if (process.env[HEALED] === "1") return false;');
+  // Only a cache that is OURS is ever deleted: the guard is under the first
+  // marker, and the path is the private one, never `~/.cache/fontconfig`.
+  expect(main).toContain('if (process.env[OWN_CACHE] !== "1") return false;');
+  expect(main).toContain('const cache = join(dataHome(), "cache", "fontconfig");');
+  expect(main).not.toContain('".cache", "fontconfig"');
+  // Tried before the sentence and the dialog, and the same restart ownFontCache makes.
+  const heal = main.indexOf("if (healFontCache()) return;");
+  const said = main.indexOf('dialog.showErrorBox("Biom could not draw its window"');
+  expect(heal).toBeGreaterThan(0);
+  expect(heal).toBeLessThan(said);
+  expect(main.split("process.execve(process.execPath, [process.execPath, ...process.argv.slice(1)], {").length - 1).toBe(2);
 });
 
 test("the shell and the server answer where this machine's data lives with one rule", () => {

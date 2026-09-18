@@ -31,6 +31,12 @@ import { API_ROUTE, CALL_TIMEOUT, ERRORS, fail } from "../../contracts/wire.js";
  *  two. */
 export const TOKEN_PARAM = "token";
 
+/** How long a share may take. The capture bound in `server/platform/capture.ts`
+ *  is 45 seconds for the draw alone; this covers that, the settle, the rewrite
+ *  and the upload, with room. Not in `contracts/wire.js` beside `CALL_TIMEOUT`
+ *  because that file is frozen and this is one caller's exception. */
+export const SHARE_TIMEOUT = 90000;
+
 /**
  * @param {string} baseUrl "" in the framework — the client is served by the same
  *   process it calls. It is a parameter so that pointing the client at another
@@ -62,7 +68,13 @@ export function makeHttp(baseUrl, token = null) {
           // Without this a hung request hangs the surface that awaited it, with
           // nothing on screen to say so. The demo failure this actually catches
           // is the server being restarted underneath a running page.
-          signal: AbortSignal.timeout(CALL_TIMEOUT),
+          // ONE KIND IS SLOW BY NATURE. A share launches a browser, draws the
+          // page, scrolls it and uploads the file, and a cold Chromium alone
+          // can take most of the ordinary bound — so the person saw "the
+          // server did not answer" while the answer was still on its way.
+          // Read off the kind rather than passed in, because the transport's
+          // one method is the contract and a second parameter is not.
+          signal: AbortSignal.timeout(req.kind === "page.share" ? SHARE_TIMEOUT : CALL_TIMEOUT),
         });
       } catch {
         return broken(req, "the server did not answer");

@@ -48,6 +48,7 @@ import type { ProcessRunner, RunRow } from "../contracts/types.ts";
 import { PROTOCOL } from "../contracts/wire.js";
 
 import type { TableTree } from "../server/domain/tables.ts";
+import type { Sharer } from "../server/domain/share.ts";
 import { ROOT_PAGE, parentOf } from "../contracts/types.ts";
 import type {
   ApiRequest, ApiResponse, Child, DirListing, Page, PageDoc, PageId, PageRef,
@@ -81,6 +82,16 @@ function fakeVault(root: string, here: string): Vault {
     },
     async recent() {
       return [info(here)];
+    },
+  };
+}
+
+/** The sharer, as this layer sees it: one call that answers a link. The real
+ *  one drives a browser and a bucket, and `tests/share.test.ts` holds it. */
+function fakeShare(): Sharer {
+  return {
+    async share(page: PageId, _html?: string) {
+      return { url: `https://shares.example/${page}.html`, key: `${page}.html`, left: [] };
     },
   };
 }
@@ -250,7 +261,7 @@ async function workspace() {
     changes,
     alive,
     deps: {
-      pages, design, docs, tables, presets, theme, mirror, runs,
+      pages, design, docs, tables, presets, theme, mirror, runs, share: fakeShare(),
       vault: fakeVault(root, vault),
       live: () => runs.live(),
       envNames: () => ["KEY_ONE", "KEY_TWO", "PATH"],
@@ -1514,6 +1525,23 @@ test("a Deps that says nothing about the build behaves exactly as it did", async
     expect("production" in w.deps).toBe(false);
     expect((value(await handle(req({ kind: "sql", query: "SELECT 1" }), w.deps)) as SqlResult).columns)
       .toEqual(["n"]);
+  } finally {
+    await w.drop();
+  }
+});
+
+test("page.share answers the link in every build, and hands a captured document through", async () => {
+  const w = await workspace();
+  try {
+    const dev = await handle(req({ kind: "page.share", page: "home" }), w.deps);
+    if (!dev.ok) throw new Error(dev.error.message);
+    expect(dev.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
+
+    // A compiled build answers too: the shell captures in its own window and
+    // the server only rewrites and uploads what it was handed.
+    const built = await handle(req({ kind: "page.share", page: "home", html: "<html></html>" }), { ...w.deps, production: true });
+    if (!built.ok) throw new Error(built.error.message);
+    expect(built.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
   } finally {
     await w.drop();
   }

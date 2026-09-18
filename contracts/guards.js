@@ -101,7 +101,7 @@ const HOST_KINDS = new Set([
   // The other four `vault.*` kinds each name a folder that is not this one and
   // stay in the outer ring. Same three-place rule as every line above it.
   "vault.info",
-  // AUTOMATIONS AND RUNS — the seventh contracts edit, 2026-09-17. A page may
+  // AUTOMATIONS AND RUNS — the eighth contracts edit, 2026-09-17. A page may
   // list every automation, start one, list and read every run and end one.
   // The ring is not the wall: the row's `page` is where a view permission will
   // filter when the sync engine has one, and nothing filters today. Same

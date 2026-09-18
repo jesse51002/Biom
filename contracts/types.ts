@@ -340,7 +340,7 @@ export interface PageRef {
    *  every page that has none on mount, and named by every run a page starts,
    *  so a page moved under another parent still owns the runs it started.
    *  Absent only on a page whose document would not parse — the tolerant
-   *  listing has no file to read it out of. The SEVENTH contracts edit, taken
+   *  listing has no file to read it out of. The EIGHTH contracts edit, taken
    *  with the automation kinds below on 2026-09-17. */
   uid?: string;
 }
@@ -843,7 +843,7 @@ export type HostRequest = Envelope &
      *  `vault.recent` stay in the outer ring: each of those is about a folder
      *  OTHER than this one, and an artifact has no business reaching for one. */
     | { kind: "vault.info" }
-    /** AUTOMATIONS AND RUNS, IN THE INNER RING, and the SEVENTH contracts edit,
+    /** AUTOMATIONS AND RUNS, IN THE INNER RING, and the EIGHTH contracts edit,
      *  taken at its own barrier on 2026-09-17.
      *
      *  A page may see every automation in the workspace, start any of them,
@@ -1215,6 +1215,18 @@ export type ApiRequest =
          *  they open a file and then save quietly; nothing else needs it,
          *  because every other write commits ahead of itself. */
         | { kind: "vault.commit"; message: string }
+        /** SHARE A PAGE: capture it as it is drawn and put the file somewhere a
+         *  link reaches. The SEVENTH contracts edit, taken at its own barrier on
+         *  2026-09-17. It is here and not in `HostRequest` because the box never
+         *  asks for it — the workspace UI does — so no page in the wild can say
+         *  it and no guard learned it. The answer is a `Share`.
+         *
+         *  `html` is the page's drawn document, when the caller could read it
+         *  itself: the desktop shell can reach into the box, so it captures
+         *  from the person's own window and the server only rewrites and
+         *  uploads. Absent, the server draws the page in a browser of its own,
+         *  which a development server can do and a compiled one cannot. */
+        | { kind: "page.share"; page: PageId; html?: string }
 
       ));
 
@@ -1227,6 +1239,16 @@ export interface VaultFile {
 }
 
 export type ApiResponse = HostResponse;
+
+/** WHAT A SHARE COMES BACK AS. `url` is the link; `key` is the object's name in
+ *  the bucket, which is the whole of the secret; `left` names every resource
+ *  the capture could not fold into the file and left pointing at the server,
+ *  so a person can see what a stranger will not. */
+export interface Share {
+  url: string;
+  key: string;
+  left: string[];
+}
 
 /* ── the module interfaces that cross an ownership boundary ────────────── */
 //
@@ -1661,7 +1683,7 @@ export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map" |
  *  and `doc.writeRaw` wire kinds stayed — the API is not a screen. */
 export interface UiState {
   route: { view: ViewName; id: string };
-  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE — the seventh edit put
+  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE — the eighth edit put
    *  it back, three members wide and in every build: `page` is the box;
    *  `instructions` is one editor over the page's `INSTRUCTIONS.md`;
    *  `automation` is the page's automations — manifest, files, runs. */
