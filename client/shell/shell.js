@@ -55,14 +55,13 @@
 /** @import { TerminalView } from "../views/terminal.js" */
 
 import { remember } from "../platform/dom.js";
-import { closePopover, popover, popItem } from "../widgets/popover.js";
+import { closePopover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
 // directions of one move — into a folder and out of it — and an address built
 // twice is an address that drops the token in one of the two places.
 import { closeHref } from "../views/vault.js";
-import { makePanels } from "./panels.js";
 import { makeDialog } from "./dialog.js";
 import { makeRack } from "./rack.js";
 import { makeDock } from "./dock.js";
@@ -76,7 +75,6 @@ import { makeDock } from "./dock.js";
  * @typedef {object} ShellViews
  * @property {() => HTMLElement} tree
  * @property {(page: Page) => HTMLElement} page
- * @property {(page: Page) => HTMLElement} config
  * @property {(view: TableView | null) => HTMLElement} table
  * @property {() => HTMLElement} vault
  * @property {() => HTMLElement} design
@@ -101,12 +99,10 @@ import { makeDock } from "./dock.js";
  *   tag was cut. It is a fact about the launch, so it goes on the end of the
  *   strip whatever the route, the way the versions line does.
  * @property {boolean} [production] WHICH BUILD THIS IS, and the only thing the
- *   chrome knows about it: whether a row is put in the list it returns. Nothing
- *   here is deleted in production and nothing becomes a second code path — every
- *   view goes on being constructed, every screen goes on existing, and a branch
- *   that removed a module in one build and not the other would be two
- *   applications sharing a name. Absent means development, so a caller that
- *   built a shell before this existed still gets every row.
+ *   chrome knows about it: what the status strip reports, and whether the
+ *   failure screen may name `make dev`. Every screen and every row is in every
+ *   build — the owner decided on 2026-09-17 that the built application hides no
+ *   screen — so nothing here is a second code path. Absent means development.
  * @property {{ on: (hear: () => void) => () => void }} [events] THE VAULT
  *   CHANGING ON DISK, as a subscription rather than an import: data ascends
  *   through a callback a higher layer registered, and nothing below the shell
@@ -130,31 +126,6 @@ import { makeDock } from "./dock.js";
  *  third list.
  *  @type {ReadonlySet<string>} */
 export const VIEWS = new Set(["page", "table", "vault", "design", "map"]);
-
-/** The screens a built application does not offer, so a typed `#/map` cannot
- *  reach what the rail no longer shows. One name today.
- *  @type {ReadonlySet<string>} */
-const HIDDEN_VIEWS = new Set(["map"]);
-
-/** The same vocabulary minus those, DERIVED rather than written out a second
- *  time. Two hand-kept lists are two places a view can be added, and the one
- *  that gets forgotten is this one — a route in the built application with no
- *  row to reach it, or a row whose route falls back to a page.
- *  @type {ReadonlySet<string>} */
-export const PRODUCTION_VIEWS = new Set([...VIEWS].filter((v) => !HIDDEN_VIEWS.has(v)));
-
-/** The panels a built application does not offer, the way `HIDDEN_VIEWS` names
- *  the screens it does not. What belongs in it is a developer's diagnostics —
- *  the rule being whether a person who never cloned this repository can act on
- *  it. Modify page draws a path to `cd` into and a prompt to paste into a
- *  coding agent running in a terminal beside this window; History reads the
- *  vault's git log, and the vault being a git repo is an implementation detail.
- *
- *  Adding a panel to this set is the whole of hiding one. The rail's row and
- *  the paint both ask `offered` below rather than testing a name, so there is
- *  no second site to remember and no way for the two to disagree.
- *  @type {ReadonlySet<string>} */
-const HIDDEN_PANELS = new Set(["agent", "history"]);
 
 /** THE WINDOW'S OWN BAR, AND WHETHER THERE IS A WINDOW TO PUT ONE ON.
  *
@@ -188,29 +159,12 @@ export function makeShell(deps) {
   const production = deps.production === true;
   const newerVersion = typeof deps.newerVersion === "string" ? deps.newerVersion.trim() : "";
 
-  /** WHICH PANEL THIS BUILD WILL SHOW, and the one answer everything asks.
-   *
-   *  `panel` is a field on the UI store and any caller can set it, so taking a
-   *  row out of the rail leaves a second door standing open the way a typed
-   *  `#/map` would if only the row had gone. Every reader of that field goes
-   *  through here instead — the rail deciding whether to offer a row, the paint
-   *  deciding what to build and how wide the bed is, and Escape deciding
-   *  whether there is a panel to close — so a panel this build hides is not a
-   *  panel to anybody.
-   *
-   *  Takes the stored value and answers it back or `null`; passing a name reads
-   *  as *is this one offered*, which is what the rail wants.
-   *  @param {null | "agent" | "history"} panel
-   *  @returns {null | "agent" | "history"} */
-  const offered = (panel) => (panel !== null && production && HIDDEN_PANELS.has(panel) ? null : panel);
-
   /** THE QUERY THIS WINDOW WAS OPENED WITH, and all `Close workspace` needs: the
    *  start page is this same address with the folder taken out of it. Read once,
    *  the way the picker reads it, so a test can state what a window this module
    *  did not open has to keep. */
   const search = deps.search ?? (typeof location === "undefined" ? "" : location.search);
 
-  const panels = makePanels({ h });
   const dialog = makeDialog({ h, ws, ui });
   // The rail's width. It owns one custom property on `.app` and nothing else in
   // here has an opinion about it — which is what keeps a drag from repainting
@@ -260,8 +214,6 @@ export function makeShell(deps) {
 
   /** What the body was last built from. Identity, not equality. @type {unknown[]} */
   let built = [Symbol("nothing")];
-  /** @type {HTMLElement | null} */ let panelEl = null;
-  /** @type {unknown} */ let panelFrom = null;
   /** @type {HTMLElement | null} */ let dialogEl = null;
   /** The reload button is the change loop; it says so while it is working. */
   let reloading = false;
@@ -331,7 +283,7 @@ export function makeShell(deps) {
         // `pages` is here because a page draws its children, and a child renamed
         // or removed elsewhere changes what this page says without touching the
         // page object itself.
-        return ["page", r.id, u.pageView, w.page, u.inserting, w.pages, missing.has(r.id)];
+        return ["page", r.id, w.page, u.inserting, w.pages, missing.has(r.id)];
       case "table":
         return ["table", r.id, w.table, w.pages];
       case "design":
@@ -389,7 +341,7 @@ export function makeShell(deps) {
           : h("code", "make dev"));
     }
 
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
 
     switch (route.view) {
@@ -398,7 +350,7 @@ export function makeShell(deps) {
         if (missing.has(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
         const page = w.page;
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
-        return pageView === "config" ? views.config(page) : views.page(page);
+        return views.page(page);
       }
       case "table": {
         if (w.table && w.table.schema.name === route.id) return views.table(w.table);
@@ -439,11 +391,10 @@ export function makeShell(deps) {
    *  paragraph — `guest/sections/default.html` — which is what lets the section
    *  beside it be full-bleed. */
   function faceOf() {
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     if (route.view === "vault") return "vault";
     if (troubled) return "none";
     if (route.view !== "page") return route.view;
-    if (pageView === "config") return "config";
     // Only once the page is actually on screen. Before it is, the canvas is
     // holding a sentence — "Opening…", or the one about a page that is not there
     // — and a sentence wants the padding a box does not.
@@ -516,14 +467,8 @@ export function makeShell(deps) {
 
   /* ── the rail ──────────────────────────────────────────────────────────── */
 
-  /** @param {string} text @param {() => void} onclick @param {boolean} pressed @param {string} extra */
-  function tool(text, onclick, pressed = false, extra = "") {
-    return h("button.tool" + (extra ? "." + extra : ""),
-      { type: "button", onclick, "aria-pressed": String(pressed) }, text);
-  }
-
   function railParts() {
-    const { route, pageView, panel } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
     const page = openPage();
 
@@ -531,11 +476,8 @@ export function makeShell(deps) {
     // is no title over the page — the page's FIRST SECTION owns the top of the
     // sheet, which is the whole point of the format — so the page is named
     // here, as the last crumb of where it sits. The path on disk that used to
-    // sit beside it is the agent's question, and the Modify page panel answers
-    // it in full where that panel is offered — in a built application it is
-    // not, and the folder an agent is pointed at is printed on the seeded root
-    // page instead. The bar answers the person's question: which page, inside
-    // what.
+    // sit beside it is the agent's question, and the seeded root page answers
+    // it. The bar answers the person's question: which page, inside what.
     const crumbs = h("nav.crumbs", { "aria-label": "Where" }, ...trail(route, w, page));
 
     const tools = [];
@@ -553,49 +495,26 @@ export function makeShell(deps) {
     }, reloading ? "Reloading…" : "Reload");
     tools.push(reload);
 
-    // HISTORY IS A DEVELOPER'S PANEL. It reads the vault's git log, and the
-    // vault being a git repo is an implementation detail: undo exists without an
-    // undo mechanism being built, and the way to it is a sentence handed to an
-    // agent rather than a list of commit subjects. `HIDDEN_PANELS` is where that
-    // is said; the extra condition beside it is this row's own, and is about
-    // there being something to show a history of.
-    if (offered("history") && (page || route.view === "table")) {
-      tools.push(tool("History", () => ui.set({ panel: panel === "history" ? null : "history" }),
-        panel === "history"));
-    }
-
     // THERE IS NO EDIT TOGGLE, AND THAT IS THE POINT. A page is editable the
     // moment it is drawn — the words take a caret, the sections and their items
     // drag, and each section draws its own way to add a part and take one away.
     // A document you have to unlock before you can type in it reads as a demo of
     // a document.
+    //
+    // AND THERE IS NO PANEL AND NO MENU. There was a History panel, a Modify
+    // page panel and a `···` menu opening a Config screen, and the owner decided
+    // on 2026-09-17 that all three go rather than hide: History said "no
+    // version list yet" over a prompt; Modify page gave directions to a terminal
+    // the dock now holds; Config was made for ports the framework does not have.
+    // A version list, when one is built, is its own spec.
 
-    // MODIFY PAGE IS A DEVELOPER'S PANEL TOO, and the owner decided on
-    // 2026-09-14 that a built application does not offer it. What it draws is
-    // a path to `cd` into and a prompt to paste into a coding agent running
-    // in a terminal beside this window — an instruction written for whoever
-    // has one open, at the exact moment a stranger is deciding what this
-    // program is. The panel is not deleted and nothing here becomes a second
-    // code path: the row is not put in the list, and the paint below declines
-    // to build it — both of them asking `offered`, the way a typed route asks
-    // `PRODUCTION_VIEWS`.
-    if (page && offered("agent")) {
-      tools.push(tool("Modify page", () => ui.set({ panel: panel === "agent" ? null : "agent" }),
-        panel === "agent", "spot"));
-    }
-
-    // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND THE LAST ACTION
-    // before the page's menu. It is not a developer's diagnostic — it is where
-    // a person runs their own agent beside the page — so it is not on any hide
-    // list, and in a built application it is the one action on the bar that
-    // does something rather than shows something, so it takes `prime`, the
-    // bar's fill in the palette's primary accent — not `spot`, which is the
-    // second accent and Modify page's. It sits after every other action so it
-    // is in the same place on every page, whatever the page adds before it;
-    // the menu below stays at the very end because a menu at the end of a bar
-    // is where a menu is. It names how many sessions are still running while
-    // the dock is put away, because Hide stops nothing and the person is
-    // entitled to see that it did not.
+    // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND LAST. It is
+    // where a person runs their own agent beside the page, and it is the one
+    // action on the bar that does something rather than shows something, so it
+    // takes `prime`, the bar's fill in the palette's primary accent. It sits
+    // after Reload so it is in the same place on every page. It names how many
+    // sessions are still running while the dock is put away, because Hide
+    // stops nothing and the person is entitled to see that it did not.
     if (terminal !== null) {
       const st = terminal.store.get();
       const running = terminal.store.live();
@@ -609,24 +528,6 @@ export function makeShell(deps) {
           if (!shown) terminal.view.focus();
         },
       }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
-    }
-
-    if (page) {
-      // Config is a screen about the page rather than a way of looking at it,
-      // so it is behind the page's own menu rather than a tab beside the name.
-      // One item today; the menu is where the next page-level thing goes.
-      const more = h("button.tool.more", {
-        type: "button", "aria-label": "More", "aria-haspopup": "menu",
-        onclick: () => {
-          popover(more, (close) => [
-            popItem(pageView === "config" ? "Page" : "Config", () => {
-              close();
-              ui.set({ pageView: pageView === "config" ? "page" : "config" });
-            }),
-          ], { align: "end" });
-        },
-      }, "\u22EF");
-      tools.push(more);
     }
 
     return [crumbs, h("span.tools", ...tools)];
@@ -895,11 +796,11 @@ export function makeShell(deps) {
           link("Design", route.view === "design", () => ui.go("design", ""), "design"),
           // The map: every page as a light, every prose link as a line between
           // two, drawn by the shipped `mindmap` plugin over the whole workspace.
-          // It is a drawing of a tree a stranger's vault does not have yet — a
-          // one-page workspace maps to one light — so it is not in a built
-          // application, and `VIEWS` loses the route with it so a typed `#/map`
-          // cannot reach what the row no longer offers.
-          production ? null : link("Map", route.view === "map", () => ui.go("map", ""), "map"),
+          // IN EVERY BUILD. It was withheld from the built application because
+          // a one-page workspace maps to one light; the owner decided on
+          // 2026-09-17 that one light is what a one-page workspace looks like,
+          // and the drawing is finished.
+          link("Map", route.view === "map", () => ui.go("map", ""), "map"),
           // CLOSE WORKSPACE, last, and it is the one row that leaves. There was
           // a Settings row here: the picker, drawn INSIDE the chrome, with the
           // folder open behind it and an "Open now" block on top saying which
@@ -1129,7 +1030,6 @@ export function makeShell(deps) {
 
   function paint() {
     const u = ui.get();
-    const w = ws.get();
 
     // A FIRST LAUNCH HAS NO WORKSPACE, SO IT DRAWS NO FURNITURE. The start page
     // is the whole client area under the bar: there is nothing for a rail to be
@@ -1174,33 +1074,8 @@ export function makeShell(deps) {
       if (plate.firstChild !== node) fill(plate, node);
     }
 
-    // The panel and the dialog are siblings of the canvas, so adding or removing
-    // one never touches the page.
-    // The vault is IN THE KEY, and it has to be: the agent panel names the
-    // folder to `cd` into, the shell reads that folder on its own and answers a
-    // beat later, and a key that left it out would build the panel once against
-    // "not yet" and never build it again.
-    //
-    // WHICH PANEL THIS BUILD WILL BUILD, asked here rather than only where the
-    // row is offered, because `panel` is a store field any caller can set.
-    // `offered` is the one answer and `HIDDEN_PANELS` is the one list; a panel
-    // this build hides is dropped for the whole of what follows — the key, the
-    // build, and the class on the bed, which would otherwise widen for a panel
-    // that is not there.
-    const showing = offered(u.panel);
-    const panelKey = showing === null
-      ? null
-      : showing + ":" + (w.page ? w.page.id : "") + ":" + (vault ? vault.path : "");
-    if (panelKey !== panelFrom) {
-      panelFrom = panelKey;
-      if (panelEl) panelEl.remove();
-      panelEl = showing === "agent" ? panels.agent(w.page, vault)
-        : showing === "history" ? panels.history(w.page, vault === null ? undefined : vault.history)
-        : null;
-      if (panelEl) bed.append(panelEl);
-      bed.className = showing ? "bed with-panel" : "bed";
-    }
-
+    // The dialog is a sibling of the canvas, so adding or removing it never
+    // touches the page.
     if (u.dialog && !dialogEl && root) { dialogEl = dialog(); root.append(dialogEl); }
     else if (!u.dialog && dialogEl) { dialogEl.remove(); dialogEl = null; }
 
@@ -1267,16 +1142,12 @@ export function makeShell(deps) {
         document.addEventListener("keydown", (ev) => {
           if (ev.key !== "Escape") return;
           // ESCAPE INSIDE THE TERMINAL IS THE PROGRAM'S. Vim leaves insert mode
-          // on it and an agent cancels on it; a panel of ours closing instead
+          // on it and an agent cancels on it; a dialog of ours closing instead
           // would be the host stealing a key the person pressed for the shell.
           if (dock !== null && dock.holds(ev.target)) return;
           const u = ui.get();
           if (u.dialog) ui.set({ dialog: false });
           else if (u.inserting !== null) ui.set({ inserting: null });
-          // `offered` rather than the raw field: a panel this build does not
-          // draw is not an open panel, and Escape swallowed by one nobody can
-          // see is the same second door in another shape.
-          else if (offered(u.panel)) ui.set({ panel: null });
         });
       }
 
@@ -1299,7 +1170,7 @@ export function makeShell(deps) {
         // Back and forward. `go` writes the hash itself, so this only fires for
         // history the browser moved and never for a route this shell set.
         window.addEventListener("hashchange", () => {
-          const route = parseHash(window.location.hash, production);
+          const route = parseHash(window.location.hash);
           const now = ui.get().route;
           if (route.view !== now.view || route.id !== now.id) ui.go(route.view, route.id);
         });
@@ -1348,16 +1219,13 @@ export function makeShell(deps) {
 /**
  * The route a URL fragment names. A hash is user input — it is the one thing in
  * the client that arrives from outside without passing the server — so an
- * unknown view falls back rather than routing to nothing.
- * THE VOCABULARY SHRINKS IN A BUILT APPLICATION, and it has to. The Map row
- * going without the route going would leave the screen reachable by typing,
- * which is a hidden feature rather than an absent one. Out of the set, `#/map`
- * falls back the way every other unknown view already does.
+ * unknown view falls back rather than routing to nothing. It is the same
+ * vocabulary in every build: a screen the rail offers is a screen a hash may
+ * name, and there is no screen the rail does not offer.
  * @param {string} hash
- * @param {boolean} [production] which build this is; absent means development.
  * @returns {{ view: ViewName, id: string }}
  */
-export function parseHash(hash, production = false) {
+export function parseHash(hash) {
   const raw = String(hash || "").replace(/^#\/?/, "");
   const cut = raw.indexOf("/");
   const view = cut < 0 ? raw : raw.slice(0, cut);
@@ -1367,11 +1235,11 @@ export function parseHash(hash, production = false) {
   } catch {
     id = "";
   }
-  const known = production ? PRODUCTION_VIEWS : VIEWS;
-  // The fallback carries no id on purpose: `#/map` landing on a page view with
-  // an id taken from a map route would open whatever page happened to share the
-  // name. Boot fills an empty page route with the first page in the workspace.
-  return known.has(view) ? { view: /** @type {ViewName} */ (view), id } : { view: "page", id: "" };
+  // The fallback carries no id on purpose: an unknown view landing on a page
+  // view with an id taken from its route would open whatever page happened to
+  // share the name. Boot fills an empty page route with the first page in the
+  // workspace.
+  return VIEWS.has(view) ? { view: /** @type {ViewName} */ (view), id } : { view: "page", id: "" };
 }
 
 /** @param {{ view: ViewName, id: string }} route @returns {string} */

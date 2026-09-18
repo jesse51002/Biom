@@ -585,10 +585,10 @@ as long as the box does.
   `MAP_PAGE` (`@map`), which `server/domain/pages.ts` answers as a bare plugin
   page with no directory; `client/views/page.js` carries the plugin's document
   again as `MAP_DOCUMENT` and `tests/mindmap.test.js` holds the two equal. The
-  Map ROW is not in a production build and `#/map` does not route there either —
-  a whole-workspace map is a drawing of a tree a stranger's vault does not have
-  yet — but the plugin itself ships in both, so a page saying `plugin: mindmap`
-  draws everywhere.
+  Map row and its route are in EVERY build — it was withheld from the built
+  application because a one-page vault maps to one light, and the owner decided
+  on 2026-09-17 that one light is what a one-page workspace looks like — and a
+  page saying `plugin: mindmap` draws everywhere too.
 - **The vault-plugin route:** `inVault()` and the `STATIC` table in
   `server/main.ts` — `/v/<enc>/plugin/<rel>` → `<vault>/plugins/<rel>`,
   `/guest/` → `guest/`, `/vendor/` → `vendor/`, and `under()`
