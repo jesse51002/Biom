@@ -20,7 +20,7 @@
 import { test, expect, beforeEach, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { makeShell, parseHash, hashOf, VIEWS } from "../client/shell/shell.js";
+import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS } from "../client/shell/shell.js";
 import {
   makeRack, rackWidth, autoCeiling,
   RACK_MIN, RACK_BASE, RACK_SHARE, RACK_KEY, RACK_STEP,
@@ -31,6 +31,7 @@ import { makePageView } from "../client/views/page.js";
 import { closeHref, hrefFor, makeVaultView } from "../client/views/vault.js";
 import { UNTITLED } from "../client/shell/dialog.js";
 import { makeUi } from "../client/store/ui.js";
+import { makeTerminals } from "../client/store/terminals.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── a recording element factory, shaped like client/platform/dom.js ──── */
@@ -56,7 +57,9 @@ function element(tag) {
   const el = Object.assign(new El(), {
     tagName: String(tag).toUpperCase(),
     attrs: {},
-    style: {},
+    // `setProperty` is what the dock writes its size with; a plain key is what
+    // the tree writes its depth with, so both spellings land in the one map.
+    style: { setProperty(/** @type {string} */ k, /** @type {string} */ v) { this[k] = v; } },
     dataset: {},
     children: [],
     parent: /** @type {any} */ (null),
@@ -71,6 +74,7 @@ function element(tag) {
     moved: 0,
     setAttribute: (k, v) => { el.attrs[k] = v; },
     removeAttribute: (k) => { delete el.attrs[k]; },
+    toggleAttribute: (k, on) => { if (on) el.attrs[k] = ""; else delete el.attrs[k]; },
     addEventListener: (name, fn) => { (el.listeners[name] ||= []).push(fn); },
     append: (...nodes) => {
       for (const n of nodes) {
@@ -338,7 +342,7 @@ function fakeFrameHost() {
  *  element each time — which is what makes "the body was not rebuilt" provable
  *  rather than assumed. */
 function fakeViews() {
-  const drawn = { tree: 0, page: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0 };
+  const drawn = { tree: 0, page: 0, table: 0, theme: 0, vault: 0, design: 0, map: 0, runs: 0, instructions: 0, pageInstructions: 0, automation: 0 };
   const one = (name, cls) => (...args) => { drawn[name]++; return h("div." + cls, String(args[0] ?? "")); };
   return {
     drawn,
@@ -349,6 +353,12 @@ function fakeViews() {
       vault: one("vault", "vaultpick"),
       design: one("design", "designdoc"),
       map: one("map", "sky"),
+      runs: one("runs", "overview"),
+      instructions: {
+        vault: one("instructions", "vaultins"),
+        page: (p) => { drawn.pageInstructions++; return h("div.pageins", p.id); },
+      },
+      automation: (p) => { drawn.automation++; return h("div.autoscreen", p.id); },
     },
   };
 }
@@ -552,20 +562,21 @@ test("THE PAGE IS NAMED BY THE BREADCRUMB IN THE RAIL, not by a heading over the
   expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Design"]);
 });
 
-test("the bar holds Reload, and Share on a page, in both builds", async () => {
+test("the bar holds Reload, and Share and the page's two screens on a page, in both builds", async () => {
   // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload is the one action
   // every route adds; Share joins it on a page, because a page is the thing a
-  // share captures and the design doc is not shared. Agent Terminal joins them
-  // when this window has a workspace to run one in (tests/terminal-store.test.js
-  // and the dock tests cover that). There is no menu, no Config, no History and
-  // no Modify page: the owner decided (2026-09-17) that the three go rather than
-  // hide, so this is asserted in the development build as well as the built one
-  // — and Share is in both builds too, because it is a product feature and not
-  // a diagnostic.
+  // share captures and the design doc is not shared, and the page's two
+  // screens — Instructions and Automations — come after it. Agent Terminal
+  // joins them when this window has a workspace to run one in (the
+  // rightmost-action test below covers that). There is no menu, no Config, no
+  // History and no Modify page: the owner decided (2026-09-17) that the three
+  // go rather than hide, so this is asserted in the development build as well
+  // as the built one — and Share and the two screens are in both builds too,
+  // because they are product features and not diagnostics.
   for (const g of [harness(), harness(DOC, { view: "page", id: DOC.id }, true)]) {
     await tick();
     const tools = find(g.rail, (el) => has(el, "tools"));
-    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Share"]);
+    expect(findAll(tools, (el) => el.tagName === "BUTTON").map(flat)).toEqual(["Reload", "Share", "Instructions", "Automations"]);
     expect(find(tools, (el) => has(el, "more"))).toBeNull();
     expect(find(tools, (el) => has(el, "viewsw"))).toBeNull();
     g.ui.go("design", "");
@@ -1321,16 +1332,17 @@ test("the rail's foot lists Design, the Map, then Close workspace", async () => 
 
   const foot = find(g.rack, (el) => has(el, "rackfoot"));
   const rows = findAll(foot, (el) => el.tagName === "A").map(flat);
-  // The design language, the map, and the way out last. There was a Settings
-  // row here — the picker drawn INSIDE the chrome, with the folder open behind
-  // it — and the owner decided (2026-09-14) that it does what the start page
-  // does and looks five times worse. The screen went; the act stayed.
-  expect(rows).toEqual(["Design", "Map", "Close workspace"]);
+  // The design language, the workspace's own instructions, every run, the map,
+  // and the way out last. There was a Settings row here — the picker drawn
+  // INSIDE the chrome, with the folder open behind it — and the owner decided
+  // (2026-09-14) that it does what the start page does and looks five times
+  // worse. The screen went; the act stayed.
+  expect(rows).toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
   // THE TAG IS DRAWN FROM `data-kind` AND IS NOT TEXT IN THE ROW, which is why
   // it is asserted here rather than read off the name: a brush, a folded map,
   // a doorway.
   const tags = findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]);
-  expect(tags).toEqual(["design", "map", "close"]);
+  expect(tags).toEqual(["design", "instructions", "runs", "map", "close"]);
 });
 
 test("Design is a route like any other, and the rail names the folder it is", async () => {
@@ -2134,17 +2146,93 @@ test("the Map row and its route are in every build", async () => {
     const g = harness(DOC, { view: "page", id: DOC.id }, production);
     await tick();
     const foot = find(g.rack, (el) => has(el, "rackfoot"));
-    expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Map", "Close workspace"]);
+    expect(findAll(foot, (el) => el.tagName === "A").map(flat)).toEqual(["Design", "Instructions", "Automations", "Map", "Close workspace"]);
     expect(findAll(foot, (el) => has(el, "kindtag")).map((el) => el.attrs["data-kind"]))
-      .toEqual(["design", "map", "close"]);
+      .toEqual(["design", "instructions", "runs", "map", "close"]);
     // Every row's route is in the vocabulary, and `close` is the start page.
-    for (const kind of ["design", "map", "close"]) expect(VIEWS.has(kind === "close" ? "vault" : kind)).toBe(true);
+    for (const kind of ["design", "instructions", "runs", "map", "close"]) expect(VIEWS.has(kind === "close" ? "vault" : kind)).toBe(true);
   }
   // ONE VOCABULARY. `parseHash` takes the hash and nothing else, so there is no
   // second argument for a build to pass and no second set for it to read.
   expect(parseHash("#/map")).toEqual({ view: "map", id: "" });
   expect(parseHash.length).toBe(1);
   for (const view of VIEWS) expect(parseHash("#/" + view).view).toBe(view);
+});
+
+test("the Instructions and Automations rows open their screens, in both builds", async () => {
+  for (const production of [false, true]) {
+    const w = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    const foot = find(w.rack, (el) => has(el, "rackfoot"));
+    const row = (text) => find(foot, (el) => el.tagName === "A" && flat(el) === text);
+    row("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().route.view).toBe("instructions");
+    expect(w.plate.firstChild.className).toBe("vaultins");
+    expect(w.plate.attrs["data-face"]).toBe("instructions");
+    row("Automations").fire("click");
+    await tick();
+    expect(w.ui.get().route.view).toBe("runs");
+    expect(w.plate.firstChild.className).toBe("overview");
+    expect(w.plate.attrs["data-face"]).toBe("runs");
+    // And both are in the route vocabulary of both builds: a typed hash reaches them.
+    expect(parseHash("#/runs").view).toBe("runs");
+    expect(parseHash("#/instructions").view).toBe("instructions");
+  }
+});
+
+test("a page's bar carries Instructions and Automations, each taking the canvas and giving it back, in both builds", async () => {
+  for (const production of [false, true]) {
+    const w = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    const toolNamed = (text) => find(w.rail, (el) => has(el, "tool") && flat(el) === text);
+    expect(toolNamed("Instructions")).toBeTruthy();
+    expect(toolNamed("Automations")).toBeTruthy();
+    toolNamed("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("instructions");
+    expect(w.plate.firstChild.className).toBe("pageins");
+    expect(w.plate.attrs["data-face"]).toBe("instructions");
+    toolNamed("Instructions").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("page");
+    expect(w.plate.firstChild.className).toBe("pagebody");
+    toolNamed("Automations").fire("click");
+    await tick();
+    expect(w.ui.get().pageView).toBe("automation");
+    expect(w.plate.firstChild.className).toBe("autoscreen");
+    expect(w.plate.attrs["data-face"]).toBe("automation");
+  }
+});
+
+test("Agent Terminal is the rightmost action on a page's bar, after Instructions and Automations, in both builds", async () => {
+  // A REAL TERMINAL STORE over a link that never opens, and a view that is a
+  // box the dock can hold: what the bar reads is `store.get()`, `store.live()`
+  // and `toggle()`, and what the dock wants is `view.el`. The owner asked
+  // (2026-09-17) for the toggle to stay the rightmost button once the page's
+  // two screens joined the bar.
+  const link = { connect() {}, close() {}, send: () => false, state: () => "idle", on: () => () => {} };
+  const store = makeTerminals({ link });
+  const view = { el: element("div"), focus() {}, sync() {}, hidden() {}, hint: () => null, schedule() {}, style() {} };
+  for (const production of [false, true]) {
+    const ws = fakeWs(DOC);
+    const ui = makeUi({ route: { view: "page", id: DOC.id } });
+    const { views } = fakeViews();
+    const shell = makeShell({ h, fill, ws, ui, frameHost: fakeFrameHost(), views, production, terminal: { store, view } });
+    ws.on(() => shell.repaint());
+    ui.on(() => shell.repaint());
+    const root = element("div");
+    shell.mount(root);
+    await tick();
+    const rail = root.children[0].children[0];
+    const tools = findAll(rail, (el) => has(el, "tool")).map(flat);
+    const at = (text) => tools.indexOf(text);
+    expect(at("Instructions")).toBeGreaterThan(-1);
+    expect(at("Automations")).toBe(at("Instructions") + 1);
+    expect(at("Agent Terminal")).toBe(at("Automations") + 1);
+    // Nothing after it, in either build: there is no menu any more.
+    expect(tools.slice(at("Agent Terminal") + 1)).toEqual([]);
+  }
 });
 
 test("the status strip stops reporting on the page and keeps reporting on the data", async () => {
@@ -2357,10 +2445,14 @@ function fakeWindowShell({ lights = false, state = { maximized: false, fullScree
   const calls = [];
   /** @type {((s: any) => void)[]} */
   const hears = [];
+  /** @type {((n: number) => void)[]} */
+  const closings = [];
   return {
     calls,
     /** Something that is not our button moved the window. */
     moved(next) { for (const hear of [...hears]) hear(next); },
+    /** The main process held a close over `n` live runs. */
+    holding(n) { for (const hear of [...closings]) hear(n); },
     bridge: {
       chooseFolder: async () => { await null; return null; },
       logo: async () => { await null; return "data:image/png;base64,AAAA"; },
@@ -2368,9 +2460,10 @@ function fakeWindowShell({ lights = false, state = { maximized: false, fullScree
         minimize: async () => { calls.push("minimize"); },
         toggleMaximize: async () => { calls.push("toggleMaximize"); },
         toggleFullScreen: async () => { calls.push("toggleFullScreen"); },
-        close: async () => { calls.push("close"); },
+        close: async (force) => { calls.push(force === true ? "close!" : "close"); },
         state: async () => { await null; return state; },
         onChange: (hear) => { hears.push(hear); return () => hears.splice(hears.indexOf(hear), 1); },
+        onClosing: (hear) => { closings.push(hear); return () => closings.splice(closings.indexOf(hear), 1); },
         lights,
         inset: lights ? 78 : 0,
       },
@@ -2528,4 +2621,39 @@ test("the bar is a drag region and the controls are not", () => {
   expect(block(".titleacts")).toContain("-webkit-app-region:no-drag");
   // And the row the bar needs, which is a class rather than a second skeleton.
   expect(block(".app.framed")).toContain("var(--title-h)");
+});
+
+
+// THE CLOSE HELD OVER A LIVE RUN. The main process asks the server, finds
+// something alive, holds the window and says how many; the bar draws the
+// question, yes closes for real and no keeps everything.
+test("a close held over a live run draws the question in the bar; yes forces the close and no keeps the runs", async () => {
+  const w = await framed({ lights: false });
+  try {
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    w.holding(2);
+    await tick();
+    const ask = find(w.bar, (el) => has(el, "closeask"));
+    expect(ask).toBeTruthy();
+    expect(flat(find(ask, (el) => has(el, "closeword")))).toBe(CLOSE_WORDS.alive(2));
+    // No: the strip goes, nothing is closed, the runs are nobody's to end.
+    find(ask, (el) => has(el, "closeno")).fire("click");
+    await tick();
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    expect(w.calls).toEqual([]);
+    // Yes: the close is forced through, and the server ends every run on the way out.
+    w.holding(1);
+    await tick();
+    expect(flat(find(w.bar, (el) => has(el, "closeword")))).toBe(CLOSE_WORDS.alive(1));
+    find(w.bar, (el) => has(el, "closeyes")).fire("click");
+    await tick();
+    expect(w.calls).toEqual(["close!"]);
+    expect(find(w.bar, (el) => has(el, "closeask"))).toBe(null);
+    // The bar's own Close button asks nothing itself: it is an ordinary
+    // close, and the hold is the main process's.
+    find(w.bar, (el) => has(el, "close") && el.tagName === "BUTTON").fire("click");
+    expect(w.calls).toEqual(["close!", "close"]);
+  } finally {
+    w.done();
+  }
 });

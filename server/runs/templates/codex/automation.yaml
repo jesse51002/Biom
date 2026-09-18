@@ -1,0 +1,5 @@
+name: Codex
+description: A headless Codex exec over this workspace.
+agent: codex
+command: [codex, exec, --add-dir, "{vault}", --json, "@{kickoff}"]
+inputs: []

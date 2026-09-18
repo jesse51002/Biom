@@ -26,6 +26,7 @@ export function makeUi(initial) {
   /** @type {UiState} */
   let state = {
     route: { view: "page", id: "" },
+    pageView: "page",
     inserting: null,
     dialog: false,
     dialogParent: null,
@@ -67,12 +68,14 @@ export function makeUi(initial) {
     },
 
     go(view, id) {
-      // Lifted from the mock: opening something closes the inserter. `route`
+      // Lifted from the mock: opening something closes the inserter and drops
+      // back to the page's own face rather than one of its screens. `route`
       // is a fresh object, so a navigation always repaints — a view may want to
       // scroll to the top even when it lands where it already was.
       apply({
         ...state,
         route: { view, id },
+        pageView: "page",
         inserting: null,
       });
     },

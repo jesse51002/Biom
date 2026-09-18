@@ -2,6 +2,8 @@
 
 **This folder is a workspace.** Every page, every word on one, the design language and the theme are files in here — there is no export step and no API to go through, so **editing a file IS editing the workspace.**
 
+**This file is the framework's; `INSTRUCTIONS.md` beside it is the person's, and you read that one next.** What this workspace is, how its owner wants it written, what to leave alone — that is theirs to say and it is said there, at three levels: `INSTRUCTIONS.md` at this root, one beside a page's `content.yaml`, one beside an automation's manifest, each outranking the one above it. Every `AGENTS.md` in a workspace is the framework's and is not a file a person edits; the one a run finds in its own directory is written fresh for that run and names the three. [docs/automations.md](docs/automations.md) is how a run works.
+
 # If somebody else might use it, it is a plugin
 
 **Anything you draw or code that has even a small chance of being used by another page, or by another person, is written as a PUBLIC PLUGIN from the start — never as a copy inside a section.** It goes in `plugins/<id>.js`, it registers an id, and every page in the workspace can reach it by name. The route is real and it needs nothing from you but the file: the server reads `plugins/` and the page is handed every `.js` in it.

@@ -28,9 +28,9 @@
 // exists. That is the only upward mechanism in the framework and it is what keeps
 // the import graph acyclic.
 
-/** @import { ApiRequest, BlockId, Change, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
- *            PageId, PageRef, Part, Row, RowId, RowQuery, Section, Share, TableName,
- *            TableRef, TableView, Theme, Transport, Variables, VarPatch, VaultInfo, WorkspaceStore }
+/** @import { ApiRequest, Automation, AutomationManifest, BlockId, Change, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
+ *            PageId, PageRef, Part, Row, RowId, RowQuery, RunRead, RunRow, Section, Share, TableName,
+ *            TableRef, TableView, Template, Theme, Transport, Variables, VarPatch, VaultFile, VaultInfo, WorkspaceStore }
  *            from "../../contracts/types.ts" */
 
 import { emitter } from "../../contracts/emitter.js";
@@ -521,8 +521,13 @@ export function makeWorkspace(transport) {
       return next;
     },
 
-    async writeFile(id, file, text) {
-      await ask({ ...env(), kind: "page.writeFile", page: id, file, text });
+    async writeFile(id, file, text, quiet) {
+      await ask({ ...env(), kind: "page.writeFile", page: id, file, text, quiet: quiet === true });
+      // THE EDITORS' QUIET PATH EMITS NOTHING. What they write — a page's
+      // INSTRUCTIONS.md, an automation's files — is nothing the page draws,
+      // and an emit here would rebuild the screen holding the editor on
+      // every pause in typing, caret and all.
+      if (quiet) return;
       // The page is re-read rather than patched, because writing a file is what
       // MAKES a block — the filesystem is the registry — so a write can change
       // the page's shape and not only its bytes.
@@ -843,6 +848,71 @@ export function makeWorkspace(transport) {
     // and on a prose flush that is a repaint per keystroke. The one screen that
     // wants this reads it on demand and shows its own edit by re-reading; every
     // other screen is right without being told.
+
+    /* ── automations and runs ──────────────────────────────────────── */
+
+    // NONE OF THESE IS CACHED, and none emits. A run's row changes on its own
+    // clock, a log grows while it is read, and the vault's stream is what
+    // says a row moved — the screens reread on it. Putting any of this in the
+    // snapshot would be a second, slower description of the registry that
+    // could disagree with the first.
+    async automations(page) {
+      return /** @type {Automation[]} */ (await ask({ ...env(), kind: "automation.list", page }));
+    },
+    async startRun(page, automation, inputs) {
+      // NO `by`: the workspace's own screen has no box to be stamped from, and
+      // the server records null — the row says the screen started it.
+      return /** @type {RunRow} */ (await ask({ ...env(), kind: "run.start", page, automation, inputs, by: null }));
+    },
+    async runs(filter) {
+      return /** @type {RunRow[]} */ (await ask({ ...env(), kind: "run.list", page: filter?.page, automation: filter?.automation }));
+    },
+    async run(id) {
+      return /** @type {RunRow | null} */ (await askOrNull({ ...env(), kind: "run.get", run: id }));
+    },
+    async readRun(id, stream, from, max) {
+      return /** @type {RunRead} */ (await ask({ ...env(), kind: "run.read", run: id, stream, from, max }));
+    },
+    async killRun(id) {
+      // THE WORKSPACE'S OWN SCREEN, and the row says so.
+      return /** @type {RunRow} */ (await ask({ ...env(), kind: "run.kill", run: id, by: "screen" }));
+    },
+    async liveRuns() {
+      return /** @type {number} */ (await ask({ ...env(), kind: "run.live" }));
+    },
+    async pageFiles(page) {
+      return /** @type {VaultFile[]} */ (await ask({ ...env(), kind: "page.files", page }));
+    },
+    async readPageFile(page, file) {
+      return /** @type {string | null} */ (await ask({ ...env(), kind: "page.readFile", page, file }));
+    },
+    async manifest(page, automation) {
+      return /** @type {AutomationManifest} */ (await ask({ ...env(), kind: "automation.get", page, automation }));
+    },
+    async setManifest(page, automation, manifest, quiet) {
+      await ask({ ...env(), kind: "automation.set", page, automation, manifest, quiet: quiet === true });
+    },
+    async templates() {
+      return /** @type {Template[]} */ (await ask({ ...env(), kind: "automation.templates" }));
+    },
+    async createAutomation(page, name, template) {
+      return /** @type {Automation} */ (await ask({ ...env(), kind: "automation.create", page, name, template }));
+    },
+    async envNames() {
+      return /** @type {string[]} */ (await ask({ ...env(), kind: "env.names" }));
+    },
+    async vaultFiles() {
+      return /** @type {VaultFile[]} */ (await ask({ ...env(), kind: "vault.files" }));
+    },
+    async readVaultFile(file) {
+      return /** @type {string | null} */ (await ask({ ...env(), kind: "vault.readFile", file }));
+    },
+    async writeVaultFile(file, text, quiet) {
+      await ask({ ...env(), kind: "vault.writeFile", file, text, quiet: quiet === true });
+    },
+    async commitVault(message) {
+      await ask({ ...env(), kind: "vault.commit", message });
+    },
 
     async readDesign() {
       return /** @type {Page} */ (await ask({ ...env(), kind: "design.read" }));

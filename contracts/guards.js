@@ -101,6 +101,12 @@ const HOST_KINDS = new Set([
   // The other four `vault.*` kinds each name a folder that is not this one and
   // stay in the outer ring. Same three-place rule as every line above it.
   "vault.info",
+  // AUTOMATIONS AND RUNS — the eighth contracts edit, 2026-09-17. A page may
+  // list every automation, start one, list and read every run and end one.
+  // The ring is not the wall: the row's `page` is where a view permission will
+  // filter when the sync engine has one, and nothing filters today. Same
+  // three-place rule: HostRequest, the bridge case, and this line.
+  "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -182,6 +188,31 @@ function wellFormed(v, allowed) {
     case "doc.get":
     case "page.embed":
       return typeof v.page === "string" && v.page !== "";
+    case "automation.list":
+      return v.page === undefined || (typeof v.page === "string" && v.page !== "");
+    case "run.start":
+      // The inputs are scalars by name — a form's values — and `by` is the
+      // bridge's to write, so a box sending one is not refused: it is simply
+      // overwritten with the truth.
+      return typeof v.page === "string" && v.page !== "" &&
+        typeof v.automation === "string" && v.automation !== "" &&
+        (v.inputs === undefined || isRowInput(v.inputs)) &&
+        (v.by === undefined || v.by === null || typeof v.by === "string");
+    case "run.list":
+      return (v.page === undefined || (typeof v.page === "string" && v.page !== "")) &&
+        (v.automation === undefined || (typeof v.automation === "string" && v.automation !== ""));
+    case "run.get":
+      return typeof v.run === "string" && v.run !== "";
+    case "run.kill":
+      // `by` is the workspace's own screens' word; a box may say it and the
+      // bridge drops it, the way it overwrites `by` on `run.start`.
+      return typeof v.run === "string" && v.run !== "" &&
+        (v.by === undefined || v.by === "page" || v.by === "screen");
+    case "run.read":
+      return typeof v.run === "string" && v.run !== "" &&
+        (v.stream === "stdout" || v.stream === "stderr") &&
+        (v.from === undefined || (typeof v.from === "number" && Number.isInteger(v.from) && v.from >= 0)) &&
+        (v.max === undefined || (typeof v.max === "number" && Number.isInteger(v.max) && v.max > 0));
     case "table.get":
     case "table.schema":
       return typeof v.name === "string" && v.name !== "";

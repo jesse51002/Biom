@@ -369,10 +369,19 @@ test("a workspace made by an older build gains what it lacks and keeps what it h
       expect([gained, existsSync(join(at, gained))]).toEqual([gained, true]);
     }
     expect(existsSync(join(at, "plugins"))).toBe(false);
-    // AND THE PAGE IS BYTE FOR BYTE WHAT IT WAS. Every write the seeder makes is
-    // additive file by file: an old workspace gains a skill or a plugin on the
-    // next start, and anything edited stays edited.
-    expect(readFileSync(rootDoc, "utf8")).toBe(asWritten);
+    // AND THE PAGE IS WHAT IT WAS, PLUS ITS IDENTITY. Every write the seeder
+    // makes is additive file by file: an old workspace gains a skill or a
+    // plugin on the next start, and anything edited stays edited. The ONE line
+    // a mount writes into a page is `uid:` under `name:`, once, for a page that
+    // has none — a page made before identities existed gains one the first
+    // time this build opens the folder, and nothing else in the file moves.
+    const after = readFileSync(rootDoc, "utf8");
+    expect(after).not.toBe(asWritten);
+    const lines = after.split("\n");
+    const uidAt = lines.findIndex((l) => l.startsWith("uid: "));
+    expect(uidAt).toBe(1);
+    expect(lines[uidAt]).toMatch(/^uid: [a-z0-9]{16}$/);
+    expect([...lines.slice(0, uidAt), ...lines.slice(uidAt + 1)].join("\n")).toBe(asWritten);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

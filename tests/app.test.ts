@@ -270,7 +270,7 @@ test("the preload exposes one object with four keys, and nothing else crosses", 
   expect([...surface.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]))
     .toEqual(["chooseFolder", "logo", "capturePage", "windowControls"]);
   expect([...surface.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]))
-    .toEqual(["minimize", "toggleMaximize", "toggleFullScreen", "close", "state", "onChange", "lights", "inset"]);
+    .toEqual(["minimize", "toggleMaximize", "toggleFullScreen", "close", "state", "onChange", "onClosing", "lights", "inset"]);
 
   // NOTHING ELSE IS REQUIRED. No node, no `fs`, no `shell`, and `ipcRenderer` is
   // used rather than handed through — a bare `ipcRenderer` on the world is every
@@ -290,6 +290,7 @@ test("the preload exposes one object with four keys, and nothing else crosses", 
   const channels = [
     "biom:choose-folder", "biom:logo", "biom:window-minimize", "biom:window-maximize",
     "biom:window-fullscreen", "biom:window-close", "biom:window-state", "biom:window-changed",
+    "biom:window-closing",
     "biom:capture-page",
   ];
   for (const channel of channels) {
@@ -304,6 +305,13 @@ test("the preload exposes one object with four keys, and nothing else crosses", 
   }
   expect(main).not.toContain("ipcMain.handle(CHANGED");
   expect(main).toContain("webContents.send(CHANGED");
+  // THE SECOND PUSH: the close held over a live run. A send, never a handle,
+  // and the window's own close event is where the hold lives — so the bar's
+  // button, Alt+F4 and a window manager's close all run through it.
+  expect(main).not.toContain("ipcMain.handle(CLOSING");
+  expect(main).toContain("webContents.send(CLOSING");
+  expect(main).toContain('win.on("close"');
+  expect(main).toContain('kind: "run.live"');
   // And the window actually loads the preload. One that ships and is not named
   // is a built application with no chooser and no controls at all.
   expect(main).toContain("preload: PRELOAD");

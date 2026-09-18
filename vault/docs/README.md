@@ -39,6 +39,7 @@ SQLite, holding the rows of every table, owned by the server. See
 | [`tables.md`](./tables.md) | **Where does data live?** What a table is, every column type, reading and writing, and what only the app can do |
 | [`styling.md`](./styling.md) | **How is any of it sized and coloured?** The palette tokens, the three type roles, and `markdown.yaml` |
 | [`changes.md`](./changes.md) | **When does a change appear?** Automatic refresh, the Reload button, whose version wins, and the markdown mirror |
+| [`automations.md`](./automations.md) | **How do I run something from here?** An automation as a folder under a page, the manifest, the three `INSTRUCTIONS.md` files, where a run lives and what it leaves, the two screens |
 
 Read `pages.md` and `sections.md` in that order and you can find and change
 anything on a page. The rest answer questions as they come up.

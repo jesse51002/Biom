@@ -114,7 +114,7 @@
 // goes looking for.
 
 import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec } from "../../contracts/types.ts";
-import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
+import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
@@ -319,6 +319,22 @@ const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? 
 export function pageFile(data: unknown): string | null {
   if (typeof data !== "string") return null;
   const parts = data.split("/");
+  // AN AUTOMATION'S FILES, under `automations/<folder>/`: the manifest, the
+  // kickoff, the instructions, and anything under `skills/` or `code/`. The
+  // page's Files screen writes them through `page.writeFile`, and `runs.ts`
+  // reads them with the same grammar spelled as `pageFileOk` — two spellings
+  // because the two modules are siblings, held equal by a test.
+  if (parts[0] === AUTOMATIONS && parts.length >= 3) {
+    const folder = parts[1] ?? "";
+    if (!AUTOMATION_FOLDER.test(folder)) return null;
+    const rest = parts.slice(2);
+    if (!rest.every((p) => FILE.test(p) && !p.includes(".."))) return null;
+    const head = rest[0] ?? "";
+    const ok = rest.length === 1
+      ? head === "automation.yaml" || head === "kickoff.md" || head === "INSTRUCTIONS.md"
+      : (head === "skills" || head === "code");
+    return ok ? data : null;
+  }
   const name =
     parts.length === 2 && parts[0] === ASSETS ? parts[1]
     : parts.length === 1 ? parts[0]
@@ -326,6 +342,12 @@ export function pageFile(data: unknown): string | null {
   if (name === undefined || !FILE.test(name) || name.includes("..")) return null;
   return parts.length === 2 ? `${ASSETS}/${name}` : name;
 }
+
+/** Where a page's automations live, and what one is called. Spelled here and
+ *  in `runs.ts`, which owns them; this file only has to let their files be
+ *  written. */
+const AUTOMATIONS = "automations";
+const AUTOMATION_FOLDER = /^[a-z][a-z0-9-]*$/;
 
 /** Turn a page name into the directory segment a human would have typed. */
 function slug(name: string): string {
@@ -534,8 +556,10 @@ export function docOf(value: unknown, fallbackName: string): PageDoc {
       input[key] = (bag as Record<string, unknown>)[key];
     }
   }
+  const uid = str(raw.uid);
   return {
     name: str(raw.name) ?? fallbackName,
+    ...(uid !== null && UID.test(uid) ? { uid } : {}),
     plugin: plugin,
     variables: varsOf(raw.variables),
     contents: plugin === DOC_PLUGIN ? contents : [],
@@ -684,9 +708,11 @@ export type TableList = () => readonly { name: TableName; rows: number; parent: 
  *  NOTHING IN A PROMPT MAY PROMISE MORE THAN THE BUILD DOES. The agent reads and
  *  writes files in the folder and the app draws what it finds and redraws when
  *  it changes; there is no model inside the app and no scheduler inside it
- *  either — which is why every recurring one says *nothing here can start you*
- *  and sends the schedule to the agent's own tooling rather than describing a
- *  feature this program does not have.
+ *  either. The app CAN start an automation — a folder under a page, from the
+ *  page's Automations screen or the rail's — so every recurring ask says to
+ *  make it one, and then says *there is no clock in this workspace* and sends
+ *  the schedule to the agent's own tooling rather than describing a feature
+ *  this program does not have.
  *
  *  THE FOLDER IS NOT IN HERE. `biom.vault()` answers it where the page is
  *  drawn, which is what makes it survive somebody moving the workspace. A path
@@ -708,13 +734,13 @@ const ROOT_WORDS: Record<string, string | string[]> = {
   asks: [
     "convert my Obsidian vault into a workspace here\n\nRead the Obsidian vault at the path I give you and make a page here for every note in it, under a page called Notes, keeping the folders as the nesting. Keep the links between notes as links between the new pages, and keep each note's tags and frontmatter as that page's variables. Where a note is really a table or a list of things, draw it as one rather than leaving it as text.\n",
     "be my second brain: everything I read, note and decide, linked and asked back\n\nMake a page called Second Brain, and file everything I drop in this folder or paste to you under it as its own page — what I read, what I noted, what I decided. Link each new page to the ones it touches, and fold anything I tell you in passing into the page it belongs to. Draw the whole thing on Second Brain as a graph of pages joined by their links. When I ask you something, answer out of those pages and name the ones you read.\n",
-    "every morning pull the feeds and repos I follow and draw what changed\n\nMake a page called Changed Overnight. Read the feed URLs and the repositories out of the file I keep in this folder, fetch each one, and put the newest items at the top of that page, one row each, with what moved since yesterday beside it. Draw the day's counts as a small figure above the rows. Every morning at 7, run it again with whatever scheduling you have of your own — nothing in this workspace can start you.\n",
-    "daily digest of my inbox, my calendar and my notes, on one page\n\nEvery morning at 7, with your own scheduling — nothing here can start you — read what you can reach of my mail and today's calendar, and whatever I wrote in this folder yesterday. Write it up as a new page under a page called Digest, named for that day's date, with three or four headings for what the day is about and a line under each saying what needs me. Leave the earlier days alone: a new page each morning, never a rewrite of the last.\n",
-    "scrape the listings I watch and keep a table of every new one\n\nMake a page called Listings with a table behind it. Fetch the listing URLs I name, take the title, the price, the place and the link out of each one, and add a row for anything that is not in the table already. Draw the table on the page, newest first, with today's arrivals picked out. Every morning at 7, run it again with your own scheduling — nothing here can start you.\n",
+    "every morning pull the feeds and repos I follow and draw what changed\n\nMake a page called Changed Overnight. Read the feed URLs and the repositories out of the file I keep in this folder, fetch each one, and put the newest items at the top of that page, one row each, with what moved since yesterday beside it. Draw the day's counts as a small figure above the rows. Make it an automation on that page, so it can be started from the page's Automations screen; running it every morning at 7 is still your own scheduling — there is no clock in this workspace.\n",
+    "daily digest of my inbox, my calendar and my notes, on one page\n\nMake it an automation on that page, so it can be started from here, and run it every morning at 7 with your own scheduling — there is no clock in this workspace. Read what you can reach of my mail and today's calendar, and whatever I wrote in this folder yesterday. Write it up as a new page under a page called Digest, named for that day's date, with three or four headings for what the day is about and a line under each saying what needs me. Leave the earlier days alone: a new page each morning, never a rewrite of the last.\n",
+    "scrape the listings I watch and keep a table of every new one\n\nMake a page called Listings with a table behind it. Fetch the listing URLs I name, take the title, the price, the place and the link out of each one, and add a row for anything that is not in the table already. Draw the table on the page, newest first, with today's arrivals picked out. Make it an automation on that page, so it can be started from the page's Automations screen; running it every morning at 7 is still your own scheduling — there is no clock in this workspace.\n",
     "dashboard my week: commits, PRs, hours, spend, with the numbers moving\n\nMake a page called This Week. Take the commits and the merged pull requests out of the git log of the repository I name, and the hours and the spend out of the files I keep in this folder. Print those across the top of the page and draw one bar per day underneath, with the busiest day picked out. Rewrite the page in place each time I ask.\n",
     "draw a live architecture diagram of my project, redrawn as the code changes\n\nMake a page called Architecture. Read the source tree of the repository I name and work out which module depends on which, then draw it as a diagram — a box per module, an arrow from each one to what it imports — with the module everything leans on in the middle. Redraw it from the tree whenever I tell you the code has moved, rather than editing the boxes by hand.\n",
     "make me a board of my side projects, with what each is blocked on\n\nMake a page called Side Projects and put them on it as a board. Take one card per project out of the notes I keep in this folder, carrying the project's name and the one thing it is blocked on, and give the board a column for each state a project can be in. Put the number of cards at the top of each column.\n",
-    "every night read what I saved today and file it where it belongs\n\nEvery night at 11, with your own scheduling — nothing in this workspace can start you — read whatever I dropped into this folder that day and file each thing as a page under the page it belongs to, making that page where there is not one. Put a line on a page called Filed Tonight for each one: the time, what it was, and where it went. Leave anything you cannot place where it is and say so on that page.\n",
+    "every night read what I saved today and file it where it belongs\n\nMake it an automation on the page it files into, so it can be started from here, and run it every night at 11 with your own scheduling — there is no clock in this workspace. Read whatever I dropped into this folder that day and file each thing as a page under the page it belongs to, making that page where there is not one. Put a line on a page called Filed Tonight for each one: the time, what it was, and where it went. Leave anything you cannot place where it is and say so on that page.\n",
     "put two versions of a page side by side\n\nMake a page called Side By Side that draws two of my pages in two panes, each one as it actually is rather than as a list of differences. Let me name which two. Pick out the lines that differ, and put the same chart under both so the two can be read against one another.\n",
   ],
 };
@@ -886,7 +912,22 @@ export function makePages(
     });
   };
 
-  const refOf = (id: PageId, doc: PageDoc): PageRef => ({ id, name: doc.name });
+  const refOf = (id: PageId, doc: PageDoc): PageRef =>
+    typeof doc.uid === "string" ? { id, name: doc.name, uid: doc.uid } : { id, name: doc.name };
+
+  /** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
+   *  platform's random source — long enough that two pages never share one and
+   *  short enough to read in a file. It is minted here and in no second place:
+   *  `create` writes one into a new page and `identify` into every page that
+   *  has none. */
+  const mintUid = (): string => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    let out = "";
+    for (const b of bytes) out += alphabet[b % alphabet.length];
+    return out;
+  };
 
   /** What a page that cannot be read looks like in the tree. Its name is its own
    *  segment — the same thing a page with no `name:` already shows — and it is
@@ -1132,6 +1173,7 @@ export function makePages(
       return {
         id,
         name: doc.name,
+        ...(typeof doc.uid === "string" ? { uid: doc.uid } : {}),
         markdown: await scaleFor(dir),
         variables: doc.variables,
         sections,
@@ -1484,15 +1526,40 @@ export function makePages(
       return next;
     },
 
-    async writeFile(id: PageId, file: string, text: string): Promise<void> {
+    async writeFile(id: PageId, file: string, text: string, quiet = false): Promise<void> {
       const dir = dirOf(id);
       const rel = pageFile(file);
       if (rel === null) throw bad("bad_request", "not a file this page can hold");
       if ((await files.read(`${dir}/${DOC}`)) === null) throw bad("not_found", "no such page");
       // Undo exists because the vault is a git repo and the server commits ahead
-      // of the write, not because a snapshot mechanism was built.
-      await files.commit(`Before a write to ${rel} on a page`);
+      // of the write, not because a snapshot mechanism was built. `quiet` is
+      // the editor's keystroke path — a save every pause in typing — which
+      // commits once when it opens the file rather than on every pause, the
+      // way a slot losing focus does not commit either.
+      if (!quiet) await files.commit(`Before a write to ${rel} on a page`);
       await files.write(`${dir}/${rel}`, text);
+    },
+
+    /** EVERY PAGE THAT HAS NO IDENTITY GETS ONE, on mount, file by file. A page
+     *  that has one is never touched, and a page whose document will not parse
+     *  is left alone rather than rewritten from nothing — the fallback repairs
+     *  it and the next mount identifies it. One commit ahead of the sweep, not
+     *  one per page: the vault's history should say *identified* once. */
+    async identify(): Promise<number> {
+      const refs = await listPages();
+      // Read first, commit second: a page that will not parse is listed with no
+      // uid and is not a page to write, so it must not be what earns a commit.
+      const missing: { id: PageId; doc: PageDoc }[] = [];
+      for (const ref of refs) {
+        if (typeof ref.uid === "string") continue;
+        const found = await readDoc(ref.id);
+        if (found === null || !("doc" in found)) continue;
+        missing.push({ id: ref.id, doc: found.doc });
+      }
+      if (missing.length === 0) return 0;
+      await files.commit("Before every page was given an identity");
+      for (const { id, doc } of missing) await writeDoc(id, { ...doc, uid: mintUid() });
+      return missing.length;
     },
 
     async create(init: PageInit): Promise<PageRef> {
@@ -1532,8 +1599,12 @@ export function makePages(
       // there is no `.md` file beside it. One section, no `data`, so it takes the
       // shipped default and its one slot: the least a page can be that is still a
       // page, and the thing an agent edits first.
+      // BORN WITH AN IDENTITY, so a run it starts today still names it after it
+      // has been moved twice.
+      const uid = mintUid();
       await writeDoc(id, {
         name,
+        uid,
         // A NEW PAGE IS A DOCUMENT. It is the one kind somebody can start typing
         // into with nothing else in place; an html page needs a file written for
         // it, which is an agent's job rather than a dialog's.
@@ -1552,7 +1623,7 @@ export function makePages(
       const drawing = await files.read(CHILD_DEFAULT);
       if (drawing !== null) await files.write(`${dirOf(id)}/${CHILD_DRAW}`, drawing);
 
-      return { id, name };
+      return { id, name, uid };
     },
 
     async remove(id: PageId): Promise<void> {

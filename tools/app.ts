@@ -111,7 +111,11 @@ const CARRIED_SUFFIX = ".bin";
  *  serves an application that cannot boot. `vault/` and `skill/` are in it
  *  because the seed and the checker have to reach somebody who never cloned
  *  anything. `presets/` is in neither list, because no such directory exists. */
-const CARRIED = ["client", "guest", "vendor", "vault", "skill", "contracts"];
+const CARRIED = ["client", "guest", "vendor", "vault", "skill", "contracts",
+  // The automation templates New copies — the framework's own, beside its
+  // code and never in the vault, so a binary has to carry them the way it
+  // carries the seed. `TEMPLATES_DIR` in `server/main.ts` is the same spelling.
+  "server/runs/templates"];
 
 /** Not a file the program serves, in any of those directories. */
 const SKIP = new Set([".git", "node_modules", ".DS_Store"]);

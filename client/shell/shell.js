@@ -79,6 +79,11 @@ import { makeDock } from "./dock.js";
  * @property {() => HTMLElement} vault
  * @property {() => HTMLElement} design
  * @property {() => HTMLElement} map
+ * @property {() => HTMLElement} runs THE OVERVIEW: running now, finished, Start.
+ * @property {{ vault: () => HTMLElement, page: (page: Page) => HTMLElement }} instructions
+ *   the workspace's INSTRUCTIONS.md with its skills, and a page's own.
+ * @property {(page: Page) => HTMLElement} automation a page's automations:
+ *   manifest, files, runs.
  */
 
 /**
@@ -125,7 +130,7 @@ import { makeDock } from "./dock.js";
  *  different halves of this file. A test that hand-copied either would be a
  *  third list.
  *  @type {ReadonlySet<string>} */
-export const VIEWS = new Set(["page", "table", "vault", "design", "map"]);
+export const VIEWS = new Set(["page", "table", "vault", "design", "map", "runs", "instructions"]);
 
 /** THE WINDOW'S OWN BAR, AND WHETHER THERE IS A WINDOW TO PUT ONE ON.
  *
@@ -150,6 +155,14 @@ function windowBridge() {
   const bridge = on && on.biomShell;
   return bridge && bridge.windowControls ? bridge : null;
 }
+
+/** What the bar says when a close is held over a live run. Spelled once, so
+ *  the end-to-end suite can find the strip by its words. */
+export const CLOSE_WORDS = Object.freeze({
+  alive: (/** @type {number} */ n) => n === 1 ? "1 automation is running. Closing ends it." : `${n} automations are running. Closing ends them.`,
+  yes: "End them and close",
+  no: "Keep them running",
+});
 
 /**
  * @param {ShellDeps} deps
@@ -236,6 +249,9 @@ export function makeShell(deps) {
   let again = false;
   /** Set by boot when the workspace could not be read at all. @type {string} */
   let troubled = "";
+  /** HOW MANY RUNS THE WINDOW WAS ASKED TO CLOSE OVER, or 0 when it was not.
+   *  Set by the shell's push, cleared by either answer. @type {number} */
+  let closing = 0;
   /** One outstanding read, so a repaint mid-fetch does not fire a second. */
   let awaiting = "";
   /** Which folder the workspace is, for the rail's foot. `WorkspaceSnapshot` is
@@ -293,7 +309,7 @@ export function makeShell(deps) {
         // `pages` is here because a page draws its children, and a child renamed
         // or removed elsewhere changes what this page says without touching the
         // page object itself.
-        return ["page", r.id, w.page, u.inserting, w.pages, missing.has(r.id)];
+        return ["page", r.id, u.pageView, w.page, u.inserting, w.pages, missing.has(r.id)];
       case "table":
         return ["table", r.id, w.table, w.pages];
       case "design":
@@ -309,6 +325,13 @@ export function makeShell(deps) {
         // on every refresh the box is sent — so the body is built once per entry
         // into the route and nothing in the snapshot has to be compared.
         return ["map"];
+      case "runs":
+        // The overview reads the registry itself and rereads on the stream and
+        // on its own clock, so it is built once per entry into the route.
+        return ["runs"];
+      case "instructions":
+        // The workspace's instructions and skills, read on entry and on Reload.
+        return ["instructions", reloads];
       default:
         return ["none"];
     }
@@ -351,7 +374,7 @@ export function makeShell(deps) {
           : h("code", "make dev"));
     }
 
-    const { route } = ui.get();
+    const { route, pageView } = ui.get();
     const w = ws.get();
 
     switch (route.view) {
@@ -360,7 +383,13 @@ export function makeShell(deps) {
         if (missing.has(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
         const page = w.page;
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
-        return views.page(page);
+        // THE THREE SCREENS OF A PAGE, in every build: the box, its
+        // INSTRUCTIONS.md in one editor, and its automations.
+        switch (pageView) {
+          case "instructions": return views.instructions.page(page);
+          case "automation": return views.automation(page);
+          default: return views.page(page);
+        }
       }
       case "table": {
         if (w.table && w.table.schema.name === route.id) return views.table(w.table);
@@ -373,6 +402,12 @@ export function makeShell(deps) {
       case "map":
         // The whole workspace as a sky, drawn by the shipped map plugin.
         return views.map();
+      case "runs":
+        // What is running across the workspace, and Start.
+        return views.runs();
+      case "instructions":
+        // The vault's INSTRUCTIONS.md and its own skills, one tree, one editor.
+        return views.instructions.vault();
       default:
         return h("p.hold", "Nothing open.");
     }
@@ -401,10 +436,11 @@ export function makeShell(deps) {
    *  paragraph — `guest/sections/default.html` — which is what lets the section
    *  beside it be full-bleed. */
   function faceOf() {
-    const { route } = ui.get();
+    const { route, pageView } = ui.get();
     if (route.view === "vault") return "vault";
     if (troubled) return "none";
     if (route.view !== "page") return route.view;
+    if (pageView !== "page") return pageView;
     // Only once the page is actually on screen. Before it is, the canvas is
     // holding a sentence — "Opening…", or the one about a page that is not there
     // — and a sentence wants the padding a box does not.
@@ -467,18 +503,32 @@ export function makeShell(deps) {
       : ctl("full", "Full screen", () => void wc.toggleFullScreen()));
     if (!wc.lights) acts.push(ctl("close", "Close", () => void wc.close()));
 
+    // THE QUESTION, in the bar itself, where the close was pressed: how many
+    // runs are alive, that closing ends them, and the two answers. Yes closes
+    // for real; no puts the bar back and keeps every run.
+    const ask = closing > 0 ? [h("span.closeask", { role: "alertdialog", "aria-live": "assertive" },
+      h("span.closeword", CLOSE_WORDS.alive(closing)),
+      h("button.closeyes", { type: "button", onclick: () => { closing = 0; paint(); void wc.close(true); } }, CLOSE_WORDS.yes),
+      h("button.closeno", { type: "button", onclick: () => { closing = 0; paint(); } }, CLOSE_WORDS.no))] : [];
     return [
       h("span.titleid", { style: { "--title-inset": String(wc.inset || 0) + "px" } },
         mark ? h("img.titlemark", { src: mark, alt: "" }) : null,
         h("span.titlename", name)),
+      ...ask,
       h("span.titleacts", ...acts),
     ];
   }
 
   /* ── the rail ──────────────────────────────────────────────────────────── */
 
+  /** A pressed-or-not control on the page bar: the two screens are drawn with it.
+   *  @param {string} text @param {() => void} onclick @param {boolean} pressed */
+  function tool(text, onclick, pressed = false) {
+    return h("button.tool", { type: "button", onclick, "aria-pressed": String(pressed) }, text);
+  }
+
   function railParts() {
-    const { route } = ui.get();
+    const { route, pageView } = ui.get();
     const w = ws.get();
     const page = openPage();
 
@@ -535,13 +585,27 @@ export function makeShell(deps) {
     // the dock now holds; Config was made for ports the framework does not have.
     // A version list, when one is built, is its own spec.
 
+    if (page) {
+      // THE PAGE'S TWO SCREENS, as two controls where the three dots were:
+      // Instructions, the page's INSTRUCTIONS.md in one editor, and
+      // Automations, its manifests, files and runs. Each takes the canvas when
+      // pressed and gives it back when pressed again. They are in every build,
+      // and they go BEFORE the terminal's toggle: that one is the rightmost
+      // action on every page.
+      /** @param {"instructions" | "automation"} which @param {string} text */
+      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: pageView === which ? "page" : which }), pageView === which);
+      tools.push(screenTool("instructions", "Instructions"));
+      tools.push(screenTool("automation", "Automations"));
+    }
+
     // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND LAST. It is
     // where a person runs their own agent beside the page, and it is the one
     // action on the bar that does something rather than shows something, so it
     // takes `prime`, the bar's fill in the palette's primary accent. It sits
-    // after Reload so it is in the same place on every page. It names how many
-    // sessions are still running while the dock is put away, because Hide
-    // stops nothing and the person is entitled to see that it did not.
+    // after every other action so it is in the same place on every page. It
+    // names how many sessions are still running while the dock is put away,
+    // because Hide stops nothing and the person is entitled to see that it
+    // did not.
     if (terminal !== null) {
       const st = terminal.store.get();
       const running = terminal.store.live();
@@ -821,6 +885,14 @@ export function makeShell(deps) {
           // Each row's glyph is drawn from `data-kind` in page.css: a brush, a
           // folded map, a doorway.
           link("Design", route.view === "design", () => ui.go("design", ""), "design"),
+          // THE WORKSPACE'S OWN INSTRUCTIONS: the vault's INSTRUCTIONS.md and
+          // its own skills, in one tree with one editor. The file every agent
+          // opened anywhere in the folder reads first, and the person's.
+          link("Instructions", route.view === "instructions", () => ui.go("instructions", ""), "instructions"),
+          // AUTOMATIONS: what is running now across the workspace, what has
+          // finished, and Start. A page's own screen is where one is made;
+          // this is where all of them are watched.
+          link("Automations", route.view === "runs", () => ui.go("runs", ""), "runs"),
           // The map: every page as a light, every prose link as a line between
           // two, drawn by the shipped `mindmap` plugin over the whole workspace.
           // IN EVERY BUILD. It was withheld from the built application because
@@ -1228,6 +1300,18 @@ export function makeShell(deps) {
           fullScreen = now.fullScreen === true;
           paint();
         });
+        // THE CLOSE HELD OVER A LIVE RUN. The main process asked the server,
+        // found something alive, held the window and said how many; the
+        // question is drawn here, in the application's own chrome, and yes is
+        // `close(true)` — which ends every run with the server — while no is
+        // the strip going away and nothing else. A bridge built before this
+        // existed has no `onClosing` and the window simply closes.
+        if (typeof wc.onClosing === "function") {
+          wc.onClosing((/** @type {number} */ alive) => {
+            closing = typeof alive === "number" && alive > 0 ? alive : 1;
+            paint();
+          });
+        }
         if (typeof bridge.logo === "function") {
           bridge.logo().then((/** @type {string} */ url) => {
             if (typeof url !== "string" || !url) return;

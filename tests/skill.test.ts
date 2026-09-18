@@ -190,7 +190,10 @@ const prose = (
  *  to carry a reader of its own rather than import the server's. */
 async function documents(dir: string, out: string[] = []): Promise<string[]> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name.startsWith(".")) continue;
+    // `dist/` is generated and gitignored, and it is where `make app` stages a
+    // build and where a try-out vault may sit; neither is a document the
+    // framework ships.
+    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === "dist" || entry.name.startsWith(".")) continue;
     const at = join(dir, entry.name);
     if (entry.isDirectory()) await documents(at, out);
     else if (/\.(?:yaml|yml)$/.test(entry.name)) out.push(at);

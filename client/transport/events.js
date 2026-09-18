@@ -26,6 +26,9 @@ import { EVENTS_ROUTE } from "../../contracts/wire.js";
  * @typedef {object} Events
  * @property {(hear: () => void) => () => void} on Subscribe. Answers the
  *   unsubscribe, which also closes the stream when it was the last one.
+ * @property {(hear: () => void) => () => void} onRun The stream's second
+ *   named event: a run started or ended under this folder. A reason to reread
+ *   `run.list`, never to redraw a page.
  * @property {() => void} close Let the stream go. The tab going away does this
  *   for us; a test does not have one.
  */
@@ -39,6 +42,10 @@ import { EVENTS_ROUTE } from "../../contracts/wire.js";
 export function makeEvents(baseUrl) {
   /** @type {Set<() => void>} */
   const hears = new Set();
+  /** A run started or ended: the stream's second named event, which is a
+   *  reason to reread `run.list` and never to redraw a page.
+   *  @type {Set<() => void>} */
+  const runHears = new Set();
   /** @type {EventSource | null} */
   let source = null;
   /** How many times the connection has opened. The FIRST one is this tab
@@ -73,6 +80,15 @@ export function makeEvents(baseUrl) {
     // the connection alive and those are not events at all; a named event is the
     // only thing that means a file moved.
     source.addEventListener("change", () => tell());
+    source.addEventListener("run", () => {
+      for (const hear of [...runHears]) {
+        try {
+          hear();
+        } catch (e) {
+          console.warn("a run listener threw", e);
+        }
+      }
+    });
     // No handler for `error`. `EventSource` reconnects on its own, and a console
     // line on every server restart is noise in the one signal worth watching.
   }
@@ -83,7 +99,18 @@ export function makeEvents(baseUrl) {
       open();
       return () => {
         hears.delete(hear);
-        if (hears.size === 0) this.close();
+        if (hears.size === 0 && runHears.size === 0) this.close();
+      };
+    },
+    /** A run started or ended. Same stream, its own event: the screens that
+     *  draw runs reread on it, and nothing else moves.
+     *  @param {() => void} hear @returns {() => void} */
+    onRun(hear) {
+      runHears.add(hear);
+      open();
+      return () => {
+        runHears.delete(hear);
+        if (hears.size === 0 && runHears.size === 0) this.close();
       };
     },
     close() {

@@ -36,11 +36,15 @@ import { handle, route } from "../server/api/routes.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
 import { rewriteOwned } from "../server/workspace/framework.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
-import { parse, parseAny, format } from "../server/platform/yaml.ts";
+import { parse, parseAny, format, formatAny } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
 import { makeDocs } from "../server/domain/docs.ts";
 import { makeMirror } from "../server/domain/mirror.ts";
-import { makePages } from "../server/domain/pages.ts";
+import { makePages, pageDir } from "../server/domain/pages.ts";
+import { makeRuns } from "../server/domain/runs.ts";
+import { makeRunFs } from "../server/platform/rundir.ts";
+import { makeDb } from "../server/platform/db.ts";
+import type { ProcessRunner, RunRow } from "../contracts/types.ts";
 import { PROTOCOL } from "../contracts/wire.js";
 
 import type { TableTree } from "../server/domain/tables.ts";
@@ -223,12 +227,45 @@ async function workspace() {
     await presets.seedIfEmpty();
     await rewriteOwned(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
   };
+  // AUTOMATIONS AND RUNS, over a registry in memory and a runner that starts
+  // nothing: what this layer is tested for is that every kind reaches the
+  // module and every refusal comes back as a code and a sentence. The runner
+  // reports one pid alive until the test says otherwise.
+  const alive = new Set<number>([4242]);
+  const runner: ProcessRunner = {
+    start: () => ({ pid: 4242, pgid: 4242, born: "b1", done: new Promise(() => {}) }),
+    end: async (pgid) => { alive.delete(pgid); },
+    killNow: (pgid) => { alive.delete(pgid); },
+    alive: (pid) => alive.has(pid),
+  };
+  const changes: string[] = [];
+  const runs = makeRuns({
+    db: makeDb(":memory:"),
+    files,
+    fs: makeRunFs(vault),
+    yaml: { parseAny, formatAny },
+    process: runner,
+    dirOf: pageDir,
+    refOf: async (id) => (await pages.list()).find((p) => p.id === id) ?? null,
+    env: () => ({ PATH: "/usr/bin", HOME: "/home/x", KEY_ONE: "1", KEY_TWO: "2" }),
+    templates: makeFiles(seedRoot),
+    api: () => ({ url: "http://127.0.0.1:4400/v/x/api/call", token: null }),
+    seededSkill: async (name) => name === "seeded",
+    onChange: (what) => { changes.push(what); },
+  });
 
   return {
     root,
     vault,
     tables,
-    deps: { pages, design, docs, tables, presets, theme, mirror, share: fakeShare(), vault: fakeVault(root, vault) },
+    changes,
+    alive,
+    deps: {
+      pages, design, docs, tables, presets, theme, mirror, runs, share: fakeShare(),
+      vault: fakeVault(root, vault),
+      live: () => runs.live(),
+      envNames: () => ["KEY_ONE", "KEY_TWO", "PATH"],
+    },
     files,
     presets,
     furnish,
@@ -1505,6 +1542,121 @@ test("page.share answers the link in every build, and hands a captured document 
     const built = await handle(req({ kind: "page.share", page: "home", html: "<html></html>" }), { ...w.deps, production: true });
     if (!built.ok) throw new Error(built.error.message);
     expect(built.value).toEqual({ url: "https://shares.example/home.html", key: "home.html", left: [] });
+  } finally {
+    await w.drop();
+  }
+});
+
+/* ── automations and runs ────────────────────────────────────────────── */
+
+test("the automation and run kinds reach the registry, and every refusal is a code and a sentence", async () => {
+  const w = await workspace();
+  try {
+    const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
+    const page = (value(await call({ kind: "page.create", init: { name: "Socials" } })) as { id: string; uid: string });
+    // Nothing yet, and a page with none is an empty list rather than an error.
+    expect(value(await call({ kind: "automation.list" }))).toEqual([]);
+    expect(value(await call({ kind: "automation.list", page: page.id }))).toEqual([]);
+    // The templates the seed root holds — this world's seed has none — and a
+    // template that is not there is refused by name.
+    expect(value(await call({ kind: "automation.templates" }))).toEqual([]);
+    const noTemplate = await call({ kind: "automation.create", page: page.id, name: "Pull", template: "claude" });
+    if (noTemplate.ok) throw new Error("unreachable");
+    expect(noTemplate.error.code).toBe("not_found");
+    expect(noTemplate.error.message).toBe("no such template");
+
+    // A manifest written by hand under the page is listed, read as a structure,
+    // and written back as one.
+    await w.deps.pages.writeFile(page.id, "automations/pull/automation.yaml",
+      "name: Pull\nenv: [KEY_ONE]\ncommand: [sh, -c, \"echo {tag}\"]\ninputs:\n  - { name: tag, type: text, required: true }\n");
+    await w.deps.pages.writeFile(page.id, "automations/pull/kickoff.md", "Do {tag}.\n");
+    const listed = value(await call({ kind: "automation.list" })) as { folder: string; page: string; uid?: string; manifest: { name: string } | null }[];
+    expect(listed.map((a) => [a.folder, a.page, a.uid === page.uid, a.manifest?.name])).toEqual([["pull", page.id, true, "Pull"]]);
+    const manifest = value(await call({ kind: "automation.get", page: page.id, automation: "pull" })) as { env: string[]; description: string };
+    expect(manifest.env).toEqual(["KEY_ONE"]);
+    expect(value(await call({ kind: "automation.set", page: page.id, automation: "pull", manifest: { ...manifest, description: "Pulls." } }))).toBeNull();
+    expect((value(await call({ kind: "automation.get", page: page.id, automation: "pull" })) as { description: string }).description).toBe("Pulls.");
+
+    // The page's files, and one of them.
+    const files = value(await call({ kind: "page.files", page: page.id })) as { path: string }[];
+    expect(files.map((f) => f.path)).toEqual(["INSTRUCTIONS.md", "automations/pull/automation.yaml", "automations/pull/kickoff.md"]);
+    expect(value(await call({ kind: "page.readFile", page: page.id, file: "automations/pull/kickoff.md" }))).toBe("Do {tag}.\n");
+    const walked = await call({ kind: "page.readFile", page: page.id, file: "../content.yaml" });
+    if (walked.ok) throw new Error("unreachable");
+    expect(walked.error.code).toBe("bad_request");
+
+    // The environment's names, and never a value.
+    expect(value(await call({ kind: "env.names" }))).toEqual(["KEY_ONE", "KEY_TWO", "PATH"]);
+
+    // START: a missing required input is refused by name; started, the row is
+    // answered, the change announced, and `by` is whatever the caller said —
+    // the bridge is what overwrites it, and this is the layer under the bridge.
+    const missing = await call({ kind: "run.start", page: page.id, automation: "pull" });
+    if (missing.ok) throw new Error("unreachable");
+    expect(missing.error.code).toBe("bad_request");
+    expect(missing.error.message).toBe("the input tag is required");
+    const row = value(await call({ kind: "run.start", page: page.id, automation: "pull", inputs: { tag: "x" }, by: "p-uid" })) as RunRow;
+    expect(row.status).toBe("running");
+    expect(row.by).toBe("p-uid");
+    expect(row.uid).toBe(page.uid);
+    expect(row.command).toEqual(["sh", "-c", "echo x"]);
+    expect(w.changes).toEqual(["start"]);
+    expect(value(await call({ kind: "run.live" }))).toBe(1);
+    expect((value(await call({ kind: "run.list" })) as RunRow[]).map((r) => r.id)).toEqual([row.id]);
+    expect((value(await call({ kind: "run.list", automation: "other" })) as RunRow[]).length).toBe(0);
+    expect((value(await call({ kind: "run.get", run: row.id })) as RunRow).id).toBe(row.id);
+    const gone = await call({ kind: "run.get", run: "nope" });
+    if (gone.ok) throw new Error("unreachable");
+    expect(gone.error.code).toBe("not_found");
+    // The log, empty because nothing was spawned, still says the run is alive.
+    expect(value(await call({ kind: "run.read", run: row.id, stream: "stdout" }))).toEqual({ text: "", next: 0, ended: false });
+    // KILL off the wire is a page's, and the row says so.
+    const killed = value(await call({ kind: "run.kill", run: row.id })) as RunRow;
+    expect(killed.status).toBe("killed");
+    expect(killed.endedBy).toBe("page");
+    expect(w.changes).toEqual(["start", "end"]);
+    expect(value(await call({ kind: "run.live" }))).toBe(0);
+    expect((value(await call({ kind: "run.read", run: row.id, stream: "stderr" })) as { ended: boolean }).ended).toBe(true);
+  } finally {
+    await w.drop();
+  }
+});
+
+test("a page moved since a run started still lists the run, and the row names the page where it is now", async () => {
+  const w = await workspace();
+  try {
+    const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
+    const a = value(await call({ kind: "page.create", init: { name: "A" } })) as { id: string; uid: string };
+    const b = value(await call({ kind: "page.create", init: { name: "B" } })) as { id: string };
+    await w.deps.pages.writeFile(a.id, "automations/pull/automation.yaml", "name: Pull\ncommand: [x]\n");
+    const row = value(await call({ kind: "run.start", page: a.id, automation: "pull", inputs: {}, by: null })) as RunRow;
+    expect(row.page).toBe(a.id);
+    const moved = value(await call({ kind: "page.move", page: a.id, parent: b.id })) as string;
+    expect(moved).not.toBe(a.id);
+    // Listed under the new id, and named by it.
+    const under = value(await call({ kind: "run.list", page: moved })) as RunRow[];
+    expect(under.map((r) => [r.id, r.page, r.uid])).toEqual([[row.id, moved, a.uid]]);
+    expect((value(await call({ kind: "run.get", run: row.id })) as RunRow).page).toBe(moved);
+    // Not under the old id, which names nothing now.
+    expect((value(await call({ kind: "run.list", page: a.id })) as RunRow[]).length).toBe(0);
+  } finally {
+    await w.drop();
+  }
+});
+
+test("the vault's own instructions and skills are read and written, and nothing else is", async () => {
+  const w = await workspace();
+  try {
+    const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
+    const before = value(await call({ kind: "vault.files" })) as { path: string; seeded: boolean }[];
+    expect(before[0]).toEqual({ path: "INSTRUCTIONS.md", seeded: false });
+    expect(value(await call({ kind: "vault.readFile", file: "INSTRUCTIONS.md" }))).toBeNull();
+    expect(value(await call({ kind: "vault.writeFile", file: "INSTRUCTIONS.md", text: "# Ours\n" }))).toBeNull();
+    expect(value(await call({ kind: "vault.readFile", file: "INSTRUCTIONS.md" }))).toBe("# Ours\n");
+    const no = await call({ kind: "vault.writeFile", file: "AGENTS.md", text: "x" });
+    if (no.ok) throw new Error("unreachable");
+    expect(no.error.code).toBe("bad_request");
+    expect(no.error.message).toBe("not a file this screen writes");
   } finally {
     await w.drop();
   }

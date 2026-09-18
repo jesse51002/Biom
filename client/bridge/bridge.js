@@ -329,7 +329,45 @@ export function makeBridge(ws, transport, ui, vault = "") {
         const input = { id: page.id, name: page.name, plugin: page.plugin, input: page.input };
         return yes(req.id, { page: page.id, html: weaveRuntime(page.html, input, vault) });
       }
+
+      /* ── automations and runs. Pass-throughs, but for one field. ─────── */
+
+      // THE STAMP. A run's row says which page started it, and that fact is
+      // written HERE, over whatever the box sent: the bridge holds the page a
+      // box was mounted on as `ctx.page`, and the page's `uid` is in the tree
+      // the store already holds. So *started by* is a fact the browser
+      // enforces and never a claim a page made — and it is provenance, not a
+      // filter: nothing anywhere reads it to refuse.
+      case "run.start":
+        return forward(req.id, {
+          kind: "run.start",
+          page: req.page,
+          automation: req.automation,
+          inputs: req.inputs ?? {},
+          by: uidOf(ctx.page),
+        });
+      case "automation.list":
+        return forward(req.id, { kind: "automation.list", page: req.page });
+      case "run.list":
+        return forward(req.id, { kind: "run.list", page: req.page, automation: req.automation });
+      case "run.get":
+        return forward(req.id, { kind: "run.get", run: req.run });
+      case "run.read":
+        return forward(req.id, { kind: "run.read", run: req.run, stream: req.stream, from: req.from, max: req.max });
+      // A box's kill is a page's, whatever it said: `by` is dropped here as
+      // it is overwritten on `run.start`.
+      case "run.kill":
+        return forward(req.id, { kind: "run.kill", run: req.run });
     }
+  }
+
+  /** The identity of the page a box is mounted on, read off the tree the store
+   *  holds, or null where the page has none — a page whose document would not
+   *  parse, or one made before this server first opened the folder.
+   *  @param {PageId} id @returns {string | null} */
+  function uidOf(id) {
+    const ref = ws.get().pages.find((p) => p.id === id);
+    return ref && typeof ref.uid === "string" ? ref.uid : null;
   }
 
   /** WHAT A WIKILINK TARGET NAMES, or null.

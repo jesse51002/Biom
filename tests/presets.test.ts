@@ -903,12 +903,14 @@ test("the seeded root draws itself, and asks where the workspace is", async () =
     expect([ask.slice(0, 40), blocks[1].length > 120]).toEqual([ask.slice(0, 40), true]);
   }
 
-  // NOTHING IN A PROMPT MAY PROMISE MORE THAN THE BUILD DOES. There is no
-  // scheduler inside this program, so a prompt that recurs says so and sends
-  // the schedule to the agent's own tooling.
+  // NOTHING IN A PROMPT MAY PROMISE MORE THAN THE BUILD DOES. The program can
+  // START an automation — a folder under a page, from a screen — and has no
+  // scheduler, so a prompt that recurs says to make it one, says there is no
+  // clock here, and sends the schedule to the agent's own tooling.
   for (const ask of asks) {
     if (!/\b(?:[Ee]very (?:morning|night|day|week)|nightly|daily)\b/.test(ask)) continue;
-    expect([ask.slice(0, 40), /can start you/.test(ask)]).toEqual([ask.slice(0, 40), true]);
+    expect([ask.slice(0, 40), /an automation/.test(ask)]).toEqual([ask.slice(0, 40), true]);
+    expect([ask.slice(0, 40), /no clock in this workspace/.test(ask)]).toEqual([ask.slice(0, 40), true]);
   }
 
   // ONE MODULE PER ASK, and the page's own markup is what says how many modules

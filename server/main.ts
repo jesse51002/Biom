@@ -37,18 +37,21 @@ import {
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
 import { DOC_PLUGIN } from "../contracts/types.ts";
-import { mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
+import { SKILL_PREFIX, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
-import { parse, parseAny, format } from "./platform/yaml.ts";
+import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
+import { makeProcessRunner } from "./platform/process.ts";
+import { makeRunFs } from "./platform/rundir.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir } from "./domain/pages.ts";
 import { makeDocs } from "./domain/docs.ts";
 import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
 import { makeSharer } from "./domain/share.ts";
 import { capturePage } from "./platform/capture.ts";
 import { makeBucket } from "./platform/bucket.ts";
 import { makeTables } from "./domain/tables.ts";
+import { BIOM_DIR, RUNS_DB, VAULT_SKILLS, makeRuns } from "./domain/runs.ts";
 import { checkVaultFormat } from "./workspace/migrate.ts";
 import { makePresets, makeTheme } from "./workspace/presets.ts";
 import {
@@ -70,11 +73,13 @@ import { mirrored, route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
 import type { Files } from "../contracts/types.ts";
+import type { Runs } from "../contracts/types.ts";
+import type { RunRow } from "../contracts/types.ts";
 import type { DirListing } from "../contracts/types.ts";
 import type { PageId } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
-import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultOf } from "../contracts/wire.js";
+import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
@@ -92,6 +97,8 @@ declare const Bun: {
   file(path: string): { exists(): Promise<boolean>; arrayBuffer(): Promise<ArrayBuffer>; text(): Promise<string> };
   // Read for its ENDING rather than its content — see `exitWhenTheParentGoes`.
   stdin: { stream(): AsyncIterable<Uint8Array> };
+  // One write, of `.biom/.gitignore`, on the mount that makes the folder.
+  write(path: string, text: string): Promise<number>;
   serve(options: {
     port: number;
     idleTimeout: number;
@@ -134,7 +141,9 @@ interface TerminalSocket {
 // `exit` is beside it because the one thing this process does about a parent
 // that has gone is stop being a process.
 // `on` is beside them because a shell this process started must not outlive it:
-// the exit handler is where every terminal tree is killed.
+// the exit handler is where every terminal tree is killed — and every run is
+// ended before the process is, on the three signals that still run a handler;
+// see `endRunsOn`.
 declare const process: {
   env: Record<string, string | undefined>;
   exit(code: number): never;
@@ -341,6 +350,12 @@ const SKILL = join(HERE, "skill");
 // mirrored into every vault's `docs/plugins/` on open so a person can read it.
 // `/guest/plugins/` itself is still not served: one url per plugin.
 const PLUGIN_ROOT = join(HERE, PLUGINS_DIR);
+/** THE TEMPLATES New copies for a chosen harness: one folder each, the
+ *  framework's own, beside its code and never in the vault. Nothing is seeded
+ *  and nothing is updated — a copy is the workspace's from the moment it is
+ *  made. Carried into the compiled binary like every other file it reads. */
+export const TEMPLATES_DIR = "server/runs/templates";
+const TEMPLATES = join(HERE, TEMPLATES_DIR);
 // In the per-user data directory and never inside a vault: it is about vaults,
 // so it cannot live in one. `VAULTS` stays the override, because a test must
 // never write the developer's own list.
@@ -351,6 +366,8 @@ const HOUSE_SCALE = "markdown.yaml";
 /* ── what a host is made of ─────────────────────────────────────────────── */
 
 export interface HostPaths {
+  /** The templates root, on disk. Tests hand a folder of their own. */
+  templates?: string;
   /** The vault to open on boot, or nothing at all. Created and seeded if it is
    *  not there yet — that is not the ordinary first run any more and it is still
    *  why this one is not checked the way a folder somebody PICKED is: it is
@@ -453,11 +470,27 @@ export interface Host {
    *  makes the requirement testable: open a stream, close it, assert the handles
    *  are gone.
    *
+   *  `hearRun` is the second, named event: a run started or ended under this
+   *  folder, which is a reason to reread `run.list` and never to redraw.
+   *
    *  Answers the function that unsubscribes. Calling it twice is harmless. */
-  watch(path: string, hear: () => void): Promise<() => void>;
+  watch(path: string, hear: () => void, hearRun?: () => void): Promise<() => void>;
   /** The vaults with a live watcher on them right now, absolute, and the
    *  directories each one holds open. The tests read it; nothing else does. */
   watching(): { path: string; handles: string[] }[];
+  /** WHERE THIS SERVER ANSWERS, told once the port is open, so a run can be
+   *  handed `BIOM_API` — the address and token of the running server — in its
+   *  environment. Before it is told, a run is handed the development address. */
+  listen(port: number, token: string | null): void;
+  /** HOW MANY RUNS ARE ALIVE across every mounted folder. */
+  live(): number;
+  /** END EVERY RUN, on the way out. `endAll` in every mounted registry, so a
+   *  server that exits — the window closed, Ctrl-C, the shell gone — leaves no
+   *  process of any automation behind. */
+  endRuns(): Promise<void>;
+  /** KILL EVERY RUN NOW, synchronously, for the process's `exit` handler —
+   *  the one ending every route passes through, where nothing can be awaited. */
+  killRuns(): void;
   /** Release every database handle. The server never calls it; a test that
    *  stood a host up does. */
   close(): void;
@@ -468,12 +501,16 @@ export interface Host {
 interface Mounted {
   path: string;
   db: Db;
+  /** The registry of runs, `.biom/runs.db`, the second database under a
+   *  vault. Closed with the first. */
+  runsDb: Db;
+  runs: Runs;
   /** THIS VAULT'S CONTENT BASELINE — what this process last wrote into, or last
    *  read out of, every file under it. It is how the watcher tells an agent's
    *  write from the app's own: `files.ts` keeps it current, and the settle below
    *  is the only thing that compares. */
   seen: Seen;
-  deps: Omit<Deps, "vault" | "production">;
+  deps: Omit<Deps, "vault" | "production" | "live" | "envNames">;
   /** See `Host.settled`. Set by `hold` once the mount has answered. */
   settled: Promise<void>;
   /** The vault's own files, held for the work `hold` starts after the mount. */
@@ -569,7 +606,7 @@ function refuses<T extends object>(why: string, code = "bad_request"): T {
  *  rather than per module: whichever call a screen happens to make first, it
  *  gets the same words, so a person is never shown two different accounts of one
  *  failure. */
-const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"> => ({
+const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production" | "live" | "envNames"> => ({
   pages: refuses(why, code),
   design: refuses(why, code),
   docs: refuses(why, code),
@@ -577,8 +614,16 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   presets: refuses(why, code),
   theme: refuses(why, code),
   mirror: refuses(why, code),
+  runs: refuses(why, code),
   share: refuses(why, code),
 });
+
+/** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
+ *  here, in the composition root, because no module below may ask the
+ *  environment a question — and a value never leaves this process except into
+ *  a run that named it. `BIOM_SHELL` is left out: it is the shell's marker and
+ *  not a name a manifest could want. */
+const envNames = (): string[] => Object.keys(Bun.env).filter((k) => k !== PARENT_ENV && k !== "").sort();
 
 const NO_VAULT = refusing("this request names no workspace");
 
@@ -616,6 +661,18 @@ function shareEnv(): Record<string, string | undefined> {
 
 export async function makeHost(at: HostPaths): Promise<Host> {
   const memory = makeVaultMemory(at.memory);
+  /** ONE RUNNER FOR EVERY VAULT. It knows no vault; a run is a command in a
+   *  directory, and which folder that directory is under is the registry's
+   *  business. */
+  const PROCESS = makeProcessRunner();
+  /** Where this server answers, once it does. Before `listen` is called — a
+   *  host stood up by a test, or the moment between mount and serve — a run
+   *  gets the development address, which is where a server run from source is. */
+  let listening: { port: number; token: string | null } = { port: PORT === 0 ? 4400 : PORT, token: null };
+  const apiFor = (path: string): { url: string; token: string | null } => ({
+    url: `http://127.0.0.1:${listening.port}${vaultBase(path)}${API_ROUTE}`,
+    token: listening.token,
+  });
   // Carried once into every Deps this host hands out, development by default.
   const production = at.production === true;
   // THE SHIPPED DEFAULT SECTION, read once. It belongs to the framework rather
@@ -735,15 +792,24 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
 
     const db = makeDb(join(path, "workspace.db"));
+    // THE SECOND DATABASE, and the folder that ignores itself. `.biom/` is the
+    // framework's own inside a vault — the registry of what has run on this
+    // machine, and every run's directory — and none of it is anybody's page,
+    // so `.biom/.gitignore` says `*` and the vault's history never carries it.
+    // Written once, when the folder is made; a hand-edited one stands.
+    const biom = join(path, BIOM_DIR);
+    if (!existsSync(join(biom, ".gitignore"))) await Bun.write(join(biom, ".gitignore"), "*\n");
+    const runsDb = makeDb(join(biom, RUNS_DB));
     try {
-      return await build(path, db, seen, files, fresh);
+      return await build(path, db, runsDb, seen, files, fresh);
     } catch (e) {
-      // THE HANDLE GOES BACK WHEN THE MOUNT DOES NOT HAPPEN. Everything below
+      // THE HANDLES GO BACK WHEN THE MOUNT DOES NOT HAPPEN. Everything below
       // this line can throw — a database locked by another process, one written
       // by a newer build, a disk that filled between two writes — and an open
       // SQLite handle on a file nobody is serving is a lock held for the life of
       // the process against a folder the person is about to try again.
       db.close();
+      runsDb.close();
       throw e;
     }
   }
@@ -751,8 +817,8 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   /** THE REST OF THE MOUNT, once the database is open. It is a function of its
    *  own for one reason: everything in it may throw, and the one thing that has
    *  to happen when it does is above. */
-  async function build(path: string, db: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
-    const yaml = { parse, parseAny, format };
+  async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
+    const yaml = { parse, parseAny, format, formatAny };
     const tables = makeTables(db);
     const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot);
     // Rooted at `design/` rather than at the vault: the design doc is ONE page
@@ -827,6 +893,53 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // happened months ago.
     if (fresh) await files.commit("The workspace as it was seeded");
 
+    // EVERY PAGE GETS AN IDENTITY, on mount, file by file, never touching a
+    // page that has one. The commit ahead of the sweep is the page module's.
+    // A vault that cannot be written is still a vault that opens.
+    try {
+      await pages.identify();
+    } catch (e) {
+      console.warn("pages could not be identified", e);
+    }
+
+    // AUTOMATIONS AND RUNS, over the second database. Handed the walk of a page
+    // directory and the page list because `pages.ts` is its sibling and there
+    // is no sideways; handed the environment because no module below this one
+    // may ask it a question; handed the templates the way the seeder is handed
+    // its roots, so a compiled binary and a checkout read the same folder.
+    const runs = makeRuns({
+      db: runsDb,
+      files,
+      fs: makeRunFs(path),
+      yaml,
+      process: PROCESS,
+      dirOf: pageDir,
+      refOf: async (id) => (await pages.list()).find((p) => p.id === id) ?? null,
+      env: () => Bun.env,
+      templates: seedRoot(TEMPLATES_DIR, at.templates ?? TEMPLATES),
+      api: () => apiFor(path),
+      // THE FRAMEWORK'S SKILLS WEAR `biom-`, which is the whole of how a
+      // rewritten skill and a person's own are told apart — `framework.ts`
+      // owns the rule, and this is one more reader of it.
+      seededSkill: async (name) => name.startsWith(SKILL_PREFIX),
+      onChange: (_what, row) => announce(path, row),
+    });
+    // ROWS STILL RUNNING FROM A PREVIOUS PROCESS ARE MARKED LOST, before
+    // anything reads the table: a server that ended without the prompt left
+    // nothing running — it ends every run on the way out — and a row it could
+    // not update reads `lost` here.
+    const lost = runs.reconcile();
+    if (lost > 0) console.log(`runs               →  ${lost} marked lost from a previous run of the server`);
+    // AND EVERY ROW NAMES ITS PAGE WHERE THE PAGE IS NOW. A page moved while
+    // this server was not running — by an agent, by hand — kept its identity
+    // and lost its id; the row is re-pointed by identity here, once, and
+    // again after every structural change the watcher settles.
+    try {
+      runs.relocateAll(await pages.list());
+    } catch (e) {
+      console.warn("runs could not be re-pointed at their pages", e);
+    }
+
     // EVERY PAGE'S PROJECTION, REBUILT. A doc page is pure data, so the local
     // process can render one without the box — which is what answers the page
     // nobody has opened since the mirror shipped, and the page removed while
@@ -880,7 +993,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       upload: makeBucket(shareEnv()),
     });
 
-    return { path, db, seen, deps: { pages, design, docs, tables, presets, theme, mirror, share }, settled: Promise.resolve(), files };
+    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs, share }, settled: Promise.resolve(), files };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -889,6 +1002,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  Keyed by resolved absolute path, so two spellings of one folder are one
    *  entry and never two database handles on one file. */
   const mounted = new Map<string, Promise<Mounted>>();
+  /** The mounts that have settled, for the one question that has to be
+   *  answered synchronously across all of them. */
+  const settledMounts = new Set<Mounted>();
 
   /** Mount `where` if it is not up, and hand back what it is made of.
    *
@@ -921,12 +1037,34 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     });
     mounted.set(abs, started);
     try {
-      return await started;
+      const done = await started;
+      settledMounts.add(done);
+      return done;
     } catch (e) {
       // Only if it is still ours. A retry that succeeded while this one was
       // failing owns the entry now, and dropping it would strand a live mount.
       if (mounted.get(abs) === started) mounted.delete(abs);
       throw e;
+    }
+  }
+
+  /** A RUN STARTED OR ENDED, said on the vault's stream as a changed file is
+   *  — payload-free — but as its own NAMED event, `run` beside `change`, so
+   *  the client rereads `run.list` and does not redraw the page: a page that
+   *  starts a run and follows its log must not be torn down for having done
+   *  so. Nothing on disk moved that the watcher would report — `.biom/` is
+   *  excluded by name — so the registry says it itself. A vault nobody is
+   *  watching has nobody to tell, and that is fine: the row is on disk for
+   *  the next read. */
+  function announce(path: string, _row: RunRow): void {
+    const now = live.get(path);
+    if (now === undefined) return;
+    for (const hear of [...now.runHears]) {
+      try {
+        hear();
+      } catch (e) {
+        console.warn("a live-change subscriber threw", e);
+      }
     }
   }
 
@@ -939,6 +1077,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   interface Live {
     watcher: Watcher;
     hears: Set<() => void>;
+    /** Told when a run starts or ends, on the same stream as a second, named
+     *  event — so a page is NOT redrawn for it. A file changing is a reason to
+     *  reread the page; a run's row moving is a reason to reread `run.list`,
+     *  and tearing a box down for it would take a page mid-interaction with
+     *  it. */
+    runHears: Set<() => void>;
     /** The burst being coalesced. Absolute paths, deduplicated by the set. */
     pending: Set<string>;
     timer: ReturnType<typeof setTimeout> | null;
@@ -1060,6 +1204,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         await mirrored(follow(held.deps.mirror, id, what.structural || gone));
       }
       if (!moved) return;
+      // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
+      // re-pointed by identity once per structural settle, not once per list.
+      if ([...touched.values()].some((t) => t.structural)) {
+        try {
+          held.runs.relocateAll(await held.deps.pages.list());
+        } catch (e) {
+          console.warn("runs could not be re-pointed at their pages", e);
+        }
+      }
       for (const hear of [...now.hears]) {
         try {
           hear();
@@ -1082,13 +1235,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }, SETTLE);
   }
 
-  async function subscribe(where: string, hear: () => void): Promise<() => void> {
+  async function subscribe(where: string, hear: () => void, hearRun?: () => void): Promise<() => void> {
     const held = await acquire(where);
     let now = live.get(held.path);
     if (now === undefined) {
       const made: Live = {
         watcher: { handles: () => [], close: () => {} },
         hears: new Set(),
+        runHears: new Set(),
         pending: new Set(),
         timer: null,
         busy: false,
@@ -1103,12 +1257,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
     const mine = now;
     mine.hears.add(hear);
+    if (hearRun !== undefined) mine.runHears.add(hearRun);
 
     let released = false;
     return () => {
       if (released) return;
       released = true;
       mine.hears.delete(hear);
+      if (hearRun !== undefined) mine.runHears.delete(hearRun);
       if (mine.hears.size > 0) return;
       if (live.get(held.path) !== mine) return;
       live.delete(held.path);
@@ -1252,7 +1408,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       await (await held).settled;
     },
     async deps(path?: string): Promise<Deps> {
-      if (path === undefined) return { ...NO_VAULT, production, vault: vaultAt(null) };
+      // Two members are the host's and not any vault's, and they ride on every
+      // set: how many runs are alive across the process, which the shell asks
+      // before it closes a window it has no folder in mind for, and the names
+      // in the environment.
+      const across = { live: () => liveAcross(), envNames };
+      if (path === undefined) return { ...NO_VAULT, ...across, production, vault: vaultAt(null) };
       let held;
       try {
         held = await acquire(path);
@@ -1277,9 +1438,32 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         // that genuinely does need the folder refuses with the mount's own
         // sentence, so `page.list` tells the tab why rather than reciting a
         // generic one.
-        return { ...refusing(sentenceOf(e), ERRORS.NOT_FOUND), production, vault: vaultAt(null) };
+        return { ...refusing(sentenceOf(e), ERRORS.NOT_FOUND), ...across, production, vault: vaultAt(null) };
       }
-      return { ...held.deps, production, vault: vaultAt(held.path) };
+      return { ...held.deps, ...across, production, vault: vaultAt(held.path) };
+    },
+    listen(port, token) {
+      listening = { port, token };
+    },
+    live: () => liveAcross(),
+    async endRuns() {
+      for (const held of mounted.values()) {
+        try {
+          await (await held).runs.endAll("shutdown");
+        } catch {
+          // A mount that failed has no runs; one that cannot be reached now
+          // has nothing this can do for it.
+        }
+      }
+    },
+    killRuns() {
+      for (const held of settledMounts) {
+        try {
+          held.runs.killAll("shutdown");
+        } catch {
+          /* a registry that cannot be written now; the process is going anyway */
+        }
+      }
     },
     open: () => [...mounted.keys()],
     watch: subscribe,
@@ -1290,10 +1474,18 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         now.watcher.close();
       }
       live.clear();
-      for (const held of mounted.values()) void held.then((m) => m.db.close()).catch(() => {});
+      for (const held of mounted.values()) void held.then((m) => { m.db.close(); m.runsDb.close(); }).catch(() => {});
       mounted.clear();
     },
   };
+
+  /** Runs alive in every folder mounted so far. Only settled mounts are
+   *  counted: one still mounting has started nothing. */
+  function liveAcross(): number {
+    let n = 0;
+    for (const held of settledMounts) n += held.runs.live();
+    return n;
+  }
 }
 
 /* ── everything else the server serves is static ────────────────────────── */
@@ -2140,7 +2332,7 @@ export function events(host: Host, path: string): Response {
       };
       let got: () => void;
       try {
-        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"));
+        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"), () => send("event: run\ndata: 1\n\n"));
       } catch {
         // A folder that cannot be a workspace. The stream ends rather than
         // hanging, and the tab's own reconnect will keep asking — which is
@@ -2224,7 +2416,26 @@ export const PARENT_ENV = "BIOM_SHELL";
  *  `/dev/null` — which is what a great many launchers do — would read end of file
  *  immediately and exit before it had served a single request. Only a parent that
  *  actually holds the pipe sets it. */
-function exitWhenTheParentGoes(): void {
+/** END EVERY RUN, THEN EXIT, on the signals that still run a handler. Armed
+ *  once; a second signal while the first is being honoured exits at once
+ *  rather than waiting again, because somebody pressing Ctrl-C twice means it. */
+function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
+  let ending = false;
+  for (const sig of signals) {
+    process.on(sig, () => {
+      // Pressed twice means it: the `exit` handler kills what is left.
+      if (ending) process.exit(130);
+      ending = true;
+      const alive = host.live();
+      if (alive > 0) console.log(`ending ${alive} run${alive === 1 ? "" : "s"} before stopping`);
+      // The exit codes main's terminal handlers used to answer with, so a
+      // signal still reads as the signal it was.
+      void host.endRuns().finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
+    });
+  }
+}
+
+function exitWhenTheParentGoes(host: Host): void {
   if (Bun.env[PARENT_ENV] !== "1") return;
   void (async () => {
     try {
@@ -2236,8 +2447,15 @@ function exitWhenTheParentGoes(): void {
       return;
     }
     console.log("the application that started this server has gone — stopping");
-    // The same abrupt ending `kill()` gives it today, and for the same reason:
-    // there is nothing to flush and the window it was serving no longer exists.
+    // Every run first: the window is gone and the person answered its question
+    // or never got one, and either way nothing of an automation is left
+    // behind. Then the same abrupt ending `kill()` gives it, for the same
+    // reason: there is nothing else to flush.
+    try {
+      await host.endRuns();
+    } catch {
+      /* nothing left to end, or nothing that can be */
+    }
     process.exit(0);
   })();
 }
@@ -2307,9 +2525,13 @@ if (import.meta.main) {
   // into an exit so that handler runs; without one a signal ends the process and
   // runs nothing of ours. SIGHUP is deliberately left alone: `make up` starts
   // this under `nohup`, and a handler here would undo that.
-  process.on("exit", () => terminals.killAll());
-  process.on("SIGINT", () => process.exit(130));
-  process.on("SIGTERM", () => process.exit(143));
+  // AND EVERY RUN GOES WITH THEM, in the same handler: an automation is a
+  // process group of its own, and a signal that ends this process reaches
+  // none of it. `killRuns` is synchronous for the reason `killAll` is. Where
+  // there is time — a signal, the parent's pipe closing — `endRunsOn` and
+  // `exitWhenTheParentGoes` below end them gracefully first, TERM then KILL,
+  // and this handler finds nothing left to do.
+  process.on("exit", () => { terminals.killAll(); host.killRuns(); });
 
   const server = Bun.serve({
     port: PORT,
@@ -2458,11 +2680,25 @@ if (import.meta.main) {
   // the application is killed.
   served = { origin: `http://localhost:${server.port}`, token: TOKEN };
   if (TOKEN !== null) console.log(`biom ready ${JSON.stringify({ port: server.port, token: TOKEN })}`);
+  // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
+  // this launch's token, into every run's `BIOM_API` from here on.
+  host.listen(server.port, TOKEN);
+  // AND NO RUN OUTLIVES THE SERVER. Every automation is a process group of its
+  // own, so a Ctrl-C at the terminal does not reach it and a shell quitting
+  // this process does not either — the registry has to end them. These two
+  // signals are ended gracefully, TERM then KILL, and then the process exits
+  // — which is also what the terminal handlers above turned them into, so one
+  // handler here stands for both. SIGHUP is left alone on the terminals'
+  // argument: `make up` starts this under `nohup`. The shell's own way, the
+  // stdin pipe, is `exitWhenTheParentGoes` below and ends them too; the
+  // `exit` handler kills whatever any of those did not reach. An abort runs
+  // nothing, and what that leaves is marked `lost` on the next mount.
+  endRunsOn(host, ["SIGINT", "SIGTERM"]);
   // AND THE LIFETIME, from this end. Armed after the port is open so a launch
   // that ends the moment it begins still says what it was — see
   // `exitWhenTheParentGoes`, which does nothing at all unless a parent said it
   // is holding the other end of stdin.
-  exitWhenTheParentGoes();
+  exitWhenTheParentGoes(host);
   console.log(`Biom framework  →  http://localhost:${server.port}   (${ENV})`);
   // NOTHING OPEN IS A STATE AND IT SAYS SO. A first launch has no folder, and a
   // line saying which workspace is being served would be a line about nothing.

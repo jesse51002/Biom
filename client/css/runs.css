@@ -1,0 +1,229 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* AUTOMATIONS AND INSTRUCTIONS: the three screens the framework draws for them
+   — the rail's overview, the workspace's instructions, and a page's two — in
+   the chrome's own tokens, so they wear whatever palette the open folder
+   ships. Nothing below names a colour. The pieces they share (the line to hand
+   your agent, the editor, the file tree) are dressed once here for all three.
+
+   EVERY ONE OF THEM FILLS THE CANVAS: a screen is a working surface rather
+   than a document, and a reading measure would put the editor in a column
+   with the tree's own width wasted beside it. */
+
+.plate[data-face="runs"], .plate[data-face="instructions"], .plate[data-face="automation"]{
+  padding:0; display:grid; min-height:0; height:100%;
+  grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr);
+}
+.plate[data-face="runs"] > *, .plate[data-face="instructions"] > *, .plate[data-face="automation"] > *{min-height:0; height:100%}
+
+/* the rail's two new rows: a page with a rule, and a lamp */
+.kindtag[data-kind="instructions"]::before{inset:1px 1px; border:1.25px solid currentColor; border-radius:1.5px}
+.kindtag[data-kind="instructions"]::after{left:4px; right:4px; top:5px; height:1.25px; background:currentColor; box-shadow:0 2.5px 0 currentColor}
+.kindtag[data-kind="runs"]::before{left:3px; top:3px; width:7px; height:7px; border-radius:50%; border:1.25px solid currentColor}
+.kindtag[data-kind="runs"]::after{left:5.5px; top:5.5px; width:2px; height:2px; border-radius:50%; background:currentColor}
+
+/* ---------- shared: the line to hand your agent ---------- */
+.ask{
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; grid-template-rows:auto auto;
+  column-gap:.8rem; row-gap:.2rem; align-items:baseline; padding:.9rem 1.4rem .8rem;
+  border-bottom:1px solid var(--rule);
+}
+.ask .lamp{grid-row:1 / 3; align-self:center; width:.55rem; height:.55rem; border-radius:50%; background:var(--cyan); box-shadow:0 0 .5rem var(--cyan-wash)}
+.ask .k{grid-column:2; font-size:.65rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+.ask .p{grid-column:2; margin:0; font-family:var(--mono-face); font-size:.85rem; line-height:1.5; color:var(--ink); overflow-wrap:anywhere}
+.ask .blank{display:inline-block; width:7ch; border-bottom:2px solid var(--cyan); vertical-align:baseline; margin-left:.2ch}
+.ask .copy{grid-column:3; grid-row:1 / 3; align-self:center; border:1px solid var(--rule); background:none; color:var(--ink-2); font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; padding:.4rem .8rem; border-radius:4px; cursor:pointer}
+.ask .copy:hover{color:var(--ink); background:var(--field)}
+.ask .copy[data-done]{color:var(--cyan); border-color:var(--cyan)}
+
+/* ---------- shared: the editor ---------- */
+.editor{display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; height:100%}
+.ed-head{display:flex; align-items:center; gap:.8rem; padding:.6rem 1.1rem; border-bottom:1px solid var(--rule); background:var(--stock-hi); font-size:.8rem}
+.ed-head .mark{width:.4rem; height:.4rem; border-radius:50%; background:transparent; flex:none}
+.ed-head .mark[data-dirty]{background:var(--cyan)}
+.ed-head .name{color:var(--ink); font-weight:500}
+.ed-head .where{color:var(--ink-3); font-family:var(--mono-face); font-size:.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.ed-head .saved{margin-left:auto; font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
+.ed-head .saved[data-pending]{color:var(--cyan)}
+.ed-head .saved[data-failed]{color:var(--magenta)}
+.editor textarea{
+  font-family:var(--mono-face); font-size:.85rem; line-height:1.6; color:var(--ink);
+  background:var(--stock-lo); border:0; padding:1.1rem 1.4rem; resize:none; width:100%; height:100%; min-height:0;
+  outline:none; white-space:pre-wrap; overflow:auto; box-sizing:border-box;
+}
+.editor textarea::placeholder{color:var(--ink-3)}
+.ed-foot{padding:.5rem 1.1rem; color:var(--ink-3); font-size:.72rem; border-top:1px solid var(--rule)}
+
+/* ---------- shared: a name asked in place ---------- */
+.namefield{display:grid; gap:.5rem; padding:1.2rem 1.4rem; align-content:start}
+.namefield .lbl{font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.namefield .row{display:flex; gap:.5rem; max-width:32rem}
+.namefield input{flex:1; font:inherit; font-size:.9rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px; padding:.45rem .65rem; min-width:0}
+.namefield input:focus{outline:2px solid var(--cyan); outline-offset:-1px}
+.namefield .ok{font:inherit; font-size:.8rem; padding:.45rem .9rem; border:1px solid var(--cyan); background:var(--cyan); color:var(--on-spot); border-radius:4px; cursor:pointer; white-space:nowrap}
+.namefield .ok[disabled]{opacity:.5; cursor:wait}
+.namefield .said{font-size:.8rem; color:var(--magenta)}
+.namefield .said:empty{display:none}
+.pick .naming:empty{display:none}
+.pick .naming{margin-top:1rem}
+.pick .tpl[aria-pressed="true"]{border-color:var(--cyan); background:var(--field)}
+
+/* ---------- shared: the file tree ---------- */
+.tree{padding:.6rem .4rem; overflow:auto; font-family:var(--mono-face); font-size:.78rem; color:var(--ink-2)}
+.tree.dim{color:var(--ink-3); opacity:.7}
+.tree .node{display:flex; align-items:center; gap:.4rem; padding:.28rem .6rem; padding-left:calc(.6rem + var(--depth, 0) * .9rem); border:0; background:none; color:inherit; width:100%; text-align:left; font:inherit; border-radius:3px; min-width:0}
+.tree .node.root{color:var(--ink-3); font-size:.7rem; letter-spacing:.04em}
+.tree .node.file{cursor:pointer}
+.tree .node.file:hover{background:var(--field); color:var(--ink)}
+.tree .node[aria-current="true"]{background:var(--field); color:var(--ink); box-shadow:inset 2px 0 0 var(--cyan)}
+.tree .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tree .twist{color:var(--ink-3); font-size:.65rem; width:.7rem; flex:none}
+.tree .dot{color:var(--ink-3); width:.7rem; text-align:center; flex:none}
+.tree .plus{margin-left:auto; border:0; background:none; color:var(--ink-3); cursor:pointer; padding:0 .3rem; font:inherit; visibility:hidden}
+.tree .node:hover .plus, .tree .node:focus-within .plus{visibility:visible}
+.tree .plus:hover{color:var(--cyan)}
+@media (hover:none){.tree .plus{visibility:visible}}
+
+/* two panes: a tree and an editor */
+.split{display:grid; grid-template-columns:minmax(12rem, 18rem) minmax(0,1fr); min-height:0; height:100%}
+.split > .tree, .split > .trees{border-right:1px solid var(--rule); min-height:0; overflow:auto; background:var(--stock)}
+.split .trees .tree + .tree{border-top:1px solid var(--rule-soft)}
+.split > .pane{min-height:0; display:grid; grid-template-rows:minmax(0,1fr)}
+.split > .pane > .hold{padding:1.2rem 1.4rem}
+
+/* ---------- the instructions screens ---------- */
+.instructions{display:grid; min-height:0; height:100%}
+.instructions.vaultins{grid-template-rows:minmax(0,1fr)}
+.instructions.pageins{grid-template-rows:auto minmax(0,1fr)}
+.instructions > .hold{padding:1.2rem 1.4rem}
+
+/* ---------- a page's automations ---------- */
+.autoscreen{display:grid; grid-template-rows:auto auto minmax(0,1fr); min-height:0; height:100%}
+.autoscreen > .hold{padding:1.2rem 1.4rem}
+.strip{display:flex; align-items:stretch; border-bottom:1px solid var(--rule); background:var(--stock-hi); overflow-x:auto}
+.strip .auto, .strip .new{display:inline-flex; align-items:center; gap:.5rem; padding:.7rem 1.1rem; border:0; border-right:1px solid var(--rule-soft); background:none; color:var(--ink-2); font:inherit; font-size:.85rem; cursor:pointer; white-space:nowrap}
+.strip .auto:hover, .strip .new:hover{background:var(--field); color:var(--ink)}
+.strip .auto.is-on{color:var(--ink); box-shadow:inset 0 -2px 0 var(--cyan)}
+.strip .auto .lamp{width:.45rem; height:.45rem; border-radius:50%; background:var(--ink-3)}
+.strip .auto .lamp[data-state="ok"]{background:var(--cyan)}
+.strip .auto .lamp[data-state="bad"]{background:var(--magenta)}
+.strip .new{margin-left:auto; border-right:0; border-left:1px solid var(--rule-soft); color:var(--ink-3)}
+.strip .new.is-on{color:var(--cyan)}
+.autobody{display:grid; grid-template-rows:auto minmax(0,1fr); min-height:0; height:100%}
+.subbar{display:flex; gap:.2rem; padding:.3rem 1rem; border-bottom:1px solid var(--rule)}
+.subbar .sub{border:0; background:none; color:var(--ink-3); font:inherit; font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; padding:.45rem .7rem; cursor:pointer; border-radius:3px}
+.subbar .sub:hover{color:var(--ink); background:var(--field)}
+.subbar .sub[aria-pressed="true"]{color:var(--ink); box-shadow:inset 0 -2px 0 var(--cyan)}
+.trouble{padding:1.2rem 1.4rem; display:grid; gap:.5rem; align-content:start}
+.trouble b{color:var(--magenta)}
+.trouble p{margin:0; font-size:.875rem}
+
+/* New: templates as tiles */
+.pick{padding:1.4rem; overflow:auto}
+.pick .lead{margin:0 0 1rem; font-size:.875rem; color:var(--ink-2); max-width:40rem}
+.pick .tiles{display:flex; flex-wrap:wrap; gap:.6rem}
+.pick .tpl{display:grid; gap:.15rem; padding:.7rem .9rem; min-width:9rem; border:1px solid var(--rule); background:var(--stock-hi); border-radius:4px; cursor:pointer; text-align:left; font:inherit; color:var(--ink)}
+.pick .tpl:hover{border-color:var(--cyan); background:var(--field)}
+.pick .tpl .kind{font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.pick .tpl .nm{font-size:.875rem}
+
+/* Manifest: a form */
+.manifest{display:grid; grid-template-rows:auto minmax(0,1fr); min-height:0; height:100%}
+.manifest .form{overflow:auto; padding:1.2rem 1.4rem 2rem; display:grid; gap:1rem; align-content:start; max-width:52rem}
+.frow{display:grid; grid-template-columns:8rem minmax(0,1fr); gap:.2rem .9rem; align-items:start; font-size:.875rem}
+.frow .lbl{color:var(--ink-3); font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; padding-top:.5rem}
+.frow .hint{grid-column:2; color:var(--ink-3); font-size:.72rem}
+.frow input[type="text"], .frow input[type="number"], .frow select, .frow textarea{
+  font:inherit; font-size:.85rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px; padding:.4rem .6rem; width:100%; box-sizing:border-box;
+}
+.frow textarea.cmd{font-family:var(--mono-face); font-size:.8rem; line-height:1.5; resize:vertical; min-height:4.5rem}
+.frow input:focus, .frow select:focus, .frow textarea:focus{outline:2px solid var(--cyan); outline-offset:-1px}
+.choices{display:flex; flex-wrap:wrap; gap:.4rem}
+.choice{border:1px solid var(--rule); background:var(--stock-hi); color:var(--ink-2); font:inherit; font-size:.8rem; padding:.35rem .7rem; border-radius:999px; cursor:pointer}
+.choice:hover{background:var(--field); color:var(--ink)}
+.choice[aria-pressed="true"]{border-color:var(--cyan); color:var(--ink); background:var(--cyan-wash)}
+.tags{display:flex; flex-wrap:wrap; gap:.4rem; align-items:center}
+.tag{display:inline-flex; align-items:center; gap:.3rem; border:1px solid var(--rule); background:var(--stock-hi); padding:.25rem .3rem .25rem .6rem; border-radius:999px; font-family:var(--mono-face); font-size:.75rem; color:var(--ink)}
+.tag .x, .irow .x{border:0; background:none; color:var(--ink-3); cursor:pointer; font:inherit; font-size:.7rem; padding:0 .3rem}
+.tag .x:hover, .irow .x:hover{color:var(--magenta)}
+.addenv{font:inherit; font-size:.75rem; color:var(--ink-3); background:none; border:1px dashed var(--rule); border-radius:999px; padding:.25rem .5rem; cursor:pointer}
+.inputs{display:grid; gap:.3rem}
+.irow{display:grid; grid-template-columns:minmax(0,1.4fr) 6rem minmax(0,1fr) 4.5rem 1.6rem; gap:.4rem; align-items:center}
+.irow.head{font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.irow input[type="checkbox"]{justify-self:center}
+.inputs .add, .runs .run, .overview .start, .overview .go{border:1px solid var(--rule); background:var(--stock-hi); color:var(--ink-2); font:inherit; font-size:.8rem; padding:.35rem .7rem; border-radius:4px; cursor:pointer; justify-self:start}
+.inputs .add:hover{background:var(--field); color:var(--ink)}
+
+/* Files */
+.split.files .trees{display:grid; grid-template-rows:auto auto; align-content:start}
+
+/* Runs of this automation */
+.runs{display:grid; grid-template-rows:auto auto minmax(0,1fr); min-height:0; height:100%}
+.runs .launch{display:grid; gap:.8rem; padding:1rem 1.4rem; border-bottom:1px solid var(--rule); align-items:start; justify-items:start}
+.fields{display:grid; gap:.5rem; grid-template-columns:repeat(auto-fill, minmax(14rem, 1fr)); width:100%}
+.field{display:grid; gap:.2rem; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+.field input[type="text"], .field input[type="number"]{font:inherit; font-size:.85rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px; padding:.4rem .6rem; text-transform:none; letter-spacing:0}
+.runs .run, .overview .go{background:var(--cyan); border-color:var(--cyan); color:var(--on-spot); font-weight:500; padding:.45rem 1.2rem}
+.runs .run:hover, .overview .go:hover{background:var(--cyan-t); border-color:var(--cyan-t)}
+.said{margin:0; font-size:.8rem; color:var(--magenta)}
+.said:empty{display:none}
+.rows-head{padding:.6rem 1.4rem .3rem; font-size:.65rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+.runrows{overflow:auto; padding:0 1.4rem 1.4rem}
+.dim{color:var(--ink-3); font-size:.85rem; margin:.4rem 0}
+
+/* a run's row, on both screens */
+.runrow, .run-row{
+  display:grid; grid-template-columns:auto minmax(9rem, 14rem) 4.5rem minmax(0,1fr) auto; gap:.2rem 1rem; align-items:start;
+  padding:.7rem 0; border-bottom:1px solid var(--rule-soft); font-size:.85rem;
+}
+.run-row{grid-template-columns:auto minmax(9rem, 12rem) 4.5rem minmax(8rem, 16rem) minmax(0,1fr) auto}
+.runrow .lamp, .run-row .lamp{width:.55rem; height:.55rem; border-radius:50%; margin-top:.35rem; background:var(--ink-3)}
+[data-state="running"] > .lamp{background:var(--yellow); box-shadow:0 0 .4rem var(--yellow-wash)}
+[data-state="exited"] > .lamp{background:var(--cyan)}
+[data-state="killed"] > .lamp{background:var(--magenta)}
+[data-state="lost"] > .lamp{background:var(--ink-3); opacity:.5}
+.run-name{color:var(--ink)}
+.run-id{font-family:var(--mono-face); font-size:.7rem; color:var(--ink-3)}
+.runrow .clock, .run-row .clock{font-family:var(--mono-face); font-size:.8rem; color:var(--ink-2); font-variant-numeric:tabular-nums}
+.runrow .tail, .run-row .tail{display:grid; gap:.15rem; min-width:0}
+.tail .lbl{font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.tail .line{font-family:var(--mono-face); font-size:.78rem; color:var(--ink-2); white-space:pre; overflow:hidden; text-overflow:ellipsis}
+.tail .all{margin:.3rem 0 0; font-family:var(--mono-face); font-size:.74rem; line-height:1.5; color:var(--ink-2); background:var(--stock-lo); border:1px solid var(--rule); border-radius:4px; padding:.6rem .8rem; max-height:20rem; overflow:auto; white-space:pre-wrap}
+.tail .open{justify-self:start; border:0; background:none; color:var(--ink-3); font:inherit; font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; padding:.1rem 0; cursor:pointer}
+.tail .open:hover{color:var(--cyan)}
+.runrow .actions, .run-row .actions{text-align:right; white-space:nowrap}
+.kill{border:1px solid transparent; background:none; color:var(--ink-3); font:inherit; font-size:.8rem; padding:.2rem .5rem; border-radius:4px; cursor:pointer}
+.kill:hover{color:var(--magenta); border-color:var(--magenta)}
+.verdict{font-family:var(--mono-face); font-size:.75rem; color:var(--ink-3)}
+.verdict[data-verdict="exited"]{color:var(--cyan)}
+.verdict[data-verdict="killed"]{color:var(--magenta)}
+.pagelink{color:var(--ink-2); font-family:var(--mono-face); font-size:.78rem; text-decoration:underline; text-decoration-color:var(--rule); text-underline-offset:.2em}
+a.pagelink:hover{color:var(--cyan); text-decoration-color:var(--cyan)}
+.pagelink.gone{color:var(--ink-3); text-decoration:none}
+
+/* ---------- the overview ---------- */
+.overview{display:grid; grid-template-rows:auto minmax(0,1fr); min-height:0; height:100%}
+.ov-head{display:flex; align-items:center; gap:.6rem; padding:.7rem 1.4rem; border-bottom:1px solid var(--rule); background:var(--stock-hi)}
+.ov-head .title{font-size:.75rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink)}
+.ov-head .count{font-family:var(--mono-face); font-size:.75rem; color:var(--yellow)}
+.ov-head .step{font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.ov-head .grow{flex:1}
+.ov-head .back{border:1px solid var(--rule); background:none; color:var(--ink-3); font:inherit; font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; padding:.35rem .7rem; border-radius:4px; cursor:pointer}
+.overview[data-step="none"] .back{display:none}
+.overview:not([data-step="none"]) .start{display:none}
+.overview .start{background:var(--cyan); border-color:var(--cyan); color:var(--on-spot); font-weight:500; font-size:.75rem; letter-spacing:.08em; text-transform:uppercase; padding:.45rem .9rem}
+.overview .start:hover{background:var(--cyan-t)}
+.ov-body{overflow:auto; padding:0 1.4rem 1.4rem}
+.ov-body .group{padding-top:.8rem}
+.ov-body h3{margin:0 0 .2rem; font-size:.65rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); font-weight:400}
+.ov-body .pick{padding:.6rem 0}
+.ov-body .auto{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.15rem 1rem; align-items:center; padding:.8rem .4rem; border-bottom:1px solid var(--rule-soft); cursor:pointer}
+.ov-body .auto:hover{background:var(--field)}
+.ov-body .auto .n{color:var(--ink); font-size:.9rem}
+.ov-body .auto .live{grid-column:2; grid-row:1; color:var(--yellow); font-size:.65rem; letter-spacing:.1em; text-transform:uppercase}
+.ov-body .auto .p{grid-column:2; grid-row:2; color:var(--ink-3); font-size:.72rem; text-align:right}
+.ov-body .auto .d{grid-column:1; grid-row:2; color:var(--ink-2); font-size:.85rem}
+.ov-body .inputs{display:grid; gap:1rem; padding:1.4rem 0; max-width:40rem; margin:0 auto; justify-items:start}
+.ov-body .chosen .n{color:var(--ink); font-size:1rem}
+.ov-body .chosen .p{color:var(--ink-3); font-size:.72rem; margin-top:.2rem}
+.ov-body .warn{margin:0; color:var(--yellow); font-size:.8rem}
+.ov-body .fields{width:100%}

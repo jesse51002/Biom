@@ -465,6 +465,28 @@
      *  alone. */
     vault: () => call("vault.info"),
 
+    /** AUTOMATIONS AND RUNS. A page may see every automation in the workspace,
+     *  start any of them, follow any run's log and end any: the ring is not
+     *  the wall. What the framework knows about a run is its row — status,
+     *  times, exit — and a file it serves byte for byte and never reads; what
+     *  a run MEANS is this page's to draw from what it wrote. `run.read` hands
+     *  back bytes from an offset, the next offset, and whether the run has
+     *  ended, so a page follows a live log by asking again and stops when the
+     *  answer says so. A run this page starts is stamped with this page's own
+     *  identity as *started by*, whatever `by` was sent.
+     *  @param {string} [page] */
+    automations: (page) => call("automation.list", page === undefined ? undefined : { page: page }),
+    /** @param {string} page @param {string} automation @param {Record<string, any>} [inputs] */
+    start: (page, automation, inputs) => call("run.start", { page: page, automation: automation, inputs: inputs || {} }),
+    /** @param {{ page?: string, automation?: string }} [filter] */
+    runs: (filter) => call("run.list", filter || undefined),
+    /** @param {string} id */
+    run: (id) => call("run.get", { run: id }),
+    /** @param {string} id @param {"stdout" | "stderr"} [stream] @param {number} [from] @param {number} [max] */
+    readRun: (id, stream, from, max) => call("run.read", { run: id, stream: stream || "stdout", from: from, max: max }),
+    /** @param {string} id */
+    kill: (id) => call("run.kill", { run: id }),
+
     /** GO SOMEWHERE — a page or a table. The only call here that is not about
      *  data: it asks the host to change what the person is looking at.
      *

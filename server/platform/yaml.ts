@@ -88,7 +88,7 @@
 import { Document, Scalar, isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import type { Content, ContentType, PageDoc, PartValue, PluginName, Section, VarScalar, VarValue, Variables } from "../../contracts/types.ts";
-import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME } from "../../contracts/types.ts";
+import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, UID } from "../../contracts/types.ts";
 
 /** Anything that is not a legal page document. Carries the line so the raw-YAML
  *  fallback in the chrome can say where, which is the difference between a
@@ -130,7 +130,7 @@ export class FlatnessError extends YamlError {
  *
  *  Anything else at the top level is refused rather than dropped, on any page: a
  *  page that is not a page is a broken page, not a quiet one. */
-const PAGE_KEYS = new Set(["name", "plugin", "variables", "contents", "input"]);
+const PAGE_KEYS = new Set(["name", "uid", "plugin", "variables", "contents", "input"]);
 /** A section: its id, its markup, its slots, its own values. No `type`, because
  *  a section is the only thing `contents` can hold and a key that distinguishes
  *  nothing is a key that can be written wrong. */
@@ -183,6 +183,15 @@ const FORBIDDEN_KEY = "__proto__";
  *  It narrows NOTHING. Whoever asked knows what they expect and validates it
  *  themselves; this only turns text into values and reports a syntax error in
  *  the same sentence and with the same line number `parse` would. */
+/** WRITE ANY VALUE AS YAML, in the house spelling. `format` is the page
+ *  document's, with its fixed key order and its block-scalar rule; this is for
+ *  a file that is not a page — an automation's manifest, which the form edits
+ *  as a structure and the server writes back, so a hand-edited file and a
+ *  form-edited one are the same file. Keys keep the order they were given. */
+export function formatAny(value: unknown): string {
+  return new Document(value, { version: "1.2" }).toString(WRITE);
+}
+
 export function parseAny(text: string): unknown {
   const doc = parseDocument(text, { version: "1.2", uniqueKeys: true, prettyErrors: true });
   const failure = doc.errors[0];
@@ -229,8 +238,10 @@ function asPageDoc(js: unknown): PageDoc {
 
   unknownKeys(map, PAGE_KEYS, "a page");
 
+  const uid = asUid(map["uid"]);
   return {
     name: asName(map["name"]),
+    ...(uid === null ? {} : { uid }),
     plugin: plugin,
     variables: asVariables(map["variables"], "the page"),
     // SECTIONS ARE THE DOC PLUGIN'S INPUT and nobody else's, so `contents` on a
@@ -241,6 +252,17 @@ function asPageDoc(js: unknown): PageDoc {
   };
 }
 
+/** THE PAGE'S IDENTITY, under `name:`. Absent is a page this server has not
+ *  opened yet, and the mount writes one in; present, it is a short string the
+ *  framework minted and nobody types. Anything that is not a string is the
+ *  file being wrong about itself, which the closed top level already refuses. */
+function asUid(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string" || !UID.test(v)) {
+    throw new FlatnessError("uid is a short id the framework wrote; it is not a thing to type");
+  }
+  return v;
+}
 /** A PLUGIN'S OWN CONFIGURATION, carried through untouched. The host has no
  *  opinion about it and never validates it, because a host that validated one
  *  would have to know every plugin — so the plugin reports its own missing key,
@@ -521,7 +543,7 @@ const WRITE = { lineWidth: 0, indent: 2, nullStr: "null", singleQuote: false, bl
  *  contents is long, and a person opening the file should reach the prose by
  *  scrolling once. Inside `input` the keys keep the order they were written in,
  *  because they are the plugin's and this file has no opinion about them. */
-const PAGE_ORDER = ["name", "plugin", "variables", "input", "contents"] as const;
+const PAGE_ORDER = ["name", "uid", "plugin", "variables", "input", "contents"] as const;
 /** A section, in the order somebody reads one: what it is called, what draws
  *  it, what it knows, and then the slots — which are the long part. */
 const SECTION_ORDER = ["name", "data", "variables", "parts"] as const;
@@ -566,6 +588,9 @@ function write(doc: PageDoc, blocks: boolean): string {
   const isDoc = doc.plugin === DOC_PLUGIN;
   const shape: Record<string, unknown> = {
     name: doc.name,
+    // The identity, right under the name, and only where the page has one: a
+    // document written by a tool that never learned the key still round-trips.
+    ...(typeof doc.uid === "string" ? { uid: doc.uid } : {}),
     // ALWAYS WRITTEN, even where the file it came from left it out. A page that
     // states what draws it can be read by somebody who has never seen this
     // format, and the default is only a default at the moment of parsing.
@@ -764,6 +789,7 @@ function partOf(part: string | Content): Content {
 function sameDoc(a: PageDoc | null, b: PageDoc): boolean {
   if (a === null) return false;
   if (a.name !== b.name) return false;
+  if ((a.uid ?? null) !== (b.uid ?? null)) return false;
   if (!sameVariables(a.variables, b.variables)) return false;
   if (a.plugin !== b.plugin) return false;
   if (!sameValue(a.input ?? {}, b.input ?? {})) return false;

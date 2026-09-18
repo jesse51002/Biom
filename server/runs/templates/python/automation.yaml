@@ -1,0 +1,5 @@
+name: Python
+description: A script under code/, run with the python on this machine.
+agent: python
+command: [python3, code/main.py]
+inputs: []
