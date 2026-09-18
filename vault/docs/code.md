@@ -429,6 +429,6 @@ Errors the box reports reach the browser console prefixed `[biom]`.
 
 **What a section's code owes its reader** — the add, the delete and the reorder,
 where controls go, and the numbered rules a section file is checked against — is
-[`../.agents/skills/sections/SKILL.md`](../.agents/skills/sections/SKILL.md).
+[`../.agents/skills/biom-sections/SKILL.md`](../.agents/skills/biom-sections/SKILL.md).
 **When to write code at all rather than reach for a plugin already in the folder**
-is [`../.agents/skills/plugins/SKILL.md`](../.agents/skills/plugins/SKILL.md).
+is [`../.agents/skills/biom-plugins/SKILL.md`](../.agents/skills/biom-plugins/SKILL.md).

@@ -15,11 +15,16 @@
 /** @import { Theme, VaultInfo } from "../contracts/types.ts" */
 
 import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, vaultBase } from "../contracts/wire.js";
-import { h, fill, remembered } from "./platform/dom.js";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { h, fill, remembered, heldForTab, holdForTab } from "./platform/dom.js";
 import { useAssets } from "./platform/markdown.js";
 import { makeHttp, TOKEN_PARAM } from "./transport/http.js";
 import { makeEvents } from "./transport/events.js";
+import { makeTerminalLink, terminalUrl } from "./transport/terminal.js";
 import { makeWorkspace } from "./store/workspace.js";
+import { makeTerminals, dockFrom } from "./store/terminals.js";
+import { makeTerminalView } from "./views/terminal.js";
 import { applyTheme, paperOf } from "./theme/theme.js";
 import { faceCss } from "./theme/faces.js";
 import { makeUi } from "./store/ui.js";
@@ -76,6 +81,16 @@ const production = environment === "production";
 const startupTrouble =
   (typeof document !== "undefined" && document.querySelector
     ? document.querySelector('meta[name="biom-trouble"]')?.getAttribute("content")
+    : null) ?? "";
+
+/** A NEWER VERSION, or "" when this one is current. The third fact about this
+ *  launch on the same channel: the server asked biom.dev once on the way up and
+ *  wrote the answer here when there was one. A development build never asks,
+ *  and a document composed before the answer landed says nothing until the next
+ *  load — so an empty read is "nothing to say", never a failure. */
+const newerVersion =
+  (typeof document !== "undefined" && document.querySelector
+    ? document.querySelector('meta[name="biom-update"]')?.getAttribute("content")
     : null) ?? "";
 
 /* ── which folder this tab is ───────────────────────────────────────────── */
@@ -235,11 +250,10 @@ const views = {
   // plugin always draws it. See the comment on `makeDesignView`.
   design: makeDesignView({ h, frameHost, ws, ui, vault: vault ?? "" }),
   // The map of the whole workspace: the `mindmap` plugin's document, mounted on
-  // `@map`, which the server answers as a bare plugin page. NOTHING IS SHIPPED
-  // any more — every plugin is seeded into `<vault>/plugins/` and served from
-  // there — so what this draws is the document `page.js` carries as
-  // `MAP_DOCUMENT`, held equal to the seed root's own file by
-  // `tests/mindmap.test.js`, and never a plugin the framework serves.
+  // `@map`, which the server answers as a bare plugin page — the vault's own
+  // `plugins/mindmap/` if it overrode one, the framework's otherwise — so what
+  // this draws is the document `page.js` carries as `MAP_DOCUMENT`, held equal
+  // to the framework's own file by `tests/mindmap.test.js`.
   map: makeMapView({ h, frameHost, ws, ui, vault: vault ?? "" }),
   // AUTOMATIONS AND INSTRUCTIONS: the rail's overview of every run and the
   // workspace's own instructions, and a page's two screens. Each reads the
@@ -251,7 +265,56 @@ const views = {
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
 };
 
-const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events });
+/* ── the agent terminal ─────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE, because a shell starts in a workspace's
+// folder and the start page has none. The socket is built here and NOT opened:
+// a page load never touches the terminal endpoint unless this tab has had the
+// dock open before, and opening a workspace never runs a command.
+//
+// WHAT A RELOAD KEEPS is this tab's own: which edge, what size, shown or not —
+// sessionStorage, per folder. The sessions themselves are the server's and are
+// found again by connecting, which is why a tab that had them reconnects at once.
+const DOCK_KEY = "terminal-dock:" + (vault ?? "");
+const SEEN_KEY = "terminal-seen:" + (vault ?? "");
+const terminalLink = vault === null ? null : makeTerminalLink({ url: terminalUrl(location, base, token) });
+const terms = terminalLink === null ? null : makeTerminals({
+  link: terminalLink,
+  dock: dockFrom((() => {
+    try {
+      return JSON.parse(heldForTab(DOCK_KEY, "null"));
+    } catch {
+      return null;
+    }
+  })()),
+});
+const terminalView = terms === null || terminalLink === null ? null : makeTerminalView({
+  h,
+  link: terminalLink,
+  terms,
+  Terminal,
+  FitAddon,
+  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
+});
+
+const shell = makeShell({
+  h, fill, ws, ui, frameHost, views, production, events, newerVersion,
+  terminal: terms !== null && terminalView !== null ? { store: terms, view: terminalView } : undefined,
+});
+
+if (terms !== null) {
+  let savedDock = terms.get().dock;
+  terms.on(() => {
+    const now = terms.get();
+    if (now.dock !== savedDock) {
+      savedDock = now.dock;
+      holdForTab(DOCK_KEY, JSON.stringify(now.dock));
+    }
+    if (now.link === "open") holdForTab(SEEN_KEY, "1");
+    shell.repaint();
+  });
+  if (terms.get().dock.visible || heldForTab(SEEN_KEY, "") === "1") terms.connect();
+}
 
 /* ── the wiring ─────────────────────────────────────────────────────────── */
 
@@ -285,6 +348,8 @@ function theme() {
   // `<canvas>` or a library writing its own literal fills, is redrawn by the
   // plugin that owns it rather than by a hook out here.
   frameHost.broadcast({ kind: "theme", theme: next });
+  // The emulator paints a canvas, which reads no custom property either.
+  if (terminalView !== null) terminalView.retheme();
 }
 
 // Both stores repaint the same shell. The shell decides what actually changed —

@@ -373,7 +373,7 @@ walk("the markdown mirror carries the words", async () => {
  * SCREEN. The shim writes the vault's palette onto `:root` as custom properties
  * and nothing else, so a browser's default black is what an element naming no
  * colour inherits — and the palette a new vault ships with is cream on charcoal.
- * The only place that said otherwise was `guest/plugins/doc/index.html`, which
+ * The only place that said otherwise was `guest/plugins/biom-doc/index.html`, which
  * the design doc's box does not load: it is woven with no document at all. So
  * the design page drew its title and the whole of its shipped-default band in
  * black on charcoal, on a fresh vault, with every module passing its own

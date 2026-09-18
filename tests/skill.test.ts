@@ -32,7 +32,7 @@
 //     how a number ends up with prose in no file, or prose in a file no checker
 //     knows about, so: every rule check.ts cites has prose in some skill, every
 //     rule number written in a skill is one check.ts cites OR one the index has
-//     RETIRED, and the rule index in `.agents/skills/pages` names all of them and points
+//     RETIRED, and the rule index in `.agents/skills/biom-pages` names all of them and points
 //     each at the skill that actually carries it.
 //
 //     **The numbers are the join, and a retired number is never reused.** The
@@ -42,7 +42,7 @@
 //     merely died: there is one filling frame per page now, so `vh`,
 //     `height: 100%` and `position: fixed` are what an author writing them
 //     expects, and R22 and R27 stayed spent rather than being rewritten in
-//     place. The retired list is read out of `.agents/skills/pages` rather than written
+//     place. The retired list is read out of `.agents/skills/biom-pages` rather than written
 //     here, because the prose is what an agent reads.
 //
 //  4. **Every rule actually catches its violation.** A checker that typechecks
@@ -72,6 +72,9 @@ const HERE = fileURLToPath(new URL("..", import.meta.url));
  *  numbers ships with the vault, because the agent working in somebody's folder
  *  never sees this repository. */
 const SKILLS = HERE + "vault/.agents/skills/";
+/** What every framework skill directory starts with. Spelled once here and once
+ *  in `server/workspace/framework.ts`; the test below holds them equal. */
+const SKILL_PREFIX = "biom-";
 
 /** The blocks every workspace is seeded with, and the design doc beside them.
  *  Real pages, in the format, read as data. */
@@ -187,7 +190,10 @@ const prose = (
  *  to carry a reader of its own rather than import the server's. */
 async function documents(dir: string, out: string[] = []): Promise<string[]> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name.startsWith(".")) continue;
+    // `dist/` is generated and gitignored, and it is where `make app` stages a
+    // build and where a try-out vault may sit; neither is a document the
+    // framework ships.
+    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === "dist" || entry.name.startsWith(".")) continue;
     const at = join(dir, entry.name);
     if (entry.isDirectory()) await documents(at, out);
     else if (/\.(?:yaml|yml)$/.test(entry.name)) out.push(at);
@@ -309,15 +315,22 @@ test("the shipped blocks are the reference a section is written from, and use re
 
 /* ── the split has not rotted ───────────────────────────────────────────── */
 
-/** Every SKILL.md the vault ships, by concept. A directory with no SKILL.md in
- *  it is not a skill and is passed over rather than failed — the folder is what
- *  an agent reads, not a manifest anybody maintains. */
+/** Every SKILL.md the vault ships, by concept — the directory name with the
+ *  framework's `biom-` prefix taken off, which is how the rule index names a
+ *  skill. A directory with no SKILL.md in it is not a skill and is passed over
+ *  rather than failed — the folder is what an agent reads, not a manifest
+ *  anybody maintains. EVERY SHIPPED SKILL CARRIES THE PREFIX: it is what keeps
+ *  the framework's names from colliding with a skill a workspace wrote, since a
+ *  framework skill is rewritten in every vault on open and a workspace's own is
+ *  never touched — so a directory here without it is a finding. */
 async function skills(): Promise<Record<string, string>> {
   const found: Record<string, string> = {};
   for (const entry of await readdir(SKILLS, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     try {
-      found[entry.name] = await readFile(SKILLS + entry.name + "/SKILL.md", "utf8");
+      const text = await readFile(SKILLS + entry.name + "/SKILL.md", "utf8");
+      expect(entry.name.startsWith(SKILL_PREFIX), `vault/.agents/skills/${entry.name} ships without the ${SKILL_PREFIX} prefix`).toBe(true);
+      found[entry.name.slice(SKILL_PREFIX.length)] = text;
     } catch {
       // not a skill
     }
@@ -340,7 +353,7 @@ async function cited(): Promise<Set<string>> {
 async function retired(): Promise<Set<string>> {
   const index = (await skills())["pages"] ?? "";
   const from = index.indexOf("## Retired numbers");
-  expect(from, ".agents/skills/pages/SKILL.md carries no retired-number list").toBeGreaterThan(0);
+  expect(from, ".agents/skills/biom-pages/SKILL.md carries no retired-number list").toBeGreaterThan(0);
   const out = new Set<string>();
   for (const m of index.slice(from).matchAll(/^\|\s*(R\d+)\s*\|/gm)) out.add(m[1] ?? "");
   return out;
@@ -362,7 +375,7 @@ test("every rule check.ts cites has prose in some skill, and every rule in a ski
 
   // R50 is prose here and code elsewhere: a vault plugin may never claim a
   // shipped id, which is checked where plugins are REGISTERED rather than where
-  // pages are read, so `.agents/skills/plugins` carries it and check.ts never cites it.
+  // pages are read, so `.agents/skills/biom-plugins` carries it and check.ts never cites it.
   expect([...rulesCited].filter((r) => !documented.has(r)).sort()).toEqual([]);
   expect([...documented].filter((r) => r !== "R50" && !rulesCited.has(r) && !gone.has(r)).sort()).toEqual([]);
   // A number cannot be both spent and live.
@@ -388,10 +401,10 @@ test("every spent number is retired and not reused", async () => {
  *  the only thing holding seven skills together as one document. A row pointing
  *  at a skill that does not carry the rule is worse than no row: it sends the
  *  reader to a file that will not answer. */
-test("the rule index in .agents/skills/pages names every rule and points each at the skill that carries it", async () => {
+test("the rule index in .agents/skills/biom-pages names every rule and points each at the skill that carries it", async () => {
   const found = await skills();
   const index = found["pages"] ?? "";
-  expect(index, ".agents/skills/pages/SKILL.md is missing").not.toBe("");
+  expect(index, ".agents/skills/biom-pages/SKILL.md is missing").not.toBe("");
   const live = index.slice(0, index.indexOf("## Retired numbers"));
 
   const owner = new Map<string, string>();
@@ -424,9 +437,17 @@ test("every skill carries frontmatter an agent can route on", async () => {
   expect(Object.keys(found).length).toBeGreaterThan(3);
   for (const [name, text] of Object.entries(found)) {
     const head = /^---\nname: ([a-z0-9-]+)\ndescription: ([\s\S]*?)\n---\n/.exec(text);
-    expect(head, `.agents/skills/${name}/SKILL.md does not open with name: and description: frontmatter`).not.toBeNull();
-    expect((head?.[2] ?? "").length, `.agents/skills/${name} has a description too short to route on`).toBeGreaterThan(120);
+    expect(head, `.agents/skills/${SKILL_PREFIX}${name}/SKILL.md does not open with name: and description: frontmatter`).not.toBeNull();
+    expect((head?.[2] ?? "").length, `.agents/skills/${SKILL_PREFIX}${name} has a description too short to route on`).toBeGreaterThan(120);
+    // The name a skill routes on is the directory it is in.
+    expect(head?.[1]).toBe(`${SKILL_PREFIX}${name}`);
   }
+});
+
+test("the framework's skill prefix is spelled the same here and in the rewrite that relies on it", async () => {
+  const source = await readFile(HERE + "server/workspace/framework.ts", "utf8");
+  const spelled = /export const SKILL_PREFIX = "([^"]+)"/.exec(source);
+  expect(spelled?.[1]).toBe(SKILL_PREFIX);
 });
 
 /* ── the baseline the bad pages are one edit away from ──────────────────── */

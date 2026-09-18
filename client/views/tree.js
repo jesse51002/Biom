@@ -26,6 +26,13 @@
 // and no wire kind writes one. A gesture that appeared to place a row and lost
 // it on reload is worse than a gesture that is not offered.
 //
+// EVERY OPEN PAGE ENDS IN A PLUS. The last row under an expanded page is not a
+// child but a way to make one there — a `+ New page` at the children's own
+// depth. The hover-only plus on each row already said the same thing, and it
+// was found by nobody: a control that is invisible until the pointer is on the
+// row is a control that is not there. The top level keeps the button under the
+// whole tree, which is the same row for the root.
+//
 // Expansion is UI state and lives in the UiStore, because it must not survive a
 // reload of workspace data and must survive a redraw.
 
@@ -33,7 +40,7 @@
 /** @import { Workspace } from "../store/workspace.js" */
 
 import { ROOT_PAGE, parentOf, rebase } from "../store/workspace.js";
-import { popover, popItem, popInput, popSep, popLabel } from "../widgets/popover.js";
+import { popover, popItem, popInput, popSep, popLabel, closePopover } from "../widgets/popover.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
@@ -213,15 +220,50 @@ export function makeTreeView(deps) {
       return h("li.treerow", a, add, more);
     };
 
-    return h("ul.tree", ...rows.map(rowEl), outdent());
+    /** The plus at the foot of an open page's children: a new page inside it,
+     *  at the depth its children sit at, so it reads as the last thing in the
+     *  folder rather than as a sibling of the folder.
+     *  @param {TreeRow} row */
+    const addEl = (row) => h("li.treerow.addrow",
+      h("button.rowaddin", {
+        type: "button",
+        style: { "--depth": String(row.depth + 1) },
+        "aria-label": "New page inside " + row.child.name,
+        onclick: (/** @type {Event} */ e) => {
+          e.preventDefault();
+          ui.set({ dialog: true, dialogParent: row.child.id });
+        },
+      }, "New page"));
+
+    // The rows, with a plus closing every open page. The flat list carries the
+    // nesting as depth alone, so a page's children END where the next row is no
+    // deeper than the page — that is where its plus goes, and every open page
+    // still on the stack at the end of the list gets one at the foot.
+    /** @type {HTMLElement[]} */
+    const els = [];
+    /** @type {TreeRow[]} */
+    const open = [];
+    for (const row of rows) {
+      for (let top = open.at(-1); top && row.depth <= top.depth; top = open.at(-1)) {
+        els.push(addEl(top));
+        open.pop();
+      }
+      els.push(rowEl(row));
+      if (row.open) open.push(row);
+    }
+    for (let top = open.pop(); top; top = open.pop()) els.push(addEl(top));
+
+    return h("ul.tree", ...els, outdent());
   };
 
   /** Rename and delete, which is everything a row can do to itself.
    *
-   *  A table renames here and a page does not. A page's name is a key of its
-   *  document and the wire has no kind that writes one, so a page is named once,
-   *  in the New dialog, and this menu says that plainly — it used to send people
-   *  to edit YAML by hand, which is not a thing a person using this should do.
+   *  A page and a table both rename here, and they are two different writes. A
+   *  table's name is its schema and `table.alter` carries one; a page's name is
+   *  a key of its document AND the spelling of its last segment, so
+   *  `page.rename` writes the key and moves the directory, and answers the new
+   *  id — which a rail standing on that page, or under it, re-routes onto, the
+   *  way a drop does.
    *  @param {HTMLElement} anchor @param {Child} child */
   function menu(anchor, child) {
     const isPage = child.kind === "page";
@@ -232,13 +274,22 @@ export function makeTreeView(deps) {
       const rename = async () => {
         const next = String(name.value).trim();
         if (next === "" || next === child.name) return;
-        // A TABLE CAN BE RENAMED AND A PAGE CANNOT, which is a fact about the
-        // wire and not about the two things. A table's name is its schema and
-        // `table.alter` carries one; a page's name is a key of its document, and
-        // the only structured write there is reaches variables. So the field is
-        // offered where it can be answered and the page case says where the name
-        // actually lives.
-        if (!isPage) await ws.alterTable(child.id, { ...tableSchema(child.id), name: next });
+        if (isPage) {
+          const open = ui.get().route;
+          const standing = open.view === "page" &&
+            (open.id === child.id || open.id.startsWith(child.id + "/"));
+          const moved = await ws.renamePage(child.id, next);
+          // THE ID THE ROUTE IS HOLDING MAY HAVE JUST STOPPED EXISTING, the
+          // same way it does after a drag: the page and everything beneath it
+          // were renamed, so the route is re-pointed at the same page under
+          // its new name.
+          if (moved !== child.id && standing) ui.go("page", rebase(open.id, child.id, moved));
+        } else {
+          await ws.alterTable(child.id, { ...tableSchema(child.id), name: next });
+        }
+        // Done is done: the row now says the name, and a menu still open over
+        // it reads as a rename that did not take.
+        closePopover();
       };
 
       const remove = async () => {
@@ -252,12 +303,12 @@ export function makeTreeView(deps) {
       name.addEventListener("keydown", (/** @type {KeyboardEvent} */ e) => {
         if (e.key !== "Enter") return;
         e.preventDefault();
-        void rename();
+        rename().catch((err) => console.error("the rail could not rename that", err));
       });
 
       return [
         popLabel("Name"),
-        isPage ? popLabel("A page keeps the name it was made with — renaming one is not built yet") : name,
+        name,
         popSep(),
         popItem("Delete", () => void remove(), { danger: true }),
         // A table's rows are in the database, and the vault's history does not

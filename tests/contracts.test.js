@@ -39,7 +39,7 @@ test("refuses what only the workspace UI may say", () => {
   // artifact must not be able to express any of them.
   for (const kind of [
     "page.list", "page.create", "page.remove", "page.writeFile",
-    "page.move", "doc.raw", "doc.writeRaw",
+    "page.move", "page.rename", "doc.raw", "doc.writeRaw",
     "table.create", "table.alter", "table.remove", "table.setParent", "table.importCsv",
     // `vault.info` is NOT in this list and the four beside it are, which is the
     // whole of the line between them: *which folder is this* is about the folder

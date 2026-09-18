@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // SPDX-License-Identifier: AGPL-3.0-only
-// skill/check.ts — the mechanical half of `.agents/skills/pages/SKILL.md`.
+// skill/check.ts — the mechanical half of `.agents/skills/biom-pages/SKILL.md`.
 //
 //   bun run .agents/skills/check.ts pages/home/children/rates-note
 //   bun run .agents/skills/check.ts pages/home/children/*
@@ -19,7 +19,7 @@
 // **THE NUMBERS ARE THE JOIN.** A rule that changes meaning gets a NEW number
 // rather than a quiet edit, and a number is never reused, because a finding
 // cites its number and reusing one makes every old finding mean something else.
-// **`.agents/skills/pages/SKILL.md` CARRIES THE INDEX AND THE RETIRED TABLE, and it is
+// **`.agents/skills/biom-pages/SKILL.md` CARRIES THE INDEX AND THE RETIRED TABLE, and it is
 // the authority on which number means what** — this file cites, it does not
 // number. Nothing here may spend a number that table has not been told about.
 //
@@ -83,7 +83,7 @@
 //   R61  a page naming a plugin that nothing here can draw with, and a doc's
 //        `contents:` left on a page drawn by something else.
 //
-// **R50 IS NOT IN HERE.** It belongs to `.agents/skills/plugins/SKILL.md` — a vault
+// **R50 IS NOT IN HERE.** It belongs to `.agents/skills/biom-plugins/SKILL.md` — a vault
 // plugin may never claim a shipped id — and is checked where plugins are
 // registered rather than where pages are read.
 //

@@ -196,4 +196,4 @@ the file's row count is a prompt to look, not a failure.
 
 **Whether the thing in front of you is a table at all**, what to say beside a grid,
 and the rule about `biom.sql`, are
-[`../.agents/skills/tables/SKILL.md`](../.agents/skills/tables/SKILL.md).
+[`../.agents/skills/biom-tables/SKILL.md`](../.agents/skills/biom-tables/SKILL.md).

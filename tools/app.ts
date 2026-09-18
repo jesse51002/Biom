@@ -46,7 +46,7 @@
 // reported rather than failed.
 
 import { mkdir, readdir, readFile, rm, writeFile, copyFile, chmod } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -56,6 +56,9 @@ import { APP_NAME, hostPlatform, install, installPlan } from "./install.ts";
 // machine keeps its Biom data. The install lands beside it, so the build reads
 // the same module the application will.
 import { dataHome } from "../app/data.js";
+import { shippedHashes } from "../server/platform/shipped.ts";
+import { SHIPPED_DIRS } from "../server/workspace/framework.ts";
+import type { Shipped } from "../server/platform/shipped.ts";
 
 declare const Bun: {
   env: Record<string, string | undefined>;
@@ -198,7 +201,7 @@ export async function carried(root = HERE): Promise<string[]> {
 /** The module the composition root imports. One module rather than one per
  *  directory: it is read exactly once, by one line, and a file per directory
  *  would be six imports to keep in step for no reader's benefit. */
-export function manifestSource(keys: string[]): string {
+export function manifestSource(keys: string[], shipped: Shipped = {}): string {
   const lines = [
     // TYPECHECKED BY NOTHING, on purpose. `tsc` pulls this file into the program
     // the moment the composition root's import resolves — `exclude` only filters
@@ -221,6 +224,17 @@ export function manifestSource(keys: string[]): string {
   keys.forEach((key, i) => lines.push(`  ${JSON.stringify(key)}: f${i},`));
   lines.push("};");
   lines.push("");
+  // EVERY VERSION OF EVERY PLUGIN AND EVERY SKILL THIS REPOSITORY EVER SHIPPED,
+  // by git blob hash, keyed by framework-relative path. A binary has no `.git`
+  // beside it to ask, so the answer travels with it: the server's sweeps on open
+  // check a vault's copies against this and remove the ones nobody edited — see
+  // `server/workspace/framework.ts`. Sorted, so two builds of one tree agree.
+  lines.push("export const SHIPPED: Record<string, string[]> = {");
+  for (const path of Object.keys(shipped).sort()) {
+    lines.push(`  ${JSON.stringify(path)}: ${JSON.stringify([...shipped[path]!].sort())},`);
+  }
+  lines.push("};");
+  lines.push("");
   return lines.join("\n");
 }
 
@@ -235,7 +249,7 @@ async function writeManifest(): Promise<number> {
     await copyFile(join(HERE, key), to);
   }
   await mkdir(DIST, { recursive: true });
-  await writeFile(MANIFEST, manifestSource(keys), "utf8");
+  await writeFile(MANIFEST, manifestSource(keys, await shippedHashes(HERE, SHIPPED_DIRS)), "utf8");
   return keys.length;
 }
 
@@ -266,6 +280,22 @@ async function run(cmd: string[], cwd = HERE): Promise<void> {
     console.error(`  failed (${code}):  ${cmd.join(" ")}`);
     process.exit(code === 0 ? 1 : code);
   }
+}
+
+/** WHICH VERSION THIS BUILD IS, from the tag the checkout sits at: `v0.1.1`
+ *  exactly on a tag, `v0.1.1-2-gf8759a0` between tags, with `-dirty` when the
+ *  tree has edits. It is the second and last thing the compiled server knows
+ *  about its own build, and its reader is the update check in `server/main.ts`,
+ *  which compares it to `biom.dev/version.json` and says nothing unless that
+ *  file names something newer. A checkout with no git history — a downloaded
+ *  archive — falls back to `package.json`'s version so the compare still has a
+ *  number to work with. */
+function buildVersion(): string {
+  const described = Bun.spawnSync(["git", "describe", "--tags", "--always", "--dirty"], { cwd: HERE, stdout: "pipe", stderr: "ignore" });
+  const tag = described.exitCode === 0 ? described.stdout.toString().trim() : "";
+  if (/^v?\d+\.\d+\.\d+/.test(tag)) return tag;
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { version?: string };
+  return `v${pkg.version ?? "0.0.0"}`;
 }
 
 /** The version of electron the bundle is built around, read from the one place
@@ -341,6 +371,9 @@ async function main(): Promise<void> {
     // shipped as development by accident.
     "--define",
     'process.env.BIOM_ENV="production"',
+    // And which version, read by the update check. See `buildVersion`.
+    "--define",
+    `process.env.BIOM_VERSION=${JSON.stringify(buildVersion())}`,
     ...(hideConsole ? ["--windows-hide-console"] : []),
     join(HERE, "server", "main.ts"),
     "--outfile",

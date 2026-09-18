@@ -47,7 +47,13 @@
     // and not .d.ts, so bun reaches the bundle by the same bare name.
     "paths": {
       "markdown-it": ["./vendor/markdown-it"],
-      "yaml": ["./vendor/yaml"]
+      "yaml": ["./vendor/yaml"],
+      // The terminal emulator, reached from `client/boot.js` only. Upstream's
+      // declarations are an ambient `declare module` block that `paths` cannot
+      // resolve to as a module, so the `.d.ts` beside each bundle is ours and
+      // partial, exactly as `markdown-it`'s is.
+      "@xterm/xterm": ["./vendor/xterm"],
+      "@xterm/addon-fit": ["./vendor/addon-fit"]
     }
   },
   // `tools/` is deliberately absent: it is bun-run build tooling that speaks

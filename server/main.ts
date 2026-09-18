@@ -36,13 +36,17 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
+import { DOC_PLUGIN } from "../contracts/types.ts";
+import { NOTHING_SHIPPED, shippedHashes } from "./platform/shipped.ts";
+import type { Shipped } from "./platform/shipped.ts";
+import { SHIPPED_DIRS, SKILL_PREFIX, mirrorPlugins, rewriteOwned, sweepOldSkills, sweepShipped } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
 import { makeProcessRunner } from "./platform/process.ts";
 import { makeRunFs } from "./platform/rundir.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, makePages, pageDir } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir } from "./domain/pages.ts";
 import { makeDocs } from "./domain/docs.ts";
 import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
 import { makeTables } from "./domain/tables.ts";
@@ -61,6 +65,9 @@ import {
   seeded,
   usable,
 } from "./workspace/vault.ts";
+import { spawnPty } from "./platform/pty.ts";
+import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
+import type { Attachment } from "./workspace/terminals.ts";
 import { mirrored, route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
@@ -72,9 +79,10 @@ import type { PageId } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -93,9 +101,36 @@ declare const Bun: {
   serve(options: {
     port: number;
     idleTimeout: number;
-    fetch: (request: Request) => Promise<Response> | Response;
-  }): { port: number };
+    // `undefined` is what a handler answers after it has upgraded the request
+    // to a WebSocket: the socket IS the response.
+    fetch: (request: Request, server: BunServer) => Promise<Response | undefined> | Response | undefined;
+    websocket?: {
+      maxPayloadLength?: number;
+      backpressureLimit?: number;
+      closeOnBackpressureLimit?: boolean;
+      open?(ws: TerminalSocket): void;
+      message?(ws: TerminalSocket, message: string | Uint8Array): void;
+      drain?(ws: TerminalSocket): void;
+      close?(ws: TerminalSocket): void;
+    };
+  }): BunServer;
 };
+interface BunServer {
+  port: number;
+  upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
+  requestIP(request: Request): { address: string } | null;
+}
+/** What a terminal socket carries from the upgrade to its handlers. */
+interface TerminalSocketData {
+  vault: string;
+  attachment: Attachment | null;
+}
+interface TerminalSocket {
+  data: TerminalSocketData;
+  send(data: string | Uint8Array): number;
+  getBufferedAmount(): number;
+  close(): void;
+}
 // READ FOR EXACTLY ONE KEY, and the expression below is the whole mechanism. A
 // compiled build substitutes that member expression at compile time with
 // `--define`, so the binary carries a string literal there and consults no
@@ -104,12 +139,14 @@ declare const Bun: {
 // the server may name the key.
 // `exit` is beside it because the one thing this process does about a parent
 // that has gone is stop being a process.
-// `on` is beside it for the three signals that still run a handler, so every
-// run is ended before the process is — see `endRunsOn`.
+// `on` is beside them because a shell this process started must not outlive it:
+// the exit handler is where every terminal tree is killed — and every run is
+// ended before the process is, on the three signals that still run a handler;
+// see `endRunsOn`.
 declare const process: {
   env: Record<string, string | undefined>;
   exit(code: number): never;
-  on(signal: "SIGINT" | "SIGTERM" | "SIGHUP", handler: () => void): void;
+  on(event: string, listener: () => void): void;
 };
 
 /* ── which build this is ────────────────────────────────────────────────── */
@@ -141,6 +178,24 @@ export function environment(named: string | undefined): Environment {
 // client, and no other module in the server asks an environment a question.
 const ENV = environment(process.env.BIOM_ENV);
 const PRODUCTION = ENV === "production";
+
+/** WHICH BUILD THIS IS, BY NUMBER. `tools/app.ts` defines it from the tag the
+ *  build was cut at, so a stranger's binary carries `v0.1.1` or, between tags,
+ *  `v0.1.1-2-gf8759a0`; a source run has no define and carries "development".
+ *  Read once here, like the environment above, and for the same reason. */
+const VERSION = (process.env.BIOM_VERSION ?? "").trim() || "development";
+
+/** THE UPDATE CHECK, AND THE ONE WAY TO SILENCE IT. A production build asks
+ *  `biom.dev/version.json` once per launch whether a newer version exists, and
+ *  the document served at `/` carries the answer to the client. It is a real
+ *  question — a person who built from the repository has no other way to learn
+ *  a tag was cut — and the log line it leaves at biom.dev is the only count
+ *  anybody has of the program being started. The request carries the path
+ *  and a user agent naming this program, its version and the platform; no id,
+ *  no query, nothing about the vault. `BIOM_NO_UPDATE_CHECK=1` skips it, and
+ *  is what the founders' machines and CI set so the count is strangers only. */
+const CHECK_UPDATES = PRODUCTION && (process.env.BIOM_NO_UPDATE_CHECK ?? "").trim() === "";
+const VERSION_URL = "https://biom.dev/version.json";
 
 // THE INSTALL DIRECTORY, AND IT IS A PATH RATHER THAN A URL. `.pathname` off a
 // `file:` URL is percent-ENCODED, so an install under `/My Documents/` came out
@@ -195,10 +250,10 @@ export function noManifest(why: unknown): boolean {
  *  Nothing below asks an environment variable whether it is compiled. The
  *  composition root asks whether anything is embedded, which is a fact about the
  *  build rather than a flag somebody has to know to set. */
-async function carriedFiles(): Promise<EmbeddedMap> {
+async function carriedFiles(): Promise<{ files: EmbeddedMap; shipped: Shipped }> {
   try {
-    const mod = (await import("../dist/embedded.ts")) as { FILES?: EmbeddedMap };
-    return mod.FILES ?? NOTHING_EMBEDDED;
+    const mod = (await import("../dist/embedded.ts")) as { FILES?: EmbeddedMap; SHIPPED?: Shipped };
+    return { files: mod.FILES ?? NOTHING_EMBEDDED, shipped: mod.SHIPPED ?? NOTHING_SHIPPED };
   } catch (why) {
     // ONE FAILURE IS THE ORDINARY CASE AND EVERY OTHER ONE IS A BROKEN BUILD.
     // There is no such module, which is a clone that has never built the
@@ -210,12 +265,32 @@ async function carriedFiles(): Promise<EmbeddedMap> {
     // serve nothing while reporting nothing. The SPECIFIER is what separates the
     // two, because both arrive as `ERR_MODULE_NOT_FOUND` and only one of them is
     // about this import.
-    if (noManifest(why)) return NOTHING_EMBEDDED;
+    if (noManifest(why)) return { files: NOTHING_EMBEDDED, shipped: NOTHING_SHIPPED };
     throw why;
   }
 }
 
-const CARRIED = await carriedFiles();
+/** WHICH FRAMEWORK THIS IS, for a commit message and nothing else. Read out of
+ *  `package.json` beside the program in a checkout; a compiled binary has no
+ *  such file beside it and says so in the one word it has. It is not `BIOM_ENV`
+ *  and must not become a switch: nothing below asks it a question. */
+async function frameworkVersion(): Promise<string> {
+  try {
+    const text = await Bun.file(join(HERE, "package.json")).text();
+    const version = (JSON.parse(text) as { version?: unknown }).version;
+    return typeof version === "string" && version !== "" ? `framework ${version}` : "the framework";
+  } catch {
+    return "the framework";
+  }
+}
+
+const BUILT = await carriedFiles();
+const CARRIED = BUILT.files;
+/** EVERY VERSION OF EVERY PLUGIN THIS BUILD'S REPOSITORY EVER SHIPPED, by blob
+ *  hash, generated by `tools/app.ts` beside the manifest and carried the same
+ *  way — a binary has no `.git` to ask. A run from source has one, and asks it
+ *  instead; see `shipped()` in `makeHost`. */
+const SHIPPED_BUILT = BUILT.shipped;
 
 /** WHICH MAP A HOST READS ITS OWN FILES OUT OF. One question, one answer, and
  *  every reader below takes it — the default section, the shipped plugin
@@ -274,10 +349,12 @@ const VAULT_SEED = join(HERE, "vault");
 // from `skill/` — and a copy travels into each vault as `.agents/skills/check.ts` so an
 // agent working in one can run it.
 const SKILL = join(HERE, "skill");
-// EVERY PLUGIN, as a seed root rather than a served directory. `guest/plugins/`
-// is copied into each vault's own `plugins/` and drawn from there; nothing is
-// shipped and `/guest/plugins/` is no longer served at all.
-const PLUGIN_SEED = join(HERE, PLUGINS_DIR);
+// THE FRAMEWORK'S OWN PLUGINS, as the fallback rung rather than a seed root.
+// `guest/plugins/` is read for any plugin a vault's own `plugins/` has not got,
+// served to the box at `/v/<enc>/plugin/…` behind the vault's own files, and
+// mirrored into every vault's `docs/plugins/` on open so a person can read it.
+// `/guest/plugins/` itself is still not served: one url per plugin.
+const PLUGIN_ROOT = join(HERE, PLUGINS_DIR);
 /** THE TEMPLATES New copies for a chosen harness: one folder each, the
  *  framework's own, beside its code and never in the vault. Nothing is seeded
  *  and nothing is updated — a copy is the workspace's from the moment it is
@@ -324,9 +401,16 @@ export interface HostPaths {
   /** The framework root, read for the two modules `check.ts` imports so the copy
    *  in a vault can actually load. Defaults to this directory. */
   checkerLib?: string;
-  /** `guest/plugins/` as it ships, copied into the vault's own `plugins/`.
-   *  Defaulted for the same reason the roots above are. */
-  pluginSeed?: string;
+  /** `guest/plugins/` as it ships: the fallback rung a page's document and a
+   *  slot plugin are resolved from when the vault has no file at that path, and
+   *  what `docs/plugins/` is mirrored from on open. Defaulted for the same
+   *  reason the roots above are. */
+  pluginRoot?: string;
+  /** Every version of every plugin the framework ever shipped, by blob hash —
+   *  what the sweep on open checks a vault's copies against. Defaults to what
+   *  this build carried, or to the git history beside a source run. A test
+   *  hands one in to say exactly what counts as shipped. */
+  shipped?: Shipped;
   /** WHAT THE PROGRAM CARRIES, when it was compiled with its files inside it.
    *  Given one, every path above is ignored and the seed roots are read out of
    *  the map instead. Defaults to whatever this build embedded, which is nothing
@@ -370,6 +454,15 @@ export interface Host {
    *  mode — it is the request that has not chosen a folder yet, which is how the
    *  picker is reachable on a first run. */
   deps(path?: string): Promise<Deps>;
+  /** THE FRAMEWORK'S OWN PLUGINS, read-only, the same set every mount falls back
+   *  to. The routes read it for the loader's bundle and for a plugin file the
+   *  vault has not got. */
+  pluginRoot: Files;
+  /** THE BACKGROUND WORK OF ONE MOUNT — the mirror into `docs/plugins/` and the
+   *  sweep of unedited copies — as a promise a caller can wait on. Nothing a
+   *  page draws waits on it; a test does. Resolves for a folder that is not
+   *  mounted, because there is nothing to wait for. */
+  settled(path: string): Promise<void>;
   /** The vaults mounted right now, absolute. The tests read it to prove that
    *  asking for one folder did not quietly mount another. */
   open(): string[];
@@ -425,6 +518,10 @@ interface Mounted {
    *  is the only thing that compares. */
   seen: Seen;
   deps: Omit<Deps, "vault" | "production" | "live" | "envNames">;
+  /** See `Host.settled`. Set by `hold` once the mount has answered. */
+  settled: Promise<void>;
+  /** The vault's own files, held for the work `hold` starts after the mount. */
+  files: Files;
 }
 
 /** Does this file parse? A half-written `content.yaml` is a normal intermediate
@@ -588,6 +685,70 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   const seedRoot = (root: string, path: string) =>
     embedded ? makeEmbeddedFiles(carried, root) : makeFiles(path);
 
+  /** THE FRAMEWORK'S OWN PLUGINS, one read-only root for every mount. Built
+   *  once here rather than per vault because it is the same set whichever
+   *  folder is open — the routes read it too, through `Host.pluginRoot`. */
+  const pluginRoot = seedRoot(PLUGINS_DIR, at.pluginRoot ?? PLUGIN_ROOT);
+
+  /** WHAT COUNTS AS SHIPPED, asked once and late. A build carries the list; a
+   *  run from source asks the git history beside it, which costs a few `git`
+   *  calls and is why it is not asked until the first mount's background work
+   *  wants it. A caller that handed a list in gets that list. */
+  let shippedOnce: Promise<Shipped> | null = null;
+  const shipped = (): Promise<Shipped> => {
+    if (shippedOnce === null) {
+      shippedOnce = at.shipped !== undefined
+        ? Promise.resolve(at.shipped)
+        : embedded ? Promise.resolve(SHIPPED_BUILT) : shippedHashes(HERE, SHIPPED_DIRS);
+    }
+    return shippedOnce;
+  };
+
+  /** THE THREE ROOTS THE FRAMEWORK OWNS INSIDE A VAULT, read-only, built once.
+   *  `vaultSeed` for the skills as they ship, `skill` for the checker, and the
+   *  framework itself for the modules the checker imports. The seeder is handed
+   *  the first for everything else at the vault root. */
+  const skillsSeed = seedRoot("vault", at.vaultSeed ?? VAULT_SEED);
+  const checkerSeed = seedRoot("skill", at.skill ?? SKILL);
+  const checkerLibSeed = seedRoot("", at.checkerLib ?? HERE);
+
+  /** THE WORK AFTER A MOUNT, off the mount path on purpose: a page draws from
+   *  the framework's plugins the instant the vault is open, so nothing here is
+   *  anything a page waits for. First the skills, so an agent pointed at the
+   *  folder reads the framework's current ones; then the mirror, so what a
+   *  person can read is current; then the sweep, so what they never edited
+   *  stops being a stale copy. Each failure is a sentence in the log and never
+   *  a mount that did not happen — a folder whose `docs/` cannot be written is
+   *  still a workspace. */
+  async function afterMount(files: Files): Promise<void> {
+    try {
+      const written = await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed, await shipped());
+      // A copy under the name a skill had before it wore the prefix, unedited,
+      // goes with the same commit — otherwise a vault carries the skill twice.
+      const gone = await sweepOldSkills(files, skillsSeed, await shipped());
+      for (const rel of gone) console.log(`skills  →  ${rel} was the framework's own under its old name, unedited, and is gone`);
+      if (written || gone.length > 0) {
+        await files.commit(`The framework's guide, docs, skills and checker, as ${await frameworkVersion()} ships them`);
+      }
+    } catch (e) {
+      console.warn("the framework's skills could not be written into .agents/skills/", e);
+    }
+    try {
+      await mirrorPlugins(files, pluginRoot);
+    } catch (e) {
+      console.warn("the plugin mirror in docs/plugins/ could not be written", e);
+    }
+    try {
+      const gone = await sweepShipped(files, await shipped());
+      if (gone.length > 0) {
+        for (const rel of gone) console.log(`plugins  →  ${rel} was the framework's own, unedited, and now follows the framework`);
+        await files.commit("The framework's unedited plugin copies removed; the framework's own draw instead");
+      }
+    } catch (e) {
+      console.warn("the vault's plugins could not be checked against the framework's history", e);
+    }
+  }
+
   /** THE LIST. Every module in the server, constructed against one folder.
    *  Called once on boot and once per `open`, which is what makes the vault
    *  swappable at all — there is no state above this to migrate, because
@@ -663,7 +824,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
     const yaml = { parse, parseAny, format, formatAny };
     const tables = makeTables(db);
-    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage);
+    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot);
     // Rooted at `design/` rather than at the vault: the design doc is ONE page
     // and it sits beside `pages/`, so the module reads its `content.yaml` and
     // its sections from the root of what it is handed. That placement is what
@@ -681,11 +842,14 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         return {};
       }
     };
-    // THE `doc` PLUGIN'S DOCUMENT, out of this vault's own `plugins/`. The design
-    // module's files are rooted at `design/` and correctly cannot reach it, so it
-    // is handed a way to ask — read live, so editing the plugin changes the
-    // design doc on the next draw exactly as it changes every other doc page.
-    const docDocument = async () => (await files.read(DOC_PLUGIN_DOCUMENT)) ?? "";
+    // THE `doc` PLUGIN'S DOCUMENT, resolved the way `pages.ts` resolves every
+    // plugin document: this vault's own `plugins/doc/index.html` if it has one,
+    // the framework's otherwise. The design module's files are rooted at
+    // `design/` and correctly cannot reach either, so it is handed a way to ask
+    // — read live, so editing the plugin changes the design doc on the next
+    // draw exactly as it changes every other doc page.
+    const docDocument = async () =>
+      (await files.read(DOC_PLUGIN_DOCUMENT)) ?? (await pluginRoot.read(frameworkPlugin(DOC_PLUGIN))) ?? "";
     // THE SAME BASELINE AS THE VAULT'S OWN FILES, rooted a level down. A write
     // into `design/` is this process's write wherever it was made from, and two
     // baselines over one tree would make half of them look like somebody else's.
@@ -698,17 +862,11 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const presets = makePresets({
       pages, tables, files, yaml,
       seed: seedRoot("presets", at.presets),
-      // The vault's own furniture: `AGENTS.md`, `.agents/skills/` and `design/`, copied
-      // file by file and never over anything already there.
-      vaultSeed: seedRoot("vault", at.vaultSeed ?? VAULT_SEED),
-      skill: seedRoot("skill", at.skill ?? SKILL),
-      // The framework itself, read for the two modules the checker imports. It is
-      // the only Files here rooted above a single concern, which is what makes
-      // it the composition root's business rather than the seeder's.
-      checkerLib: seedRoot("", at.checkerLib ?? HERE),
-      // EVERY PLUGIN, into the vault's own `plugins/`. Nothing is shipped, so
-      // this root is what makes a page draw at all.
-      pluginSeed: seedRoot(PLUGINS_DIR, at.pluginSeed ?? PLUGIN_SEED),
+      // The vault's own furniture: `INSTRUCTIONS.md`, `design/` and `base/`,
+      // copied file by file and never over anything already there. The same
+      // root's `AGENTS.md`, `docs/` and `.agents/skills/` are the framework's
+      // and go through `rewriteOwned` in `afterMount` instead.
+      vaultSeed: skillsSeed,
     });
 
     // The rows live in SQLite and the pages live in git. A binary file rewritten
@@ -764,7 +922,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       env: () => Bun.env,
       templates: seedRoot(TEMPLATES_DIR, at.templates ?? TEMPLATES),
       api: () => apiFor(path),
-      seededSkill: async (name) => (await seedRoot("vault", at.vaultSeed ?? VAULT_SEED).read(`${VAULT_SKILLS}/${name}/SKILL.md`)) !== null,
+      // THE FRAMEWORK'S SKILLS WEAR `biom-`, which is the whole of how a
+      // rewritten skill and a person's own are told apart — `framework.ts`
+      // owns the rule, and this is one more reader of it.
+      seededSkill: async (name) => name.startsWith(SKILL_PREFIX),
       onChange: (_what, row) => announce(path, row),
     });
     // ROWS STILL RUNNING FROM A PREVIOUS PROCESS ARE MARKED LOST, before
@@ -790,7 +951,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
 
     await memory.remember(path);
-    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs } };
+    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs }, settled: Promise.resolve(), files };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -825,7 +986,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const had = mounted.get(abs);
     if (had) return await had;
 
-    const started = mount(abs);
+    const started = mount(abs).then((m) => {
+      // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
+      // caller awaits resolves with the mount; the mirror and the sweep start
+      // from here and are reachable through `settled` for whoever has to wait.
+      m.settled = afterMount(m.files);
+      return m;
+    });
     mounted.set(abs, started);
     try {
       const done = await started;
@@ -1183,6 +1350,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       return mounted.size > 0 ? null : trouble;
     },
     vault: vaultAt(null),
+    pluginRoot,
+    async settled(path: string): Promise<void> {
+      const held = mounted.get(resolve(path));
+      if (held === undefined) return;
+      await (await held).settled;
+    },
     async deps(path?: string): Promise<Deps> {
       // Two members are the host's and not any vault's, and they ride on every
       // set: how many runs are alive across the process, which the shell asks
@@ -1427,7 +1600,7 @@ export const PLUGIN_DIR_ROUTE = "/plugin/";
  *  is replaced by the sentence saying so. One broken plugin is one broken plugin.
  *
  *  @param vault the absolute path of the folder being served */
-export async function pluginBundle(vault: string): Promise<Response> {
+export async function pluginBundle(vault: string, framework: Files | null = null): Promise<Response> {
   const dir = join(vault, PLUGINS_DIR_VAULT);
   let files: { name: string; mtimeMs: number; size: number }[];
   try {
@@ -1448,16 +1621,40 @@ export async function pluginBundle(vault: string): Promise<Response> {
     files = [];
   }
 
+  // THE FRAMEWORK'S OWN, MINUS EVERY NAME THE VAULT ALSO HAS. The union is
+  // computed here by filename and nowhere else: a vault `markdown.js` means the
+  // framework's `markdown.js` never enters the script, so the registry never
+  // sees two registrations of one id and its refusal never fires for this. The
+  // framework's go FIRST, so a vault plugin that `ctx.use`s one finds it
+  // registered. Read by content rather than stat'd — `Files` has no stat, the
+  // set is a handful of small files, and reading them is what keeps the
+  // edit-and-reload loop live for `guest/plugins/` in a checkout.
+  const mine = new Set(files.map((f) => f.name));
+  const theirs: { name: string; source: string }[] = [];
+  if (framework !== null) {
+    const entries = (await framework.list(".")).filter((e) => !e.dir && e.name.endsWith(".js") && !mine.has(e.name));
+    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const source = await framework.read(e.name);
+      if (source !== null) theirs.push({ name: e.name, source });
+    }
+  }
+
   // THE FOLDER AS IT STANDS, AS ONE STRING. Every page in a vault carries this
   // tag, so a rail of twenty pages is twenty requests that read and compile every
   // plugin in the folder on a server with one thread. The key is the listing plus
   // each file's mtime and size, so a write through the app, an editor save, a
-  // delete and a reseed all miss the memo and nothing else does.
-  const key = files.map((f) => `${f.name}:${f.mtimeMs}:${f.size}`).join("\n");
+  // delete and a reseed all miss the memo and nothing else does — and the
+  // framework's half by a hash of what was read, for the same reason.
+  const key = files.map((f) => `${f.name}:${f.mtimeMs}:${f.size}`).join("\n")
+    + "\n--\n" + theirs.map((t) => `${t.name}:${createHash("sha1").update(t.source).digest("hex")}`).join("\n");
   const had = bundles.get(vault);
   if (had !== undefined && had.key === key) return pluginResponse(had.body);
 
   const parts: string[] = [PLUGIN_BUNDLE_HEAD];
+  for (const { name, source } of theirs) {
+    parts.push(`/* framework/${name} */`);
+    parts.push(compiled(name, "framework", source, null));
+  }
   for (const { name, size } of files) {
     parts.push(`/* plugins/${name} */`);
     let broken: string | null = null;
@@ -1470,21 +1667,32 @@ export async function pluginBundle(vault: string): Promise<Response> {
       broken = `${Math.round(size / 1024)}KB is larger than a plugin may be (${Math.round(PLUGIN_MAX_BYTES / 1024)}KB) — a plugin is a file you can read, and a library belongs in its own script`;
     } else {
       source = await Bun.file(join(dir, name)).text();
-      try {
-        // Compiles the source and runs none of it.
-        new Function(source);
-      } catch (e) {
-        broken = e instanceof Error ? e.message : String(e);
-      }
     }
-    if (broken === null) parts.push(`file(${JSON.stringify(name)}, function () {\n${source}\n});`);
-    else parts.push(`fail(${JSON.stringify(name)}, ${JSON.stringify(broken)});`);
+    parts.push(compiled(name, "plugins", source, broken));
   }
   parts.push("})();");
 
   const body = parts.join("\n");
   bundles.set(vault, { key, body });
   return pluginResponse(body);
+}
+
+/** ONE PLUGIN'S SEGMENT OF THE BUNDLE. Compiled here with `new Function` —
+ *  which parses and runs nothing — so a file that does not parse is replaced by
+ *  the sentence saying so instead of taking every other plugin down with it.
+ *  `root` is what the failure names, `plugins/` or `framework/`, so a reader
+ *  knows which copy broke; the bare file name is what the registry reads to
+ *  bind a part kind, and it is the same whichever root it came from. */
+function compiled(name: string, root: "plugins" | "framework", source: string, broken: string | null): string {
+  if (broken === null) {
+    try {
+      new Function(source);
+    } catch (e) {
+      broken = e instanceof Error ? e.message : String(e);
+    }
+  }
+  if (broken === null) return `file(${JSON.stringify(name)}, ${JSON.stringify(root)}, function () {\n${source}\n});`;
+  return `fail(${JSON.stringify(name)}, ${JSON.stringify(root)}, ${JSON.stringify(broken)});`;
 }
 
 /** The largest a single `plugins/*.js` may be. Generous for a file somebody is
@@ -1517,20 +1725,21 @@ function pluginResponse(body: string): Response {
  *  `rt.pluginFile` is what `whereFrom()` in the registry reads, and it is restored
  *  afterwards rather than cleared, so a plugin that registers another from inside
  *  its own body is still attributed to the file it is in. */
-const PLUGIN_BUNDLE_HEAD = `/* <vault>/plugins/ — this workspace's own plugins, in id order.
-   Served whole by the server that read the folder; every file gets a function of
-   its own, so one plugin that fails is one plugin that fails. */
+const PLUGIN_BUNDLE_HEAD = `/* The slot plugins this workspace draws with: the framework's own, then
+   <vault>/plugins/ — each in id order, and a vault file shadows the framework's
+   of the same name. Served whole by the server that read both; every file gets
+   a function of its own, so one plugin that fails is one plugin that fails. */
 (function () {
   var rt = globalThis.__gRuntime || (globalThis.__gRuntime = {});
-  function fail(file, e) {
-    var message = "plugins/" + file + " did not load: " + ((e && e.message) || e);
+  function fail(file, root, e) {
+    var message = root + "/" + file + " did not load: " + ((e && e.message) || e);
     if (typeof rt.report === "function") rt.report(message);
     else console.error("[biom] " + message);
   }
-  function file(name, run) {
+  function file(name, root, run) {
     var was = rt.pluginFile;
     rt.pluginFile = name;
-    try { run(); } catch (e) { fail(name, e); } finally { rt.pluginFile = was; }
+    try { run(); } catch (e) { fail(name, root, e); } finally { rt.pluginFile = was; }
   }`;
 
 /** The routes that resolve INSIDE a vault, so they only exist on a request that
@@ -1546,11 +1755,34 @@ const PLUGIN_BUNDLE_HEAD = `/* <vault>/plugins/ — this workspace's own plugins
  *  `plugins/` is this WORKSPACE's own plugins, served to the box as classic
  *  scripts exactly as `/guest/` and `/vendor/` are. It is per-vault for the
  *  obvious reason the other two are not: a plugin somebody wrote for their
- *  workspace lives in it. */
+ *  workspace lives in it. A path under it the vault has NOT got falls back to
+ *  the framework's own file of that name — see `pluginFile` — which is the same
+ *  nearest-first walk `pages.ts` makes for a page's document, applied per file:
+ *  a vault holding only `plugins/kanban/index.html` still gets the framework's
+ *  `kanban/kanban.js` underneath it. */
 function inVault(rest: string, vault: string): string | null {
   if (rest.startsWith(PLUGIN_DIR_ROUTE)) return under(join(vault, PLUGINS_DIR_VAULT), rest.slice(PLUGIN_DIR_ROUTE.length));
   if (rest.startsWith("/asset/")) return under(join(vault, "assets"), rest.slice("/asset/".length));
   return null;
+}
+
+/** ONE PLUGIN FILE, the vault's if it has it and the framework's if not.
+ *  Answered as text through the read-only root rather than as a path, because
+ *  a carried file has no path a route may hand out and a plugin is text. */
+export async function pluginFile(rel: string, vault: string, framework: Files): Promise<Response> {
+  const mine = under(join(vault, PLUGINS_DIR_VAULT), rel);
+  if (mine !== null && (await Bun.file(mine).exists())) return await deliver(mine);
+  let theirs: string | null = null;
+  try {
+    theirs = await framework.read(rel);
+  } catch {
+    theirs = null;
+  }
+  if (theirs === null) return new Response("Not found", { status: 404 });
+  const ext = rel.slice(rel.lastIndexOf(".") + 1);
+  return new Response(theirs, {
+    headers: { "content-type": TYPES[ext] ?? "application/octet-stream", "cache-control": "no-store" },
+  });
 }
 
 /** THE ONE THING IN THE DOCUMENT THE CLIENT CANNOT WORK OUT FOR ITSELF.
@@ -1565,6 +1797,48 @@ function inVault(rest: string, vault: string): string | null {
  *  The name is duplicated in `client/index.html` and in `client/boot.js` and
  *  cannot be shared: `contracts/` is the only place all three could import from
  *  and it is frozen, and an HTML attribute cannot import anything at all. */
+/** `major.minor.patch` out of a version string, or null where there is none.
+ *  A leading `v`, and anything after the triple — `-2-gf8759a0`, a `-dirty` —
+ *  is ignored, so a build between tags compares as the tag it was cut from and
+ *  is told about the next one and nothing sooner. */
+export function versionTriple(text: string): [number, number, number] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(text.trim());
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** Whether `latest` is a newer release than `running`. False whenever either
+ *  side fails to parse: a development build is never told to update, and a
+ *  malformed file at biom.dev says nothing rather than something wrong. */
+export function newerThan(running: string, latest: string): boolean {
+  const a = versionTriple(running);
+  const b = versionTriple(latest);
+  if (a === null || b === null) return false;
+  if (b[0] !== a[0]) return b[0] > a[0];
+  if (b[1] !== a[1]) return b[1] > a[1];
+  return b[2] > a[2];
+}
+
+/** The one request this program makes on its own account. Resolves to the
+ *  newer version's name, or null — on the same version, an older file, a
+ *  malformed one, a network that is not there, or a slow answer. Never throws
+ *  and never retries: the next launch asks again. */
+export async function fetchNewer(running: string, url = VERSION_URL, platform = osPlatform()): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": `Biom/${running} (${platform})`, Accept: "application/json" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    const latest = body && typeof body === "object" && typeof (body as { version?: unknown }).version === "string"
+      ? (body as { version: string }).version
+      : null;
+    return latest !== null && newerThan(running, latest) ? latest : null;
+  } catch {
+    return null;
+  }
+}
+
 const ENV_META = "meta name=\"biom-env\" content=";
 
 /** Built once rather than per request: the pattern is constant, and `/` is a
@@ -1614,6 +1888,21 @@ export function withTrouble(html: string, why: string | null): string {
   return `${html.slice(0, after)}\n<${TROUBLE_META}"${escapeAttribute(why)}">${html.slice(after)}`;
 }
 
+/** THE THIRD THING THE CLIENT CANNOT WORK OUT FOR ITSELF: that a newer version
+ *  exists. Same channel, same shape as the trouble tag, same reason — a fact
+ *  about this launch and not about any vault, and `contracts/` is frozen. Absent
+ *  when there is nothing to say, so a document on the current version is
+ *  byte-identical to the file. */
+const UPDATE_META = "meta name=\"biom-update\" content=";
+
+export function withUpdate(html: string, newer: string | null): string {
+  if (newer === null || newer.trim() === "") return html;
+  const at = ENV_META_RE.exec(html);
+  if (at === null) return html;
+  const after = at.index + at[0].length + 1;
+  return `${html.slice(0, after)}\n<${UPDATE_META}"${escapeAttribute(newer)}">${html.slice(after)}`;
+}
+
 /** A sentence written by this framework, made safe to sit in an HTML attribute.
  *  Nothing here is user input — every one of these strings is a literal in
  *  `server/workspace/vault.ts` or `server/workspace/migrate.ts` — and it is
@@ -1641,12 +1930,13 @@ const escapeAttribute = (text: string): string =>
 export function locate(pathname: string): string | null {
   if (pathname === "/" || pathname === "") return INDEX;
   if (pathname === SHIM_ROUTE) return `${GUEST}/biom.js`;
-  // `guest/plugins/` IS A SEED ROOT AND NOT A SERVED ONE. Every plugin is copied
-  // into the vault and served from `/v/<enc>/plugin/`; serving it here as well
-  // would leave two urls for one plugin, and the one a page happened to name
-  // would decide whether the person's own copy drew or the install's did. It is
-  // refused explicitly rather than by the directory simply being absent, because
-  // in a checkout it is very much present.
+  // `guest/plugins/` IS THE FALLBACK RUNG AND NOT A SERVED ROOT. A plugin is
+  // reached at `/v/<enc>/plugin/…`, where the vault's own file answers first and
+  // the framework's second; serving it here as well would leave two urls for
+  // one plugin, and the one a page happened to name would decide whether the
+  // person's override drew or the framework's did. It is refused explicitly
+  // rather than by the directory simply being absent, because in a checkout it
+  // is very much present.
   if (pathname.startsWith(`/${GUEST}/plugins/`)) return null;
   for (const [prefix, base] of STATIC) {
     if (!pathname.startsWith(prefix)) continue;
@@ -1690,7 +1980,7 @@ function source(key: string | null): string | null {
  *  client loads already has: the change loop is somebody writing a file and
  *  pressing reload, and a document cached in this process would be the one file
  *  in the client that needed a restart. */
-const composeRoot = (html: string) => withTrouble(withEnvironment(html, ENV), TROUBLE());
+const composeRoot = (html: string) => withUpdate(withTrouble(withEnvironment(html, ENV), TROUBLE()), NEWER);
 
 /** WHY THIS LAUNCH HAS NO WORKSPACE, read at the moment a document is composed
  *  rather than captured when the server started.
@@ -1703,6 +1993,11 @@ const composeRoot = (html: string) => withTrouble(withEnvironment(html, ENV), TR
  *  gets nothing, which is the honest answer to a question nobody asked. */
 let TROUBLE: () => string | null = () => null;
 
+/** THE NEWER VERSION, if the check has come back with one. Null until it does
+ *  and null forever if it does not; a document composed before the answer lands
+ *  says nothing, and the next load says it. */
+let NEWER: string | null = null;
+
 /** The framework's own files: the client, the box's code, the contracts, the
  *  fonts and the vendored scripts. One url whichever folder is being looked at,
  *  and one lookup whether they are carried or on disk.
@@ -1711,9 +2006,15 @@ let TROUBLE: () => string | null = () => null;
  *  than by which url arrived: `locate` answers the root document for a bare `/`
  *  and for a deep link into a vault alike, and both have to carry which build
  *  this is. */
-async function serveStatic(pathname: string): Promise<Response> {
+async function serveStatic(pathname: string, grant?: string): Promise<Response> {
   const key = locate(pathname);
-  return await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
+  const response = await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
+  // THE TERMINAL CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE —
+  // a cookie rather than a third meta tag, because a script on the page never
+  // needs to read it and an HttpOnly cookie is one no script can. See
+  // `terminalRefusal`.
+  if (key === INDEX && grant !== undefined && response.status === 200) response.headers.append("set-cookie", grant);
+  return response;
 }
 
 /**
@@ -1822,6 +2123,89 @@ const mintToken = (): string => crypto.randomUUID().replaceAll("-", "");
 export function tokenOk(expected: string | null, url: URL): boolean {
   if (expected === null) return true;
   return url.searchParams.get(TOKEN_PARAM) === expected;
+}
+
+/* ── the terminal, and who may open one ─────────────────────────────────── */
+
+/** THE TERMINAL IS LOCAL COMMAND EXECUTION, AND IT IS GUARDED LIKE IT. The API
+ *  route above is open in a source run because what it reaches is a workspace;
+ *  what `/v/<vault>/terminal` reaches is a shell running as the person, so no
+ *  build answers it without every check below — a development server that
+ *  became an unauthenticated terminal service would be a remote shell for
+ *  anybody on the same network, because `Bun.serve` listens on every interface.
+ *
+ *  FIVE CHECKS, AND EACH STOPS SOMETHING THE OTHERS DO NOT:
+ *
+ *    · A WEBSOCKET UPGRADE. The page proxy (`proxy` in `server/api/routes.ts`)
+ *      is a `fetch`, and a fetch cannot upgrade — so no page can reach this
+ *      through the one way out it has.
+ *    · THE LAUNCH TOKEN, in the built application, exactly as the API route
+ *      takes it: the window has it in its address and nothing else does.
+ *    · LOOPBACK, by the socket's own peer address rather than any header, so a
+ *      machine on the same network is refused before a header is read.
+ *    · HOST AND ORIGIN. The Host must be a loopback name on this server's port —
+ *      which is what defeats a DNS-rebinding page that resolves its own name to
+ *      127.0.0.1 — and the Origin must be that same address. A page in the box
+ *      has an opaque origin and its browser sends `Origin: null`; a site in
+ *      another tab sends its own. Both are refused here, and a browser never
+ *      lets a page forge either.
+ *    · THE CAPABILITY COOKIE. Minted once per launch, set `HttpOnly` and
+ *      `SameSite=Strict` on the document this server composes, and only for a
+ *      loopback request. A sandboxed frame's requests are cross-site, so a
+ *      Strict cookie is never sent from inside the box, and no script on any
+ *      page can read an HttpOnly one.
+ *
+ *  WHAT THIS DOES NOT STOP, SAID PLAINLY: another program on this machine, as
+ *  this user or another, can fetch `/`, take the cookie and forge the headers —
+ *  in a source run, where there is no launch token. A process that can already
+ *  do that as the same user can already run any command it likes; a DIFFERENT
+ *  local user on a shared machine is the case this leaves open in development,
+ *  and the built application's token closes it there.
+ *
+ *  Pure, and exported: the refusal is a sentence for the log and a test, and the
+ *  socket itself is never told which check failed. */
+export const TERMINAL_COOKIE = "biom-terminal";
+
+/** Named per port, because a cookie ignores the port and two servers on one
+ *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
+ *  other's. */
+export const terminalCookie = (port: number): string => `${TERMINAL_COOKIE}-${port}`;
+
+const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+export function isLoopback(address: string | null | undefined): boolean {
+  if (!address) return false;
+  const a = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+  return a === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+}
+
+/** One cookie's value out of a `Cookie` header, or null. */
+export function cookieValue(header: string | null, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const at = part.indexOf("=");
+    if (at < 0) continue;
+    if (part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return null;
+}
+
+export function terminalRefusal(
+  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
+  if (!asked.tokenOk) return "this launch's token is missing";
+  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
+  const host = asked.host ?? "";
+  const cut = host.lastIndexOf(":");
+  const name = cut < 0 ? host : host.slice(0, cut);
+  const port = cut < 0 ? "" : host.slice(cut + 1);
+  if (!LOOPBACK_NAMES.has(name.toLowerCase()) || port !== String(expected.port)) return "the Host is not this server on this machine";
+  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
+  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
+  return null;
 }
 
 /* ── the live stream ────────────────────────────────────────────────────── */
@@ -2034,6 +2418,12 @@ if (import.meta.main) {
   // remembered entry is checked because it is a claim about the past. It used to
   // be one ternary here, and what that ternary did to a deleted workspace was
   // recreate it — empty, seeded from scratch, wearing its name.
+  // ASKED FIRST AND AWAITED NEVER: the check runs alongside the mount below, so
+  // by the time the shell loads `/` the answer has usually landed. A launch that
+  // beats it sees the notice on its next load instead, which is the honest
+  // trade for a start-up that never waits on a network.
+  if (CHECK_UPDATES) fetchNewer(VERSION).then((newer) => { NEWER = newer; });
+
   const start = await bootVault(Bun.env.VAULT, await memory.last());
   const host = await makeHost({
     vault: start.path ?? undefined,
@@ -2042,7 +2432,7 @@ if (import.meta.main) {
     vaultSeed: VAULT_SEED,
     skill: SKILL,
     production: PRODUCTION,
-    pluginSeed: PLUGIN_SEED,
+    pluginRoot: PLUGIN_ROOT,
   });
 
   // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
@@ -2059,13 +2449,34 @@ if (import.meta.main) {
   // a step in it.
   const TOKEN = STANDALONE ? mintToken() : null;
 
+  // THE TERMINAL'S CAPABILITY, minted in EVERY build — unlike the token above —
+  // because the terminal is guarded in every build. See `terminalRefusal`.
+  const TERMINAL_CAP = mintToken();
+  // Every workspace's terminal sessions. Constructed here like everything else,
+  // handed the one capability it spawns with and the environment it scrubs.
+  const terminals = makeTerminals({ spawn: spawnPty, env: process.env });
+  // A SHELL NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the one
+  // place every ending passes through — the window closing, the parent pipe
+  // reaching end of file, Ctrl-C in `make dev` — so every tree is killed there,
+  // synchronously, because no timer runs after it. The two signals are turned
+  // into an exit so that handler runs; without one a signal ends the process and
+  // runs nothing of ours. SIGHUP is deliberately left alone: `make up` starts
+  // this under `nohup`, and a handler here would undo that.
+  process.on("exit", () => terminals.killAll());
+  process.on("SIGINT", () => process.exit(130));
+  process.on("SIGTERM", () => process.exit(143));
+
   const server = Bun.serve({
     port: PORT,
     // See KEEPALIVE: the default is ten seconds and a live stream says nothing
     // most of the time.
     idleTimeout: IDLE,
-    async fetch(request) {
+    async fetch(request, server) {
       const url = new URL(request.url);
+      /** The terminal capability, for a document served to this machine only. */
+      const grant = isLoopback(server.requestIP(request)?.address)
+        ? `${terminalCookie(server.port)}=${TERMINAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
+        : undefined;
       // WHICH FOLDER, read off the front of the path. `null` means the request
       // named none, which is legal: the picker has to be reachable before
       // anything has been chosen, and `vault.browse`, `vault.open` and
@@ -2094,6 +2505,39 @@ if (import.meta.main) {
         return await route(request, await host.deps(named === null ? undefined : named.path));
       }
 
+      // THE TERMINAL, and nothing about it is reachable without every check in
+      // `terminalRefusal`. The refusal goes to the log and never to the socket:
+      // telling a caller which check failed is telling it which to forge next.
+      if (rest === TERMINAL_ROUTE) {
+        if (named === null) return new Response("This request names no workspace", { status: 404 });
+        const refused = terminalRefusal(
+          {
+            upgrade: request.headers.get("upgrade"),
+            tokenOk: tokenOk(TOKEN, url),
+            address: server.requestIP(request)?.address ?? null,
+            host: request.headers.get("host"),
+            origin: request.headers.get("origin"),
+            cookie: cookieValue(request.headers.get("cookie"), terminalCookie(server.port)),
+          },
+          { port: server.port, capability: TERMINAL_CAP },
+        );
+        if (refused !== null) {
+          console.warn(`terminal refused   →  ${refused}`);
+          return new Response("Forbidden", { status: 403 });
+        }
+        // THE FOLDER A SHELL STARTS IN IS THE MOUNT'S OWN PATH, resolved here and
+        // never defaulted: a workspace that will not open is a refusal, not a
+        // terminal in the home directory.
+        let cwd: string;
+        try {
+          cwd = (await (await host.deps(named.path)).vault.info()).path;
+        } catch {
+          return new Response("That workspace is not open", { status: 404 });
+        }
+        if (server.upgrade(request, { data: { vault: cwd, attachment: null } })) return undefined;
+        return new Response("Expected a WebSocket", { status: 400 });
+      }
+
       if (request.method !== "GET") return new Response("Use GET", { status: 405, headers: { allow: "GET" } });
 
       // THE ONE LIVE STREAM, and it is served from here rather than from
@@ -2119,7 +2563,8 @@ if (import.meta.main) {
         // the loader's answer — every plugin this vault has, as one script — and
         // it has to be caught here, because `under()` resolves it to the folder
         // itself and `deliver` cannot read a directory.
-        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path);
+        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path, host.pluginRoot);
+        if (rel.startsWith(PLUGIN_DIR_ROUTE)) return await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot);
         const inside = inVault(rel, named.path);
         if (inside !== null) return await deliver(inside);
         // Anything else under the prefix is the client itself: a deep link like
@@ -2127,10 +2572,37 @@ if (import.meta.main) {
         // rather than a 404 they cannot navigate out of — and `serveStatic` is
         // what composes the root document, so a deep link into a vault carries
         // which build this is by the same path a bare `/` does.
-        return await serveStatic(rel);
+        return await serveStatic(rel, grant);
       }
 
-      return await serveStatic(decodeURIComponent(url.pathname));
+      return await serveStatic(decodeURIComponent(url.pathname), grant);
+    },
+    // ONE SOCKET PER WINDOW PER WORKSPACE, and all it does is hand bytes to the
+    // registry and back. Every decision about a session is in
+    // `server/workspace/terminals.ts`; this is the wire.
+    websocket: {
+      // Above the registry's own input limit, so an oversized paste is refused
+      // with a sentence rather than by the socket closing under the person.
+      maxPayloadLength: 4 * 1024 * 1024,
+      backpressureLimit: 16 * 1024 * 1024,
+      closeOnBackpressureLimit: false,
+      open(ws) {
+        ws.data.attachment = terminals.attach(ws.data.vault, {
+          send: (text) => void ws.send(text),
+          sendBinary: (bytes) => void ws.send(bytes),
+          buffered: () => ws.getBufferedAmount(),
+        });
+      },
+      message(ws, message) {
+        ws.data.attachment?.receive(message);
+      },
+      drain(ws) {
+        ws.data.attachment?.drained();
+      },
+      close(ws) {
+        ws.data.attachment?.detach();
+        ws.data.attachment = null;
+      },
     },
   });
 

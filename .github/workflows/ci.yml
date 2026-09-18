@@ -22,6 +22,14 @@ name: CI
 
 on: push
 
+env:
+  # THE RUNNERS NEVER COUNT AS A LAUNCH. The last job starts the packaged
+  # application on a screen, and a production build asks biom.dev once per
+  # start whether a newer version is out — the request whose log line is the
+  # count of the program being started by people. Set here, for every job,
+  # so a CI run is never mistaken for a person.
+  BIOM_NO_UPDATE_CHECK: "1"
+
 jobs:
   gates:
     # THE THREE THINGS EVERY CHANGE HAS TO PASS, and they are the same three
@@ -31,7 +39,17 @@ jobs:
     name: check and test
     runs-on: ubuntu-latest
     steps:
+      # THE WHOLE HISTORY, NOT ONE COMMIT. The build writes every version of every
+      # plugin and skill this repository ever shipped into the manifest, by git
+      # blob hash, and the server's sweeps on open read that list to tell a copy
+      # nobody edited from one somebody did — `server/platform/shipped.ts`. A
+      # shallow clone has one commit in it, so a binary built from one would
+      # recognise nothing, and the test that holds the list honest fails here
+      # for the same reason. Full depth on every job, so the bundle CI builds is
+      # the bundle a release is.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -73,7 +91,17 @@ jobs:
             build: bun run app -- --no-install
 
     steps:
+      # THE WHOLE HISTORY, NOT ONE COMMIT. The build writes every version of every
+      # plugin and skill this repository ever shipped into the manifest, by git
+      # blob hash, and the server's sweeps on open read that list to tell a copy
+      # nobody edited from one somebody did — `server/platform/shipped.ts`. A
+      # shallow clone has one commit in it, so a binary built from one would
+      # recognise nothing, and the test that holds the list honest fails here
+      # for the same reason. Full depth on every job, so the bundle CI builds is
+      # the bundle a release is.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Bun and git are the only two things a person installs by hand to build
       # this, and the runner already has the second.
@@ -117,7 +145,17 @@ jobs:
     name: The program on a screen
     runs-on: ubuntu-latest
     steps:
+      # THE WHOLE HISTORY, NOT ONE COMMIT. The build writes every version of every
+      # plugin and skill this repository ever shipped into the manifest, by git
+      # blob hash, and the server's sweeps on open read that list to tell a copy
+      # nobody edited from one somebody did — `server/platform/shipped.ts`. A
+      # shallow clone has one commit in it, so a binary built from one would
+      # recognise nothing, and the test that holds the list honest fails here
+      # for the same reason. Full depth on every job, so the bundle CI builds is
+      # the bundle a release is.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:

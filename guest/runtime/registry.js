@@ -153,11 +153,43 @@
   /** THE ONE FILE A PART KIND MAY BE DRAWN FROM. A reserved id is not filled by
    *  whoever registers first — that made the reservation a race the alphabet
    *  decided, and `plugins/0-notes.js` could take `table` from `plugins/table.js`
-   *  by sorting ahead of it. It is filled by the file the format names, which is
-   *  the vault's own `plugins/<kind>.js` and therefore the person's edit of it.
-   *  @param {string} id @param {string} from */
+   *  by sorting ahead of it. It is filled by the file the format names: the
+   *  vault's own `plugins/<kind>.js`, or the framework's `biom-<kind>.js`, and
+   *  the id says which. @param {string} id @param {string} from */
   function mayReserve(id, from) {
     return from === "plugins/" + id + ".js" || isRuntime(from);
+  }
+
+  /** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED, and why a bare name is not.
+   *  Every plugin the framework ships registers as `biom-<name>` — `biom-markdown`,
+   *  `biom-reveal`, `biom-doc` — so a plugin a workspace wrote can never share
+   *  an id with one the framework ships later and be refused as its duplicate
+   *  on the next release. A page, a slot and a plugin go on saying the bare
+   *  name: `resolve` below answers the workspace's own first and the
+   *  framework's second, which is the same nearest-first rule the server
+   *  applies to a plugin's file. Spelled once here and once in
+   *  `server/domain/pages.ts`, which is the other side of the same lookup, and
+   *  a test holds the two equal. */
+  const OURS = "biom-";
+
+  /** A part kind, or the framework's own plugin for one. Both are reserved to
+   *  the file that carries the name, because a `biom-markdown` registered by
+   *  some other file is the same theft as a `markdown` would be. @param {string} id */
+  function isKind(id) {
+    return PART_KINDS.has(id) || (id.startsWith(OURS) && PART_KINDS.has(id.slice(OURS.length)));
+  }
+
+  /** THE LOOKUP, NEAREST FIRST. A bare id is the workspace's own if it
+   *  registered one, and the framework's `biom-<id>` otherwise; a prefixed id
+   *  is exactly what it says. That is the whole of how `plugin: doc`,
+   *  `data-g-plugin="reveal"` and a `markdown` slot go on working when the
+   *  framework's files and ids wear the prefix — and how a workspace that
+   *  registers its own `reveal` is what those draw with, by having one.
+   *  @param {string} id @returns {string | null} the id that is registered */
+  function resolve(id) {
+    if (byId.has(id)) return id;
+    if (!id.startsWith(OURS) && byId.has(OURS + id)) return OURS + id;
+    return null;
   }
 
   const plugins = {
@@ -191,7 +223,7 @@
          `table.js` and took `table` — replacing the drawing of every table in
          the workspace, on pages its author never opened, with nothing anywhere
          saying so. The file name is not a race. */
-      if (PART_KINDS.has(id) && !mayReserve(id, from)) {
+      if (isKind(id) && !mayReserve(id, from)) {
         say('"' + id + '" is a part kind and only plugins/' + id + '.js draws it — ' + from + " must register under an id of its own");
         return false;
       }
@@ -226,14 +258,16 @@
 
     /** @param {string} id @returns {boolean} */
     has(id) {
-      return byId.has(id);
+      return resolve(id) !== null;
     },
 
-    /** The definition, or null. Public because a plugin composing on another
-     *  wants to know whether it declares `edit` before offering to edit it.
-     *  @param {string} id @returns {GPlugin | null} */
+    /** The definition, or null — the workspace's own for a bare id, the
+     *  framework's `biom-` one when it has none. Public because a plugin
+     *  composing on another wants to know whether it declares `edit` before
+     *  offering to edit it. @param {string} id @returns {GPlugin | null} */
     get(id) {
-      return byId.get(id) || null;
+      const found = resolve(id);
+      return found === null ? null : byId.get(found) || null;
     },
 
     /** Every id registered, in registration order. For the section menu the

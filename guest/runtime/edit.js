@@ -139,6 +139,9 @@
 [data-g-src] [data-g-seg] {
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  /* A typed tab draws four wide rather than the browser's eight, which is
+     what a tab looks like in the file. */
+  tab-size: 4;
   /* THE SOURCE'S OWN BLANK LINES ARE THE SPACING while it is open. A block keeps
      its size, its weight and its colour, and gives up its margin: the gap
      segments hold the newlines a person actually typed, and a rendered margin on
@@ -429,6 +432,75 @@
     range.collapse(true);
     sel.removeAllRanges();
     sel.addRange(range);
+  }
+
+  /**
+   * Select a character range, the two-ended form of `place`.
+   * @param {Element} host @param {number} from @param {number} to
+   */
+  function select(host, from, to) {
+    place(host, from);
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const it = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    let acc = 0;
+    let node;
+    while ((node = /** @type {Text | null} */ (it.nextNode()))) {
+      const len = (node.nodeValue || "").length;
+      if (to <= acc + len) {
+        range.setEnd(node, to - acc);
+        return;
+      }
+      acc += len;
+    }
+  }
+
+  /**
+   * A tab under the caret, in place of whatever was selected.
+   *
+   * THROUGH `execCommand`, DEPRECATED AS IT IS, because it is the one way to
+   * change a contenteditable that the browser's own undo stack records and
+   * that fires `input` like a keystroke — so the save and the rebuild that
+   * follow a typed character follow this one too. The fallback below is for a
+   * browser that refuses it, and it fires the event by hand.
+   * @param {HTMLElement} host
+   */
+  function indent(host) {
+    if (document.execCommand("insertText", false, "\t")) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const t = document.createTextNode("\t");
+    range.insertNode(t);
+    range.setStartAfter(t);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    host.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  /**
+   * One tab off the front of the line the caret is on, if there is one there.
+   * The caret stays on the same character, one place to the left of where the
+   * tab was.
+   * @param {HTMLElement} host
+   */
+  function outdent(host) {
+    const r = read(host);
+    const at = caretOffset(host, r);
+    if (at === null) return;
+    const line = r.text.lastIndexOf("\n", at - 1) + 1;
+    if (r.text[line] !== "\t") return;
+    select(host, line, line + 1);
+    if (!document.execCommand("delete")) {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      sel.getRangeAt(0).deleteContents();
+      host.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    place(host, Math.max(line, at - 1));
   }
 
   /* ── one editable slot ─────────────────────────────────────────────────── */
@@ -725,6 +797,18 @@
       if (ev.key === "Escape") {
         ev.preventDefault();
         host.blur();
+        return;
+      }
+      // TAB TYPES A TAB. A contenteditable hands Tab to the browser, which
+      // moves focus — so pressing it in a slot closed the slot and landed on
+      // the next control, and there was no way to indent a line of markdown at
+      // all. With a modifier it is still the browser's chord. Shift takes one
+      // back off the front of the caret's line, because a tab typed by
+      // mistake should come out the way it went in.
+      if (ev.key === "Tab" && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        ev.preventDefault();
+        if (ev.shiftKey) outdent(host);
+        else indent(host);
       }
     }, opt);
     host.addEventListener("blur", () => {

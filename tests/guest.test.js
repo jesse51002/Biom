@@ -35,7 +35,7 @@ function plugin(rel) {
   return registered;
 }
 
-const markdown = plugin("guest/plugins/markdown.js");
+const markdown = plugin("guest/plugins/biom-markdown.js");
 
 /** The edit wave, evaluated the same way. It hangs itself on the runtime
  *  namespace and, finding no `rt.page`, reports that it loaded early and wires
@@ -146,7 +146,7 @@ test("an empty source has no blocks, and unparseable source is one block", () =>
 test("`edit` and `blocks` travel together, and a plugin that declares neither is not editable", () => {
   expect(markdown.edit).toBe(true);
   expect(typeof markdown.blocks).toBe("function");
-  for (const rel of ["guest/plugins/table.js", "guest/plugins/child.js", "guest/plugins/html.js"]) {
+  for (const rel of ["guest/plugins/biom-table.js", "guest/plugins/biom-child.js", "guest/plugins/biom-html.js"]) {
     // Each says `edit: false` for its own reason, in its own file. None of them
     // is the absence of a decision.
     expect(plugin(rel).edit).toBe(false);
@@ -413,10 +413,10 @@ test("a page that fills itself later can ask for its projection to be taken agai
   expect(boot).toContain('document.addEventListener("biom:rendered"');
   // Coalesced, or a board that draws per row writes a file per row.
   expect(boot).toContain("projectSoon");
-  const kanban = readFileSync(new URL("../guest/plugins/kanban/kanban.js", import.meta.url), "utf8");
+  const kanban = readFileSync(new URL("../guest/plugins/biom-kanban/kanban.js", import.meta.url), "utf8");
   expect(kanban).toContain('new CustomEvent("biom:rendered")');
   // The map reads every page over the port before it has anything to say.
-  const mindmap = readFileSync(new URL("../guest/plugins/mindmap/mindmap.js", import.meta.url), "utf8");
+  const mindmap = readFileSync(new URL("../guest/plugins/biom-mindmap/mindmap.js", import.meta.url), "utf8");
   expect(mindmap).toContain('new CustomEvent("biom:rendered")');
 });
 

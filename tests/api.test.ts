@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 
 import { handle, route } from "../server/api/routes.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format, formatAny } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
@@ -168,7 +169,7 @@ function fakeTables(): Tables & TableTree & { boom: boolean } {
  *  rather than of the shipped copy. */
 const ROOT_SEED: Record<string, string> = {
   "AGENTS.md": "# This folder is a Biom workspace\n\nRead `.agents/skills/`.\n",
-  ".agents/skills/pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
+  ".agents/skills/biom-pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
   "design/content.yaml":
     "name: Design\nplugin: doc\nvariables:\n  mood: quiet\ncontents:\n" +
     "  - name: brand\n    parts:\n      body: |\n        # Brand\n        One accent.\n",
@@ -207,9 +208,14 @@ async function workspace() {
   const presets = makePresets({
     pages, tables, files, yaml,
     vaultSeed: makeFiles(seedRoot),
-    skill: makeFiles(skillDir),
   });
   const mirror = makeMirror(files, pages);
+  /** What the host does on open: the seeder's fill, then the framework's
+   *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
+  const furnish = async () => {
+    await presets.seedIfEmpty();
+    await rewriteOwned(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
+  };
   // AUTOMATIONS AND RUNS, over a registry in memory and a runner that starts
   // nothing: what this layer is tested for is that every kind reaches the
   // module and every refusal comes back as a code and a sentence. The runner
@@ -250,6 +256,7 @@ async function workspace() {
     },
     files,
     presets,
+    furnish,
     async drop() { await rm(root, { recursive: true, force: true }); },
   };
 }
@@ -279,7 +286,7 @@ const slot = (page: Page, section: string, part: string): string => {
 test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async () => {
   const w = await workspace();
   try {
-    await w.presets.seedIfEmpty();
+    await w.furnish();
 
     const first = await w.deps.pages.list();
     // The root page and nothing else. A new vault has no content: seeding
@@ -310,7 +317,7 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     // landed in the vault, the format guide lived in the framework repo and the
     // agent working in somebody else's folder never saw it.
     expect(await readFile(join(w.vault, "AGENTS.md"), "utf8")).toContain(".agents/skills/");
-    expect(existsSync(join(w.vault, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(w.vault, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     // A plain `.agents/skills/`, so the vault reads the same to Cursor and Codex.
     expect(existsSync(join(w.vault, ".claude"))).toBe(false);
     expect(existsSync(join(w.vault, "CLAUDE.md"))).toBe(false);
@@ -535,6 +542,67 @@ test("every ApiRequest kind round-trips", async () => {
 // MOVING A PAGE MOVES ITS DIRECTORY, so its id changes and so does every id
 // beneath it. Nothing forwards: the answer is the NEW id and a stale one gets
 // `not_found` rather than somebody else's page.
+test("page.rename writes the name, moves the directory, and answers the new id", async () => {
+  const w = await workspace();
+  try {
+    await w.presets.seedIfEmpty();
+    const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
+
+    const notes = value(await call({ kind: "page.create", init: { name: "Notes" } })) as PageRef;
+    const ash = value(await call({
+      kind: "page.create", init: { name: "Ashgrove", parent: notes.id },
+    })) as PageRef;
+    const other = value(await call({ kind: "page.create", init: { name: "Field notes" } })) as PageRef;
+    expect(other.id).toBe(`${ROOT_PAGE}/Field-notes`);
+    // A table under the page about to be renamed, which has no directory of its
+    // own and would otherwise go on naming an id that stopped existing.
+    w.tables.create({ name: "jobs", kind: "basic", columns: [{ name: "name", type: "text" }] });
+    await call({ kind: "table.setParent", name: "jobs", parent: ash.id });
+
+    // THE ID FOLLOWS THE NAME: the segment is spelled from it, and a sibling
+    // already holding that segment gets the same `-2` a create would.
+    const to = value(await call({ kind: "page.rename", page: notes.id, name: "  Field notes " })) as PageId;
+    expect(to).toBe(`${ROOT_PAGE}/Field-notes-2`);
+    expect(existsSync(join(dirOf(w.vault, to), "content.yaml"))).toBe(true);
+    expect(existsSync(join(dirOf(w.vault, notes.id), "content.yaml"))).toBe(false);
+
+    const listed = value(await call({ kind: "page.list" })) as PageRef[];
+    expect(listed.find((p) => p.id === to)?.name).toBe("Field notes");
+    // Everything beneath it moved with it, and the table followed.
+    expect(listed.find((p) => p.id === `${to}/Ashgrove`)?.name).toBe("Ashgrove");
+    expect(listed.some((p) => p.id === notes.id || p.id === ash.id)).toBe(false);
+    expect(w.tables.list().find((t) => t.name === "jobs")?.parent).toBe(`${to}/Ashgrove`);
+    expect((value(await call({ kind: "page.read", page: to })) as Page).name).toBe("Field notes");
+    // Nothing forwards: the old id is a page that is not there.
+    expect((await call({ kind: "page.read", page: notes.id })).ok).toBe(false);
+    // The parent's child list says the new name and the new id.
+    const kids = value(await call({ kind: "children", page: ROOT_PAGE })) as { id: string; name: string }[];
+    expect(kids.find((c) => c.id === to)?.name).toBe("Field notes");
+    expect(kids.some((c) => c.id === notes.id)).toBe(false);
+    // The mirror was carried rather than dropped: the new path has a file and
+    // the old one does not.
+    expect(existsSync(join(w.vault, "_markdown", `${to}.md`))).toBe(true);
+    expect(existsSync(join(w.vault, "_markdown", `${notes.id}.md`))).toBe(false);
+
+    // A NAME THAT SPELLS THE SEGMENT THE PAGE ALREADY HAS is a rename of the
+    // name alone, and the id stays — including a change of case, which the
+    // filesystem may not be able to tell apart.
+    expect(value(await call({ kind: "page.rename", page: to, name: "field notes 2" }))).toBe(to);
+    expect((value(await call({ kind: "page.read", page: to })) as Page).name).toBe("field notes 2");
+
+    // A blank name is refused rather than written, and a page that is not
+    // there says so.
+    const blank = await call({ kind: "page.rename", page: to, name: "   " });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) expect(blank.error.code).toBe("bad_request");
+    const gone = await call({ kind: "page.rename", page: `${ROOT_PAGE}/nothing-here`, name: "x" });
+    expect(gone.ok).toBe(false);
+    if (!gone.ok) expect(gone.error.code).toBe("not_found");
+  } finally {
+    await w.drop();
+  }
+});
+
 test("page.move answers the new id, renames the subtree, and nothing forwards", async () => {
   const w = await workspace();
   try {

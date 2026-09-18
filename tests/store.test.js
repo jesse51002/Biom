@@ -216,6 +216,27 @@ function fake() {
           t.docs[id] = { name: req.init.name, variables: {}, contents: [] };
           return { id, name: req.init.name };
         }
+        case "page.rename": {
+          // A RENAME IS A MOVE: the last segment is spelled from the name, so
+          // the id changes and everything beneath it changes with it, and the
+          // answer is the new id.
+          const to = `${req.page.slice(0, req.page.lastIndexOf("/") + 1)}${req.name.replace(/\s+/g, "-")}`;
+          for (const id of Object.keys(t.docs)) {
+            const moved = rebase(id, req.page, to);
+            if (moved === id) continue;
+            t.docs[moved] = t.docs[id];
+            delete t.docs[id];
+          }
+          t.docs[to].name = req.name;
+          t.pages = t.pages.map((p) => ({
+            ...p, id: rebase(p.id, req.page, to), name: p.id === req.page ? req.name : p.name,
+          }));
+          for (const [parent, held] of Object.entries(t.kids)) {
+            t.kids[parent] = held.map((c) =>
+              (c.kind === "page" && c.id === req.page ? { ...c, id: to, name: req.name } : c));
+          }
+          return to;
+        }
         case "page.move": {
           // A REAL MOVE: the directory goes under the new parent, so the page's
           // id changes and every id beneath it changes with it. The answer is
@@ -374,6 +395,28 @@ test("reload drops the cached page before it reads", async () => {
 
   expect(sawNull).toBe(true);
   expect(ws.get().page).not.toBe(null);
+});
+
+test("renaming a page is a move: the rail is re-listed and the open page re-read under its new id", async () => {
+  const { server, ws, seen } = wired();
+  await ws.loadTree();
+  await ws.loadPage("notes");
+  const paints = seen.n;
+
+  const to = await ws.renamePage("notes", "Field notes");
+  // THE ANSWER IS THE NEW ID, because the one sent has stopped existing.
+  expect(to).toBe("Field-notes");
+  expect(server.count("page.rename")).toBe(1);
+  // The rail is re-read rather than patched: the server owns names as it owns
+  // ids. The open page was the one renamed, so it is re-read under the new id
+  // — that read is what carries the new name.
+  expect(server.count("page.list")).toBe(2);
+  expect(server.count("page.read")).toBe(2);
+  expect(ws.get().pages.find((p) => p.id === to).name).toBe("Field notes");
+  expect(ws.get().pages.some((p) => p.id === "notes")).toBe(false);
+  expect(ws.get().page.id).toBe(to);
+  expect(ws.get().page.name).toBe("Field notes");
+  expect(seen.n).toBe(paints + 1);
 });
 
 test("a page that is not there is an answer, not a failure", async () => {

@@ -140,6 +140,30 @@ export function remembered(key, fallback) {
   }
 }
 
+/** A VIEW PREFERENCE FOR THIS TAB ONLY — sessionStorage, which a reload keeps
+ *  and a restart does not. The terminal dock's edge and size live here: the
+ *  spec keeps them for the current workspace session and leaves anything longer
+ *  to a retention decision nobody has made. Same try/catch discipline as
+ *  `remembered`, for the same reasons.
+ *  @param {string} key @param {string} fallback @returns {string} */
+export function heldForTab(key, fallback) {
+  try {
+    const held = sessionStorage.getItem(`biom:${key}`);
+    return held === null ? fallback : held;
+  } catch {
+    return fallback;
+  }
+}
+
+/** @param {string} key @param {string} value */
+export function holdForTab(key, value) {
+  try {
+    sessionStorage.setItem(`biom:${key}`, value);
+  } catch {
+    /* the dock forgets its edge on reload; nothing else is lost */
+  }
+}
+
 /** @param {string} key @param {string} value */
 export function remember(key, value) {
   try {

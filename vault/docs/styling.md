@@ -258,6 +258,6 @@ mean the whole canvas.
 
 **Whose taste wins** — reading `design/` first, what "decided" means and who
 decides it, and the rule that no page names a raw colour — is
-[`../.agents/skills/design/SKILL.md`](../.agents/skills/design/SKILL.md).
+[`../.agents/skills/biom-design/SKILL.md`](../.agents/skills/biom-design/SKILL.md).
 **Which of the three files to reach for** is
-[`../.agents/skills/markdown/SKILL.md`](../.agents/skills/markdown/SKILL.md).
+[`../.agents/skills/biom-markdown/SKILL.md`](../.agents/skills/biom-markdown/SKILL.md).

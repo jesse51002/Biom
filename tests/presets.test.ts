@@ -34,6 +34,7 @@ import { makeDb } from "../server/platform/db.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { ROOT_PAGE_FILE, makePages } from "../server/domain/pages.ts";
 import { makeTables } from "../server/domain/tables.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
 
 import type { PresetDeps } from "../server/workspace/presets.ts";
@@ -175,11 +176,16 @@ function boot(dir: string, presetRoot: string | null = shed, seeds: Partial<Pres
     // the checker that travels beside them. Both are the shipped directories,
     // not fixtures: their SHAPE is what is being seeded.
     vaultSeed: makeFiles(join(import.meta.dir, "..", "vault")),
-    skill: makeFiles(join(import.meta.dir, "..", "skill")),
-    checkerLib: makeFiles(join(import.meta.dir, "..")),
     ...seeds,
   });
-  return { db, pages, tables, presets, theme: makeTheme(files) };
+  /** What the host does on open: the seeder's fill, then the framework's
+   *  skills and checker rewritten whole by `framework.ts`, which the host runs
+   *  off the mount path. A test that wants the furniture asks for both. */
+  const furnish = async () => {
+    await presets.seedIfEmpty();
+    await rewriteOwned(files, makeFiles(join(import.meta.dir, "..", "vault")), makeFiles(join(import.meta.dir, "..", "skill")), makeFiles(join(import.meta.dir, "..")));
+  };
+  return { db, files, pages, tables, presets, furnish, theme: makeTheme(files) };
 }
 
 /** A seed root that is nothing but the answer a test wants `list` to give.
@@ -332,34 +338,6 @@ test("a workspace handed no preset root opens with an empty shed rather than fai
 
 /* ── a seed root that is there and is wrong ─────────────────────────────── */
 
-test("a plugin seed root that is EMPTY is said out loud, because no page will draw", async () => {
-  // The `undefined` case already had a sentence. This is the same failure by a
-  // different route — a root handed over and holding nothing — and it used to be
-  // silent: the walk found no entries, returned, and every page in the workspace
-  // drew MISSING_DOCUMENT with nothing in the log saying why. There is no shipped
-  // rung left to fall back to, so the silence is the whole of the bug.
-  const { db, presets } = boot(root, null, { pluginSeed: seedRoot(() => []) });
-  const said = await warnings(() => presets.seedIfEmpty());
-  expect(said).toContain("no page will draw");
-  expect(existsSync(join(root, "plugins"))).toBe(false);
-  // And the mount finished: an empty seed is a bad install, not a crash.
-  expect(existsSync(join(root, "design", "content.yaml"))).toBe(true);
-  db.close();
-});
-
-test("a plugin seed root that cannot be READ fails the mount rather than seeding half a vault", async () => {
-  // EACCES on the install directory, EIO on the disk under it. `Files.list`
-  // answers ENOENT and its neighbours with an empty array, so a throw that gets
-  // this far means something is wrong with the install itself — and a mount that
-  // swallowed it would hand somebody a workspace in which nothing draws and the
-  // log says nothing.
-  const { db, presets } = boot(root, null, {
-    pluginSeed: seedRoot(() => { throw Object.assign(new Error("permission denied"), { code: "EACCES" }); }),
-  });
-  await expect(presets.seedIfEmpty()).rejects.toThrow(/permission denied/);
-  db.close();
-});
-
 test("a seed root whose SUBDIRECTORY cannot be read fails too, at whatever depth it is", async () => {
   // The same rule one level down, and the one the walk used to swallow: a root
   // that lists fine and a directory inside it that does not. Half the vault root
@@ -377,8 +355,8 @@ test("a seed root whose SUBDIRECTORY cannot be read fails too, at whatever depth
 /* ── what a fresh vault contains ────────────────────────────────────────── */
 
 test("A NEW VAULT IS EMPTY, and everything that seeds is furniture", async () => {
-  const { db, pages, tables, presets, theme } = boot(root);
-  await presets.seedIfEmpty();
+  const { db, pages, tables, presets, theme, furnish } = boot(root);
+  await furnish();
 
   // The root page and nothing else. Seeding somebody's folder with invented
   // pages about a trade business was noise they had to delete before they could
@@ -472,23 +450,36 @@ test("A NEW VAULT IS EMPTY, and everything that seeds is furniture", async () =>
   db.close();
 });
 
-test("the checker is REFRESHED rather than filled in, because it is code", async () => {
-  const { db, presets } = boot(root);
-  await presets.seedIfEmpty();
+test("the checker and the skills are REWRITTEN rather than filled in, because they are the framework's", async () => {
+  const { db, furnish } = boot(root);
+  await furnish();
 
   const shipped = readFileSync(join(import.meta.dir, "..", "skill", "check.ts"), "utf8");
   expect(readFileSync(join(root, ".agents", "skills", "check.ts"), "utf8")).toBe(shipped);
+  const pagesSkill = readFileSync(join(import.meta.dir, "..", "vault", ".agents", "skills", "biom-pages", "SKILL.md"), "utf8");
+  expect(readFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
 
   // Everything else in the vault is somebody's to edit and is never written
-  // over. The checker is not: its whole job is to agree with a format that keeps
-  // moving, so a copy frozen at the moment a vault was made goes wrong quietly
-  // and stays wrong forever, reporting failures against rules the format no
-  // longer has.
+  // over. These are not: the checker's whole job is to agree with a format that
+  // keeps moving, and a skill is what an agent is told to write by — so a copy
+  // frozen at the moment a vault was made goes wrong quietly and stays wrong
+  // forever. A change made here is gone on the next open; what is wanted
+  // everywhere goes into the framework, and what is wanted here goes into a
+  // skill under a name of this workspace's own.
   writeFileSync(join(root, ".agents", "skills", "check.ts"), "// stale\n");
   writeFileSync(join(root, ".agents", "skills", "_lib", "wire.js"), "// stale\n");
-  await presets.seedIfEmpty();
+  writeFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "# mine\n");
+  writeFileSync(join(root, ".agents", "skills", "biom-pages", "notes.md"), "a file added inside the framework's skill\n");
+  mkdirSync(join(root, ".agents", "skills", "ours"), { recursive: true });
+  writeFileSync(join(root, ".agents", "skills", "ours", "SKILL.md"), "# ours\n");
+  await furnish();
   expect(readFileSync(join(root, ".agents", "skills", "check.ts"), "utf8")).toBe(shipped);
   expect(readFileSync(join(root, ".agents", "skills", "_lib", "wire.js"), "utf8")).not.toBe("// stale\n");
+  expect(readFileSync(join(root, ".agents", "skills", "biom-pages", "SKILL.md"), "utf8")).toBe(pagesSkill);
+  // Whole: a file added inside a framework skill goes with the edit.
+  expect(existsSync(join(root, ".agents", "skills", "biom-pages", "notes.md"))).toBe(false);
+  // And a skill under a name of the workspace's own is never looked at.
+  expect(readFileSync(join(root, ".agents", "skills", "ours", "SKILL.md"), "utf8")).toBe("# ours\n");
   db.close();
 });
 

@@ -29,6 +29,16 @@ each one is and why that build.
     Copyright Eemeli Aro <eemeli@gmail.com>
     vendor/yaml.LICENSE
 
+  xterm.js (@xterm/xterm) — MIT
+    Copyright (c) 2017-2019, The xterm.js authors
+    Copyright (c) 2014-2016, SourceLair Private Company
+    Copyright (c) 2012-2013, Christopher Jeffrey
+    vendor/xterm.LICENSE
+
+  @xterm/addon-fit — MIT
+    Copyright (c) 2019, The xterm.js authors
+    vendor/addon-fit.LICENSE
+
 THE DECLARATION FILES BESIDE THEM ARE OURS
 
 `vendor/markdown-it.d.ts` and `vendor/yaml.d.ts` are hand-written here and
