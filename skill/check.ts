@@ -82,6 +82,12 @@
 //        the collapse it describes with it, in silence.
 //   R61  a page naming a plugin that nothing here can draw with, and a doc's
 //        `contents:` left on a page drawn by something else.
+//   R62  a grid whose rows are ragged — a column that stops part way down.
+//   R63  a grid whose head is not a row: `head` says the first row is the
+//        header and there is no first row, or `head` is not true or false.
+//   R64  a grid cell holding a bare pipe — outside a wikilink or a code span —
+//        which is the mark of a row pasted into a cell; kept as a character,
+//        and reported so somebody looks.
 //
 // **R50 IS NOT IN HERE.** It belongs to `.agents/skills/biom-plugins/SKILL.md` — a vault
 // plugin may never claim a shipped id — and is checked where plugins are
@@ -327,7 +333,7 @@ const SECTION_KEYS = new Set(["name", "data", "parts", "variables"]);
  *  written as a map rather than as a bare markdown string. There is no `name:`
  *  either: a slot's id is the key it sits under, so there is no second statement
  *  of it to disagree. */
-const PART_KEYS = new Set(["type", "data", "variables"]);
+const PART_KEYS = new Set(["type", "data", "variables", "rows", "head"]);
 /** R47 — the keys a page must state itself, and the ones a preset MUST state
  *  because installing copies its `content.yaml` verbatim. `variables` is
  *  deliberately not among them: it is left out entirely when the page has none,
@@ -348,7 +354,7 @@ const RETIRED_SECTION_KEYS = new Set(["type", "order", "kind", "render"]);
 /** THERE IS NO DIAGRAM TYPE. A diagram is a drawing in a section's own markup,
  *  or a fence a workspace's own plugin upgrades in place — the file type was a
  *  mechanism invented for a case that already had one. */
-const TYPES = new Set(["markdown", "html", "table", "child"]);
+const TYPES = new Set(["markdown", "html", "table", "child", "grid"]);
 /** The old format's files. Prose lives in `content.yaml` now, and a `.md` beside
  *  it is words nothing will ever read. */
 const RETIRED_EXT = /\.(?:md|mermaid)$/;
@@ -1481,8 +1487,14 @@ export function check(src: PageSource): Report {
       }
       const type = typeof held["type"] === "string" && TYPES.has(held["type"]) ? held["type"] : null;
       if (type === null) {
-        say("R49", "FAIL", DOC, at, '"' + label + '" on "' + name + '" has no usable type. A part is markdown, html, table or child — and there is no diagram type: a diagram is drawn in the section\'s own markup, or written as a fence a plugin in this workspace upgrades in place.');
+        say("R49", "FAIL", DOC, at, '"' + label + '" on "' + name + '" has no usable type. A part is markdown, html, table, child or grid — and there is no diagram type: a diagram is drawn in the section\'s own markup, or written as a fence a plugin in this workspace upgrades in place.');
       }
+      /* R49 — `rows` and `head` are a grid's and nothing else's. On any other
+       * type they are keys nothing draws, and the parser refuses them by name. */
+      if (type !== "grid" && type !== null && (held["rows"] !== undefined || held["head"] !== undefined)) {
+        say("R49", "FAIL", DOC, at, '"' + label + '" on "' + name + '" is a ' + type + ' carrying ' + (held["rows"] !== undefined ? "rows" : "head") + ", which only a grid holds. The parser refuses the key rather than dropping it, so this page does not open at all.");
+      }
+      if (type === "grid") checkGrid(held, label, at);
       const partData = held["data"];
       const data = typeof partData === "string" ? partData
         : typeof partData === "number" || typeof partData === "boolean" ? String(partData)
@@ -1491,6 +1503,63 @@ export function check(src: PageSource): Report {
         say("R49", "FAIL", DOC, at, 'the data of "' + label + '" on "' + name + '" is text — the prose itself, a filename, a table name, or a child\'s segment, depending on the type.');
       }
       return { type, data, own: readVars(held["variables"], DOC, '"' + name + "." + label + '"', at) };
+    };
+
+    /** R62, R63, R64 — A GRID IS THE DOCUMENT'S OWN TABLE: `rows`, a list of
+     *  lists of cells, and `head`, whether the first row is the header. Three
+     *  things go wrong with one that nothing else catches. A ragged row is a
+     *  column that stops part way down — the reader pads it and the page draws,
+     *  but the cell somebody meant is now in the wrong column, so it is said. A
+     *  head with no row under it is a header that is not there. And a pipe
+     *  inside a cell is kept as the character it is — a cell is a cell — but it
+     *  is nearly always a table row pasted into one cell, so it is worth a look
+     *  and gets a WARN rather than silence. */
+    const checkGrid = (held: Record<string, Yaml>, label: string, at: number): void => {
+      const where = '"' + label + '" on "' + name + '"';
+      if (held["data"] !== undefined && held["data"] !== null && held["data"] !== "") {
+        say("R49", "FAIL", DOC, at, where + " is a grid with data. A grid holds rows and no data — the parser refuses it rather than guessing which one was meant.");
+      }
+      const head = held["head"];
+      if (head !== undefined && head !== null && typeof head !== "boolean") {
+        say("R63", "FAIL", DOC, at, "the head of " + where + " is " + JSON.stringify(head) + ". It is true or false — whether the first row is the header — and absent reads as true.");
+      }
+      const rows = held["rows"];
+      if (rows === undefined || rows === null) {
+        if (head !== false) say("R63", "WARN", DOC, at, where + " has no rows, and its head is the first row. A grid with a header has at least the header; write rows: with the header first, or say head: false for a grid that starts empty.");
+        return;
+      }
+      if (!Array.isArray(rows)) {
+        say("R62", "FAIL", DOC, at, "the rows of " + where + " are a list — one list per row, one cell per entry. The parser refuses anything else.");
+        return;
+      }
+      const widths: number[] = [];
+      rows.forEach((row, r) => {
+        if (!Array.isArray(row)) {
+          say("R62", "FAIL", DOC, at, "row " + String(r + 1) + " of " + where + " is not a list. A row is a list of cells, `- [Piece, Where]`, and a cell is markdown.");
+          return;
+        }
+        widths.push(row.length);
+        row.forEach((cell, c) => {
+          if (cell !== null && cell !== undefined && !isScalar(cell)) {
+            say("R62", "FAIL", DOC, at, "cell " + String(c + 1) + " of row " + String(r + 1) + " of " + where + " is " + (Array.isArray(cell) ? "a list" : "a map") + ". A cell is markdown — text — and never a structure.");
+            return;
+          }
+          // A pipe inside a `[[wikilink|alias]]` or a code span is the link's
+          // or the code's, and is the ordinary way this format writes a link —
+          // only a bare pipe is the mark of a row pasted into a cell.
+          if (typeof cell === "string" && cell.replace(/\[\[[^\]]*\]\]/g, "").replace(/`[^`]*`/g, "").indexOf("|") >= 0) {
+            say("R64", "WARN", DOC, at, "cell " + String(c + 1) + " of row " + String(r + 1) + " of " + where + " holds a pipe. It is kept as a character — a cell is a cell and nothing splits it — but a bare pipe in a cell is nearly always a table row pasted into one cell. If it was meant to be several cells, make them entries of the row; if the pipe is the character, this is only a note.");
+          }
+        });
+      });
+      if (rows.length === 0 && head !== false) {
+        say("R63", "WARN", DOC, at, where + " has no rows, and its head is the first row. A grid with a header has at least the header; write the header row, or say head: false for a grid that starts empty.");
+      }
+      if (widths.length > 1 && widths.some((w) => w !== widths[0])) {
+        const widest = Math.max(...widths);
+        const short = widths.map((w, i) => (w !== widest ? i + 1 : 0)).filter((i) => i > 0);
+        say("R62", "WARN", DOC, at, where + " is ragged: row" + (short.length === 1 ? " " : "s ") + short.join(", ") + (short.length === 1 ? " has" : " have") + " fewer cells than the widest row, at " + String(widest) + ". The reader pads a short row with empty cells on the right, so a cell that was meant for a later column has moved left. Give every row " + String(widest) + " entries, empty ones written as \"\".");
+      }
     };
 
     const parts: Part[] = [];

@@ -1051,14 +1051,34 @@
           ? mine.map((one) => one.source)
           : (content.items || []).map((/** @type {any} */ item) => String(item.md || ""));
       }
+      // A GRID ANSWERS ITS ROWS, a copy, so a section that splices a row out
+      // of the answer is editing its own array and not the drawn page's.
+      if (content && content.kind === "grid") {
+        return (content.rows || []).map((/** @type {any} */ row) => (Array.isArray(row) ? row.map(String) : []));
+      }
       if (mine.length > 0 && mine[0]) return mine[0].source;
       return content && typeof content.md === "string" ? content.md : "";
     },
 
     /** @param {string} section @param {string} part
-     *  @param {string | string[]} markdown */
+     *  @param {string | string[] | string[][]} markdown */
     write(section, part, markdown) {
       const mine = slots.filter((one) => one.section === section && one.part === part);
+
+      // A GRID IS WRITTEN WHOLE AND NOT REDRAWN. Its rows go down the wire as
+      // they are, and the page is NOT asked to draw itself again: the grid
+      // plugin drew the cell, the row or the column it changed before it asked
+      // for the write, so a redraw here would only replace the board under the
+      // person's pointer with an identical one and cost them the next click.
+      // What the editor holds is patched by `rt.page.write` itself.
+      if (Array.isArray(markdown) && markdown.length > 0 && markdown.every((row) => Array.isArray(row))) {
+        const rows = markdown.map((row) => /** @type {string[]} */ (row).map((cell) => String(cell)));
+        rt.page.write(section, part, rows).then(
+          () => {},
+          (/** @type {any} */ e) => say('"' + part + '" could not be written: ' + String((e && e.message) || e), e),
+        );
+        return true;
+      }
 
       // A LIST IS WRITTEN WHOLE AND REDRAWN WHOLE. Adding an item, removing one
       // or moving one changes how many regions the slot has, and a region is an
@@ -1066,7 +1086,7 @@
       // in place. `rt.page.write` sends the array; the redraw follows the answer
       // so the section sees exactly what was stored.
       if (Array.isArray(markdown)) {
-        const list = markdown.map((one) => String(one));
+        const list = /** @type {string[]} */ (markdown).map((one) => String(one));
         for (const one of mine) release(one);
         rt.page.write(section, part, list).then(
           () => rt.page.redraw(),

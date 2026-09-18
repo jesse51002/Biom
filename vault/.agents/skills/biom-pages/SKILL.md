@@ -182,7 +182,7 @@ variables:
 ## Sections and slots, and the rules about them
 
 **[`../../../docs/sections.md`](../../../docs/sections.md) is the mechanism** —
-what a section is, what `data:` names, how a slot is filled, the four part types,
+what a section is, what `data:` names, how a slot is filled, the five part types,
 what a list slot is and how one is written. [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md)
 is how to WRITE one. The judgement and the rules are here.
 
@@ -206,7 +206,7 @@ Three shapes to delete on sight, because they are the ones that keep arriving: *
 
 **R48 — a bare string is markdown, a map is a full `Content`, and a LIST is a list of items.** Prose is most of what a slot holds and `body: "..."` should not need a wrapper. The long spelling carries `type`, `data` and the part's own `variables`, and nothing else — **no `name`**, because the key it sits under already stated the id. *(FAIL)*
 
-**R49 — the part types, and `data` read the right way for each.** `markdown` carries the prose itself, `html` a filename beside `content.yaml`, `table` a table's name, `child` a direct child — and an entry in a LIST is one of these too, read exactly the same way. *(FAIL)*
+**R49 — the part types, and `data` read the right way for each.** `markdown` carries the prose itself, `html` a filename beside `content.yaml`, `table` a table's name, `child` a direct child, and `grid` no `data` at all — it carries `rows`, the document's own table, and `rows` on any other type is refused as `data` on a grid is — and an entry in a LIST is one of these too, read exactly the same way. Which of `grid` and `table` a page wants is [`../tables/SKILL.md`](../tables/SKILL.md). *(FAIL)*
 
 **R42 — the type and the data have to agree.** An `html` part naming a file that is not in the directory draws an EMPTY slot: the entry is visible and there is nothing in it. A `markdown` part whose `data` is a filename draws the filename as a paragraph. A `table` part names a table and a `child` part names one segment — a path is a page reaching past its own children, which the format does not have. And an HTML file on disk that no section and no part names is invisible, because the document is the only thing the host reads. *(FAIL; the unnamed file and the missing section file are WARNs)*
 
@@ -332,6 +332,9 @@ Complete. The **Skill** column says which file carries the prose; the number is 
 | R59 | A section holding a list can add an item and take one away — its own `ctx.write`, or an `items`, `open-list` or `checklist` node naming that slot | sections | WARN |
 | R60 | `inline-size` and `block-size` are container features, never media features | sections | FAIL |
 | R61 | The plugin a page names can draw it, and `contents:` is not left on a page a document is not drawing | pages | FAIL / WARN |
+| R62 | A grid is square — every row as long as the widest, a row a list, a cell text | tables | WARN / FAIL |
+| R63 | A grid's head is a row — `head` true or false, and a header with a row under it | tables | FAIL / WARN |
+| R64 | A bare pipe in a grid cell — outside a wikilink or a code span — is kept as a character and reported, because it is usually a row pasted into a cell | tables | WARN |
 
 **R50 is the one number in here that `.agents/skills/check.ts` does not cite.** It is checked where plugins register, in the box, rather than where pages are read — see [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md).
 

@@ -160,7 +160,7 @@ contents:
 
 **The framework names no language there, and that is the point.** This vault's `plugins/` folder is the whole of the list: a drawing language is a workspace's own choice rather than one picked for everybody. **A fence naming something the workspace has no plugin for stays an ordinary code block**, which is the correct reading of it.
 
-**The four part kinds can never be handed a fence.** ```` ```html ```` is an ordinary thing to write — somebody documenting their own section markup writes it and means it — so `markdown`, `html`, `table` and `child` are excluded by name and a code sample stays a code sample.
+**The five part kinds can never be handed a fence.** ```` ```html ```` is an ordinary thing to write — somebody documenting their own section markup writes it and means it — so `markdown`, `html`, `table`, `child` and `grid` are excluded by name and a code sample stays a code sample.
 
 **Reach for this when a diagram LANGUAGE is genuinely what is wanted** — a page full of small graphs whose author would rather type than lay out — and know what it costs: a library's renderer draws in its own idiom, it cannot read a custom property (so its colours have to be mapped from `biom.theme()` rather than taken from tokens), and the picture will not look like the rest of the workspace. **The drawing above is the default and this is the exception.**
 

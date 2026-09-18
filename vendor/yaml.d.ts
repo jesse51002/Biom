@@ -64,6 +64,9 @@ export declare class YAMLMap {
 export declare class YAMLSeq {
   items: unknown[];
   get(key: unknown, keepScalar?: boolean): unknown;
+  /** Requested flow style, `[a, b]` on one line rather than one `- ` per item.
+   *  The codec asks it of a grid's rows and of nothing else. */
+  flow?: boolean;
 }
 
 export interface ParseOptions {
@@ -91,6 +94,9 @@ export interface ToStringOptions {
   /** Allow `|` and `>` forms at all. True by default; named here because it is
    *  the switch the whole prose-stays-readable requirement rests on. */
   blockQuote?: boolean;
+  /** `[a, b]` rather than `[ a, b ]` for a flow collection. Only a grid's rows
+   *  are written in flow style, so this reaches nothing else. */
+  flowCollectionPadding?: boolean;
 }
 
 export declare class Document<T = unknown> {

@@ -197,7 +197,8 @@ disagree. That is why `section.write` names a page, a section **and** a part.
 
 **A bare string is markdown**, because prose is most of what a slot holds and
 `body: "..."` should not need a wrapper. A map is a full `Content` with a `type`
-and a `data`, so a slot takes a table or a child just as easily. A bare number or
+and a `data`, so a slot takes a table or a child just as easily — or a `grid`,
+whose value is `rows` rather than `data`. A bare number or
 boolean is prose YAML read as a value (`body: 2026`) and reads back as its own
 text rather than being refused over a missing quote.
 
@@ -229,8 +230,8 @@ re-reads every page written against the old one. The person typing and the code
 parsing had to agree about something neither could see. An item is an element
 now, so there is nothing to agree about.
 
-**A list is written WHOLE.** `section.write` carries `string | string[]`, and for
-a list the whole array goes back with the edited entry in it — a wire carrying
+**A list is written WHOLE.** `section.write` carries `string | string[] |
+string[][]`, and for a list the whole array goes back with the edited entry in it — a wire carrying
 one item plus an index would have to be right about the index at a moment when
 another edit may have moved it. Each entry keeps its own spelling where the
 lengths line up, so a plain list stays plain and a `variables` on one item is not
@@ -246,10 +247,30 @@ first write to land.
 | `html` | a filename beside `content.yaml` (optionally one level down in `_assets/`) |
 | `table` | the table's name |
 | `child` | the direct child's **segment** — `notes`, never a path. Placed by reconciliation, not written by hand |
+| `grid` | **nothing, and never written**. A grid carries `rows` — a list of lists of markdown strings — and `head`, whether the first row is the header (absent is true). The one type whose value is not a string, because a cell is a cell and never a string somebody splits |
+
+**A GRID IS THE DOCUMENT'S OWN TABLE**, and the fifth kind was added at its own
+barrier (2026-09-17). Its `Content` carries `rows` and `head` beside the three
+keys every other part has; the codec reads rows square — a short row padded on
+the right — refuses `data` on a grid and `rows` on anything else by name, and
+writes the rows back one per line in flow style, `- [Piece, Where]`, quoting a
+cell that holds a comma, a pipe or a line break. It resolves to
+`{ kind: "grid", rows, head, vars }` with the cells RAW for the reason `md` is.
+`writeSlot` takes `string[][]` for a grid slot and replaces `rows` alone —
+`head` and the part's variables are not on the wire and stay as they were —
+and refuses rows on any other slot as it refuses prose on a grid. The
+projection writes it into the mirror as a markdown table again, pipes escaped
+and line breaks as `<br>`; `guest/runtime/project.js` carries the same arm.
+The conversion that makes one out of a markdown table in a prose part is the
+doc plugin's, in `guest/plugins/biom-doc/index.html`, and goes through
+`section.write` and `section.order` — `section-runtime-guide` §10.
 
 **The two readings of `data` are the one wart in this shape, and they are worth
 it**: inlining an html file would put a program inside a document, and pointing at
 a markdown file would give back the second read this format exists to remove.
+A grid's `rows` beside an empty `data` is the second wart, and it is worth it
+for the same reason a list slot is: a two-dimensional array is the shape of the
+thing, and a string somebody splits is a format inside a format.
 
 **There is no `diagram` type.** A diagram is a ` ```mermaid ` fence inside
 markdown, upgraded in place by the mermaid plugin — the file type was a mechanism

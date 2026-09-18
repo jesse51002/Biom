@@ -118,7 +118,7 @@ own directory** — that is wrong the first time somebody moves the application.
 
 ## Four names are spoken for
 
-`markdown`, `html`, `table` and `child` are the **part kinds** — a slot's plugin
+`markdown`, `html`, `table`, `child` and `grid` are the **part kinds** — a slot's plugin
 is named by its part's type — so a second file registering one of them does not
 add a plugin: it replaces the drawing of every slot of that kind in the workspace,
 on every page, including pages somebody else wrote. Nothing in `content.yaml`
@@ -144,7 +144,7 @@ is served from anywhere else. What is refused is a second file taking an id the
 folder already draws.
 
 **A `parts` entry can therefore never name a plugin of yours.** A slot's type is
-markdown, html, table or child and nothing else. Yours is reached by a
+markdown, html, table, child or grid and nothing else. Yours is reached by a
 `data-g-plugin` node, and it is handed `null` for its content: it is chrome,
 ornament and behaviour, not a new kind of stored content. Anything with words in it
 is a markdown part beside it.
@@ -255,9 +255,9 @@ is drawn by your `plugins/flow.js`, with nothing else to wire up.
 - **The framework names no language there.** Your `plugins/` folder is the whole of
   the list, which is what makes a drawing language this workspace's own choice
   rather than one picked for everybody.
-- **The four part kinds can never be handed a fence.** ` ```html ` is an ordinary
-  thing to write and means a code sample, so `markdown`, `html`, `table` and
-  `child` are excluded by name.
+- **The five part kinds can never be handed a fence.** ` ```html ` is an ordinary
+  thing to write and means a code sample, so `markdown`, `html`, `table`,
+  `child` and `grid` are excluded by name.
 - **A fence naming something you have no plugin for stays an ordinary code
   block** — which is the right failure, because the source is still on the page.
 - **The source travels as an option rather than as content**, because a fence has

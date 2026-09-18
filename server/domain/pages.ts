@@ -304,7 +304,7 @@ export const isSectionName = (name: string): boolean =>
  *  what goes IN a slot rather than a name for one. */
 export const isPartName = (name: string): boolean => NAME.test(name);
 
-const TYPES: ReadonlySet<string> = new Set(["markdown", "html", "table", "child"]);
+const TYPES: ReadonlySet<string> = new Set(["markdown", "html", "table", "child", "grid"]);
 
 /** Domain failures carry one of the contract's closed error codes, so the API
  *  layer can answer with it instead of falling back to `internal`. The message
@@ -366,9 +366,42 @@ export function contentOf(part: unknown): Content | null {
     type: raw.type as ContentType,
     data: typeof raw.data === "string" ? raw.data : "",
   };
+  // A GRID CARRIES ROWS AND A HEAD, squared here the way the codec squares
+  // them, because a document can arrive some other way than off disk — over
+  // `section.order` from the box, for one — and the drawing wants every row as
+  // long as the widest whichever door it came through.
+  if (out.type === "grid") {
+    out.data = "";
+    out.rows = rowsOf(raw.rows);
+    out.head = raw.head !== false;
+  }
   const vars = varsOf(raw.variables);
   if (Object.keys(vars).length > 0) out.variables = vars;
   return out;
+}
+
+/** Cell for cell, row for row. */
+function sameRows(a: string[][], b: string[][]): boolean {
+  return a.length === b.length && a.every((row, i) => {
+    const other = b[i];
+    return other !== undefined && row.length === other.length && row.every((cell, c) => cell === other[c]);
+  });
+}
+
+/** A grid's rows, made square. A row that is not a list is dropped and a cell
+ *  that is not text reads as its text, on the rule that one unreadable entry
+ *  must not cost the others — the codec refuses the same shapes by name at the
+ *  file, which is where a person can act on it. */
+function rowsOf(v: unknown): string[][] {
+  if (!Array.isArray(v)) return [];
+  const rows: string[][] = [];
+  for (const row of v) {
+    if (!Array.isArray(row)) continue;
+    rows.push(row.map((cell) => (typeof cell === "string" ? cell : cell === null || cell === undefined ? "" : String(cell))));
+  }
+  const width = rows.reduce((w, row) => Math.max(w, row.length), 0);
+  for (const row of rows) while (row.length < width) row.push("");
+  return rows;
 }
 
 /** WHAT A SECTION DRAWS AS: its html loaded and every slot in it resolved.
@@ -463,6 +496,10 @@ async function partOf(
       const table = str(content.data);
       return table === null ? null : { kind: "table", table };
     }
+    case "grid":
+      // Raw cells, for the reason `md` is raw: a cell opens under the caret and
+      // writes back, so `{{name}}` resolves where it is drawn and never here.
+      return { kind: "grid", rows: (content.rows ?? []).map((row) => row.slice()), head: content.head !== false, vars };
     default:
       return await child(content);
   }
@@ -1236,7 +1273,7 @@ export function makePages(
      *  NO COMMIT. This is a keystroke path: a commit per debounce would bury the
      *  agent writes the vault's history exists to make undoable, which is the
      *  same judgement `docs.merge` already makes about a slot losing focus. */
-    async writeSlot(id: PageId, section: BlockId | null, part: string, data: string | string[]): Promise<void> {
+    async writeSlot(id: PageId, section: BlockId | null, part: string, data: string | string[] | string[][]): Promise<void> {
       dirOf(id); // the id grammar, before anything is joined onto it
       if (section !== null && (typeof section !== "string" || !isSectionName(section))) {
         throw bad("bad_request", "that is not a section name");
@@ -1244,10 +1281,20 @@ export function makePages(
       if (typeof part !== "string" || !isPartName(part)) {
         throw bad("bad_request", "that is not a slot name");
       }
-      const list = Array.isArray(data);
-      if (!list && typeof data !== "string") throw bad("bad_request", "a slot's text is text");
-      if (list && !data.every((one) => typeof one === "string")) {
+      // THREE SHAPES, TOLD APART BY THEIR FIRST ENTRY. Text is a slot's markdown;
+      // a list of text is a list slot, written whole; a list of lists is a
+      // grid's rows, written whole. An empty list is read as a list slot's
+      // empty state, because a grid with no rows is still a grid and its rows
+      // are written as `[]` by nobody — the grid plugin always writes at least
+      // the header — so the ambiguity is settled towards the case that occurs.
+      const grid = Array.isArray(data) && data.length > 0 && data.every((row) => Array.isArray(row));
+      const list = Array.isArray(data) && !grid;
+      if (!list && !grid && typeof data !== "string") throw bad("bad_request", "a slot's text is text");
+      if (list && !(data as unknown[]).every((one) => typeof one === "string")) {
         throw bad("bad_request", "every item in a list is text");
+      }
+      if (grid && !(data as unknown[][]).every((row) => row.every((cell) => typeof cell === "string"))) {
+        throw bad("bad_request", "every cell in a grid is text");
       }
 
       const found = await readDoc(id);
@@ -1275,6 +1322,8 @@ export function makePages(
         if (had !== undefined && !(typeof had === "string" || (Array.isArray(had) && had.every((one) => typeof one === "string")))) {
           throw bad("bad_request", "that key does not hold words");
         }
+        // A page's own top-level key holds words or a list of them, never a grid.
+        if (grid) throw bad("bad_request", "a page's own slot holds words rather than a grid");
         if (!list && had === data) return;
         await writeDoc(id, { ...doc, input: { ...doc.input, [part]: data } });
         return;
@@ -1304,9 +1353,34 @@ export function makePages(
       // list of plain markdown and a `variables` on one item is not lost because
       // its neighbour was typed in.
       let next: PartValue;
-      if (list) {
+      if (grid) {
+        // A GRID'S ROWS REPLACE ITS ROWS AND NOTHING ELSE. `head` and the
+        // content's own variables stay as they were, because the wire carries
+        // rows and a write that reset the header to true would be the page's
+        // editing surface deciding something nobody typed. Only a grid slot
+        // takes rows: writing them over prose would destroy the prose, and
+        // over a table would destroy the pointer.
+        const content = was === undefined ? null : Array.isArray(was) ? null : contentOf(was);
+        if (content === null || content.type !== "grid") {
+          throw bad("bad_request", "only a grid slot holds rows");
+        }
+        const rows = rowsOf(data);
+        if (sameRows(content.rows ?? [], rows)) return;
+        next = { ...content, rows };
+      } else if (list) {
+        // A LIST GOES OVER A LIST, or over a lone markdown string a section is
+        // promoting to one — never over a grid, a table, an html file or a
+        // child. An empty array reads as a list, so without this `[]` sent at
+        // a grid slot would replace its rows, its head and its variables with
+        // an empty list and say nothing.
+        if (was !== undefined && !Array.isArray(was) && typeof was !== "string") {
+          const shape = contentOf(was);
+          if (shape === null || shape.type !== "markdown") {
+            throw bad("bad_request", "only a list slot takes a list" + (shape?.type === "grid" ? " — a grid takes its rows, one list per row" : ""));
+          }
+        }
         const before = Array.isArray(was) ? was : [];
-        next = data.map((text, at) => {
+        next = (data as string[]).map((text, at) => {
           const had = before[at];
           if (had === undefined || typeof had === "string") return text;
           const shape = contentOf(had);
@@ -1320,9 +1394,10 @@ export function makePages(
         // Nothing to do is not a failure, and it is the common case: the debounce
         // fires after a caret move as readily as after a keystroke.
         if (content.data === data) return;
+        if (typeof data !== "string") throw bad("bad_request", "a slot's text is text");
         // The short spelling survives an edit to a plain paragraph, because that
         // is what somebody wrote and a save is not the moment to rewrite it.
-        next = was === undefined || typeof was === "string" ? data : { ...content, data };
+        next = was === undefined || typeof was === "string" ? data : { ...content, data: data as string };
       }
       const contents = doc.contents.slice();
       contents[at] = { ...held, parts: { ...held.parts, [part]: next } };
