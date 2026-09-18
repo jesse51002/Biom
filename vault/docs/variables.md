@@ -142,4 +142,4 @@ directory.**
 
 **Which values are worth making variables at all** — the arguable-number rule, and
 the split between a variable and a `parts` entry — is
-[`../.agents/skills/pages/SKILL.md`](../.agents/skills/pages/SKILL.md).
+[`../.agents/skills/biom-pages/SKILL.md`](../.agents/skills/biom-pages/SKILL.md).

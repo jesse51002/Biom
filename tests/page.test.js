@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The page view and Config.
+// The page view.
 //
 // THIS FILE USED TO BE ABOUT DRAWING A PAGE, AND IT IS NOT ANY MORE. `page.js`
 // walked `Page.blocks`, asked a `Registry` for a `BlockDraw` per `BlockKind`,
@@ -9,15 +9,17 @@
 // stacks them is `guest/runtime/`, which lives INSIDE the box, on the far side
 // of an opaque origin where nothing in this process can reach it.
 //
-// So what is left of `client/views/page.js` is a MOUNT POINT with three exports,
-// and this file tests exactly those two and nothing it wishes were still true:
+// So what is left of `client/views/page.js` is a MOUNT POINT, and this file
+// tests exactly that and nothing it wishes were still true:
 //
-//   `makePageView`  builds one document and hands it to the frame host
+//   `makePageView`   builds one document and hands it to the frame host
 //   `makeDesignView` draws the design doc in a box, like every other page
+//   `makeMapView`    the same mount again, for the rail's map — `tests/mindmap.test.js`
 //
-// Config keeps its half of the file: `client/views/config.js` is the other
-// screen a page has, it is live code, and the raw-YAML fallback in it is the way
-// back into a page whose one bad character took its words with it.
+// CONFIG HAD THE OTHER HALF OF THIS FILE, and it is gone: the screen was made
+// for ports the framework does not have, and the owner decided (2026-09-17)
+// that it goes with the raw-YAML editor it kept — a broken page is fixed in an
+// editor or by the agent, where every other edit to a page already happens.
 //
 // There is no DOM here and deliberately no DOM library: the views take `h` as a
 // dependency, so a recording `h` that builds plain objects exercises the real
@@ -29,7 +31,6 @@ import { join } from "node:path";
 
 import { makePageView, makeDesignView } from "../client/views/page.js";
 import { vaultBase } from "../contracts/wire.js";
-import { makeConfigView, fileList } from "../client/views/config.js";
 
 const ROOT = join(import.meta.dir, "..");
 /** WHICH FOLDER THIS TAB IS. Every view that builds a document needs one now:
@@ -157,13 +158,11 @@ const page = (id, sections, extra = {}) =>
 
 /** A frame host, keyed and reused exactly like `client/frame/frame.js`: the same
  *  key hands back the same element whether or not the html changed. */
-function fakeFrameHost(report = null) {
+function fakeFrameHost() {
   const frames = new Map();
   return {
     /** every `for(key, html, ctx)` this host was asked for, in order */
     mounts: [],
-    /** every key `compliance` was asked about */
-    asked: [],
     setShim() {}, broadcast() {}, refresh() {},
     drop(key) { frames.delete(key); },
     for(key, html, ctx) {
@@ -172,7 +171,7 @@ function fakeFrameHost(report = null) {
       if (!frame) { frame = { el: element("iframe"), post() {}, drop() {} }; frames.set(key, frame); }
       return frame;
     },
-    compliance(key) { this.asked.push(key); return report; },
+    compliance() { return null; },
   };
 }
 
@@ -333,259 +332,4 @@ test("the design box is keyed apart from every page box", () => {
   makePageView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(page("design", []));
   makeDesignView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })();
   expect(frameHost.mounts.map((m) => m.key)).toEqual(["design", "@design"]);
-});
-
-/* ══ Config: what this page actually is ════════════════════════════════ */
-
-function configWorld(p, frameHost = fakeFrameHost()) {
-  const raws = [];
-  const written = [];
-  const ws = {
-    readDocRaw: async (id) => { raws.push(id); return "name: Quote\n"; },
-    writeDocRaw: async (id, text) => { written.push({ id, text }); return { name: "Quote", variables: {}, contents: [] }; },
-  };
-  return { ws, raws, written, frameHost, draw: makeConfigView({ h, ws, ui: {}, frameHost }) };
-}
-
-/** The same screen, built as the application a stranger downloaded. */
-function productionConfig(p, frameHost = fakeFrameHost()) {
-  const w = configWorld(p, frameHost);
-  return { ...w, draw: makeConfigView({ h, ws: w.ws, ui: {}, frameHost, production: true }) };
-}
-
-test("the files list is the page as it sits on disk, and invents nothing", () => {
-  // ONLY REAL FILENAMES. A markdown slot is not a file — its words sit in
-  // `content.yaml` beside its name — and a `DrawnSection` deliberately does not
-  // carry the name of the HTML it was drawn from, because the runtime that draws
-  // it has the markup and never needs the path.
-  const p = page("quote", [
-    sect("intro", { body: prose("# Quote") }),
-    sect("calc", { body: { kind: "html", file: "calc.html", html: "", vars: {} } }, { fallback: false }),
-    sect("@page-Notes", {
-      body: {
-        kind: "child",
-        child: { kind: "page", id: "quote/notes", name: "Notes" },
-        // THE CHILD'S OWN FILE, in the child's directory: a page knows how it
-        // wants to be summarised better than every page that might hold it.
-        draw: { file: "child.html", html: "<a>" },
-      },
-    }),
-    sect("kids", { body: { kind: "child", child: { kind: "table", id: "jobs", name: "jobs" } } }),
-  ]);
-
-  expect(fileList(p).map((f) => f.name)).toEqual([
-    "content.yaml", "calc.html", "pages/quote/notes/child.html",
-  ]);
-  // A child with no `child.html` of its own is not a file: deleting that file is
-  // a supported act, and the child plugin draws its built-in row instead.
-  expect(fileList(page("bare", [sect("a", { body: prose("x") })])).map((f) => f.name))
-    .toEqual(["content.yaml"]);
-});
-
-test("Config names each section, whether it drew with its own HTML, and its slots", () => {
-  const p = page("quote", [
-    sect("intro", { body: prose("# Quote") }),
-    sect("calc", {
-      left: { kind: "html", file: "calc.html", html: "", vars: {} },
-      right: prose("Notes."),
-    }, { fallback: false }),
-  ]);
-  const w = configWorld(p);
-  const root = w.draw(p);
-
-  const words = flatten(root);
-  // THE SHIPPED DEFAULT IS A FILE AND NOT A BRANCH, and `fallback` is how the
-  // page says it took it. A page that is nothing but defaults is a generation
-  // that did not use the freedom it had, which is a thing worth being able to see.
-  expect(words).toContain("the shipped section");
-  expect(words).toContain("its own HTML");
-  expect(words).toContain("1 slot");
-  expect(words).toContain("2 slots");
-  expect(words).toContain("2 sections");
-});
-
-test("a page that declares no sections is told it draws nothing", () => {
-  const p = page("blank", []);
-  const w = configWorld(p);
-  expect(flatten(w.draw(p))).toContain("draws nothing");
-});
-
-test("Config states the truth: unrestricted, and the count is SELF-REPORTED", () => {
-  const p = page("quote", [sect("intro", { body: prose("#") })]);
-  const reported = configWorld(p, fakeFrameHost({ sections: 3 }));
-  const words = flatten(reported.draw(p));
-
-  // The framework applies no restrictions, and a screen showing approved
-  // destinations or "anywhere else → blocked" would make a claim this build
-  // cannot back if anyone in the room asks.
-  expect(words).toContain("unrestricted");
-  expect(words).not.toContain("blocked");
-  expect(words).not.toContain("approved");
-
-  // The host CANNOT CHECK this: a sandboxed frame has an opaque origin and there
-  // is nothing to scrape, so the number is what the page says about itself.
-  expect(words).toContain("3 section");
-  expect(words).toContain("cannot read inside a null-origin frame");
-  // It asks the host about this page and nothing else, UNDER THE KEY THE BOX IS
-  // ACTUALLY MOUNTED WITH. This assertion used to spell `quote#` and pass, which
-  // is the whole reason it is worth having: the trailing `#` is the old
-  // one-box-per-BLOCK key, it named a mount that has never existed, and the
-  // report therefore said "not reported" on every page in the product without
-  // anything erroring. Compare `frameHost.mounts[0].key` in the first test in
-  // this file — the two must agree, and this is what makes them.
-  expect(reported.frameHost.asked).toEqual(["quote"]);
-});
-
-test("a page nothing has reported on says so rather than claiming zero", () => {
-  // Zero is a real answer from a runtime and means an empty page. Silence is a
-  // different answer — never finished loading, or failed while drawing — and
-  // printing it as 0 would make the two indistinguishable.
-  const p = page("quote", [sect("intro", { body: prose("#") })]);
-  const w = configWorld(p, fakeFrameHost(null));
-  const words = flatten(w.draw(p));
-  expect(words).toContain("it reported nothing back");
-  expect(words).not.toContain("reported 0");
-  // A page reporting nothing either never finished loading or failed while
-  // drawing; either way the raw YAML below still edits its text, so the fallback
-  // is never behind the thing that went wrong.
-  expect(words).toContain("either way the raw YAML below still edits its text");
-  expect(find(w.draw(p), "rawyaml")).toBeTruthy();
-});
-
-/* ── the raw-YAML fallback ────────────────────────────────────────────────
-   ONE FILE HOLDS EVERYTHING A PAGE SAYS now, so this box matters MORE than it
-   did: the prose used to live in `.md` files that survived a broken
-   `content.yaml` untouched, and this is the only way back to a page whose one
-   bad character took its sentences with it.
-
-   It has to be right about what is on disk NOW. The store hands out a new Page
-   object every time it re-reads, which is what Reload does, and that object
-   identity is the signal this reads. */
-
-test("the raw YAML is re-read on open and on reload, never served from a cache", async () => {
-  const p = page("quote", []);
-  const w = configWorld(p);
-  let disk = "name: Quote\n";
-  w.ws.readDocRaw = async (id) => { w.raws.push(id); return disk; };
-
-  w.draw(p);
-  await flush();
-  expect(w.raws).toEqual(["quote"]);
-
-  // Claude Code rewrites content.yaml; Reload re-reads the page, so the view is
-  // handed a new Page object for the same id.
-  disk = "name: Quote\nvariables:\n  heading: Rewritten\n";
-  const root = w.draw({ ...p });
-  await flush();
-
-  expect(w.raws).toEqual(["quote", "quote"]);
-  expect(find(root, "rawyaml").value).toBe(disk);
-});
-
-test("a file that moved under an unsaved edit is said out loud, not clobbered", async () => {
-  const p = page("quote", []);
-  const w = configWorld(p);
-  let disk = "name: Quote\n";
-  w.ws.readDocRaw = async () => disk;
-
-  const first = w.draw(p);
-  await flush();
-  const area = find(first, "rawyaml");
-  area.value = "name: Mine\n";
-  area.fire("input", {});
-
-  disk = "name: Theirs\n";
-  const root = w.draw({ ...p });
-  await flush();
-
-  // Neither side is thrown away: the unsaved text stays in the box, and an agent
-  // rewriting the file while somebody is typing into it is a collision the user
-  // is told about and decides, not one this view resolves quietly.
-  expect(find(root, "rawyaml").value).toBe("name: Mine\n");
-  expect(String(find(root, "hint").textContent)).toContain("changed on disk");
-});
-
-test("saving writes what is in the box and says so", async () => {
-  const p = page("quote", []);
-  const w = configWorld(p);
-  const root = w.draw(p);
-  await flush();
-
-  const area = find(root, "rawyaml");
-  area.value = "name: Quote\nvariables:\n  rate: 62\n";
-  area.fire("input", {});
-  findAll(root, "btn").at(-1).fire("click", {});
-  await flush();
-
-  expect(w.written).toEqual([{ id: "quote", text: "name: Quote\nvariables:\n  rate: 62\n" }]);
-  expect(String(find(root, "hint").textContent)).toBe("Saved.");
-});
-
-test("a refusal is shown rather than swallowed, because the message IS the point", async () => {
-  // Flatness is the likely one, and naming the line that is not flat is the
-  // whole reason this box shows what came back.
-  const p = page("quote", []);
-  const w = configWorld(p);
-  w.ws.writeDocRaw = async () => { throw new Error("a variable is a scalar or a list of scalars"); };
-  const root = w.draw(p);
-  await flush();
-
-  findAll(root, "btn").at(-1).fire("click", {});
-  await flush();
-  expect(String(find(root, "hint").textContent)).toContain("a variable is a scalar");
-});
-
-
-test("production drops Config's Sections group and keeps everything else", () => {
-  // A TABLE OF EVERY SECTION, what drew it and how many slots it has, over a
-  // sentence about what the frame reported. It is `content.yaml` restated for
-  // somebody who is about to edit one, which is nobody in a built application.
-  const p = page("quote", [
-    sect("intro", { body: prose("# Quote") }),
-    sect("calc", { left: { kind: "html", file: "calc.html", html: "", vars: {} } }, { fallback: false }),
-  ]);
-  const built = productionConfig(p);
-  const words = flatten(built.draw(p));
-
-  expect(words).not.toContain("its own HTML");
-  expect(words).not.toContain("2 sections");
-  expect(words).not.toContain("the shipped section");
-
-  // Files, Data and Raw are each about the person's own page, and Raw is the way
-  // back into a page whose one bad character took its sentences with it.
-  expect(words).toContain("content.yaml");
-  expect(words).toContain("unrestricted");
-  expect(words).toContain("ONE FILE HOLDS EVERYTHING THIS PAGE SAYS");
-});
-
-test("Config's Data group says what THIS build allows, not what development does", () => {
-  // The development server resolves `sql` and `fetch` for real; a production one
-  // refuses both, and a page can say either without touching a control anybody
-  // could hide. A screen whose job is to state plainly what a page can reach
-  // must not be the one thing on it that is out of date.
-  const p = page("quote", [sect("intro", { body: prose("# Quote") })]);
-
-  const dev = flatten(configWorld(p).draw(p));
-  expect(dev).toContain("can also run SQL and call out to the internet");
-  expect(dev).not.toContain("This build refuses");
-
-  const built = flatten(productionConfig(p).draw(p));
-  expect(built).toContain("cannot run SQL and cannot call out to the internet");
-  expect(built).not.toContain("can also run SQL");
-
-  // Tables are unrestricted in EVERY build — `table.get` and `row.insert` are
-  // not on the refusal list — so that half of the sentence, and the group's own
-  // tag, are the same in both.
-  for (const words of [dev, built]) {
-    expect(words).toContain("read and write every table in the workspace");
-    expect(words).toContain("unrestricted");
-  }
-});
-
-test("the empty Sections group goes too, because it says the same thing to the same nobody", () => {
-  // It reads "ask the agent pointed at this vault", which is the audience the
-  // whole group was written for. Both of the group's returns are on the list.
-  const p = page("blank", []);
-  expect(flatten(productionConfig(p).draw(p))).not.toContain("draws nothing");
-  expect(flatten(configWorld(p).draw(p))).toContain("draws nothing");
 });

@@ -42,7 +42,7 @@ This skill owns the format and its server implementation. It does **not** own:
 - **How a page reaches the box at all** — the sandbox, the ports, the three rings
   → `boundary-guide`.
 - **How to AUTHOR a page as a vault user** — that is the vault's own
-  `.agents/skills/pages/SKILL.md`, shipped inside the workspace. This skill is for
+  `.agents/skills/biom-pages/SKILL.md`, shipped inside the workspace. This skill is for
   whoever changes the reader; that one is for whoever writes the file.
 
 ---
@@ -122,10 +122,10 @@ already spent.
 
 **This is not `kind:` returning.** That key claimed a page was one of a closed set
 the host understood, and each of them was a branch in the host. This one names a
-DOCUMENT, the host has no opinion about what it does, and the set is open: NOTHING
-IS SHIPPED at all. Every plugin is seeded into `<vault>/plugins/` and drawn from
-there, so the framework's own and one a workspace wrote are not merely
-indistinguishable — they are the same thing in the same folder.
+DOCUMENT, the host has no opinion about what it does, and the set is open: the
+framework's own plugins are the rung UNDER the workspace's `plugins/`, resolved
+by the same lookup, so the framework's own and one a workspace wrote are the same
+shape of thing — and a workspace file at the framework's path is an override.
 
 **SECTIONS ARE THE DOC PLUGIN'S CONCEPT.** A board has none; an html page has
 none; child reconciliation, `section.order` and the whole section runtime belong
@@ -262,7 +262,7 @@ and refuses rows on any other slot as it refuses prose on a grid. The
 projection writes it into the mirror as a markdown table again, pipes escaped
 and line breaks as `<br>`; `guest/runtime/project.js` carries the same arm.
 The conversion that makes one out of a markdown table in a prose part is the
-doc plugin's, in `guest/plugins/doc/index.html`, and goes through
+doc plugin's, in `guest/plugins/biom-doc/index.html`, and goes through
 `section.write` and `section.order` — `section-runtime-guide` §10.
 
 **The two readings of `data` are the one wart in this shape, and they are worth
@@ -287,7 +287,7 @@ in `content.yaml`, behind a slot; a section's html file carries the visuals and
 the structure and none of the words**, because a word baked into an html file is
 a word nobody can ever edit. Text inside an `<svg>` is the one exception — it is
 part of a drawing. `section-runtime-guide` §11 carries the mechanism this is a
-consequence of, `vault/.agents/skills/sections/SKILL.md` carries the rule for
+consequence of, `vault/.agents/skills/biom-sections/SKILL.md` carries the rule for
 whoever writes a page, and `skill/check.ts` WARNs on it as **R56**.
 
 ---
@@ -676,7 +676,7 @@ because it is declared straight onto an element's style on the other side.
   `server/main.ts` and handed to `makePages` and `makeDesign` as a
   string, because nothing may import `guest/`.
 - **The author-facing counterpart, shipped inside a vault:**
-  `vault/.agents/skills/pages/SKILL.md` — how to WRITE a page. When the format
+  `vault/.agents/skills/biom-pages/SKILL.md` — how to WRITE a page. When the format
   changes, check whether it needs the same edit.
 - **Siblings:** what draws the resolved page → `section-runtime-guide`; what
   fills a slot → `plugin-guide`; why resolution has to be server-side →
@@ -691,7 +691,7 @@ implementation. Whenever the format genuinely changes — a new part type, a new
 key on a section, a change to reconciliation or to a write path's commit policy, a
 change to the id grammar, a retired key — **update this skill in the same
 change**, update all four readers named in §10 in that same change, run
-`tests/skill.test.ts`, and check whether `vault/.agents/skills/pages/SKILL.md`
+`tests/skill.test.ts`, and check whether `vault/.agents/skills/biom-pages/SKILL.md`
 needs the same edit for its own audience. If a rule here is what diverged, fix the
 rule; if the divergence is a mistake, fix the code. Either way they agree when you
 are done.

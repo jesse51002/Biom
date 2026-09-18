@@ -197,7 +197,8 @@ refused the same way. A row shorter than the widest is padded with empty cells
 on the right when the page is read, so a column is a column all the way down;
 write every row the same length and the file says what the page shows.
 
-It is drawn by the `grid` plugin as a board, and **edited a cell at a time**:
+It is drawn as a board by the framework's `biom-grid` — or by a `plugins/grid.js`
+of this workspace's own, which wins by existing — and **edited a cell at a time**:
 click a cell and it opens as its raw markdown, Enter or leaving it writes the
 rows back, Escape puts it back. A row or a column is added or removed from the
 gutter outside the board — *Delete row* beside each row, *Delete column* over
@@ -228,7 +229,7 @@ was.
 **There is no diagram type and no diagram file.** A diagram is a drawing the
 section makes — HTML over boxes and edges held in the section's own
 `variables` — which is
-[`.agents/skills/diagrams/`](../.agents/skills/diagrams/SKILL.md).
+[`.agents/skills/biom-diagrams/`](../.agents/skills/biom-diagrams/SKILL.md).
 
 ### A list slot
 
@@ -278,7 +279,7 @@ headline capability of the format on the quietest possible failure. `@font-face`
 `@property`, `@counter-style`, `@import`, `@charset`, `@namespace`,
 `@font-feature-values` and `@font-palette-values` are hoisted with it, for the same
 reason: each names something for the whole document and has no meaning scoped to a
-subtree. **Write them where they read best.**
+subtree. A name is therefore shared by every section on the page: two sections that both declare `@keyframes cap-1` are declaring one animation, and the one drawn last wins for both. **Write them where they read best.**
 
 **The markup is interpolated as text, before it is parsed.** That is the only way
 `<img alt="{{caption}}">` can work at all — an attribute value is not a node and
@@ -305,6 +306,6 @@ is also what makes it come back where it was rather than at the bottom.
 **Writing a section well** — what earns a section its own file, how many slots a
 thing wants, the add and delete every section owes its reader, and the numbered
 rules — is
-[`../.agents/skills/sections/SKILL.md`](../.agents/skills/sections/SKILL.md).
+[`../.agents/skills/biom-sections/SKILL.md`](../.agents/skills/biom-sections/SKILL.md).
 Values inside `{{…}}` are [`variables.md`](./variables.md); a section's `<script>`
 is [`code.md`](./code.md).

@@ -31,7 +31,6 @@ import { makeUi } from "./store/ui.js";
 import { makeBridge } from "./bridge/bridge.js";
 import { makeFrameHost } from "./frame/frame.js";
 import { makePageView, makeDesignView, makeMapView } from "./views/page.js";
-import { makeConfigView } from "./views/config.js";
 import { makeTableView } from "./views/table.js";
 import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
@@ -207,7 +206,7 @@ const ws = makeWorkspace(transport);
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
 const ui = makeUi({
-  route: vault === null ? { view: "vault", id: "" } : parseHash(location.hash, production),
+  route: vault === null ? { view: "vault", id: "" } : parseHash(location.hash),
   // The one piece of view state that outlives the tab, read here because the
   // store does no I/O. Anything other than "desc" is ascending, so a corrupted
   // value reads as the default rather than as a third state.
@@ -234,7 +233,6 @@ const frameHost = makeFrameHost(bridge, assets, faces);
 const views = {
   tree: makeTreeView({ h, ws, ui }),
   page: makePageView({ h, frameHost, ws, ui, vault: vault ?? "" }),
-  config: makeConfigView({ h, ws, ui, frameHost, production }),
   table: makeTableView({ ws, ui, production }),
   // Which folder the workspace IS, chosen here rather than in an environment
   // variable somebody has to be told about. It is workspace-level like the one
@@ -247,11 +245,10 @@ const views = {
   // plugin always draws it. See the comment on `makeDesignView`.
   design: makeDesignView({ h, frameHost, ws, ui, vault: vault ?? "" }),
   // The map of the whole workspace: the `mindmap` plugin's document, mounted on
-  // `@map`, which the server answers as a bare plugin page. NOTHING IS SHIPPED
-  // any more — every plugin is seeded into `<vault>/plugins/` and served from
-  // there — so what this draws is the document `page.js` carries as
-  // `MAP_DOCUMENT`, held equal to the seed root's own file by
-  // `tests/mindmap.test.js`, and never a plugin the framework serves.
+  // `@map`, which the server answers as a bare plugin page — the vault's own
+  // `plugins/mindmap/` if it overrode one, the framework's otherwise — so what
+  // this draws is the document `page.js` carries as `MAP_DOCUMENT`, held equal
+  // to the framework's own file by `tests/mindmap.test.js`.
   map: makeMapView({ h, frameHost, ws, ui, vault: vault ?? "" }),
 };
 

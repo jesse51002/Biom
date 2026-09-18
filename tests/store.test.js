@@ -323,8 +323,6 @@ function fake() {
         case "design.writeFile":
           t.designFiles.push({ file: req.file, text: req.text });
           return null;
-        case "doc.raw": return "name: Notes\n";
-        case "doc.writeRaw": return t.docs.notes;
         default: return null;
       }
     },
@@ -774,23 +772,10 @@ test("the order is one write, and the page and the rail are both re-read from it
   // own contents put them — so the tree is re-read with the page.
   expect(server.count("children")).toBe(6);
   // THE OTHER HALF OF THE ASYMMETRY. The shape of the page moved — the rail
-  // draws that order, the Config screen counts it, and another box mounted on
-  // the same page is drawing it — so unlike a slot write, this one says so.
+  // draws that order, and another box mounted on the same page is drawing it —
+  // so unlike a slot write, this one says so.
   expect(seen.n).toBe(base + 1);
   expect(changes).toEqual([{ page: "notes", shape: true }]);
-});
-
-test("the raw fallback is never cached and never repaints", async () => {
-  const { server, ws, seen } = wired();
-  await ws.loadPage("notes");
-  const base = seen.n;
-
-  // It matters MORE than it did: the prose is in this file now, so it is the
-  // only way back to a page whose one bad character took its words with it.
-  expect(await ws.readDocRaw("notes")).toBe("name: Notes\n");
-  expect(await ws.readDocRaw("notes")).toBe("name: Notes\n");
-  expect(server.count("doc.raw")).toBe(2);
-  expect(seen.n).toBe(base);
 });
 
 /* ── the design doc: one page, and it is not in the page tree ──────────── */
@@ -1085,13 +1070,13 @@ test("a no-op set does not repaint — this is what killed set({})", () => {
   let n = 0;
   ui.on(() => { n++; });
 
-  ui.set({ panel: "agent" });
+  ui.set({ dialog: true });
   expect(n).toBe(1);
-  ui.set({ panel: "agent" });
+  ui.set({ dialog: true });
   expect(n).toBe(1);
   ui.set({});
   expect(n).toBe(1);
-  ui.set({ panel: null });
+  ui.set({ dialog: false });
   expect(n).toBe(2);
 });
 
@@ -1110,15 +1095,15 @@ test("a collection has to be rebuilt to be seen", () => {
   expect(ui.get().expanded.has("board")).toBe(true);
 });
 
-test("go resets the inserter and the page's face", () => {
+test("go resets the inserter", () => {
   const ui = makeUi();
   let n = 0;
   ui.on(() => { n++; });
 
-  ui.set({ pageView: "config", inserting: 2 });
+  ui.set({ inserting: 2 });
 
   ui.go("page", "notes");
-  expect(ui.get()).toMatchObject({ pageView: "page", inserting: null });
+  expect(ui.get()).toMatchObject({ inserting: null });
   expect(ui.get().route).toEqual({ view: "page", id: "notes" });
 
   ui.go("table", "jobs");
@@ -1128,5 +1113,5 @@ test("go resets the inserter and the page's face", () => {
 test("the ui store takes a route from boot", () => {
   const ui = makeUi({ route: { view: "table", id: "jobs" } });
   expect(ui.get().route).toEqual({ view: "table", id: "jobs" });
-  expect(ui.get().panel).toBe(null);
+  expect(ui.get().inserting).toBe(null);
 });

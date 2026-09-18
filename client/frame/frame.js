@@ -99,7 +99,7 @@ const HTML = /<html\b[^>]*>/i;
  *  nothing else, and a browser's default text colour is black — invisible while
  *  every palette was dark ink on light stock, and an unreadable page the moment
  *  a workspace ships light ink on a dark board, which the shipped brand palette
- *  does. `guest/plugins/doc/index.html` said this for itself, so a `doc` page
+ *  does. `guest/plugins/biom-doc/index.html` said this for itself, so a `doc` page
  *  read correctly and nothing else in the same workspace did: the design doc,
  *  whose box is woven with NO document at all, drew its title and its whole
  *  shipped-default band in black on charcoal, and so does any page an author

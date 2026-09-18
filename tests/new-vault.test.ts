@@ -3,12 +3,15 @@
 //
 // Two halves of one sentence, and this file is both.
 //
-//   · EVERY PLUGIN IS A FILE IN THE VAULT. Nothing is shipped: `guest/plugins/`
-//     is a seed root, the seeder copies the whole set into `<vault>/plugins/` on
-//     every mount, and the server serves it from there. What is asserted is the
-//     property that makes it safe — `fill` never writes over a file that is
-//     there — because that one property is what lets an existing workspace gain
-//     the set with no migration and keep its own overrides byte for byte.
+//   · A VAULT HOLDS ONLY THE PLUGINS IT WROTE OR OVERRODE. The framework's own
+//     set is the FALLBACK RUNG: a page's document and a slot plugin are read
+//     from `<vault>/plugins/` first and from `guest/plugins/` second, so a fresh
+//     vault has an empty `plugins/` and draws everything, a vault file at the
+//     framework's path replaces the framework's by being there, and deleting
+//     that file is how the framework's takes over again. What a person can READ
+//     is the mirror the server writes into `docs/plugins/` on every open; what
+//     they can CHANGE is a copy of it in `plugins/`. Nothing is seeded into
+//     `plugins/`, so nothing in it can fall behind.
 //
 //   · A FIRST LAUNCH MOUNTS NOTHING, and a new workspace is a parent folder plus
 //     a typed name. The ancestor walk is the expensive half to get wrong: a
@@ -65,50 +68,54 @@ function filesUnder(at: string, prefix = ""): string[] {
 
 /* ══ every plugin is a file in the vault ═════════════════════════════════ */
 
-test("an empty folder is seeded with the whole plugin set, and nothing in it names the install", async () => {
+test("an empty folder gets NO plugins of its own, and every page in it still draws", async () => {
   const root = await scratch();
   const vault = join(root, "fresh");
   const host = await hostAt(root, vault);
   try {
-    // THE SET IS WHAT IS ON DISK IN `guest/plugins/`, read rather than listed
-    // here — a plugin added and not seeded would otherwise be caught by nothing.
-    expect(filesUnder(join(vault, "plugins"))).toEqual(filesUnder(SEED));
+    await host.settled(vault);
+    // NOTHING IN `plugins/`. The framework's set is the rung underneath, not a
+    // copy in the folder — a copy is what a person makes when they want to
+    // change one, and a copy nobody asked for is a copy that goes stale.
+    expect(existsSync(join(vault, "plugins"))).toBe(false);
 
-    // The three page plugins each have their document, and the slot plugins are
-    // classic scripts. Named rather than derived, because this is the assertion
-    // that the SHAPE is right and not only that the copy happened.
-    for (const id of ["doc", "kanban", "mindmap"]) {
-      expect(existsSync(join(vault, "plugins", id, "index.html"))).toBe(true);
-    }
-    for (const id of ["markdown", "html", "table", "child"]) {
-      expect(existsSync(join(vault, "plugins", `${id}.js`))).toBe(true);
-    }
-
-    // AND MERMAID IS NOT AMONG THEM. The whole point of this format is a CUSTOM
-    // drawing — a figure is HTML a section writes, and a diagram of
-    // relationships is that same drawing — so a fresh vault ships with no
-    // diagram library and no plugin that reaches one. A workspace that wants
-    // mermaid puts its own `plugins/mermaid.js` in here, and the markdown
-    // plugin hands it the fence exactly as it would any other registered name.
-    expect(existsSync(join(vault, "plugins", "mermaid.js"))).toBe(false);
-    for (const rel of filesUnder(join(vault, "plugins"))) {
-      expect([rel, readFileSync(join(vault, "plugins", rel), "utf8").includes("mermaid")])
-        .toEqual([rel, false]);
-    }
-
-    // NO FILE IN A VAULT MAY NAME `/guest/`. A path into an install directory,
-    // written into a person's folder, is wrong the first time they move the
-    // application — and the two documents that carried one were the finding this
-    // whole piece turned on.
-    for (const rel of filesUnder(join(vault, "plugins"))) {
-      expect(readFileSync(join(vault, "plugins", rel), "utf8")).not.toContain("/guest/");
-    }
-
-    // And the page the vault is born with draws: its plugin is a file that is
-    // now beside it.
+    // And a page draws: the root the vault is born with, which is its own
+    // document, and a doc page made after it, whose document is the framework's
+    // `doc` read through the fallback rung. The design doc reads the same rung.
     const deps = await host.deps(vault);
     const [root0] = await deps.pages.list();
     expect((await deps.pages.read(root0!.id))!.html).not.toContain("Nothing draws this page");
+    const made = await deps.pages.create({ parent: root0!.id, name: "Notes" });
+    const drawn = (await deps.pages.read(made.id))!.html;
+    expect(drawn).not.toContain("Nothing draws this page");
+    expect(drawn).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
+    expect((await deps.design.read()).html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
+
+    // WHAT A PERSON CAN READ IS THE MIRROR, and it is the whole set, byte for
+    // byte what draws their page — written out of the same root the rung reads.
+    expect(filesUnder(join(vault, "docs/plugins"))).toEqual(filesUnder(SEED));
+    for (const rel of filesUnder(SEED)) {
+      expect(readFileSync(join(vault, "docs/plugins", rel), "utf8")).toBe(readFileSync(join(SEED, rel), "utf8"));
+    }
+    // Kept out of the vault's history: a framework release rewrites every file
+    // in it, and that is not a diff anybody asked for.
+    expect(readFileSync(join(vault, ".gitignore"), "utf8")).toContain("docs/plugins/");
+
+    // AND MERMAID IS NOT AMONG THEM. The whole point of this format is a CUSTOM
+    // drawing — a figure is HTML a section writes, and a diagram of
+    // relationships is that same drawing — so the framework ships no diagram
+    // library and no plugin that reaches one. A workspace that wants mermaid
+    // puts its own `plugins/mermaid.js` in, and the markdown plugin hands it the
+    // fence exactly as it would any other registered name.
+    for (const rel of filesUnder(SEED)) {
+      expect([rel, readFileSync(join(SEED, rel), "utf8").includes("mermaid")]).toEqual([rel, false]);
+    }
+    // NO FRAMEWORK PLUGIN MAY NAME `/guest/`. It is served under the vault's
+    // own route now, behind the vault's own files, and a path into an install
+    // directory is wrong the first time the application moves.
+    for (const rel of filesUnder(SEED)) {
+      expect(readFileSync(join(SEED, rel), "utf8")).not.toContain("/guest/");
+    }
   } finally {
     host.close();
     await rm(root, { recursive: true, force: true });
@@ -128,6 +135,7 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
   const vault = join(root, "guided");
   const host = await hostAt(root, vault);
   try {
+    await host.settled(vault);
     for (const dir of ["docs", ".agents/skills"]) {
       for (const rel of filesUnder(join(vault, dir))) {
         // THE PROSE, which is what an agent reads. `check.ts` and the verbatim
@@ -145,7 +153,7 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
     // AND IT SAYS WHAT A DIAGRAM IS INSTEAD, which is the half a `not.toContain`
     // cannot assert: the drawing, the starter to copy, and the words it is laid
     // out from.
-    const skill = readFileSync(join(vault, ".agents/skills/diagrams/SKILL.md"), "utf8");
+    const skill = readFileSync(join(vault, ".agents/skills/biom-diagrams/SKILL.md"), "utf8");
     expect(skill).toContain("HTML elements in the section's own markup");
     expect(skill).toContain("base/diagram/");
     expect(skill).toContain("variables");
@@ -161,12 +169,11 @@ test("the seeded guide teaches the CUSTOM drawing, and names no diagram library"
   }
 });
 
-test("a vault made before this existed gains the set, and its own plugin survives untouched", async () => {
-  // THE CASE THAT PROVES IT is this repository's own workspace, which ships
-  // `plugins/doc/index.html` as a deliberate override of the shipped one. A
-  // partial copy is the case to get right: the walk is file by file rather than
-  // directory by directory, so a vault holding one plugin gains the rest and
-  // keeps the one.
+test("a vault's own plugin file wins by being there, and deleting it hands the page back to the framework's", async () => {
+  // THE CASE THAT PROVES IT is this repository's own workspace, which carries
+  // `plugins/doc/index.html` as a deliberate override. Nothing is copied in
+  // beside it: the override is the one file in `plugins/`, and every other
+  // plugin the vault's pages name is the framework's, read through the rung.
   const root = await scratch();
   const vault = join(root, "older");
   await mkdir(join(vault, "pages/home"), { recursive: true });
@@ -175,49 +182,70 @@ test("a vault made before this existed gains the set, and its own plugin survive
   const mine = "<!doctype html><title>mine</title><!-- the board of children -->";
   await writeFile(join(vault, "plugins/doc/index.html"), mine);
 
-  const host = await hostAt(root, vault);
-  try {
-    // Byte for byte what it was. No migration, no version marker, no prompt.
-    expect(readFileSync(join(vault, "plugins/doc/index.html"), "utf8")).toBe(mine);
-    // And the rest of the set arrived beside it.
-    expect(filesUnder(join(vault, "plugins"))).toEqual(filesUnder(SEED));
-    // The override is what draws, because the vault's own file is the only rung
-    // there is.
-    const deps = await host.deps(vault);
-    expect((await deps.pages.read("home"))!.html).toContain("mine");
-  } finally {
-    host.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a plugin somebody deleted is filled back on the next start", async () => {
-  const root = await scratch();
-  const vault = join(root, "gap");
-
   const first = await hostAt(root, vault);
-  first.close();
-  await rm(join(vault, "plugins/doc/index.html"));
-  expect(existsSync(join(vault, "plugins/doc/index.html"))).toBe(false);
+  try {
+    await first.settled(vault);
+    // Byte for byte what it was, and alone in the folder.
+    expect(readFileSync(join(vault, "plugins/doc/index.html"), "utf8")).toBe(mine);
+    expect(filesUnder(join(vault, "plugins"))).toEqual(["doc/index.html"]);
+    // The override draws, because a vault file is the nearer rung.
+    const deps = await first.deps(vault);
+    expect((await deps.pages.read("home"))!.html).toBe(mine);
+  } finally {
+    first.close();
+  }
 
+  // DELETING THE OVERRIDE IS HOW YOU GO BACK. Nothing writes the file again —
+  // there is no seeder — and the framework's own document draws on the next
+  // read, which is what a person deleting it meant.
+  await rm(join(vault, "plugins/doc/index.html"));
   const second = await hostAt(root, vault);
   try {
-    expect(existsSync(join(vault, "plugins/doc/index.html"))).toBe(true);
+    await second.settled(vault);
+    expect(existsSync(join(vault, "plugins/doc/index.html"))).toBe(false);
     const deps = await second.deps(vault);
-    expect((await deps.pages.read("home"))!.html).not.toContain("Nothing draws this page");
+    expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
   } finally {
     second.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("`guest/plugins/` is a seed root and is no longer served", () => {
+test("the mirror in docs/plugins/ is rewritten whole on every open, so a file edited there does not survive it", async () => {
+  // A MIRROR, NOT A SOURCE. Nothing reads it to draw a page, and it is thrown
+  // away and written again every time the vault opens — which is the one-word
+  // difference from the seeder this replaced: `fill` skipped a file that was
+  // there, and that is exactly what let a copy drift.
+  const root = await scratch();
+  const vault = join(root, "mirrored");
+  const first = await hostAt(root, vault);
+  await first.settled(vault);
+  first.close();
+  const shown = join(vault, "docs/plugins/biom-markdown.js");
+  await writeFile(shown, "// somebody typed here");
+  await writeFile(join(vault, "docs/plugins/stray.js"), "// and left this");
+
+  const second = await hostAt(root, vault);
+  try {
+    await second.settled(vault);
+    expect(readFileSync(shown, "utf8")).toBe(readFileSync(join(SEED, "biom-markdown.js"), "utf8"));
+    expect(existsSync(join(vault, "docs/plugins/stray.js"))).toBe(false);
+    // And the mirror is not what draws: a page still reads the framework's own.
+    expect(existsSync(join(vault, "plugins"))).toBe(false);
+  } finally {
+    second.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("`guest/plugins/` is the fallback rung and is not served as a root of its own", () => {
   // Refused EXPLICITLY rather than by the directory being absent, because in a
   // checkout it is very much present. Two urls for one plugin would mean the one
-  // a page happened to name decided whether the person's copy drew or the
-  // install's did.
-  expect(locate("/guest/plugins/markdown.js")).toBeNull();
-  expect(locate("/guest/plugins/kanban/kanban.js")).toBeNull();
+  // a page happened to name decided whether the person's override drew or the
+  // framework's did; the one url is the vault's `/plugin/` route, which answers
+  // the vault's file first and the framework's second.
+  expect(locate("/guest/plugins/biom-markdown.js")).toBeNull();
+  expect(locate("/guest/plugins/biom-kanban/kanban.js")).toBeNull();
   // The runtime and the shim are still served from there, and must stay so: the
   // registry's `shipped` test is `document.currentScript` against `/guest/`, and
   // what it now means is "the framework's own code".
@@ -235,11 +263,11 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   // path under `plugins/` and marks it, because it cannot name the install, has
   // no base to resolve a relative path against inside the box, and was written
   // before anybody knew which folder it landed in.
-  const kanban = readFileSync(join(SEED, "kanban/index.html"), "utf8");
-  expect(kanban).toContain('data-g-src="kanban/kanban.js"');
+  const kanban = readFileSync(join(SEED, "biom-kanban/index.html"), "utf8");
+  expect(kanban).toContain('data-g-src="biom-kanban/kanban.js"');
 
   const doc = weaveRuntime(kanban, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
-  expect(doc).toContain(`src="${base}kanban/kanban.js"`);
+  expect(doc).toContain(`src="${base}biom-kanban/kanban.js"`);
   // The mark is gone from the tag; the comment above it explaining the mark is
   // the plugin author's words and stays, like every other word in their file.
   expect(doc).not.toContain("<script data-g-src");
@@ -265,8 +293,8 @@ test("the map's document and the mindmap plugin's own file are the same document
   // The equality is also what keeps the copy in `client/views/page.js` honest
   // about `data-g-src`: the plugin is a file in the vault now, and neither copy
   // may name an install directory.
-  const onDisk = readFileSync(join(SEED, "mindmap/index.html"), "utf8");
-  expect(onDisk).toContain('data-g-src="mindmap/mindmap.js"');
+  const onDisk = readFileSync(join(SEED, "biom-mindmap/index.html"), "utf8");
+  expect(onDisk).toContain('data-g-src="biom-mindmap/mindmap.js"');
   expect(onDisk).not.toContain("/guest/");
 });
 
@@ -518,8 +546,12 @@ test("what create makes is an ordinary folder, and opening it is the ordinary pa
     const host = await hostAt(root, abs);
     try {
       expect(existsSync(join(abs, "pages/home/content.yaml"))).toBe(true);
-      expect(existsSync(join(abs, "plugins/doc/index.html"))).toBe(true);
+      // No plugin of its own: the framework's draw it, through the rung.
+      expect(existsSync(join(abs, "plugins"))).toBe(false);
+      // The guide is the framework's and lands off the mount path.
+      await host.settled(abs);
       expect(existsSync(join(abs, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(abs, "INSTRUCTIONS.md"))).toBe(true);
       // The name typed is the folder's name, and the workspace's.
       expect((await (await host.deps(abs)).vault.info()).name).toBe("Studio");
     } finally {

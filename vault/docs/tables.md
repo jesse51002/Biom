@@ -216,7 +216,7 @@ contents:
         rows:
           - [Piece, Where, What changes]
           - [The part, "`contracts/types.ts`", A fifth part kind beside the four]
-          - [The drawing, "`plugins/grid.js`", "Draws the rows as a board"]
+          - [The drawing, "`plugins/biom-grid.js`", "Draws the rows as a board"]
 ```
 
 `head` is true when left out, because every markdown table has a header and that
@@ -227,7 +227,8 @@ The rows are written back one per line, `- [Piece, Where, What changes]`, so
 the file reads as the table it holds; a cell holding a comma, a pipe or a line
 break is quoted on that line.
 
-**It is drawn by the `grid` plugin as a board** — a header band, the cells in
+**It is drawn as a board by the framework's `biom-grid`** — or by a
+`plugins/grid.js` of this workspace's own, which wins by existing — a header band, the cells in
 the sheet face, one hairline — and it needs no section file: a section with no
 `data:` takes the shipped default, which widens from the reading measure to the
 figure width when its slot holds a grid, and the board scrolls sideways inside
@@ -278,4 +279,4 @@ so are the three rules the checker reports on a grid — R62, R63 and R64.
 
 **Whether the thing in front of you is a table at all**, what to say beside a grid,
 and the rule about `biom.sql`, are
-[`../.agents/skills/tables/SKILL.md`](../.agents/skills/tables/SKILL.md).
+[`../.agents/skills/biom-tables/SKILL.md`](../.agents/skills/biom-tables/SKILL.md).

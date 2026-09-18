@@ -1,40 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// A prompt you copy and hand to the agent. Layer 8.
+// A button that copies a piece of text. Layer 8.
 //
-// This is the shape of every action in the product the app itself cannot
-// perform. The change loop is asking Claude Code, so anything that would
-// otherwise need a terminal — reverting a page, adapting an installed listing,
-// building something that does not exist yet — arrives here as a sentence to
-// copy rather than a command to run or a button that lies.
+// It is the shape of every action in the product the app itself cannot
+// perform: what the terminal's help hands out is a command to copy rather than
+// a button that lies about having run it. It lives in `widgets/` so that any
+// layer above may draw one and none has a private copy that drifts.
 //
-// It lives in `widgets/` because two layers above need it and neither may
-// import the other: the marketplace's listing screen (views) and the History
-// panel (shell). A private copy in each is how the two would drift into
-// describing the same gesture differently.
+// A prompt card used to sit beside it — a sentence to hand an agent, and a note
+// under it — for the History panel. That panel is gone (2026-09-17), and the
+// card with it; the button is what the dock still needs.
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
 /** What the button says when it is not saying anything else. */
-const IDLE = "Copy the prompt";
-
-/**
- * A prompt card: the sentence, and a button that puts it on the clipboard.
- *
- * @param {H} h
- * @param {string} text the prompt itself, which is also what is copied
- * @param {{ lead?: string, note?: string }} [opts]
- *   `lead` is the small label above it; `note` sits under the button.
- * @returns {HTMLElement}
- */
-export function promptCard(h, text, opts = {}) {
-  const body = h("p.promptbody", text);
-  const card = h("div.promptcard",
-    opts.lead ? h("h5", opts.lead) : null,
-    body,
-    copyButton(h, text, body),
-    opts.note ? h("p.notyet", opts.note) : null);
-  return card;
-}
+const IDLE = "Copy";
 
 /**
  * Worth more than a bare `navigator.clipboard.writeText`. The clipboard can
@@ -46,7 +25,7 @@ export function promptCard(h, text, opts = {}) {
  * @param {H} h
  * @param {string} text
  * @param {HTMLElement} body the element to select if the clipboard refuses
- * @param {string} [idle] what the button says at rest, for a thing that is not a prompt
+ * @param {string} [idle] what the button says at rest
  * @returns {HTMLElement}
  */
 export function copyButton(h, text, body, idle = IDLE) {

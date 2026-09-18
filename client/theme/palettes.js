@@ -54,13 +54,11 @@
 // colour. Three things the brand does not name had to be picked anyway, and
 // each is picked so the screen that uses it keeps its contrast:
 //
-//   `magenta`/`magentaT`  a cool blue, the SECOND accent — the agent tool, the
-//                         close control, a person pill. It cannot be Sunflower:
-//                         a person pill and a page pill sit side by side in a
-//                         table cell and would become one colour. Cool rather
-//                         than red because `.tool.spot` is the biggest control
-//                         on the screen and a red one reads as an alarm rather
-//                         than as the way to talk to your agent.
+//   `magenta`/`magentaT`  a cool blue, the SECOND accent — the close control,
+//                         a person pill. It cannot be Sunflower: a person pill
+//                         and a page pill sit side by side in a table cell and
+//                         would become one colour. Cool rather than red because
+//                         a red control reads as an alarm.
 //   `field`               a hover fill a step above the page's paper, because a
 //                         hover that matches the paper is not a hover.
 //   `ink3`                lifted off the brand's `#7E7A70` to `#8F8A7C`, which

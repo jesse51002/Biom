@@ -664,7 +664,7 @@ const INK = "<style>@layer biom.ink{:root{color:var(--ink,CanvasText)}a{color:va
  * The shim declares the palette on `:root` as custom properties and nothing
  * else, and a browser's default text colour is black — unreadable the moment a
  * workspace ships light ink on a dark board, which the shipped brand palette
- * does. `guest/plugins/doc/index.html` used to be the only place that said so,
+ * does. `guest/plugins/biom-doc/index.html` used to be the only place that said so,
  * so a `doc` page read correctly and nothing else in the same workspace did:
  * the design doc, whose box is woven with NO document at all, drew its title
  * and its whole shipped-default band in black on charcoal.
@@ -690,7 +690,7 @@ test("every woven document takes the palette's ink, in a layer anything can beat
   expect(INK).toContain("@layer biom.ink{");
 
   // FIRST, ahead of the document's own head, which is what keeps `biom.ink` the
-  // lowest layer: `guest/plugins/doc/index.html` declares `@layer biom.scale,
+  // lowest layer: `guest/plugins/biom-doc/index.html` declares `@layer biom.scale,
   // biom.frame`, and a layer named later sorts after one named earlier.
   const woven = weave("S", "<!doctype html><html><head><style>html{color:blue}</style></head><body></body></html>");
   expect(woven.indexOf(INK)).toBeLessThan(woven.indexOf("html{color:blue}"));

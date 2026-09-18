@@ -468,21 +468,21 @@ walk("the production hide list holds on the screens that carry it", async () => 
   await until("the Dashboard row was drawn", BOUNDS.draw, async () =>
     (await wire.evaluate<number>("document.querySelectorAll('button.dashboardlink').length")) === 1);
 
-  // AND THE ROW THAT IS MEANT TO BE GONE. Map draws the whole workspace as a
-  // graph and a stranger's workspace is one page, so it is not in a built
-  // application — and `VIEWS` loses the route with it.
+  // AND THE MAP ROW, IN THE BUILD. It was withheld from the built application
+  // because a stranger's workspace is one page and maps to one light; the owner
+  // decided (2026-09-17) that the built application hides no screen.
   const foot = await wire.evaluate<string>("document.querySelector('nav.rack div.rackfoot').innerText");
   expect(foot).toContain("Design");
+  expect(foot).toContain("Map");
   expect(foot).toContain("Close workspace");
-  expect(foot).not.toContain("Map");
 
-  // AND THE TWO TOOLS THAT ARE MEANT TO BE GONE FROM THE BAR. History reads the
-  // vault's git log; Modify page hands out a path to `cd` into and a prompt for
-  // a coding agent in a terminal beside this window. Reload is what is left.
+  // AND THE BAR: Reload, Agent Terminal, and nothing else. The History panel,
+  // the Modify page panel and the Config screen behind a `···` menu are
+  // deleted from every build, not withheld from this one.
   const tools = await wire.evaluate<string>("document.querySelector('div.rail span.tools').innerText");
   expect(tools).toContain("Reload");
-  expect(tools).not.toContain("History");
-  expect(tools).not.toContain("Modify page");
+  expect(tools).toContain("Agent Terminal");
+  for (const gone of ["History", "Modify page", "\u22EF"]) expect([gone, tools.includes(gone)]).toEqual([gone, false]);
 
   // THE STRIP SAYS NOTHING A PERSON WHO NEVER CLONED THIS REPOSITORY CANNOT ACT
   // ON. Declared, drawn and the data grant are a compliance report between the
