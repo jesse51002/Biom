@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 
 import { handle, route } from "../server/api/routes.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
+import { rewriteOwned } from "../server/workspace/framework.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
@@ -164,7 +165,7 @@ function fakeTables(): Tables & TableTree & { boom: boolean } {
  *  rather than of the shipped copy. */
 const ROOT_SEED: Record<string, string> = {
   "AGENTS.md": "# This folder is a Biom workspace\n\nRead `.agents/skills/`.\n",
-  ".agents/skills/pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
+  ".agents/skills/biom-pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
   "design/content.yaml":
     "name: Design\nplugin: doc\nvariables:\n  mood: quiet\ncontents:\n" +
     "  - name: brand\n    parts:\n      body: |\n        # Brand\n        One accent.\n",
@@ -203,9 +204,14 @@ async function workspace() {
   const presets = makePresets({
     pages, tables, files, yaml,
     vaultSeed: makeFiles(seedRoot),
-    skill: makeFiles(skillDir),
   });
   const mirror = makeMirror(files, pages);
+  /** What the host does on open: the seeder's fill, then the framework's
+   *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
+  const furnish = async () => {
+    await presets.seedIfEmpty();
+    await rewriteOwned(files, makeFiles(seedRoot), makeFiles(skillDir), makeFiles(join(import.meta.dir, "..")));
+  };
 
   return {
     root,
@@ -214,6 +220,7 @@ async function workspace() {
     deps: { pages, design, docs, tables, presets, theme, mirror, vault: fakeVault(root, vault) },
     files,
     presets,
+    furnish,
     async drop() { await rm(root, { recursive: true, force: true }); },
   };
 }
@@ -243,7 +250,7 @@ const slot = (page: Page, section: string, part: string): string => {
 test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async () => {
   const w = await workspace();
   try {
-    await w.presets.seedIfEmpty();
+    await w.furnish();
 
     const first = await w.deps.pages.list();
     // The root page and nothing else. A new vault has no content: seeding
@@ -274,7 +281,7 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     // landed in the vault, the format guide lived in the framework repo and the
     // agent working in somebody else's folder never saw it.
     expect(await readFile(join(w.vault, "AGENTS.md"), "utf8")).toContain(".agents/skills/");
-    expect(existsSync(join(w.vault, ".agents", "skills", "pages", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(w.vault, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     // A plain `.agents/skills/`, so the vault reads the same to Cursor and Codex.
     expect(existsSync(join(w.vault, ".claude"))).toBe(false);
     expect(existsSync(join(w.vault, "CLAUDE.md"))).toBe(false);

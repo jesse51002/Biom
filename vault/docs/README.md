@@ -79,5 +79,5 @@ single rule the whole format is arranged around, because a word baked into a
 markup file is a word nobody using the workspace can ever change.
 
 [`sections.md`](./sections.md) is how that works;
-[`../.agents/skills/sections/SKILL.md`](../.agents/skills/sections/SKILL.md) is
+[`../.agents/skills/biom-sections/SKILL.md`](../.agents/skills/biom-sections/SKILL.md) is
 what it asks of you when you write one.

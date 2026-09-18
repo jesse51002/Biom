@@ -12,7 +12,7 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 
-const DOC = readFileSync(new URL("../guest/plugins/doc/index.html", import.meta.url), "utf8");
+const DOC = readFileSync(new URL("../guest/plugins/biom-doc/index.html", import.meta.url), "utf8");
 
 /** The stylesheet only. The file's header comment quotes CSS at length, so a
  *  rule ABOUT the stylesheet must never be checked against the prose explaining

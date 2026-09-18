@@ -42,7 +42,7 @@ the CODE changed, or because WE changed our minds? Code is a doc; a decision is 
 skill; **a numbered rule is a skill whatever it is about**, because the number is
 the join between the prose and `check.ts` and moving half of that join breaks the
 pair. A passage lives in exactly one of the two and each links the other in a
-clause. `vault/.agents/skills/docs/SKILL.md` states that line for the vault and is
+clause. `vault/.agents/skills/biom-docs/SKILL.md` states that line for the vault and is
 the file to read before moving anything between them.
 
 **A doc's examples run against the build, and that is checkable rather than
@@ -326,23 +326,36 @@ vault/…                               what ships
 <workspace>/.agents/skills/check.ts   what the documented gate command runs
 ```
 
-**The seeder is additive and never overwrites.** A workspace gains a file it did
-not have; it does not gain a new VERSION of one it already has. That protects a
-person's edits to their own workspace, and it means **anything improved here
-reaches new workspaces only.** So the skill you just edited is not the skill an
-agent reads in an existing workspace, that workspace's checker can be older than
-the rules it is held to, and **testing a change from inside a workspace runs its
-stale copy and tells you the change did not work.**
+**The guide, the docs, the skills and the checker are the framework's inside a
+workspace, and they are REWRITTEN WHOLE on every open.** `rewriteOwned` in
+`server/workspace/framework.ts` runs off the mount path once a vault is up:
+`AGENTS.md`, every `docs/*.md`, every `.agents/skills/biom-<skill>/` the
+framework ships, `check.ts` and `_lib/` are compared with what `vault/` and
+`skill/` hold and rewritten where they differ, committed once naming the
+framework version. **`AGENTS.md` sends the agent to `INSTRUCTIONS.md` in its
+first line, and that file is the person's** — seeded once as a stub, never
+touched; an edited `AGENTS.md` from before this rule is renamed across on the
+first open rather than written over. **Every one of
+them wears `biom-`, and a new skill here takes the prefix too** — it is what
+keeps the framework's names from ever meeting a skill a workspace wrote, since a
+name the framework owns is rewritten and a name it does not is never touched;
+the frontmatter `name:` is the directory, so an agent routes on `biom-pages`
+and `tests/skill.test.ts` refuses a shipped skill without the prefix. A copy
+under the old bare name, unedited, is swept on open; an edited one stays. So a skill you edit
+here reaches every workspace on its next open, and **a change made to a
+framework skill inside a workspace is gone on that workspace's next open** —
+what is wanted everywhere goes here, and what is wanted in one workspace goes
+into a skill under a name of that workspace's own, which the rewrite never
+touches. Nothing is removed: a skill this repository stops shipping stays where
+it is in every workspace that had it.
 
-```bash
-diff -q vault/.agents/skills/<name>/SKILL.md  <vault>/.agents/skills/<name>/SKILL.md
-diff -q vault/docs/<name>.md                 <vault>/docs/<name>.md
-diff -q skill/check.ts                        <vault>/.agents/skills/check.ts
-```
+**`INSTRUCTIONS.md`, `base/` and `design/` are filled once and never
+overwritten**: those are the person's from the moment they land.
 
-Deleting a workspace's copies and restarting the server reseeds them. **When you
-want certainty about which checker ran, invoke `skill/check.ts` by
-path.**
+**Testing a change from inside a workspace is honest** — the running server
+rewrote the guide, the docs, the skills and the checker when it opened the
+folder. When you want certainty about which checker ran, invoke
+`skill/check.ts` by path.
 
 ### A rule is one statement in two places
 
@@ -400,8 +413,11 @@ When a new one appears, add it as a class rather than as an incident.
   and inside a vault.
 - **The agreement test:** `tests/skill.test.ts` — every cited rule has
   prose, every documented rule is cited or retired, no number is both.
-- **The seeder, and the additive rule that lets a workspace's copy go stale:**
-  `server/workspace/presets.ts`.
+- **The seeder, and the additive rule for what is the person's** —
+  `INSTRUCTIONS.md`, `base/`, `design/`: `server/workspace/presets.ts`. **The
+  rewrite of what is the framework's** — `AGENTS.md`, `docs/`, the skills, the
+  checker, its `_lib/`: `rewriteOwned` in `server/workspace/framework.ts`, run
+  by `afterMount` in `server/main.ts`.
 - **Siblings, for the mechanism a skill describes:** the section runtime →
   `section-runtime-guide`; the format on disk → `page-format-guide`; the plugin
   registry → `plugin-guide`; the box and its ports → `boundary-guide`.

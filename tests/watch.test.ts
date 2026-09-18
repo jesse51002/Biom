@@ -127,7 +127,7 @@ test("the watched inputs and the exclusions are one list each, and a path under 
   expect(watched("notes.txt")).toBe(false);
   expect(watched("tables.json")).toBe(false);
   expect(watched(".DS_Store")).toBe(false);
-  expect(watched(".agents/skills/pages/SKILL.md")).toBe(false);
+  expect(watched(".agents/skills/biom-pages/SKILL.md")).toBe(false);
 
   // And the two lists do not overlap, which is what makes "one list each" a
   // statement rather than a hope.

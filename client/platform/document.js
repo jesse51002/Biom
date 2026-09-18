@@ -44,11 +44,13 @@ const RUNTIME = [
   "/guest/runtime/edit.js",
 ];
 
-/** THE SLOT PLUGINS, AND THEY ARE FILES IN THE VAULT — ALL OF THEM, INCLUDING
- *  THE ONES THE PERSON WROTE. Nothing is shipped: the seeder copies every plugin
- *  into `<vault>/plugins/` on every mount, and the server serves that folder to
- *  the box as classic scripts at `/v/<enc>/plugin/…`. So a person can open the
- *  file that draws their prose where they stand, and change it.
+/** THE SLOT PLUGINS: the framework's own and the ones the person wrote or
+ *  overrode, as ONE script. The server answers `/v/<enc>/plugin/` with the
+ *  framework's `*.js` minus every name the vault's `plugins/` also has, then the
+ *  vault's own — so a vault file shadows the framework's by name, and a vault
+ *  with no `plugins/` at all draws with the framework's set. What a person can
+ *  read is the mirror in `docs/plugins/`; what they can change is a copy of it
+ *  in `plugins/`.
  *
  *  THERE IS NO LONGER A LIST OF IDS HERE, and that is the whole of the loader.
  *  This file used to name a fixed handful — `markdown`, `html`, `table`, `child`
@@ -91,7 +93,7 @@ const headTags = (vault) =>
  *  vault cannot spell for itself.
  *
  *  `plugins/kanban/index.html` has to load `plugins/kanban/kanban.js`. It cannot
- *  say `/guest/plugins/kanban/kanban.js`, which is what it said when it was
+ *  say `/guest/plugins/biom-kanban/kanban.js`, which is what it said when it was
  *  shipped: a path into an install directory, written into a person's folder, is
  *  wrong the first time they move the application. It cannot say a RELATIVE path
  *  either — the box is a `srcdoc` frame at an opaque origin and has no base to
