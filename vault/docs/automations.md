@@ -120,7 +120,7 @@ never in git.
 | `running` | alive now. Kill ends it: the whole process group, TERM, a short grace, KILL |
 | `exited` | ended on its own, with its exit code |
 | `killed` | ended by a page, by the overview, or by the application closing |
-| `lost` | the server started again and found no process behind a row still marked running |
+| `lost` | the server started again and found no process behind a row still marked running — the pid gone, or a different process wearing it since a reboot |
 
 Two runs of one automation at once are allowed and warned about. A finished run
 keeps its directory and its row until deleted. **Closing the application over a

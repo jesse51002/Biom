@@ -413,19 +413,24 @@ only("killAll is synchronous: every live group is killed outright and every row 
 
 test("reconcile marks a running row whose process is gone as lost, and leaves a live one alone", async () => {
   // A fake runner: `alive` says what the test says, and nothing is spawned.
+  // It asks by pid AND birth, so a reused pid with another birth reads dead.
   const alivePids = new Set<number>([4242]);
+  let bornNow = "b1";
   const fake: ProcessRunner = {
-    start: () => ({ pid: 4242, pgid: 4242, done: new Promise(() => {}) }),
+    start: () => ({ pid: 4242, pgid: 4242, born: "b1", done: new Promise(() => {}) }),
     end: async () => {},
     killNow: (pgid) => { alivePids.delete(pgid); },
-    alive: (pid) => alivePids.has(pid),
+    alive: (pid, born) => alivePids.has(pid) && (born === undefined || born === null || born === bornNow),
   };
   const w = await world({ manifest: "name: Fake\ncommand: [whatever]\n", process: fake });
   const row = await w.runs.start(PAGE, "pull", {}, null);
+  expect(w.runs.get(row.id)?.born).toBe("b1");
   expect(w.runs.reconcile()).toBe(0);
   expect(w.runs.get(row.id)?.status).toBe("running");
-  alivePids.clear();
+  // The pid is still taken — by a process born later. That is not our run.
+  bornNow = "b2";
   expect(w.runs.reconcile()).toBe(1);
+  alivePids.clear();
   const lost = w.runs.get(row.id)!;
   expect(lost.status).toBe("lost");
   expect(lost.ended).not.toBeNull();
@@ -434,9 +439,44 @@ test("reconcile marks a running row whose process is gone as lost, and leaves a 
   expect((await w.runs.kill(row.id, "page")).status).toBe("lost");
 });
 
+test("relocate re-points rows by prefix, and relocateAll by identity against the page list", async () => {
+  const fake: ProcessRunner = {
+    start: () => ({ pid: 7, pgid: 7, born: "b7", done: new Promise(() => {}) }),
+    end: async () => {},
+    killNow: () => {},
+    alive: () => true,
+  };
+  const w = await world({ manifest: "name: Fake\ncommand: [x]\n", process: fake });
+  const a = await w.runs.start(PAGE, "pull", {}, null);
+  // A move the route performs: every row under the old id, by prefix, and
+  // nothing else.
+  expect(w.runs.relocate(PAGE, "home/Boards/Socials")).toBe(1);
+  expect(w.runs.get(a.id)?.page).toBe("home/Boards/Socials");
+  expect(w.runs.list({ page: "home/Boards/Socials" }).length).toBe(1);
+  expect(w.runs.list({ page: PAGE }).length).toBe(0);
+  expect(w.runs.relocate("home/Nope", "home/Else")).toBe(0);
+  // A move from outside: the row's identity finds the page wherever it is now.
+  expect(w.runs.relocateAll([{ id: "home/Moved/Again", name: "Socials", uid: a.uid ?? "" }])).toBe(1);
+  expect(w.runs.get(a.id)?.page).toBe("home/Moved/Again");
+  // Already there: nothing moves. A page list without the identity: nothing moves.
+  expect(w.runs.relocateAll([{ id: "home/Moved/Again", name: "Socials", uid: a.uid ?? "" }])).toBe(0);
+  expect(w.runs.relocateAll([{ id: "home/Other", name: "Other", uid: "someoneelse1234" }])).toBe(0);
+});
+
+test("setManifest refuses a manifest that is not a map, and one that will not read, in a sentence", async () => {
+  const w = await world();
+  await expect(w.runs.setManifest(PAGE, "pull", /** @type {any} */ (null))).rejects.toThrow(/not a map/);
+  await expect(w.runs.setManifest(PAGE, "pull", /** @type {any} */ ({ name: "X" }))).rejects.toThrow(/will not read/);
+  // Quiet writes no commit; a loud one does.
+  const before = (await w.files.read("pages/home/children/Socials/automations/pull/automation.yaml")) ?? "";
+  const m = await w.runs.manifest(PAGE, "pull");
+  await w.runs.setManifest(PAGE, "pull", { ...m, description: "quiet" }, true);
+  expect(await w.files.read("pages/home/children/Socials/automations/pull/automation.yaml")).not.toBe(before);
+});
+
 test("a kill on a row this server never held a process for finishes the row itself", async () => {
   const fake: ProcessRunner = {
-    start: () => ({ pid: 999999, pgid: 999999, done: new Promise(() => {}) }),
+    start: () => ({ pid: 999999, pgid: 999999, born: null, done: new Promise(() => {}) }),
     end: async () => {},
     killNow: () => {},
     alive: () => false,
@@ -487,7 +527,7 @@ test("vaultFiles is the vault's instructions and its skills, the seeded ones mar
 
 test("a row round-trips every column", async () => {
   const fake: ProcessRunner = {
-    start: () => ({ pid: 7, pgid: 7, done: Promise.resolve({ exit: 2, signal: null }) }),
+    start: () => ({ pid: 7, pgid: 7, born: "b7", done: Promise.resolve({ exit: 2, signal: null }) }),
     end: async () => {},
     killNow: () => {},
     alive: () => false,

@@ -53,6 +53,20 @@
 .editor textarea::placeholder{color:var(--ink-3)}
 .ed-foot{padding:.5rem 1.1rem; color:var(--ink-3); font-size:.72rem; border-top:1px solid var(--rule)}
 
+/* ---------- shared: a name asked in place ---------- */
+.namefield{display:grid; gap:.5rem; padding:1.2rem 1.4rem; align-content:start}
+.namefield .lbl{font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.namefield .row{display:flex; gap:.5rem; max-width:32rem}
+.namefield input{flex:1; font:inherit; font-size:.9rem; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px; padding:.45rem .65rem; min-width:0}
+.namefield input:focus{outline:2px solid var(--cyan); outline-offset:-1px}
+.namefield .ok{font:inherit; font-size:.8rem; padding:.45rem .9rem; border:1px solid var(--cyan); background:var(--cyan); color:var(--on-spot); border-radius:4px; cursor:pointer; white-space:nowrap}
+.namefield .ok[disabled]{opacity:.5; cursor:wait}
+.namefield .said{font-size:.8rem; color:var(--magenta)}
+.namefield .said:empty{display:none}
+.pick .naming:empty{display:none}
+.pick .naming{margin-top:1rem}
+.pick .tpl[aria-pressed="true"]{border-color:var(--cyan); background:var(--field)}
+
 /* ---------- shared: the file tree ---------- */
 .tree{padding:.6rem .4rem; overflow:auto; font-family:var(--mono-face); font-size:.78rem; color:var(--ink-2)}
 .tree.dim{color:var(--ink-3); opacity:.7}

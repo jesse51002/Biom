@@ -26,7 +26,7 @@
 // its status, its times, its exit, and a file it serves and never reads.
 
 /** @import { Automation, AutomationInput, AutomationManifest, Page, RunRow, Template, VaultFile, VarScalar, WorkspaceStore, UiStore } from "../../contracts/types.ts" */
-import { askLine, editor, fileTree, clock, lastLine, SAVE_AFTER, WORDS } from "../widgets/runsui.js";
+import { askLine, editor, fileTree, nameField, followLog, clock, lastLine, SAVE_AFTER, WORDS } from "../widgets/runsui.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
@@ -36,8 +36,6 @@ export const SUBS = /** @type {const} */ (["manifest", "files", "runs"]);
 export const SUB_WORDS = Object.freeze({ manifest: "Manifest", files: "Files", runs: "Runs of this automation" });
 /** How often a live run's row is re-read while the screen is open. */
 export const FOLLOW_EVERY = 1000;
-/** How much of a log's tail a row keeps for its one raw line and the whole-log flap. */
-const TAIL_KEEP = 64 * 1024;
 
 /**
  * @typedef {object} AutomationViewDeps
@@ -68,6 +66,11 @@ export function makeAutomationView(deps) {
   };
   /** Each run's log tail as read so far, by id: the text kept and the offset to read next. */
   const tails = new Map();
+  /** Read whatever a run has printed since the last read, to the end. Declared
+   *  HERE, above the `return`: the screens below are hoisted functions and run
+   *  after this factory has returned, so a `const` under that return is one
+   *  they can name and never reach. */
+  const follow = (/** @type {RunRow} */ r) => followLog((id, stream, from) => ws.readRun(id, stream, from), tails, r.id);
 
   const hold = (/** @type {string} */ m) => h("p.hold", m);
 
@@ -145,20 +148,31 @@ export function makeAutomationView(deps) {
     } catch {
       templates = [];
     }
+    // A TILE OPENS A NAME FIELD UNDER THE TILES rather than a dialog: the
+    // template's own name is offered and selected, Enter makes the copy, and
+    // a refusal — a name already taken on this page — is said beside it.
+    const naming = h("div.naming");
     const tiles = templates.map((t) => h("button.tpl", {
       type: "button", "data-template": t.id,
       onclick: () => {
-        const name = typeof prompt === "function" ? prompt(`The new automation's name, on ${page.id}`, t.name) : t.name;
-        if (name === null || name.trim() === "") return;
-        void ws.createAutomation(page.id, name, t.id).then((made) => {
-          state.folder = made.folder; state.picking = false; state.sub = "manifest";
-          void redraw(plate, page);
-        }, (e) => { alert(e instanceof Error ? e.message : "that could not be made"); });
+        for (const b of plate.querySelectorAll("button.tpl")) b.setAttribute("aria-pressed", String(b.getAttribute("data-template") === t.id));
+        naming.replaceChildren(nameField(h, {
+          label: `The new automation's name, on ${page.id}, from ${t.name}`,
+          value: t.name,
+          ok: "Make it",
+          take: async (name) => {
+            const made = await ws.createAutomation(page.id, name, t.id);
+            state.folder = made.folder; state.picking = false; state.sub = "manifest";
+            void redraw(plate, page);
+          },
+          cancel: () => { naming.replaceChildren(); for (const b of plate.querySelectorAll("button.tpl")) b.removeAttribute("aria-pressed"); },
+        }));
       },
     }, h("span.kind", t.agent || t.id), h("span.nm", t.name)));
     return h("div.pick",
       h("p.lead", "Or start from a template, one per harness the framework ships. The copy is this page's from the moment it is made."),
       h("div.tiles", ...tiles),
+      naming,
       templates.length === 0 ? h("p.dim", "This build ships no templates.") : null);
   }
 
@@ -176,13 +190,16 @@ export function makeAutomationView(deps) {
     }
     const state = h("span.saved", WORDS.saved);
     let pending = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+    // ONE COMMIT AS THE FORM OPENS, then every save is quiet — see the
+    // editors: a pause in typing is not a version.
+    void ws.commitVault(`Before the manifest of ${auto.folder} on ${page.id} was edited`).catch(() => {});
     const save = () => {
       state.textContent = WORDS.saving; state.setAttribute("data-pending", ""); state.removeAttribute("data-failed");
       if (pending !== null) clearTimeout(pending);
       pending = setTimeout(async () => {
         pending = null;
         try {
-          await ws.setManifest(page.id, auto.folder, m);
+          await ws.setManifest(page.id, auto.folder, m, true);
           state.textContent = WORDS.saved; state.removeAttribute("data-pending");
         } catch (e) {
           state.textContent = WORDS.failed + (e instanceof Error && e.message ? ": " + e.message : ""); state.setAttribute("data-failed", "");
@@ -293,12 +310,23 @@ export function makeAutomationView(deps) {
     if (state.file === null || (!inVault && !own.includes(state.file)) || (inVault && !skills.includes(state.file.slice(7)))) {
       state.file = own.includes("kickoff.md") ? "kickoff.md" : own[0] ?? null;
     }
+    const pane = h("div.pane", hold("Opening…"));
     const pickAndDraw = (/** @type {string} */ f) => { state.file = f; void redraw(plate, page); };
+    // + ON A FOLDER OPENS A NAME FIELD IN THE EDITOR'S PLACE, with the path a
+    // file there usually has offered; Enter makes it empty and opens it.
     const addFile = (/** @type {string} */ folder) => {
-      const name = typeof prompt === "function" ? prompt(`The new file's name under ${folder}/`, folder === "skills" ? "my-skill/SKILL.md" : "main.py") : null;
-      if (name === null || name.trim() === "") return;
-      const rel = `${prefix}${folder}/${name.trim().replace(/^\/+/, "")}`;
-      void ws.writeFile(page.id, rel, "").then(() => { state.file = rel.slice(prefix.length); void redraw(plate, page); }, (e) => alert(e instanceof Error ? e.message : "that file could not be made"));
+      pane.replaceChildren(nameField(h, {
+        label: `The new file's name under ${folder}/`,
+        value: folder === "skills" ? "my-skill/SKILL.md" : "main.py",
+        ok: "Make it",
+        take: async (name) => {
+          const rel = `${prefix}${folder}/${name.replace(/^\/+/, "")}`;
+          await ws.writeFile(page.id, rel, "");
+          state.file = rel.slice(prefix.length);
+          void redraw(plate, page);
+        },
+        cancel: () => void redraw(plate, page),
+      }));
     };
     const ownTree = fileTree(h, {
       root: `${page.id} · automations/${auto.folder}/`,
@@ -309,7 +337,6 @@ export function makeAutomationView(deps) {
       files: skills, open: inVault && state.file !== null ? state.file.slice(7) : null,
       pick: (f) => pickAndDraw("@vault/" + f), dim: !inVault,
     });
-    const pane = h("div.pane", hold("Opening…"));
     if (state.file !== null) {
       const file = state.file;
       const vaultPath = inVault ? `.agents/skills/${file.slice(7)}` : null;
@@ -317,6 +344,7 @@ export function makeAutomationView(deps) {
         try {
           const text = vaultPath !== null ? (await ws.readVaultFile(vaultPath)) ?? "" : (await ws.readPageFile(page.id, prefix + file)) ?? "";
           const shown = vaultPath ?? file;
+          void ws.commitVault(`Before ${vaultPath ?? prefix + file} was edited`).catch(() => {});
           const ed = editor(h, {
             name: shown.slice(shown.lastIndexOf("/") + 1),
             where: vaultPath !== null ? "the workspace's skills" : `${page.id} · automations/${auto.folder}/${shown.includes("/") ? shown.slice(0, shown.lastIndexOf("/")) + "/" : ""}`,
@@ -326,7 +354,7 @@ export function makeAutomationView(deps) {
               : shown === "kickoff.md" ? "The prompt, with {input} placeholders. Substituted per run and nothing prepended: the run's AGENTS.md says where things are."
               : shown === "INSTRUCTIONS.md" ? "This automation's instructions, on top of the page's and the workspace's."
               : "",
-            save: (next) => vaultPath !== null ? ws.writeVaultFile(vaultPath, next) : ws.writeFile(page.id, prefix + file, next),
+            save: (next) => vaultPath !== null ? ws.writeVaultFile(vaultPath, next, true) : ws.writeFile(page.id, prefix + file, next, true),
           });
           pane.replaceChildren(ed.el);
         } catch (e) {
@@ -396,19 +424,6 @@ export function makeAutomationView(deps) {
     const gone = setInterval(() => { if (shown && !screen.isConnected) { stop(); clearInterval(gone); } }, 5000);
     await draw();
     return screen;
-  }
-
-  /** Read whatever a run has printed since the last read, keeping a tail. */
-  async function follow(/** @type {RunRow} */ r) {
-    const had = tails.get(r.id) ?? { text: "", next: 0, ended: false };
-    if (had.ended) return;
-    try {
-      const got = await ws.readRun(r.id, "stdout", had.next);
-      const text = (had.text + got.text).slice(-TAIL_KEEP);
-      tails.set(r.id, { text, next: got.next, ended: got.ended && got.text === "" });
-    } catch {
-      /* a run whose directory has gone; the row still draws */
-    }
   }
 
   /** @param {RunRow} r @param {() => void} again */

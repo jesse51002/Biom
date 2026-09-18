@@ -551,10 +551,13 @@ walk("an automation is made on a page's Automations screen, started, and its log
   // The line to hand your agent is the first thing on it, with Copy.
   expect(await page.locator("div.autoscreen div.ask p.p").innerText()).toContain("Make an automation on page `home`");
 
-  // A NEW ONE FROM THE NODE TEMPLATE. The name is asked with a prompt, which
-  // the page answers with the template's own name.
-  page.once("dialog", (d) => void d.accept("Overnight"));
+  // A NEW ONE FROM THE NODE TEMPLATE. The name is asked IN PLACE — a field
+  // under the tiles, never `window.prompt`, which Electron's renderer throws
+  // on — offered as the template's name and taken on Enter.
   await page.locator('div.autoscreen button.tpl[data-template="node"]').click();
+  await until("the name field drew", BOUNDS.draw, async () => (await page.locator("div.pick div.namefield input").count()) > 0);
+  await page.locator("div.pick div.namefield input").fill("Overnight");
+  await page.locator("div.pick div.namefield input").press("Enter");
   await until("the manifest form drew", BOUNDS.draw, async () => (await page.locator("div.manifest div.form").count()) > 0);
   // The copy landed under the page, named as asked, and is the workspace's now.
   const folder = join(second, "pages", "home", "automations", "overnight");

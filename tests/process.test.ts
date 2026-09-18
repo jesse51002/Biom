@@ -97,6 +97,23 @@ only("a command that does not exist settles with no exit and a reason, rather th
   rmSync(dir, { recursive: true, force: true });
 });
 
+only("a started process carries its birth, and alive tells the same pid with another birth apart", async () => {
+  const dir = scratch();
+  const runner = makeProcessRunner();
+  const started = runner.start({ cmd: ["sleep", "5"], cwd: dir, env: { PATH: process.env.PATH ?? "" }, stdout: join(dir, "o"), stderr: join(dir, "e") });
+  expect(started.born).not.toBeNull();
+  expect(runner.alive(started.pid)).toBe(true);
+  expect(runner.alive(started.pid, started.born)).toBe(true);
+  // The same number with a different birth is a stranger wearing it — the
+  // reused-pid case — and answers dead, so a row from before a reboot is
+  // marked lost rather than kept, counted, asked about and killed.
+  expect(runner.alive(started.pid, "not-this-one")).toBe(false);
+  await runner.end(started.pgid, 100);
+  await started.done;
+  expect(runner.alive(started.pid, started.born)).toBe(false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 only("alive answers no for a pid that is gone and for nonsense", async () => {
   const runner = makeProcessRunner();
   expect(runner.alive(0)).toBe(false);

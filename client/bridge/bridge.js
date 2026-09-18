@@ -354,6 +354,8 @@ export function makeBridge(ws, transport, ui, vault = "") {
         return forward(req.id, { kind: "run.get", run: req.run });
       case "run.read":
         return forward(req.id, { kind: "run.read", run: req.run, stream: req.stream, from: req.from, max: req.max });
+      // A box's kill is a page's, whatever it said: `by` is dropped here as
+      // it is overwritten on `run.start`.
       case "run.kill":
         return forward(req.id, { kind: "run.kill", run: req.run });
     }

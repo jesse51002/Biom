@@ -213,6 +213,102 @@ export function fileTree(h, spec) {
   return el;
 }
 
+/**
+ * @typedef {object} NameSpec
+ * @property {string} label what is being named, as a small label
+ * @property {string} [value] what the field starts holding
+ * @property {string} [placeholder]
+ * @property {string} ok the word on the button
+ * @property {(name: string) => Promise<void>} take called with the trimmed
+ *   name on Enter or the button; a rejection is said beside the field and the
+ *   field stays
+ * @property {() => void} [cancel] Escape, or the field losing its purpose
+ */
+
+/**
+ * ONE NAME, ASKED IN PLACE. Not `window.prompt`: Electron's renderer does not
+ * support it and throws, so a screen that asked with one worked in a browser
+ * and did nothing in the built application. This is a field where the act
+ * was — a label, the input focused, one button — that takes Enter, gives up
+ * on Escape, and says a refusal beside itself rather than in a dialog.
+ * @param {H} h
+ * @param {NameSpec} spec
+ * @returns {HTMLElement}
+ */
+export function nameField(h, spec) {
+  const input = /** @type {HTMLInputElement} */ (h("input", { type: "text", value: spec.value ?? "", placeholder: spec.placeholder ?? null, "aria-label": spec.label, spellcheck: "false" }));
+  const said = h("span.said");
+  const go = h("button.ok", { type: "button" }, spec.ok);
+  let busy = false;
+  const take = async () => {
+    if (busy) return;
+    const name = input.value.trim();
+    if (name === "") { input.focus(); return; }
+    busy = true; go.setAttribute("disabled", ""); said.textContent = "";
+    try {
+      await spec.take(name);
+    } catch (e) {
+      said.textContent = e instanceof Error && e.message ? e.message : "that could not be made";
+      busy = false; go.removeAttribute("disabled"); input.focus();
+    }
+  };
+  go.addEventListener("click", () => void take());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); void take(); }
+    if (e.key === "Escape" && spec.cancel) { e.preventDefault(); spec.cancel(); }
+  });
+  const el = h("div.namefield", h("span.lbl", spec.label), h("div.row", input, go), said);
+  // Focused once it is on screen; a field nobody has to click into is the
+  // whole point of asking in place.
+  setTimeout(() => { if (el.isConnected) input.focus(); }, 0);
+  if (spec.value) setTimeout(() => { if (el.isConnected) input.select(); }, 0);
+  return el;
+}
+
+/** How much of a log's tail a row keeps for its one raw line and the whole-log
+ *  flap. Older bytes fall off the front; the last line is always the last. */
+export const TAIL_KEEP = 64 * 1024;
+/** How many reads one draw may make of one run, so a log that grows faster
+ *  than it is read cannot hold a redraw hostage. */
+const READS_PER_DRAW = 32;
+
+/**
+ * @typedef {{ text: string, next: number, ended: boolean }} Tail
+ */
+
+/**
+ * FOLLOW ONE RUN'S LOG, from where the last read stopped to where the log is
+ * NOW. One `run.read` answers at most a chunk, and a draw that read one chunk
+ * per run showed the line at the chunk's end as the run's "last line" — wrong
+ * for any finished log longer than a chunk, and stuck that way until another
+ * run moved. So a draw reads until the answer says nothing more arrived, and
+ * keeps only the tail. A run already read to its end is not asked again.
+ * @param {(id: string, stream: "stdout" | "stderr", from?: number) => Promise<{ text: string, next: number, ended: boolean }>} readRun
+ * @param {Map<string, Tail>} tails
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function followLog(readRun, tails, id) {
+  const had = tails.get(id) ?? { text: "", next: 0, ended: false };
+  if (had.ended) return;
+  let text = had.text;
+  let next = had.next;
+  let ended = false;
+  try {
+    for (let i = 0; i < READS_PER_DRAW; i++) {
+      const got = await readRun(id, "stdout", next);
+      text = (text + got.text).slice(-TAIL_KEEP);
+      next = got.next;
+      // Nothing new and the run has ended: that is the whole of it. Nothing
+      // new and still running: it will say more later.
+      if (got.text === "") { ended = got.ended; break; }
+    }
+  } catch {
+    /* a run whose directory has gone; the row still draws what it had */
+  }
+  tails.set(id, { text, next, ended });
+}
+
 /** A clock, `mm:ss` from milliseconds; hours when there are any.
  *  @param {number} ms @returns {string} */
 export function clock(ms) {

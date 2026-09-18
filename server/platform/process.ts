@@ -24,7 +24,7 @@
 // restarts leaves the log exactly as far as the child got.
 
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, readFileSync } from "node:fs";
 
 import type { ProcessRunner, Started } from "../../contracts/types.ts";
 
@@ -33,17 +33,58 @@ const WINDOWS = process.platform === "win32";
 /** How long `end` waits between TERM and KILL when the caller names nothing. */
 export const DEFAULT_GRACE = 5000;
 
-/** Is a pid alive, without touching it. Signal 0 is the POSIX question and
- *  `ESRCH` the answer that means no; `EPERM` means it is somebody else's and
- *  therefore there, which for a reconcile is the honest answer. */
-function alive(pid: number): boolean {
+/** WHEN A PROCESS STARTED, as the system records it, or null where it will
+ *  not say. A pid is reused — after a reboot, or after enough processes have
+ *  come and gone — so a row that remembers only a pid cannot tell its own
+ *  process from a stranger's that happens to wear the number now; a row that
+ *  remembers the start time can. On Linux it is field 22 of `/proc/<pid>/stat`,
+ *  the start in clock ticks since boot, read past the last `)` because the
+ *  command name before it may hold spaces and parentheses. Elsewhere `ps`
+ *  answers `lstart`, which is a wall-clock string and equally stable for one
+ *  process. */
+function bornAt(pid: number): string | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const tail = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      // The fields after the name start at index 3 of the whole line, so the
+      // 22nd field is index 22 - 3 = 19 of the tail.
+      return tail[19] ?? null;
+    } catch {
+      return null;
+    }
+  }
+  if (WINDOWS) return null;
+  try {
+    const out = Bun.spawnSync(["ps", "-o", "lstart=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" });
+    const said = new TextDecoder().decode(out.stdout).trim();
+    return said === "" ? null : said;
+  } catch {
+    return null;
+  }
+}
+
+/** Is a pid alive, without touching it — and, given `born`, is it still the
+ *  process that was started rather than a stranger wearing a reused number.
+ *  Signal 0 is the POSIX question and `ESRCH` the answer that means no;
+ *  `EPERM` means it is somebody else's and therefore there, which with no
+ *  `born` to compare is the honest answer and with one is answered by the
+ *  comparison. */
+function alive(pid: number, born?: string | null): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
+  let there: boolean;
   try {
     process.kill(pid, 0);
-    return true;
+    there = true;
   } catch (e) {
-    return (e as { code?: string }).code === "EPERM";
+    there = (e as { code?: string }).code === "EPERM";
   }
+  if (!there) return false;
+  if (born === undefined || born === null) return true;
+  const now = bornAt(pid);
+  // A system that will not say now but did then: the pid is all there is.
+  return now === null ? true : now === born;
 }
 
 /** Send a signal to a whole group, or on Windows to the pid, swallowing the
@@ -115,9 +156,9 @@ export function makeProcessRunner(): ProcessRunner {
       if (pid === undefined) {
         // `spawn` answers no pid when the exec itself failed; the `error`
         // event above says why. The caller gets a row it can mark.
-        return { pid: -1, pgid: -1, done };
+        return { pid: -1, pgid: -1, born: null, done };
       }
-      return { pid, pgid: pid, done };
+      return { pid, pgid: pid, born: bornAt(pid), done };
     },
 
     async end(pgid: number, grace = DEFAULT_GRACE): Promise<void> {

@@ -16,7 +16,7 @@
 // `AGENTS.md` is on neither screen: it is the framework's at every level.
 
 /** @import { Page, VaultFile, WorkspaceStore, UiStore } from "../../contracts/types.ts" */
-import { askLine, editor, fileTree } from "../widgets/runsui.js";
+import { askLine, editor, fileTree, nameField } from "../widgets/runsui.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
@@ -72,29 +72,41 @@ export function makeInstructionsView(deps) {
     // marked them, so nothing here carries a roster.
     const own = files.filter((f) => !f.seeded).map((f) => f.path);
     if (!own.includes(vaultOpen)) vaultOpen = INSTRUCTIONS;
+    const pane = h("div.pane", hold("Opening…"));
     const tree = fileTree(h, {
       root: "the workspace",
       files: own,
       open: vaultOpen,
       pick: (path) => { vaultOpen = path; draw(plate, files); },
       adds: [SKILLS],
+      // + ON THE FOLDER ASKS THE SKILL'S NAME IN THE EDITOR'S PLACE. The name
+      // becomes the folder — lowercase, digits, dashes — and the skill starts
+      // as the frontmatter every skill carries.
       add: () => {
-        const name = typeof prompt === "function" ? prompt("The new skill's name, as a folder: lowercase, digits, dashes") : null;
-        if (name === null) return;
-        const folder = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        if (folder === "") return;
-        const path = `${SKILLS}/${folder}/SKILL.md`;
-        void ws.writeVaultFile(path, `---\nname: ${folder}\ndescription: What this skill is for, in one line.\n---\n\n# ${folder}\n`).then(async () => {
-          vaultOpen = path;
-          draw(plate, await ws.vaultFiles());
-        });
+        pane.replaceChildren(nameField(h, {
+          label: "The new skill's name",
+          placeholder: "what-it-is-for",
+          ok: "Make it",
+          take: async (name) => {
+            const folder = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+            if (folder === "") throw new Error("a skill needs a name that could be a folder");
+            const path = `${SKILLS}/${folder}/SKILL.md`;
+            await ws.writeVaultFile(path, `---\nname: ${folder}\ndescription: What this skill is for, in one line.\n---\n\n# ${folder}\n`);
+            vaultOpen = path;
+            draw(plate, await ws.vaultFiles());
+          },
+          cancel: () => draw(plate, files),
+        }));
       },
     });
-    const pane = h("div.pane", hold("Opening…"));
     plate.replaceChildren(h("div.split", tree, pane));
     void (async () => {
       const text = (await ws.readVaultFile(vaultOpen)) ?? "";
       const at = vaultOpen;
+      // ONE COMMIT AS THE FILE OPENS, and then every save is quiet: what the
+      // vault held before this sitting is one revert away, and the pauses in
+      // typing are not each a version.
+      void ws.commitVault(`Before ${at} was edited`).catch(() => {});
       const ed = editor(h, {
         name: at.slice(at.lastIndexOf("/") + 1),
         where: at === INSTRUCTIONS ? "the workspace" : at.slice(0, at.lastIndexOf("/")),
@@ -103,7 +115,7 @@ export function makeInstructionsView(deps) {
         foot: at === INSTRUCTIONS
           ? "Read first by every agent opened anywhere in this workspace. AGENTS.md beside it is the framework's and is rewritten when the workspace opens."
           : "One of this workspace's own skills. The framework's seeded skills are not listed here.",
-        save: (next) => ws.writeVaultFile(at, next),
+        save: (next) => ws.writeVaultFile(at, next, true),
       });
       pane.replaceChildren(ed.el);
     })();
@@ -125,13 +137,14 @@ export function makeInstructionsView(deps) {
         pane.replaceChildren(hold(e instanceof Error ? e.message : "the file could not be read"));
         return;
       }
+      void ws.commitVault(`Before the instructions of ${page.id} were edited`).catch(() => {});
       const ed = editor(h, {
         name: INSTRUCTIONS,
         where: page.id,
         text,
         placeholder: "What an agent pointed at this page should know: what the page is for, where its rows go, what to leave alone.",
         foot: "What any agent opened on this page reads first, after the workspace's own INSTRUCTIONS.md above it. Every run under this page gets it as page/INSTRUCTIONS.md.",
-        save: (next) => ws.writeFile(page.id, INSTRUCTIONS, next),
+        save: (next) => ws.writeFile(page.id, INSTRUCTIONS, next, true),
       });
       pane.replaceChildren(ed.el);
     })();

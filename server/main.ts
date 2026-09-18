@@ -937,6 +937,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // not update reads `lost` here.
     const lost = runs.reconcile();
     if (lost > 0) console.log(`runs               →  ${lost} marked lost from a previous run of the server`);
+    // AND EVERY ROW NAMES ITS PAGE WHERE THE PAGE IS NOW. A page moved while
+    // this server was not running — by an agent, by hand — kept its identity
+    // and lost its id; the row is re-pointed by identity here, once, and
+    // again after every structural change the watcher settles.
+    try {
+      runs.relocateAll(await pages.list());
+    } catch (e) {
+      console.warn("runs could not be re-pointed at their pages", e);
+    }
 
     // EVERY PAGE'S PROJECTION, REBUILT. A doc page is pure data, so the local
     // process can render one without the box — which is what answers the page
@@ -1165,6 +1174,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         await mirrored(follow(held.deps.mirror, id, what.structural || gone));
       }
       if (!moved) return;
+      // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
+      // re-pointed by identity once per structural settle, not once per list.
+      if ([...touched.values()].some((t) => t.structural)) {
+        try {
+          held.runs.relocateAll(await held.deps.pages.list());
+        } catch (e) {
+          console.warn("runs could not be re-pointed at their pages", e);
+        }
+      }
       for (const hear of [...now.hears]) {
         try {
           hear();

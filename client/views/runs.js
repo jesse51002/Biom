@@ -15,7 +15,7 @@
 // is watched.
 
 /** @import { Automation, RunRow, VarScalar, WorkspaceStore, UiStore } from "../../contracts/types.ts" */
-import { clock, lastLine } from "../widgets/runsui.js";
+import { clock, followLog, lastLine } from "../widgets/runsui.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
@@ -40,7 +40,6 @@ export const WORDS = Object.freeze({
 });
 /** How often live rows are re-read while the screen is open. */
 export const FOLLOW_EVERY = 1000;
-const TAIL_KEEP = 64 * 1024;
 
 /**
  * @typedef {object} RunsViewDeps
@@ -63,6 +62,8 @@ export function makeRunsView(deps) {
     open: new Set(),
   };
   const tails = new Map();
+  /** Read whatever a run has printed since the last read, to the end. */
+  const follow = (/** @type {RunRow} */ r) => followLog((id, stream, from) => ws.readRun(id, stream, from), tails, r.id);
 
   return function overview() {
     const head = h("div.ov-head", h("span.title", WORDS.title), h("span.count"), h("span.step"), h("span.grow"),
@@ -187,17 +188,6 @@ export function makeRunsView(deps) {
       const there = ws.get().pages.some((p) => p.id === id);
       if (!there) return h("span.pagelink.gone", id, " · " + WORDS.orphan);
       return h("a.pagelink", { href: "#", onclick: (/** @type {Event} */ e) => { e.preventDefault(); e.stopPropagation(); ui.go("page", id); } }, id);
-    }
-
-    async function follow(/** @type {RunRow} */ r) {
-      const had = tails.get(r.id) ?? { text: "", next: 0, ended: false };
-      if (had.ended) return;
-      try {
-        const got = await ws.readRun(r.id, "stdout", had.next);
-        tails.set(r.id, { text: (had.text + got.text).slice(-TAIL_KEEP), next: got.next, ended: got.ended && got.text === "" });
-      } catch {
-        /* a run whose directory has gone; the row still draws */
-      }
     }
 
     if (deps.events) off = deps.events.on(() => void draw());

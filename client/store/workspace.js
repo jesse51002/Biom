@@ -520,8 +520,13 @@ export function makeWorkspace(transport) {
       return next;
     },
 
-    async writeFile(id, file, text) {
-      await ask({ ...env(), kind: "page.writeFile", page: id, file, text });
+    async writeFile(id, file, text, quiet) {
+      await ask({ ...env(), kind: "page.writeFile", page: id, file, text, quiet: quiet === true });
+      // THE EDITORS' QUIET PATH EMITS NOTHING. What they write — a page's
+      // INSTRUCTIONS.md, an automation's files — is nothing the page draws,
+      // and an emit here would rebuild the screen holding the editor on
+      // every pause in typing, caret and all.
+      if (quiet) return;
       // The page is re-read rather than patched, because writing a file is what
       // MAKES a block — the filesystem is the registry — so a write can change
       // the page's shape and not only its bytes.
@@ -877,7 +882,8 @@ export function makeWorkspace(transport) {
       return /** @type {RunRead} */ (await ask({ ...env(), kind: "run.read", run: id, stream, from, max }));
     },
     async killRun(id) {
-      return /** @type {RunRow} */ (await ask({ ...env(), kind: "run.kill", run: id }));
+      // THE WORKSPACE'S OWN SCREEN, and the row says so.
+      return /** @type {RunRow} */ (await ask({ ...env(), kind: "run.kill", run: id, by: "screen" }));
     },
     async liveRuns() {
       return /** @type {number} */ (await ask({ ...env(), kind: "run.live" }));
@@ -891,8 +897,8 @@ export function makeWorkspace(transport) {
     async manifest(page, automation) {
       return /** @type {AutomationManifest} */ (await ask({ ...env(), kind: "automation.get", page, automation }));
     },
-    async setManifest(page, automation, manifest) {
-      await ask({ ...env(), kind: "automation.set", page, automation, manifest });
+    async setManifest(page, automation, manifest, quiet) {
+      await ask({ ...env(), kind: "automation.set", page, automation, manifest, quiet: quiet === true });
     },
     async templates() {
       return /** @type {Template[]} */ (await ask({ ...env(), kind: "automation.templates" }));
@@ -909,8 +915,11 @@ export function makeWorkspace(transport) {
     async readVaultFile(file) {
       return /** @type {string | null} */ (await ask({ ...env(), kind: "vault.readFile", file }));
     },
-    async writeVaultFile(file, text) {
-      await ask({ ...env(), kind: "vault.writeFile", file, text });
+    async writeVaultFile(file, text, quiet) {
+      await ask({ ...env(), kind: "vault.writeFile", file, text, quiet: quiet === true });
+    },
+    async commitVault(message) {
+      await ask({ ...env(), kind: "vault.commit", message });
     },
 
     async readDesign() {

@@ -222,7 +222,7 @@ async function workspace() {
   // reports one pid alive until the test says otherwise.
   const alive = new Set<number>([4242]);
   const runner: ProcessRunner = {
-    start: () => ({ pid: 4242, pgid: 4242, done: new Promise(() => {}) }),
+    start: () => ({ pid: 4242, pgid: 4242, born: "b1", done: new Promise(() => {}) }),
     end: async (pgid) => { alive.delete(pgid); },
     killNow: (pgid) => { alive.delete(pgid); },
     alive: (pid) => alive.has(pid),

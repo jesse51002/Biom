@@ -189,8 +189,12 @@ function wellFormed(v, allowed) {
       return (v.page === undefined || (typeof v.page === "string" && v.page !== "")) &&
         (v.automation === undefined || (typeof v.automation === "string" && v.automation !== ""));
     case "run.get":
-    case "run.kill":
       return typeof v.run === "string" && v.run !== "";
+    case "run.kill":
+      // `by` is the workspace's own screens' word; a box may say it and the
+      // bridge drops it, the way it overwrites `by` on `run.start`.
+      return typeof v.run === "string" && v.run !== "" &&
+        (v.by === undefined || v.by === "page" || v.by === "screen");
     case "run.read":
       return typeof v.run === "string" && v.run !== "" &&
         (v.stream === "stdout" || v.stream === "stderr") &&

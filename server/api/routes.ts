@@ -339,6 +339,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         try {
           const to = await deps.pages.rename(req.page, req.name);
           if (to !== req.page) restack(deps, req.page, to);
+          if (to !== req.page) relocated(deps, req.page, to);
           if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
           await mirrored(follow(deps.mirror, to, true));
           return ok(id, to);
@@ -360,7 +361,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         // this route exists for the day it does not; the markdown editor and the
         // raw-YAML fallback are its first consumers, so it is exercised by the
         // UI before an agent is ever built.
-        await deps.pages.writeFile(req.page, req.file, req.text);
+        await deps.pages.writeFile(req.page, req.file, req.text, req.quiet === true);
         return ok(id, null);
 
       // A section is its entry in `contents` — which carries its own variables
@@ -503,6 +504,10 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           // the same position under the new id, in the same request, so the
           // move is one thing that happened rather than two.
           if (to !== req.page) restack(deps, req.page, to);
+          // AND THE RUNS UNDER IT, by the same prefix rule and for the same
+          // reason: a run's row names its page, a page's id is where it sits,
+          // and the registry is not told by the filesystem.
+          if (to !== req.page) relocated(deps, req.page, to);
           // The old path names nothing now and the new one names a page nobody
           // has drawn yet, so both halves are done here rather than waiting for
           // somebody to open it. The mirror is CARRIED rather than dropped and
@@ -728,34 +733,29 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           return err(id, codeOf(e, "internal"), said !== "" ? said : "that automation could not be started");
         }
 
-      // A PAGE MOVED SINCE A RUN STARTED STILL OWNS IT. The row keeps the id
-      // the page had then and the identity it has always had; the filter asks
-      // by both, and every row answered names the page where it is NOW — this
-      // is the lowest layer holding the registry and the page list together.
-      case "run.list": {
-        const refs = await deps.pages.list();
-        // An id that names no page now lists nothing: the rows started under it
-        // belong to wherever that page went, and are listed there.
-        if (req.page !== undefined && !refs.some((p) => p.id === req.page)) return ok(id, []);
-        const uid = req.page === undefined ? undefined : refs.find((p) => p.id === req.page)?.uid;
-        const rows = deps.runs.list({ page: req.page, uid, automation: req.automation });
-        return ok(id, rows.map((r) => located(r, refs)));
-      }
+      // A PAGE MOVED SINCE A RUN STARTED STILL OWNS IT, and the row already
+      // says so: the moves this route performs re-point the rows beside the
+      // tables (`restack` and `relocate` below), and the root re-points by
+      // identity on mount and after a change from outside. So a list is one
+      // query and never a walk of the page tree — which it was, once a second
+      // while a run was followed.
+      case "run.list":
+        return ok(id, deps.runs.list({ page: req.page, automation: req.automation }));
 
       case "run.get": {
         const row = deps.runs.get(req.run);
         if (row === null) return err(id, "not_found", "no such run");
-        return ok(id, located(row, await deps.pages.list()));
+        return ok(id, row);
       }
 
       case "run.read":
         return ok(id, await deps.runs.read(req.run, req.stream, req.from, req.max));
 
-      // ENDED BY A PAGE. The workspace's own screen calls the same kind through
-      // the transport and is client zero of it; which of the two pressed Kill
-      // is what `endedBy` records, and a request off the wire is a page's.
+      // WHO ENDED IT. The workspace's own screens say `screen`; a box says
+      // nothing, because the bridge drops the field, and is recorded as a
+      // page's. A request off the wire that says neither is a page's too.
       case "run.kill":
-        return ok(id, await deps.runs.kill(req.run, "page"));
+        return ok(id, await deps.runs.kill(req.run, req.by === "screen" ? "screen" : "page"));
 
       // The one kind about runs rather than in a vault: answered with or
       // without a folder named, because the shell asking it has no folder in
@@ -775,7 +775,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         return ok(id, await deps.runs.manifest(req.page, req.automation));
 
       case "automation.set":
-        await deps.runs.setManifest(req.page, req.automation, req.manifest);
+        await deps.runs.setManifest(req.page, req.automation, req.manifest, req.quiet === true);
         return ok(id, null);
 
       case "automation.templates":
@@ -794,7 +794,15 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         return ok(id, await deps.runs.readVaultFile(req.file));
 
       case "vault.writeFile":
-        await deps.runs.writeVaultFile(req.file, req.text);
+        await deps.runs.writeVaultFile(req.file, req.text, req.quiet === true);
+        return ok(id, null);
+
+      // THE EDITORS' ONE COMMIT, before their quiet saves start: what the
+      // vault held when the file was opened is one revert away, and the
+      // pauses in typing after it are not each a version.
+      case "vault.commit":
+        if (typeof req.message !== "string" || req.message.trim() === "") return err(id, "bad_request", "a commit needs a message");
+        await deps.runs.commit(req.message);
         return ok(id, null);
 
     }
@@ -826,14 +834,17 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
   return err(id, "unknown_kind", "not a request this host answers");
 }
 
-/** A run's row, naming its page where the page is NOW. The row carries the id
- *  the page had when the run started and the identity it has always had; where
- *  a page with that identity is listed under a different id, that is the page.
- *  A run whose page is gone keeps the id it had, and the screens say so. */
-function located(row: RunRow, refs: readonly PageRef[]): RunRow {
-  if (row.uid === null) return row;
-  const now = refs.find((p) => p.uid === row.uid);
-  return now === undefined || now.id === row.page ? row : { ...row, page: now.id };
+/** Follow a page move with the runs that were started under it. THE REGISTRY
+ *  NEVER FAILS A MOVE: the page has already moved when this runs, and a row
+ *  left naming the old id is re-pointed by identity on the next settle or
+ *  mount — so a registry that is absent or refuses is a line in the log and
+ *  never a move that did not happen. */
+function relocated(deps: Deps, from: PageId, to: PageId): void {
+  try {
+    deps.runs.relocate(from, to);
+  } catch (e) {
+    console.warn("the runs under a moved page", e);
+  }
 }
 
 /** Follow a page move with the tables that were parented under it.

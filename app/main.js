@@ -500,10 +500,15 @@ if (!app.requestSingleInstanceLock()) {
     win.on("close", (event) => {
       if (forced) return;
       event.preventDefault();
+      // BOUNDED, so a server that is alive and not answering cannot hold the
+      // window shut: a question that cannot be asked in two seconds is
+      // answered as nothing running, and the close goes through — which is
+      // what closing did before there was a question at all.
       const ask = fetch(`http://localhost:${port}/api/call?token=${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: "close", g: 1, kind: "run.live" }),
+        signal: AbortSignal.timeout(2000),
       }).then((r) => r.json()).then((res) => (res && res.ok && typeof res.value === "number" ? res.value : 0), () => 0);
       ask.then((alive) => {
         if (!win) return;

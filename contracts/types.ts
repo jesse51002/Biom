@@ -686,6 +686,9 @@ export interface RunRow {
   inputs: Record<string, VarScalar>;
   pid: number | null;
   pgid: number | null;
+  /** The process's own start time as the system records it — what tells a
+   *  live pid from a reused one on the next mount. */
+  born: string | null;
   started: number;
   ended: number | null;
   status: RunStatus;
@@ -851,8 +854,10 @@ export type HostRequest = Envelope &
      *  page's to draw from what the run wrote. */
     | { kind: "run.read"; run: string; stream: "stdout" | "stderr"; from?: number; max?: number }
     /** END IT: the whole process group, TERM, a short grace, then KILL. The
-     *  row says `killed` and by whom. */
-    | { kind: "run.kill"; run: string }
+     *  row says `killed` and by whom: `page` off a box, which the bridge
+     *  enforces by sending none, or `screen` from the workspace's own
+     *  overview and Runs screen, which say so. */
+    | { kind: "run.kill"; run: string; by?: "page" | "screen" }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -1101,7 +1106,12 @@ export type ApiRequest =
          *  an id that has just stopped existing, and nothing forwards. A name
          *  whose segment is the one the page already has answers the same id. */
         | { kind: "page.rename"; page: PageId; name: string }
-        | { kind: "page.writeFile"; page: PageId; file: string; text: string }
+        /** `quiet` is the editor's keystroke path: no commit ahead of the
+         *  write, because a debounced save fires on every pause in typing and
+         *  a commit per pause is a history nobody can read. The editor commits
+         *  once when it opens the file instead, and the one before an agent's
+         *  write stays the default. */
+        | { kind: "page.writeFile"; page: PageId; file: string; text: string; quiet?: boolean }
         /** The whole document as text, for the fallback that opens a page whose
          *  YAML will not parse. It matters MORE than it did: the prose is in
          *  here now, so this is the only way back to a page whose one bad
@@ -1155,7 +1165,7 @@ export type ApiRequest =
          *  server is what writes the yaml, so a hand-edited file and a
          *  form-edited one are the same file. */
         | { kind: "automation.get"; page: PageId; automation: string }
-        | { kind: "automation.set"; page: PageId; automation: string; manifest: AutomationManifest }
+        | { kind: "automation.set"; page: PageId; automation: string; manifest: AutomationManifest; quiet?: boolean }
         /** The starting points New offers — one per harness the framework
          *  ships — and the copy it makes. `create` writes the template's files
          *  into `automations/<name>/` under the page and refuses a name that
@@ -1171,7 +1181,11 @@ export type ApiRequest =
          *  out — the server knows its own roster, so no list travels here. */
         | { kind: "vault.files" }
         | { kind: "vault.readFile"; file: string }
-        | { kind: "vault.writeFile"; file: string; text: string }
+        | { kind: "vault.writeFile"; file: string; text: string; quiet?: boolean }
+        /** ONE COMMIT OF THE VAULT, naming why. The editors call it once when
+         *  they open a file and then save quietly; nothing else needs it,
+         *  because every other write commits ahead of itself. */
+        | { kind: "vault.commit"; message: string }
 
       ));
 
@@ -1294,7 +1308,9 @@ export interface Pages {
   /** The whole list, in order. Adding, reordering, duplicating and removing at
    *  once, because `contents` IS the order and they are one edit to one list. */
   setSections(id: PageId, sections: Section[]): Promise<Section[]>;
-  writeFile(id: PageId, file: string, text: string): Promise<void>;
+  /** `quiet` skips the commit ahead of the write — the editor's keystroke
+   *  path, which commits once on open instead. */
+  writeFile(id: PageId, file: string, text: string, quiet?: boolean): Promise<void>;
   create(init: PageInit): Promise<PageRef>;
   remove(id: PageId): Promise<void>;
   /** Move the directory under `parent`, and answer the page's NEW id. Everything
@@ -1402,6 +1418,11 @@ export interface Presets {
 export interface Started {
   pid: number;
   pgid: number;
+  /** WHICH PROCESS THAT PID IS: its start time as the system records it, or
+   *  null where the system will not say. A pid is reused after a reboot or a
+   *  long enough uptime, so a pid alone cannot say whether a row's process is
+   *  still the one that was started; the pair can. */
+  born: string | null;
   /** Settles when the process ends, however it ends. */
   done: Promise<{ exit: number | null; signal: string | null }>;
 }
@@ -1412,7 +1433,10 @@ export interface ProcessRunner {
   end(pgid: number, grace: number): Promise<void>;
   /** KILL the group now, no grace, synchronously — for a process exit handler. */
   killNow(pgid: number): void;
-  alive(pid: number): boolean;
+  /** Is `pid` alive AND the process it was when `born` was read? With `born`
+   *  null the pid alone is asked, which is the honest answer where the
+   *  system records no start time. */
+  alive(pid: number, born?: string | null): boolean;
 }
 
 /** server/domain/runs.ts — the registry, the folder reader, the run
@@ -1421,14 +1445,19 @@ export interface ProcessRunner {
 export interface Runs {
   automations(page?: PageId): Promise<Automation[]>;
   manifest(page: PageId, folder: string): Promise<AutomationManifest>;
-  setManifest(page: PageId, folder: string, manifest: AutomationManifest): Promise<void>;
+  setManifest(page: PageId, folder: string, manifest: AutomationManifest, quiet?: boolean): Promise<void>;
   templates(): Promise<Template[]>;
   create(page: PageId, name: string, template: string): Promise<Automation>;
   start(page: PageId, folder: string, inputs: Record<string, VarScalar>, by: string | null): Promise<RunRow>;
-  /** Rows, newest first. `page` matches the id the row was started under and
-   *  `uid` the identity it carries; the route passes both, so a page moved
-   *  since still lists its runs. */
-  list(filter?: { page?: PageId; uid?: string; automation?: string }): RunRow[];
+  /** Rows, newest first, narrowed only when asked. */
+  list(filter?: { page?: PageId; automation?: string }): RunRow[];
+  /** A PAGE MOVED, SO ITS ROWS FOLLOW IT. The route calls this beside the
+   *  tables' re-pointing on every move and rename it performs; the root calls
+   *  `relocateAll` on mount and after a structural change from outside, so a
+   *  page an agent moved by hand catches up too. A row keeps the identity it
+   *  was started under, which is what makes the second one possible. */
+  relocate(from: PageId, to: PageId): number;
+  relocateAll(refs: readonly PageRef[]): number;
   get(id: string): RunRow | null;
   read(id: string, stream: "stdout" | "stderr", from?: number, max?: number): Promise<RunRead>;
   kill(id: string, by: "page" | "screen" | "shutdown"): Promise<RunRow>;
@@ -1450,7 +1479,10 @@ export interface Runs {
   /** The vault's own `INSTRUCTIONS.md` and `.agents/skills/`. */
   vaultFiles(): Promise<VaultFile[]>;
   readVaultFile(file: string): Promise<string | null>;
-  writeVaultFile(file: string, text: string): Promise<void>;
+  writeVaultFile(file: string, text: string, quiet?: boolean): Promise<void>;
+  /** ONE COMMIT, for an editor about to autosave: what the vault holds before
+   *  the person's edits start landing quietly. */
+  commit(message: string): Promise<void>;
 }
 
 /** client/transport/http.js — one method, one type. Two importers, both of
@@ -1522,7 +1554,9 @@ export interface WorkspaceStore {
   /** Delete a section: the entry, the file and the keys, in one request so the
    *  vault gets one commit and the user gets one undo. */
   removeSection(id: PageId, section: BlockId): Promise<void>;
-  writeFile(id: PageId, file: string, text: string): Promise<void>;
+  /** `quiet` is the editors' keystroke path: no commit ahead of the write and
+   *  no emit after it, because what they write is nothing the page draws. */
+  writeFile(id: PageId, file: string, text: string, quiet?: boolean): Promise<void>;
 
   /** `section` null is the page's own variables; a name is that section's. */
   patchVariables(id: PageId, section: BlockId | null, patch: VarPatch): Promise<PageDoc>;
@@ -1576,13 +1610,15 @@ export interface WorkspaceStore {
   pageFiles(page: PageId): Promise<VaultFile[]>;
   readPageFile(page: PageId, file: string): Promise<string | null>;
   manifest(page: PageId, automation: string): Promise<AutomationManifest>;
-  setManifest(page: PageId, automation: string, manifest: AutomationManifest): Promise<void>;
+  setManifest(page: PageId, automation: string, manifest: AutomationManifest, quiet?: boolean): Promise<void>;
   templates(): Promise<Template[]>;
   createAutomation(page: PageId, name: string, template: string): Promise<Automation>;
   envNames(): Promise<string[]>;
   vaultFiles(): Promise<VaultFile[]>;
   readVaultFile(file: string): Promise<string | null>;
-  writeVaultFile(file: string, text: string): Promise<void>;
+  writeVaultFile(file: string, text: string, quiet?: boolean): Promise<void>;
+  /** The editors' one commit before they start saving quietly. */
+  commitVault(message: string): Promise<void>;
 }
 
 /** `map` is the rail's own map of the whole workspace, mounted on `MAP_PAGE`

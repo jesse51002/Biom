@@ -1451,14 +1451,17 @@ export function makePages(
       return next;
     },
 
-    async writeFile(id: PageId, file: string, text: string): Promise<void> {
+    async writeFile(id: PageId, file: string, text: string, quiet = false): Promise<void> {
       const dir = dirOf(id);
       const rel = pageFile(file);
       if (rel === null) throw bad("bad_request", "not a file this page can hold");
       if ((await files.read(`${dir}/${DOC}`)) === null) throw bad("not_found", "no such page");
       // Undo exists because the vault is a git repo and the server commits ahead
-      // of the write, not because a snapshot mechanism was built.
-      await files.commit(`Before a write to ${rel} on a page`);
+      // of the write, not because a snapshot mechanism was built. `quiet` is
+      // the editor's keystroke path — a save every pause in typing — which
+      // commits once when it opens the file rather than on every pause, the
+      // way a slot losing focus does not commit either.
+      if (!quiet) await files.commit(`Before a write to ${rel} on a page`);
       await files.write(`${dir}/${rel}`, text);
     },
 

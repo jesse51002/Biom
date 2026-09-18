@@ -116,6 +116,7 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS runs (
   inputs TEXT NOT NULL,
   pid INTEGER,
   pgid INTEGER,
+  born TEXT,
   started INTEGER NOT NULL,
   ended INTEGER,
   status TEXT NOT NULL,
@@ -126,7 +127,7 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS runs (
 
 interface Raw {
   id: string; page: string; uid: string | null; automation: string; started_by: string | null;
-  command: string; inputs: string; pid: number | null; pgid: number | null;
+  command: string; inputs: string; pid: number | null; pgid: number | null; born: string | null;
   started: number; ended: number | null; status: string; exit: number | null; signal: string | null; ended_by: string | null;
 }
 
@@ -140,6 +141,7 @@ const rowOf = (r: Raw): RunRow => ({
   inputs: JSON.parse(r.inputs) as Record<string, VarScalar>,
   pid: r.pid,
   pgid: r.pgid,
+  born: r.born,
   started: r.started,
   ended: r.ended,
   status: r.status as RunStatus,
@@ -207,12 +209,14 @@ export function manifestOf(value: unknown, folder: string): AutomationManifest {
 /** The manifest as it is written back: keys in reading order, the empty lists
  *  left out, so a file the form saved reads like one a person wrote. */
 function manifestShape(m: AutomationManifest): Record<string, unknown> {
+  // Tolerant of a partial manifest off the wire: what is missing is left out
+  // and `manifestOf` says what the file then lacks, in a sentence.
   const out: Record<string, unknown> = { name: m.name };
-  if (m.description !== "") out.description = m.description;
-  if (m.agent !== "") out.agent = m.agent;
-  if (m.env.length > 0) out.env = m.env;
+  if (typeof m.description === "string" && m.description !== "") out.description = m.description;
+  if (typeof m.agent === "string" && m.agent !== "") out.agent = m.agent;
+  if (Array.isArray(m.env) && m.env.length > 0) out.env = m.env;
   out.command = m.command;
-  if (m.inputs.length > 0) out.inputs = m.inputs;
+  if (Array.isArray(m.inputs) && m.inputs.length > 0) out.inputs = m.inputs;
   return out;
 }
 
@@ -482,13 +486,21 @@ export function makeRuns(d: RunsDeps): Runs {
 
     manifest: readManifest,
 
-    async setManifest(page, folder, manifest) {
+    async setManifest(page, folder, manifest, quiet = false) {
       const path = manifestPath(page, folder);
       if ((await files.read(path)) === null) throw bad("not_found", "no such automation");
       // Narrowed through the same reader the file goes through, so the form
-      // cannot write what the folder reader would then refuse.
-      const clean = manifestOf(manifestShape(manifest), folder);
-      await files.commit(`Before the manifest of ${folder} was written`);
+      // cannot write what the folder reader would then refuse — and a manifest
+      // that is not a map off the wire is refused in a sentence rather than
+      // thrown on.
+      if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) throw bad("bad_request", "the manifest is not a map");
+      let clean: AutomationManifest;
+      try {
+        clean = manifestOf(manifestShape(manifest as AutomationManifest), folder);
+      } catch (e) {
+        throw bad("bad_request", `the manifest will not read: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      if (!quiet) await files.commit(`Before the manifest of ${folder} was written`);
       await files.write(path, yaml.formatAny(manifestShape(clean)));
     },
 
@@ -559,39 +571,47 @@ export function makeRuns(d: RunsDeps): Runs {
       const pageRel = d.dirOf(page);
       const folderRel = `${pageRel}/${AUTOMATIONS_DIR}/${folder}`;
       const folderAbs = abs(folderRel);
-      fs.mkdir(runDir);
+      const kickoffText = await files.read(`${folderRel}/${KICKOFF}`);
 
       // The four names the framework fills, then every input, as words.
       const words: Record<string, string> = { vault: vaultAbs, run: runDir, kickoff: `${runDir}/${KICKOFF}` };
       for (const [k, v] of Object.entries(inputs)) words[k] = asWord(v);
 
-      // THE COPIES ARE THE RECORD OF WHAT RAN. The manifest as it was, the
-      // kickoff with its inputs written in and nothing else, the automation's
-      // own instructions.
-      fs.copy(`${folderAbs}/${MANIFEST}`, `${runDir}/${MANIFEST}`);
-      const kickoffText = await files.read(`${folderRel}/${KICKOFF}`);
-      if (kickoffText !== null) fs.writeText(`${runDir}/${KICKOFF}`, substitute(kickoffText, words));
-      if (fs.exists(`${folderAbs}/${INSTRUCTIONS}`)) fs.copy(`${folderAbs}/${INSTRUCTIONS}`, `${runDir}/${INSTRUCTIONS}`);
-      // THE LINKS ARE WHAT AN ENVIRONMENT BUILT LATER WOULD BELONG TO — the
-      // automation's, not the run's — and what the vault's commit already
-      // records the version of.
-      if (fs.isDir(`${folderAbs}/${SKILLS_DIR}`)) {
-        fs.link(`${folderAbs}/${SKILLS_DIR}`, `${runDir}/${SKILLS_DIR}`);
-        // Where every harness looks for skills, both pointing at the one folder.
-        fs.link(`../${SKILLS_DIR}`, `${runDir}/.agents/${SKILLS_DIR}`);
-        fs.link(`../${SKILLS_DIR}`, `${runDir}/.claude/${SKILLS_DIR}`);
+      // THE DIRECTORY IS ASSEMBLED WHOLE OR NOT AT ALL. A link the system
+      // refuses — Windows without the privilege, a read-only mount — leaves
+      // nothing behind and is said in a sentence, not thrown as a frame.
+      try {
+        fs.mkdir(runDir);
+        // THE COPIES ARE THE RECORD OF WHAT RAN. The manifest as it was, the
+        // kickoff with its inputs written in and nothing else, the
+        // automation's own instructions.
+        fs.copy(`${folderAbs}/${MANIFEST}`, `${runDir}/${MANIFEST}`);
+        if (kickoffText !== null) fs.writeText(`${runDir}/${KICKOFF}`, substitute(kickoffText, words));
+        if (fs.exists(`${folderAbs}/${INSTRUCTIONS}`)) fs.copy(`${folderAbs}/${INSTRUCTIONS}`, `${runDir}/${INSTRUCTIONS}`);
+        // THE LINKS ARE WHAT AN ENVIRONMENT BUILT LATER WOULD BELONG TO — the
+        // automation's, not the run's — and what the vault's commit already
+        // records the version of.
+        if (fs.isDir(`${folderAbs}/${SKILLS_DIR}`)) {
+          fs.link(`${folderAbs}/${SKILLS_DIR}`, `${runDir}/${SKILLS_DIR}`);
+          // Where every harness looks for skills, both pointing at the one folder.
+          fs.link(`../${SKILLS_DIR}`, `${runDir}/.agents/${SKILLS_DIR}`);
+          fs.link(`../${SKILLS_DIR}`, `${runDir}/.claude/${SKILLS_DIR}`);
+        }
+        if (fs.isDir(`${folderAbs}/${CODE_DIR}`)) fs.link(`${folderAbs}/${CODE_DIR}`, `${runDir}/${CODE_DIR}`);
+        // The page's instructions under `page/`, so nothing is merged and the
+        // agent reads both.
+        if (fs.exists(abs(`${pageRel}/${INSTRUCTIONS}`))) fs.link(abs(`${pageRel}/${INSTRUCTIONS}`), `${runDir}/page/${INSTRUCTIONS}`);
+        // ONE LINK TO THE VAULT ROOT, never one per page: per-page links go
+        // stale the moment a run makes a page.
+        fs.link(vaultAbs, `${runDir}/vault`);
+        // THE FRAMEWORK'S OWN FILE, and every harness's name for it.
+        fs.writeText(`${runDir}/AGENTS.md`, runAgentsMd({ automation: folder, page, runDir, vault: vaultAbs, pageDir: pageRel, inputs, kickoff: kickoffText !== null }));
+        fs.link("AGENTS.md", `${runDir}/CLAUDE.md`);
+        for (const [rel, text] of Object.entries(harnessFiles(vaultAbs))) fs.writeText(`${runDir}/${rel}`, text);
+      } catch (e) {
+        try { fs.remove(runDir); } catch { /* nothing to remove, or nothing that can be */ }
+        throw bad("bad_request", `the run directory could not be made: ${e instanceof Error ? e.message : String(e)}`);
       }
-      if (fs.isDir(`${folderAbs}/${CODE_DIR}`)) fs.link(`${folderAbs}/${CODE_DIR}`, `${runDir}/${CODE_DIR}`);
-      // The page's instructions under `page/`, so nothing is merged and the
-      // agent reads both.
-      if (fs.exists(abs(`${pageRel}/${INSTRUCTIONS}`))) fs.link(abs(`${pageRel}/${INSTRUCTIONS}`), `${runDir}/page/${INSTRUCTIONS}`);
-      // ONE LINK TO THE VAULT ROOT, never one per page: per-page links go
-      // stale the moment a run makes a page.
-      fs.link(vaultAbs, `${runDir}/vault`);
-      // THE FRAMEWORK'S OWN FILE, and every harness's name for it.
-      fs.writeText(`${runDir}/AGENTS.md`, runAgentsMd({ automation: folder, page, runDir, vault: vaultAbs, pageDir: pageRel, inputs, kickoff: kickoffText !== null }));
-      fs.link("AGENTS.md", `${runDir}/CLAUDE.md`);
-      for (const [rel, text] of Object.entries(harnessFiles(vaultAbs))) fs.writeText(`${runDir}/${rel}`, text);
 
       // THE ENVIRONMENT: the floor every process needs, what this run is, and
       // every name the manifest asked for with its value from the server's own
@@ -623,10 +643,10 @@ export function makeRuns(d: RunsDeps): Runs {
         throw bad("bad_request", `the command could not be started: ${e instanceof Error ? e.message : String(e)}`);
       }
       db.run(
-        `INSERT INTO runs (id, page, uid, automation, started_by, command, inputs, pid, pgid, started, ended, status, exit, signal, ended_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'running', NULL, NULL, NULL)`,
+        `INSERT INTO runs (id, page, uid, automation, started_by, command, inputs, pid, pgid, born, started, ended, status, exit, signal, ended_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'running', NULL, NULL, NULL)`,
         [id, page, ref.uid ?? null, folder, by, JSON.stringify(command), JSON.stringify(inputs),
-          handle.pid > 0 ? handle.pid : null, handle.pgid > 0 ? handle.pgid : null, started],
+          handle.pid > 0 ? handle.pid : null, handle.pgid > 0 ? handle.pgid : null, handle.born, started],
       );
       const row = readRow(id);
       if (row === null) throw bad("internal", "the run was not recorded");
@@ -638,15 +658,41 @@ export function makeRuns(d: RunsDeps): Runs {
     list(filter) {
       const where: string[] = [];
       const params: (string | number)[] = [];
-      // BY ID OR BY IDENTITY. A row keeps the id its page had when the run
-      // started; a page moved since has a new id and the same uid, and its
-      // runs are still its own.
-      if (filter?.page !== undefined && filter.uid !== undefined) { where.push("(page = ? OR uid = ?)"); params.push(filter.page, filter.uid); }
-      else if (filter?.page !== undefined) { where.push("page = ?"); params.push(filter.page); }
-      else if (filter?.uid !== undefined) { where.push("uid = ?"); params.push(filter.uid); }
+      if (filter?.page !== undefined) { where.push("page = ?"); params.push(filter.page); }
       if (filter?.automation !== undefined) { where.push("automation = ?"); params.push(filter.automation); }
       const sql = `SELECT * FROM runs${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY started DESC, id DESC`;
       return db.all<Raw>(sql, params).map(rowOf);
+    },
+
+    // A ROW NAMES ITS PAGE WHERE THE PAGE IS NOW. The id on a row is the page's
+    // id when the run started, and a page moves; rather than have every list
+    // walk the page tree to find where each row's page went — once a second
+    // while a run is followed — the rows are re-pointed when a page moves: by
+    // the route on the moves it performs, by prefix like the tables; by the
+    // root against the page list on mount and after a structural change from
+    // outside, by identity. Between those a row an agent's rename outran names
+    // the old id, and the screens say the page is gone until the next settle.
+    relocate(from, to) {
+      if (from === to) return 0;
+      const rows = db.all<Raw>(`SELECT id, page FROM runs WHERE page = ? OR page LIKE ?`, [from, `${from}/%`]);
+      for (const r of rows) {
+        const moved = r.page === from ? to : to + r.page.slice(from.length);
+        db.run(`UPDATE runs SET page = ? WHERE id = ?`, [moved, r.id]);
+      }
+      return rows.length;
+    },
+
+    relocateAll(refs) {
+      const byUid = new Map<string, PageId>();
+      for (const p of refs) if (typeof p.uid === "string") byUid.set(p.uid, p.id);
+      let moved = 0;
+      for (const r of db.all<Raw>(`SELECT id, page, uid FROM runs WHERE uid IS NOT NULL`)) {
+        const now = r.uid === null ? undefined : byUid.get(r.uid);
+        if (now === undefined || now === r.page) continue;
+        db.run(`UPDATE runs SET page = ? WHERE id = ?`, [now, r.id]);
+        moved += 1;
+      }
+      return moved;
     },
 
     get: readRow,
@@ -678,14 +724,18 @@ export function makeRuns(d: RunsDeps): Runs {
       // this server never held — one reconciled after a restart — is finished
       // here, because nothing else will.
       const after = readRow(id);
-      if (after !== null && after.status === "running" && (row.pid === null || !d.process.alive(row.pid))) finish(id, null, "SIGKILL");
+      if (after !== null && after.status === "running" && (row.pid === null || !d.process.alive(row.pid, row.born))) finish(id, null, "SIGKILL");
       return readRow(id) ?? row;
     },
 
     reconcile() {
+      // BY PID AND BY BIRTH. A pid alone is reused — after a reboot, or after
+      // enough processes have come and gone — and a row that trusted it would
+      // keep a stranger's process as its own run, count it alive, ask about it
+      // on close, and end it with a signal to a group that was never ours.
       let lost = 0;
       for (const r of db.all<Raw>(`SELECT * FROM runs WHERE status = 'running'`)) {
-        if (r.pid !== null && d.process.alive(r.pid)) continue;
+        if (r.pid !== null && d.process.alive(r.pid, r.born)) continue;
         db.run(`UPDATE runs SET status = 'lost', ended = ? WHERE id = ?`, [now(), r.id]);
         lost += 1;
       }
@@ -756,10 +806,14 @@ export function makeRuns(d: RunsDeps): Runs {
       return await files.read(file);
     },
 
-    async writeVaultFile(file, text) {
+    async writeVaultFile(file, text, quiet = false) {
       if (!vaultFileOk(file)) throw bad("bad_request", "not a file this screen writes");
-      await files.commit(`Before ${file} was written`);
+      if (!quiet) await files.commit(`Before ${file} was written`);
       await files.write(file, text);
+    },
+
+    async commit(message) {
+      await files.commit(message);
     },
   };
 
