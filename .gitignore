@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 
 # A vault that used to be served from here, and no longer is. NOTHING IS
 # WRITTEN BESIDE THE INSTALL any more — the default vault lives in the per-user
