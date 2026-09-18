@@ -646,6 +646,20 @@ export function makeShell(deps) {
         panel === "agent", "spot"));
     }
 
+    if (page) {
+      // THE PAGE'S TWO SCREENS, as two controls where the three dots were:
+      // Instructions, the page's INSTRUCTIONS.md in one editor, and
+      // Automations, its manifests, files and runs. Each takes the canvas when
+      // pressed and gives it back when pressed again. They are in every build,
+      // and they go BEFORE the terminal's toggle: that one is the rightmost
+      // action on every page, by the rule written above it.
+      const shown = offeredPageView(pageView);
+      /** @param {"instructions" | "automation"} which @param {string} text */
+      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: shown === which ? "page" : which }), shown === which);
+      tools.push(screenTool("instructions", "Instructions"));
+      tools.push(screenTool("automation", "Automations"));
+    }
+
     // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND THE LAST ACTION
     // before the page's menu. It is not a developer's diagnostic — it is where
     // a person runs their own agent beside the page — so it is not on any hide
@@ -674,16 +688,6 @@ export function makeShell(deps) {
     }
 
     if (page) {
-      // THE PAGE'S TWO SCREENS, as two controls where the three dots were:
-      // Instructions, the page's INSTRUCTIONS.md in one editor, and
-      // Automations, its manifests, files and runs. Each takes the canvas when
-      // pressed and gives it back when pressed again. They are in every build.
-      const shown = offeredPageView(pageView);
-      /** @param {"instructions" | "automation"} which @param {string} text */
-      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: shown === which ? "page" : which }), shown === which);
-      tools.push(screenTool("instructions", "Instructions"));
-      tools.push(screenTool("automation", "Automations"));
-
       // CONFIG IS A DEVELOPER'S SCREEN NOW. The ports it draws are declared
       // and never enforced, so what it says is a claim this build cannot
       // back, and the owner decided (2026-09-17) the menu that reached it goes

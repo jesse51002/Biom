@@ -31,6 +31,7 @@ import { makePageView } from "../client/views/page.js";
 import { closeHref, hrefFor, makeVaultView } from "../client/views/vault.js";
 import { UNTITLED } from "../client/shell/dialog.js";
 import { makeUi } from "../client/store/ui.js";
+import { makeTerminals } from "../client/store/terminals.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── a recording element factory, shaped like client/platform/dom.js ──── */
@@ -56,7 +57,9 @@ function element(tag) {
   const el = Object.assign(new El(), {
     tagName: String(tag).toUpperCase(),
     attrs: {},
-    style: {},
+    // `setProperty` is what the dock writes its size with; a plain key is what
+    // the tree writes its depth with, so both spellings land in the one map.
+    style: { setProperty(/** @type {string} */ k, /** @type {string} */ v) { this[k] = v; } },
     dataset: {},
     children: [],
     parent: /** @type {any} */ (null),
@@ -71,6 +74,7 @@ function element(tag) {
     moved: 0,
     setAttribute: (k, v) => { el.attrs[k] = v; },
     removeAttribute: (k) => { delete el.attrs[k]; },
+    toggleAttribute: (k, on) => { if (on) el.attrs[k] = ""; else delete el.attrs[k]; },
     addEventListener: (name, fn) => { (el.listeners[name] ||= []).push(fn); },
     append: (...nodes) => {
       for (const n of nodes) {
@@ -2234,6 +2238,36 @@ test("a page's bar carries Instructions and Automations, each taking the canvas 
     expect(w.ui.get().pageView).toBe("automation");
     expect(w.plate.firstChild.className).toBe("autoscreen");
     expect(w.plate.attrs["data-face"]).toBe("automation");
+  }
+});
+
+test("Agent Terminal is the rightmost action on a page's bar, after Instructions and Automations; only development's menu follows it", async () => {
+  // A REAL TERMINAL STORE over a link that never opens, and a view that is a
+  // box the dock can hold: what the bar reads is `store.get()`, `store.live()`
+  // and `toggle()`, and what the dock wants is `view.el`. The owner asked
+  // (2026-09-17) for the toggle to stay the rightmost button once the page's
+  // two screens joined the bar.
+  const link = { connect() {}, close() {}, send: () => false, state: () => "idle", on: () => () => {} };
+  const store = makeTerminals({ link });
+  const view = { el: element("div"), focus() {}, sync() {}, hidden() {}, hint: () => null, schedule() {}, style() {} };
+  for (const production of [false, true]) {
+    const ws = fakeWs(DOC);
+    const ui = makeUi({ route: { view: "page", id: DOC.id } });
+    const { views } = fakeViews();
+    const shell = makeShell({ h, fill, ws, ui, frameHost: fakeFrameHost(), views, production, terminal: { store, view } });
+    ws.on(() => shell.repaint());
+    ui.on(() => shell.repaint());
+    const root = element("div");
+    shell.mount(root);
+    await tick();
+    const rail = root.children[0].children[0];
+    const tools = findAll(rail, (el) => has(el, "tool")).map(flat);
+    const at = (text) => tools.indexOf(text);
+    expect(at("Instructions")).toBeGreaterThan(-1);
+    expect(at("Automations")).toBe(at("Instructions") + 1);
+    expect(at("Agent Terminal")).toBe(at("Automations") + 1);
+    // Production: nothing after it. Development: the one menu, and nothing else.
+    expect(tools.slice(at("Agent Terminal") + 1)).toEqual(production ? [] : ["\u22EF"]);
   }
 });
 
