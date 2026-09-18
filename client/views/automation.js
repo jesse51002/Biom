@@ -63,6 +63,10 @@ export function makeAutomationView(deps) {
     picking: false,
     /** The whole-log flaps that are open, by run id. */
     open: new Set(),
+    /** The folders of the two trees the person has opened or closed against
+     *  the default, by path, so a pick does not fold what they just opened. */
+    folds: /** @type {Map<string, boolean>} */ (new Map()),
+    vaultFolds: /** @type {Map<string, boolean>} */ (new Map()),
   };
   /** Each run's log tail as read so far, by id: the text kept and the offset to read next. */
   const tails = new Map();
@@ -331,11 +335,15 @@ export function makeAutomationView(deps) {
     const ownTree = fileTree(h, {
       root: `${page.id} · automations/${auto.folder}/`,
       files: own, open: inVault ? null : state.file, pick: pickAndDraw, adds: ["skills", "code"], add: addFile,
+      // A skill or a module is a tree of its own; each starts shut.
+      fold: ["skills", "code"], folds: state.folds,
     });
     const vaultTree = fileTree(h, {
       root: ".agents/skills/ (the workspace's own)",
       files: skills, open: inVault && state.file !== null ? state.file.slice(7) : null,
       pick: (f) => pickAndDraw("@vault/" + f), dim: !inVault,
+      // The root IS the skills folder here, so its entries are the skills.
+      fold: [""], folds: state.vaultFolds,
     });
     if (state.file !== null) {
       const file = state.file;

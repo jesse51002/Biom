@@ -76,6 +76,8 @@
 .tree .node.file:hover{background:var(--field); color:var(--ink)}
 .tree .node[aria-current="true"]{background:var(--field); color:var(--ink); box-shadow:inset 2px 0 0 var(--cyan)}
 .tree .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tree .fold{display:flex; align-items:center; gap:.4rem; border:0; background:none; color:inherit; font:inherit; padding:0; cursor:pointer; min-width:0}
+.tree .fold:hover .nm{color:var(--ink)}
 .tree .twist{color:var(--ink-3); font-size:.65rem; width:.7rem; flex:none}
 .tree .dot{color:var(--ink-3); width:.7rem; text-align:center; flex:none}
 .tree .plus{margin-left:auto; border:0; background:none; color:var(--ink-3); cursor:pointer; padding:0 .3rem; font:inherit; visibility:hidden}

@@ -156,13 +156,29 @@ export function editor(h, spec) {
  * @property {(folder: string) => void} [add]
  * @property {boolean} [dim] the whole tree in the second ink, for a root
  *   that is somebody else's until a file in it is opened
+ * @property {string[]} [fold] folders whose ENTRIES start closed — `skills`,
+ *   where every child is a skill carrying a tree of its own. The folder itself
+ *   is open, so the entries are all in view; each opens on a click
+ * @property {Map<string, boolean>} [folds] which folders the person has opened
+ *   or shut, by path — what they chose and not a flip of the default, because
+ *   the default moves with the open file. Held by the caller across redraws
+ *   so a pick does not fold back what they just opened; the tree writes it
  */
 
 /**
- * A FILE TREE DRAWN THE WAY A FILE BROWSER DRAWS ONE: folders open, files
- * under them, the open file marked current, and a ＋ at the end of the rows
- * that take a new file. Built from a flat list of paths, so what it draws is
- * exactly what the server listed and nothing here decides what a folder holds.
+ * A FILE TREE DRAWN THE WAY A FILE BROWSER DRAWS ONE: the files of a folder
+ * first and the folders under it after, the open file marked current, and a
+ * ＋ at the end of the rows that take a new file. Built from a flat list of
+ * paths, so what it draws is exactly what the server listed and nothing here
+ * decides what a folder holds.
+ *
+ * FILES BEFORE FOLDERS, because the file at a level is the one that matters
+ * there: `INSTRUCTIONS.md` at the vault root was drawn UNDER `.agents/skills/`
+ * and every skill in it, and the one file the screen exists for was the last
+ * row. A FOLDER CLICKS SHUT AND OPEN, and the entries of a `fold` folder start
+ * shut: a skill is a tree of its own, sometimes deep, and a workspace with a
+ * dozen of them was a wall. A folder holding the open file starts open
+ * whatever the rule says, so the row that is current is never out of sight.
  * @param {H} h
  * @param {TreeSpec} spec
  * @returns {HTMLElement}
@@ -185,31 +201,48 @@ export function fileTree(h, spec) {
     at.files.push(path);
   }
   const adds = new Set(spec.adds ?? []);
+  const fold = new Set(spec.fold ?? []);
+  const folds = spec.folds ?? new Map();
+  /** Whether a folder starts open: yes unless its parent is a `fold` folder,
+   *  and yes regardless when the open file is somewhere under it.
+   *  @param {Node} dir @param {Node} parent */
+  const openByDefault = (dir, parent) =>
+    !fold.has(parent.path) || (spec.open !== null && spec.open.startsWith(dir.path + "/"));
   /** @param {Node} node @param {number} depth @returns {HTMLElement[]} */
   const rows = (node, depth) => {
     /** @type {HTMLElement[]} */
     const out = [];
-    for (const dir of [...node.dirs.values()].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const plus = adds.has(dir.path) && spec.add
-        ? h("button.plus", { type: "button", title: "New file in " + dir.name + "/", "aria-label": "New file in " + dir.name, onclick: () => spec.add && spec.add(dir.path) }, "＋")
-        : null;
-      out.push(h("div.node.dir", { style: { "--depth": String(depth) } }, h("span.twist", "▾"), h("span.nm", dir.name + "/"), plus));
-      out.push(...rows(dir, depth + 1));
-    }
     for (const file of node.files.sort()) {
       const name = file.slice(file.lastIndexOf("/") + 1);
       out.push(h("button.node.file", {
         type: "button",
         "aria-current": spec.open === file ? "true" : null,
+        "data-path": file,
         onclick: () => spec.pick(file),
         style: { "--depth": String(depth) },
       }, h("span.dot", "·"), h("span.nm", name)));
+    }
+    for (const dir of [...node.dirs.values()].sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const shown = folds.get(dir.path) ?? openByDefault(dir, node);
+      const plus = adds.has(dir.path) && spec.add
+        ? h("button.plus", { type: "button", title: "New file in " + dir.name + "/", "aria-label": "New file in " + dir.name, onclick: () => spec.add && spec.add(dir.path) }, "＋")
+        : null;
+      // The row's name is the toggle and the ＋ sits beside it, because a
+      // button cannot hold a button.
+      const toggle = h("button.fold", {
+        type: "button", "aria-expanded": String(shown),
+        onclick: () => { folds.set(dir.path, !shown); redraw(); },
+      }, h("span.twist", shown ? "▾" : "▸"), h("span.nm", dir.name + "/"));
+      out.push(h("div.node.dir", { style: { "--depth": String(depth) }, "data-path": dir.path }, toggle, plus));
+      if (shown) out.push(...rows(dir, depth + 1));
     }
     return out;
   };
   const rootRow = h("div.node.root", h("span.twist", "▾"), h("span.nm", spec.root),
     adds.has("") && spec.add ? h("button.plus", { type: "button", "aria-label": "New file", onclick: () => spec.add && spec.add("") }, "＋") : null);
-  const el = h("div.tree" + (spec.dim ? ".dim" : ""), rootRow, ...rows(top, 1));
+  const el = h("div.tree" + (spec.dim ? ".dim" : ""));
+  const redraw = () => el.replaceChildren(rootRow, ...rows(top, 1));
+  redraw();
   return el;
 }
 
