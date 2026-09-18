@@ -32,6 +32,7 @@ export interface ITerminalOptions {
   fontSize?: number;
   lineHeight?: number;
   macOptionIsMeta?: boolean;
+  macOptionClickForcesSelection?: boolean;
   scrollback?: number;
   theme?: ITheme;
 }
@@ -69,6 +70,9 @@ export declare class Terminal implements IDisposable {
   scrollToBottom(): void;
   hasSelection(): boolean;
   getSelection(): string;
+  selectAll(): void;
+  clear(): void;
+  input(data: string, wasUserInput?: boolean): void;
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void;
   loadAddon(addon: ITerminalAddon): void;
   dispose(): void;

@@ -194,7 +194,24 @@ screen lays the dock over the bed's cell and drops the rail and strip rows
 The emulator owns keys while focused. `Escape` reaches the program — the shell's
 Escape handler ignores events from inside the dock. `Ctrl+C` is always SIGINT;
 copy/paste are Cmd on macOS and `Ctrl+Shift+C/V` elsewhere (paste is handed to
-the browser so bracketed paste survives). `Ctrl+\`` toggles the dock from the
+the browser so bracketed paste survives). **⌘V on macOS depends on the Edit menu
+being VISIBLE** in `app/main.js` — a hidden one registers no accelerator, and the
+desktop application pasted nothing anywhere until it was shown.
+
+**The platform's own terminal habits are honoured**, as one pure table —
+`terminalKey` in `client/views/terminal.js`, tested in
+`tests/terminal-keys.test.js`. Each rewrite sends bytes a line editor already
+understands; nothing is bound in the shell. On macOS, as Terminal.app and iTerm2:
+`Option+←/→` a word (`ESC b`/`ESC f`), `⌘←/→` start/end of line (`^A`/`^E`),
+`Option+Delete` the word behind (`ESC DEL`), `⌘Delete` to the start of the line
+(`^U`), `⌘K` clears the scrollback, `⌘A` selects all. On Linux and Windows:
+`Ctrl+Shift+A` selects all and `Ctrl+Backspace` deletes a word (`^W`); Ctrl+arrows
+already reach readline. Everywhere, `Shift+Enter` sends `ESC Return`, which the
+agent CLIs read as a new line in the prompt rather than a submit. **Selecting out
+of a program that has taken the mouse** is `Option`-drag on macOS
+(`macOptionClickForcesSelection`, which costs Option-drag's column selection;
+Option-click still moves the cursor) and `Shift`-drag elsewhere, the emulator's
+default. Double-click, triple-click and Shift-click to extend are the emulator's. `Ctrl+\`` toggles the dock from the
 chrome and from the terminal — **not from inside a page's box**, whose key events
 do not leave its frame; the rail's button is the way that always works. Restore
 is a button, so it works while Vim owns the keyboard. The zoom keys are taken

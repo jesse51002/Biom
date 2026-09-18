@@ -82,26 +82,21 @@ export function makeTerminalView(deps) {
     };
   }
 
-  /** COPY AND PASTE WITHOUT STEALING THE INTERRUPT. On macOS they are Cmd and
-   *  the emulator leaves Cmd alone. Elsewhere Ctrl+C must stay SIGINT, so copy
-   *  is Ctrl+Shift+C and paste is Ctrl+Shift+V — the second handed back to the
-   *  browser, whose paste event the emulator reads with bracketed paste intact.
-   *  Ctrl+` belongs to the dock's toggle and never reaches the shell.
+  /** The emulator's own key handler, with the platform's terminal habits laid
+   *  over it — see `terminalKey` below for what each key does and why.
    *  @param {KeyboardEvent} e @param {any} term */
   function keys(e, term) {
     if (e.type !== "keydown") return true;
-    if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === "Backquote") return false;
-    // ZOOM IS THE WINDOW'S, NOT THE SHELL'S. Ctrl/Cmd with `+`, `-` or `0` would
-    // otherwise reach the program as an ordinary keystroke, and a shell that
-    // received `0` while somebody was trying to read it is the wrong answer.
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && ["=", "+", "-", "_", "0"].includes(e.key)) return false;
-    if (!mac && e.ctrlKey && e.shiftKey && !e.altKey && e.code === "KeyC") {
+    const act = terminalKey(e, mac);
+    if (act === "pass") return true;
+    if (act === "host") return false;
+    e.preventDefault();
+    if (act === "copy") {
       if (term.hasSelection() && navigator.clipboard) void navigator.clipboard.writeText(term.getSelection()).catch(() => {});
-      e.preventDefault();
-      return false;
-    }
-    if (!mac && e.ctrlKey && e.shiftKey && !e.altKey && e.code === "KeyV") return false;
-    return true;
+    } else if (act === "selectAll") term.selectAll();
+    else if (act === "clear") term.clear();
+    else term.input(act.send);
+    return false;
   }
 
   /** @param {string} id @returns {Pane} */
@@ -113,6 +108,13 @@ export function makeTerminalView(deps) {
     const term = new Terminal({
       cursorBlink: true,
       disableStdin: true,
+      // OPTION-DRAG SELECTS ON macOS, as it does in iTerm2 and Terminal.app,
+      // even while a program has taken the mouse — an agent's full-screen view,
+      // vim, less. Without it a Mac has no way to select out of such a program
+      // at all: every drag is reported to it. Elsewhere that key is Shift and
+      // the emulator already honours it. The price is Option-drag's column
+      // selection on macOS; Option-click still moves the cursor.
+      macOptionClickForcesSelection: true,
       fontFamily: look.fontFamily,
       fontSize: terms.get().dock.font,
       lineHeight: 1.15,
@@ -309,3 +311,62 @@ export function makeTerminalView(deps) {
 }
 
 /** @typedef {ReturnType<typeof makeTerminalView>} TerminalView */
+
+/** @typedef {"pass" | "host" | "copy" | "selectAll" | "clear" | { send: string }} KeyAct */
+
+/** WHAT A KEY DOES IN THE TERMINAL, AS THE PLATFORM'S OWN TERMINAL DOES IT.
+ *  A person who lives in Terminal.app, iTerm2, GNOME Terminal or Windows
+ *  Terminal has hands that already know these, and an emulator that answers
+ *  them with silence — or with an escape sequence the shell ignores — reads as
+ *  a broken terminal. Each rewrite sends the bytes a line editor (readline, zle,
+ *  and the agent CLIs' own prompts) already understands; nothing is bound in the
+ *  shell. Pure, so the table can be read and tested without an emulator.
+ *
+ *  - `pass` leaves the key to the emulator, and through it to the browser —
+ *    which is how paste arrives, with bracketed paste intact.
+ *  - `host` keeps the key out of the shell and lets the page have it.
+ *  - `{ send }` types those bytes into the session in the key's place.
+ *
+ *  @param {Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">} e
+ *  @param {boolean} mac
+ *  @returns {KeyAct} */
+export function terminalKey(e, mac) {
+  const { key, code, ctrlKey: ctrl, metaKey: meta, altKey: alt, shiftKey: shift } = e;
+  // Ctrl+` belongs to the dock's toggle and never reaches the shell.
+  if (ctrl && !meta && !alt && code === "Backquote") return "host";
+  // ZOOM IS THE WINDOW'S, NOT THE SHELL'S. Ctrl/Cmd with `+`, `-` or `0` would
+  // otherwise reach the program as an ordinary keystroke.
+  if ((ctrl || meta) && !alt && ["=", "+", "-", "_", "0"].includes(key)) return "host";
+  // SHIFT+ENTER IS A NEW LINE, NOT A SUBMIT. The agent CLIs read ESC+Return as
+  // "newline in the prompt" — it is what their own terminal setup binds Shift+
+  // Enter to — and a bare Return here sent a half-written prompt.
+  if (shift && !ctrl && !meta && !alt && key === "Enter") return { send: "\x1b\r" };
+  if (mac) {
+    // Terminal.app and iTerm2: Cmd is the application's, Option is the word.
+    if (meta && !ctrl && !alt) {
+      if (key === "ArrowLeft") return { send: "\x01" }; // start of line
+      if (key === "ArrowRight") return { send: "\x05" }; // end of line
+      if (key === "Backspace") return { send: "\x15" }; // delete to start of line
+      if (key === "k" && !shift) return "clear"; // clear the scrollback
+      if (key === "a" && !shift) return "selectAll";
+      return "pass"; // ⌘C and ⌘V: the Edit menu's, and the emulator answers them
+    }
+    if (alt && !ctrl && !meta && !shift) {
+      if (key === "ArrowLeft") return { send: "\x1bb" }; // back a word
+      if (key === "ArrowRight") return { send: "\x1bf" }; // forward a word
+      if (key === "Backspace") return { send: "\x1b\x7f" }; // delete the word behind
+    }
+    return "pass";
+  }
+  // LINUX AND WINDOWS: Ctrl+C must stay SIGINT, so the clipboard is on
+  // Ctrl+Shift, as in GNOME Terminal and Windows Terminal. Paste is handed back
+  // to the browser, whose paste event the emulator reads.
+  if (ctrl && shift && !alt && !meta) {
+    if (code === "KeyC") return "copy";
+    if (code === "KeyV") return "host";
+    if (code === "KeyA") return "selectAll";
+  }
+  // Ctrl+Backspace deletes the word behind, as Windows Terminal and VS Code send it.
+  if (ctrl && !shift && !alt && !meta && key === "Backspace") return { send: "\x17" };
+  return "pass";
+}
