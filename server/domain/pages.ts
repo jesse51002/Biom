@@ -1342,6 +1342,17 @@ export function makePages(
         if (sameRows(content.rows ?? [], rows)) return;
         next = { ...content, rows };
       } else if (list) {
+        // A LIST GOES OVER A LIST, or over a lone markdown string a section is
+        // promoting to one — never over a grid, a table, an html file or a
+        // child. An empty array reads as a list, so without this `[]` sent at
+        // a grid slot would replace its rows, its head and its variables with
+        // an empty list and say nothing.
+        if (was !== undefined && !Array.isArray(was) && typeof was !== "string") {
+          const shape = contentOf(was);
+          if (shape === null || shape.type !== "markdown") {
+            throw bad("bad_request", "only a list slot takes a list" + (shape?.type === "grid" ? " — a grid takes its rows, one list per row" : ""));
+          }
+        }
         const before = Array.isArray(was) ? was : [];
         next = (data as string[]).map((text, at) => {
           const had = before[at];

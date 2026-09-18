@@ -260,8 +260,8 @@ drawn.** The doc plugin cuts the table out and rewrites the document once, in
 place: the prose before keeps the section's name and its file, the table
 becomes a section named `<section>-table` with no file whose `body` is the
 grid, and the prose after becomes `<section>-after`. Both new sections carry
-the section's own `variables`, so a `{{name}}` in a cell or in the prose after
-still resolves. A section that held nothing but the table — no file, no other
+the section's own `variables` with the part's own over them, so a `{{name}}`
+in a cell or in the prose after still resolves. A section that held nothing but the table — no file, no other
 slot — gives its place to the grid section rather than staying as an empty
 band. What that means for writing is that a run of pipes in a paragraph is
 never the final shape of anything: write the grid, or write the pipes and let

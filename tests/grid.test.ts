@@ -206,6 +206,21 @@ test("rows go only into a grid slot, and words go only into a markdown slot", as
   await expect(pages.writeSlot("home/Rates", "body-table", "body", [["a", 1 as unknown as string]])).rejects.toThrow(/every cell/);
 });
 
+test("a list never lands on a grid: an empty array is a list, and it is refused rather than replacing the rows", async () => {
+  // `[]` reads as a list, and the list branch used to take whatever the slot
+  // held for a list — so an empty array sent at a grid slot wrote `body: []`
+  // over the rows, the head and the variables, and said nothing.
+  const { files, pages } = await vaultWithGrid();
+  const before = files.at(`${dir("home/Rates")}/content.yaml`);
+  await expect(pages.writeSlot("home/Rates", "body-table", "body", [])).rejects.toThrow(/only a list slot takes a list/);
+  await expect(pages.writeSlot("home/Rates", "body-table", "body", ["one", "two"])).rejects.toThrow(/a grid takes its rows/);
+  expect(files.at(`${dir("home/Rates")}/content.yaml`)).toBe(before);
+  // A lone markdown string is still promoted to a list, which is how a
+  // section's first add works on a slot somebody wrote as one item.
+  await pages.writeSlot("home/Rates", "body", "body", ["Before.\n", "After."]);
+  expect(parse(files.at(`${dir("home/Rates")}/content.yaml`) ?? "").contents[0]!.parts!["body"]).toEqual(["Before.\n", "After."]);
+});
+
 /* ── 5. the projection ─────────────────────────────────────────────────── */
 
 const PROJECTED = {
@@ -358,10 +373,31 @@ test("a page with no table in any prose part is left exactly as it was", () => {
   expect(c.plan([{ name: "f", parts: { body: { kind: "markdown", md: "```\n| a | b |\n|---|---|\n```\n", vars: {} } }, source: { name: "f", parts: { body: "x" } } }])).toBeNull();
   // A header and a delimiter that disagree about the width are not a table.
   expect(c.tablesIn("| a | b |\n|---|\n| 1 | 2 |")).toEqual([]);
+  // A delimiter row carries a pipe. A setext heading whose text ends in one,
+  // or a rule under such a line, is not a one-column table.
+  expect(c.tablesIn("A heading about pipes |\n---\n\nProse.")).toEqual([]);
+  expect(c.tablesIn("| A |\n|---|\n| 1 |")).toEqual([{ start: 0, end: 3, width: 1 }]);
   // A pipe inside a wikilink's alias or a code span is the cell's, not a column.
   expect(c.cellsOf("| [[home/Specs/One|the spec]] | `a | b` | c \\| d |")).toEqual(["[[home/Specs/One|the spec]]", "`a | b`", "c | d"]);
   // A list slot and a non-markdown part are not looked at.
   expect(c.plan([{ name: "l", parts: { body: { kind: "list", items: [{ kind: "markdown", md: TABLE_MD }] } }, source: { name: "l", parts: { body: [TABLE_MD] } } }])).toBeNull();
+});
+
+test("the born sections carry the section's variables with the part's own over them", () => {
+  const c = conversion();
+  const md = "Rate {{rate}}.\n\n| A |\n|---|\n| {{rate}} |\n\nStill {{rate}}, and {{unit}}.\n";
+  const plan = c.plan([{
+    name: "s",
+    parts: { body: { kind: "markdown", md, vars: { rate: 62, unit: "kg" } } },
+    // The long spelling: the part carries values of its own, over the section's.
+    source: { name: "s", variables: { rate: 10, unit: "kg" }, parts: { body: { type: "markdown", data: md, variables: { rate: 62 } } } },
+  }]);
+  expect(plan.contents[1].variables).toEqual({ rate: 62, unit: "kg" });
+  expect(plan.contents[2].variables).toEqual({ rate: 62, unit: "kg" });
+  // A part with no values of its own and a section with none: no `variables`
+  // key is written at all.
+  const bare = c.plan([{ name: "t", parts: { body: { kind: "markdown", md, vars: {} } }, source: { name: "t", parts: { body: md } } }]);
+  expect(bare.contents[1].variables).toBeUndefined();
 });
 
 test("a bare section whose part opens with the table gives its place to the grid, and two tables in one part are numbered", () => {
