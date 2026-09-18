@@ -45,6 +45,8 @@ export function makeInstructionsView(deps) {
 
   /** Which file the workspace screen has open, kept across repaints. */
   let vaultOpen = INSTRUCTIONS;
+  /** The skill folders the person has opened or shut, by path. */
+  const folds = new Map();
 
   /** @param {string} message @returns {HTMLElement} */
   const hold = (message) => h("p.hold", message);
@@ -79,6 +81,9 @@ export function makeInstructionsView(deps) {
       open: vaultOpen,
       pick: (path) => { vaultOpen = path; draw(plate, files); },
       adds: [SKILLS],
+      // Every entry of the skills folder is a skill with a tree of its own,
+      // some of them deep: the folder is open and each skill starts shut.
+      fold: [SKILLS], folds,
       // + ON THE FOLDER ASKS THE SKILL'S NAME IN THE EDITOR'S PLACE. The name
       // becomes the folder — lowercase, digits, dashes — and the skill starts
       // as the frontmatter every skill carries.
