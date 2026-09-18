@@ -217,6 +217,13 @@ test("this repository's own history answers every committed plugin and skill, at
   // the thing history does not yet know.
   const { spawnSync } = await import("node:child_process");
   const atTip = (path: string) => spawnSync("git", ["show", `HEAD:${path}`], { cwd: HERE, encoding: "utf8" }).stdout;
+  // A SHALLOW CLONE HAS NO HISTORY TO ANSWER FROM, and this test is the one that
+  // would notice. It is not skipped here — a checkout with one commit in it is
+  // exactly the checkout that must not build a release, and the CI workflow
+  // fetches full depth for that reason — so a shallow clone fails this test by
+  // name rather than by a missing key.
+  const shallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: HERE, encoding: "utf8" }).stdout.trim();
+  expect(shallow, "a shallow clone cannot answer what this repository shipped; fetch the full history (fetch-depth: 0 in CI)").toBe("false");
   const shipped = await shippedHashes(HERE, SHIPPED_DIRS);
   // The tip may hold a plugin under its `biom-` name or, before the rename is
   // committed, under the bare one — either way its bytes are in history.
