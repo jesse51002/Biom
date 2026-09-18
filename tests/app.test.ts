@@ -423,8 +423,10 @@ test("the shell removes the application menu before it opens a window", async ()
   // THE ONE THING THAT MAY NOT GO WITH IT. Copy, paste, select all and undo
   // inside a web page are Chromium's on Linux and Windows and the MENU'S on
   // macOS, so a null menu there is a window where ⌘C does nothing. macOS gets
-  // the edit roles, hidden — registered accelerators, no bar of ours.
-  expect(main).toContain('{ role: "editMenu", visible: false }');
+  // the edit roles, SHOWN: a hidden Edit menu registers no accelerator there,
+  // and the Agent Terminal was the place that made it obvious — ⌘V did nothing.
+  expect(main).toContain('{ role: "editMenu" },');
+  expect(main).not.toContain('{ role: "editMenu", visible: false }');
   expect(main).toContain('process.platform !== "darwin"');
 });
 
