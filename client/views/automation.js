@@ -12,9 +12,11 @@
 //   MANIFEST  a form and never a file on screen — what it runs with, its
 //             name, its command, the env NAMES it needs picked from what the
 //             server holds, and its inputs as rows. The server writes the yaml.
-//   FILES     the folder drawn the way a file browser draws one, with the
-//             workspace's own skills as a second root, greyed until opened,
-//             and a text editor beside the tree. ＋ on skills/ and code/.
+//   FILES     the folder drawn the way a file browser draws one — the kickoff,
+//             the instructions, skills/ and code/, never the manifest, which
+//             is the Manifest screen — with the workspace's own skills as a
+//             second root, greyed until opened, and a text editor beside the
+//             tree. ＋ on skills/ and code/.
 //   RUNS      the inputs as they will be asked, Run, and this automation's
 //             runs — status, clock, exit, the last line of stdout raw, the
 //             whole log on a click, Kill.
@@ -280,7 +282,11 @@ export function makeAutomationView(deps) {
     } catch (e) {
       return hold(e instanceof Error ? e.message : "the files could not be listed");
     }
-    const own = pageFiles.map((f) => f.path).filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
+    // THE MANIFEST IS NOT IN THE TREE. The Manifest screen is that file as a
+    // form and the server writes the yaml, so listing it here would be the
+    // same file twice with two ways to edit it. Everything else in the folder
+    // is a file a person writes by hand.
+    const own = pageFiles.map((f) => f.path).filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length)).filter((p) => p !== "automation.yaml");
     const skills = vaultFiles.filter((f) => !f.seeded).map((f) => f.path).filter((p) => p.startsWith(".agents/skills/")).map((p) => p.slice(".agents/skills/".length));
     // Which root the open file is in: the automation's, or the workspace's skills.
     const inVault = state.file !== null && state.file.startsWith("@vault/");
@@ -319,7 +325,6 @@ export function makeAutomationView(deps) {
               ? "The workspace's own skill: every automation and every agent in the workspace reads it."
               : shown === "kickoff.md" ? "The prompt, with {input} placeholders. Substituted per run and nothing prepended: the run's AGENTS.md says where things are."
               : shown === "INSTRUCTIONS.md" ? "This automation's instructions, on top of the page's and the workspace's."
-              : shown === "automation.yaml" ? "The manifest as a file. The Manifest screen edits the same file as a form."
               : "",
             save: (next) => vaultPath !== null ? ws.writeVaultFile(vaultPath, next) : ws.writeFile(page.id, prefix + file, next),
           });

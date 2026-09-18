@@ -133,8 +133,9 @@ and what it could not update reads `lost` on the next open.
 **Instructions** and **Automations** are the two controls on a page's bar. The
 first is one editor over the page's `INSTRUCTIONS.md`. The second is this page's
 automations: **Manifest** as a form (the server writes the yaml, so a file edited
-by hand and one edited by the form are the same file), **Files** as a tree with a
-text editor beside it and the workspace's own skills greyed under it, and
+by hand and one edited by the form are the same file), **Files** as a tree of everything else in the folder — never the manifest,
+which the Manifest screen is — with a text editor beside it and the workspace's
+own skills greyed under it, and
 **Runs** with the inputs as they will be asked, Run, and every run of this
 automation with its last line of output raw and the whole log a click away.
 Every change is written a moment after it is made; there is nothing to press.
@@ -151,9 +152,8 @@ by-hand path under it.
 ## From a page's own code
 
 A page may list every automation, start one, follow any run's log and end one —
-`biom.call` with the `automation.list`, `run.start`, `run.list`, `run.get`,
-`run.read` and `run.kill` kinds, which [`code.md`](./code.md) lists with the
-rest. `run.read` hands back bytes from an offset and the next offset, so a page
+`biom.automations`, `biom.start`, `biom.runs`, `biom.run`, `biom.readRun` and
+`biom.kill`, which [`code.md`](./code.md) lists with the rest and walks through. `run.read` hands back bytes from an offset and the next offset, so a page
 follows a live log by asking again and stops when the answer says the run has
 ended. A run a page starts is stamped with that page's identity as *started by*,
 whatever the page said.
