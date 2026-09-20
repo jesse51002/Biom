@@ -236,6 +236,9 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         return ok(id, await deps.pages.children(req.page));
       }
 
+      case "children.all":
+        return ok(id, await deps.pages.childrenAll());
+
       // ANOTHER PAGE'S VARIABLES — the local-first join. A page can read what
       // another page knows and draw something richer than a table with it, and
       // reaching across a page boundary is a CALL rather than a template so that

@@ -177,6 +177,10 @@ function fake() {
         case "table.list": return t.tables;
         case "theme.get": return THEME;
         case "children": return t.kids[req.page] ?? [];
+        // The whole tree in one answer, keyed by id, root included — what the
+        // store reads now; the per-page kind stays for a box asking about its
+        // own page.
+        case "children.all": return Object.fromEntries(Object.entries(t.kids));
         case "page.read": {
           const doc = t.docs[req.page];
           if (!doc) return null;
@@ -645,14 +649,14 @@ test("a slot flush re-reads NOTHING, because the document says what moved", asyn
   await ws.loadPage("notes");
   const reads = server.count("page.read");
   const lists = server.count("page.list");
-  const kids = server.count("children");
+  const kids = server.count("children.all");
   const base = seen.n;
 
   await ws.patchVariables("notes", "title", { heading: "This week" });
 
   expect(server.count("page.read")).toBe(reads);
   expect(server.count("page.list")).toBe(lists);
-  expect(server.count("children")).toBe(kids);
+  expect(server.count("children.all")).toBe(kids);
   expect(seen.n).toBe(base + 1);
 });
 
@@ -693,7 +697,7 @@ test("a prose write is one request, and page.read is not the second", async () =
     data: "Rates went up in March.",
   });
   expect(server.count("page.read")).toBe(reads);
-  expect(server.count("children")).toBe(3);      // the tree was not re-read either
+  expect(server.count("children.all")).toBe(1);  // the tree was not re-read either
 });
 
 test("A SLOT WRITE TELLS NOBODY, and that asymmetry is the decision", async () => {
@@ -769,8 +773,9 @@ test("the order is one write, and the page and the rail are both re-read from it
   // "More." for `tail` and the document's own entry is what survived.
   expect(ws.get().page.sections.find((s) => s.name === "tail").vars).toEqual({ rate: 70 });
   // THE RAIL DRAWS THIS ORDER TOO — a page's children come back in the order its
-  // own contents put them — so the tree is re-read with the page.
-  expect(server.count("children")).toBe(6);
+  // own contents put them — so the tree is re-read with the page: one request
+  // for the whole tree, twice.
+  expect(server.count("children.all")).toBe(2);
   // THE OTHER HALF OF THE ASYMMETRY. The shape of the page moved — the rail
   // draws that order, and another box mounted on the same page is drawing it —
   // so unlike a slot write, this one says so.
@@ -961,8 +966,11 @@ test("loadTree reads what every page holds, without taking the open-page slot", 
   await ws.loadTree();
 
   expect(seen.n).toBe(1);                       // still one repaint for the lot
-  // the root page is always asked for, whether or not it is in the page list
-  expect(server.count("children")).toBe(3);
+  // ONE REQUEST FOR THE WHOLE TREE, however many pages it holds — and never one
+  // per page, which a browser refuses past a few hundred in flight. The root is
+  // in the map whether or not it is in the page list.
+  expect(server.count("children.all")).toBe(1);
+  expect(server.count("children")).toBe(0);
   expect(ws.children("home").map((c) => c.kind + ":" + c.id))
     .toEqual(["page:notes", "table:jobs"]);
   expect(ws.children("board")).toEqual([]);

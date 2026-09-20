@@ -389,6 +389,13 @@ test("every ApiRequest kind round-trips", async () => {
     expect(kids.filter((c) => c.kind === "page").map((c) => c.name)).toEqual(["Start here"]);
     // A page with nothing under it holds nothing, and says so rather than failing.
     expect(value(await call({ kind: "children", page: start.id }))).toEqual([]);
+    // THE WHOLE TREE IN ONE ANSWER, keyed by id, root included — what the shell
+    // draws the rail from — and every entry is exactly what the per-page kind
+    // answers for that page, so the two can never disagree.
+    const all = value(await call({ kind: "children.all" })) as Record<string, Child[]>;
+    expect(Object.keys(all).sort()).toEqual([ROOT_PAGE, start.id].sort());
+    expect(all[ROOT_PAGE]).toEqual(kids);
+    expect(all[start.id]).toEqual([]);
 
     const view = value(await call({ kind: "table.get", name: "jobs" })) as TableView;
     expect(view.total).toBe(12);

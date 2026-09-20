@@ -241,22 +241,24 @@ export function makeWorkspace(transport) {
     return /** @type {Page | null} */ (await askOrNull({ ...env(), kind: "page.read", page: id }));
   }
 
-  /** Layer one for the whole workspace, in one round.
+  /** Layer one for the whole workspace, in ONE request.
    *
    *  Eager and complete rather than fetched as the rail expands, and that is the
    *  cheap answer to a real hazard: a view that fetched what it was missing
-   *  while drawing would fetch again on the repaint its own answer caused. The
-   *  cost is one request per page on a workspace of a few dozen pages, which is
-   *  a throwaway instrument's kind of cost.
+   *  while drawing would fetch again on the repaint its own answer caused.
    *
-   *  ROOT_PAGE is asked for whether or not it is in `pages`, because the rail is
-   *  its children and a workspace whose root has not been seeded yet should draw
-   *  an empty rail rather than fail. */
+   *  It used to be one request per page, "a throwaway instrument's kind of
+   *  cost" on a few dozen pages — and on eighteen hundred it was more requests
+   *  than a browser will have in flight, refused before the server heard them,
+   *  and the shell said the server had not answered. So the server walks the
+   *  tree once and answers every page's children keyed by id, root included,
+   *  whether or not the root is in `pages`: the rail is its children, and a
+   *  workspace whose root has not been seeded yet should draw an empty rail
+   *  rather than fail. A page the answer does not name has no children. */
   async function readChildren() {
+    const all = /** @type {Record<PageId, Child[]> | null} */ (await askOrNull({ ...env(), kind: "children.all" }));
     const ids = [...new Set([ROOT_PAGE, ...pages.map((p) => p.id)])];
-    const got = await Promise.all(ids.map((id) =>
-      askOrNull({ ...env(), kind: "children", page: id })));
-    kids = new Map(ids.map((id, i) => [id, /** @type {Child[]} */ (got[i]) ?? []]));
+    kids = new Map(ids.map((id) => [id, /** @type {Child[]} */ ((all && all[id]) ?? [])]));
   }
 
   /** The tree, after a create, a remove or a move. Re-listed rather than patched
