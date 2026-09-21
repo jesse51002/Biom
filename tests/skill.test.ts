@@ -60,7 +60,7 @@ import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
 
 import {
-  check, checkDir, checkVault, findVault, formatReport, readVault, readYaml,
+  check, checkDir, checkVault, contractsOf, findVault, formatReport, readVault, readYaml,
   type PageSource, type Report, type VaultSource,
 } from "../skill/check.ts";
 import { parse } from "../server/platform/yaml.ts";
@@ -1676,10 +1676,128 @@ test("readVault treats every part of a workspace as optional", async () => {
     // `scale` joined this shape when `markdown.yaml` arrived, and it is as
     // optional as everything else here: a workspace with no type scale is one
     // that never wrote one, which is not a finding.
-    expect(source).toEqual({ design: null, designFiles: [], theme: null, pages: false, scale: null });
+    expect(source).toEqual({ design: null, designFiles: [], theme: null, pages: false, scale: null, plugins: null, shipped: {} });
     // A vault that has not been seeded yet is not a vault that skipped its
     // design work.
     expect(checkVault(source)).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/* ── plugin folders: R65 to R68 ─────────────────────────────────────────── */
+
+/** A vault on disk with a `plugins/` shaped as given, a mirror in
+ *  `docs/plugins/` holding the framework's `biom-doc` — its contract and a
+ *  document — and one page carrying its own `plugins/`. */
+async function pluginVault(files: Record<string, string>): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "biom-plugfold-"));
+  const seed: Record<string, string> = {
+    "theme.json": JSON.stringify({ palette: { name: "Biom" } }),
+    "design/content.yaml": "name: Design\nplugin: doc\ncontents: []\n",
+    "docs/plugins/biom-doc/plugin.yaml": "head:\nfoot: biom-holds\nrows: false\n",
+    "docs/plugins/biom-doc/index.html": FRAMEWORK_DOC,
+    "docs/plugins/biom-doc/plugins/holds/holds.js": "",
+    "docs/plugins/biom-doc/plugins/holds/plugin.yaml": "sort: name\n",
+    "pages/home/content.yaml": "name: Home\nplugin: doc\ncontents: []\n",
+  };
+  for (const [rel, text] of Object.entries({ ...seed, ...files })) {
+    await mkdir(join(root, rel, ".."), { recursive: true });
+    await writeFile(join(root, rel), text);
+  }
+  return root;
+}
+
+/** An invented framework document, long enough for a copy to be told from a
+ *  document somebody wrote themselves. */
+const FRAMEWORK_DOC = "<!doctype html>\n<html>\n<head>\n<title>Document</title>\n<style>\n" +
+  Array.from({ length: 30 }, (_, i) => "  .frame-rule-" + String(i) + " { margin-block: " + String(i) + "rem; }").join("\n") +
+  "\n</style>\n</head>\n<body><header id=\"g-head\"></header><main id=\"g-page\"></main><footer id=\"g-foot\"></footer></body>\n</html>\n";
+
+test("R65 to R68 — the folder shape, a rung naming nothing, and the copy a warning is for, once for the vault", async () => {
+  const root = await pluginVault({
+    // R65: the old shape, and a folder that is not an id.
+    "plugins/reveal.js": "",
+    "plugins/My Plugin/x.js": "",
+    // R66: an extension folder holding more than its rung.
+    "plugins/biom-doc/extensions.yaml": "head: board-look\nsort: date\n",
+    "plugins/biom-doc/index.html": "<main></main>",
+    "plugins/biom-doc/doc.js": "",
+    // R67: a rung over nothing, and one over the vault's own plugin's contract.
+    "plugins/biom-nothing/extensions.yaml": "x: 1\n",
+    "plugins/board-look/board-look.js": "",
+    "plugins/board-look/plugin.yaml": "dots: true\n",
+    "plugins/board-look/extensions.yaml": "dots: false\nsize: 3\n",
+    // R68: a bare-named copy of the framework's document, and a document of
+    // the workspace's own that shares nothing with it.
+    "plugins/doc/index.html": FRAMEWORK_DOC.replace("Document", "Mine"),
+    "plugins/timeline/index.html": "<!doctype html>\n<html><head><title>Timeline</title></head><body><main id=\"g-timeline\"></main></body></html>\n",
+    // The inner plugin's contract is reached by the framework's prefix rule.
+    "plugins/biom-holds/extensions.yaml": "sort: date\norder: up\n",
+  });
+  try {
+    const source = await readVault(root);
+    expect(source.plugins?.loose).toEqual(["reveal.js"]);
+    expect(Object.keys(source.shipped ?? {}).sort()).toEqual(["biom-doc", "biom-holds"]);
+    const found = checkVault(source).filter((f) => f.rule !== "R53");
+    const by = (rule: string) => found.filter((f) => f.rule === rule).map((f) => f.file + " · " + f.says);
+    expect(by("R65")).toEqual([
+      "plugins/reveal.js · reveal.js is a loose script and nothing loads it — a plugin is a folder. mkdir plugins/reveal && mv plugins/reveal.js plugins/reveal/ is the whole fix.",
+      "plugins/My Plugin/ · My Plugin/ is not a plugin folder — a plugin's folder is its id: lowercase letters, digits and dashes.",
+    ]);
+    expect(by("R66").map((s) => s.split(" · ")[0])).toEqual(["plugins/biom-doc/doc.js", "plugins/biom-doc/index.html"]);
+    expect(by("R66")[1]).toContain("plugins/doc/, and every page saying plugin: doc draws with it");
+    expect(by("R67")).toEqual([
+      'plugins/biom-doc/extensions.yaml · plugins/biom-doc/extensions.yaml names "sort", which biom-doc does not declare — its plugin.yaml holds head, foot, rows. A key the plugin does not read draws nothing.',
+      'plugins/biom-holds/extensions.yaml · plugins/biom-holds/extensions.yaml names "order", which biom-holds does not declare — its plugin.yaml holds sort. A key the plugin does not read draws nothing.',
+      'plugins/biom-nothing/extensions.yaml · plugins/biom-nothing/extensions.yaml extends "biom-nothing", which declares no plugin.yaml — there is nothing to extend. Is the id spelled as the framework spells it? docs/plugins/ lists the framework\'s.',
+      'plugins/board-look/extensions.yaml · plugins/board-look/extensions.yaml names "size", which board-look does not declare — its plugin.yaml holds dots. A key the plugin does not read draws nothing.',
+    ]);
+    const copies = by("R68");
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toContain("plugins/doc/index.html is shaped like the framework's own document");
+    expect(copies[0]).toContain("plugins/biom-doc/extensions.yaml follows every release");
+    expect(found.every((f) => (f.rule === "R68" ? f.severity === "WARN" : f.severity === "FAIL"))).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a page's own plugins/ takes R65 to R67 against the contracts the vault knows, and R68 does not apply there", async () => {
+  const root = await pluginVault({
+    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: doc\ncontents: []\n",
+    "pages/home/children/notes/plugins/loose.js": "",
+    "pages/home/children/notes/plugins/biom-doc/extensions.yaml": "foot:\nrows: true\ntypo: 1\n",
+    "pages/home/children/notes/plugins/biom-doc/doc.js": "",
+    "pages/home/children/notes/plugins/doc/index.html": FRAMEWORK_DOC,
+    "pages/home/children/notes/plugins/own/own.js": "",
+    "pages/home/children/notes/plugins/own/plugin.yaml": "lit: false\n",
+    "pages/home/children/notes/plugins/own/extensions.yaml": "lit: true\nglow: 2\n",
+  });
+  try {
+    const dir = join(root, "pages", "home", "children", "notes");
+    const source = await readVault(root);
+    // As the CLI does it: the vault's contracts travel with the page's read,
+    // and the vault's own findings are not said per page.
+    const report = await checkDir(dir, null, contractsOf(source));
+    const rules = report.findings.map((f) => f.rule + " " + f.file);
+    expect(rules).toEqual([
+      "R65 plugins/loose.js",
+      "R66 plugins/biom-doc/doc.js",
+      "R67 plugins/biom-doc/extensions.yaml",
+      "R67 plugins/own/extensions.yaml",
+    ]);
+    expect(report.findings.find((f) => f.file === "plugins/own/extensions.yaml")?.says).toContain('names "glow"');
+    // Handed the directory alone, with nothing about the vault, R67 says
+    // nothing about the framework's contract it never saw — and still holds
+    // the page's own plugin to its own.
+    const alone = await checkDir(dir);
+    expect(alone.findings.map((f) => f.rule + " " + f.file)).toEqual([
+      "R65 plugins/loose.js",
+      "R66 plugins/biom-doc/doc.js",
+    ]);
+    // The reserved subdirectory is not a section file, and not a page.
+    expect(report.findings.some((f) => f.file.startsWith("plugins/") && f.rule !== "R65" && f.rule !== "R66" && f.rule !== "R67")).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -213,7 +213,7 @@ const skill = (name) =>
 
 test("the seeded AGENTS.md carries modularity, and the skills where the work happens echo it", () => {
   expect(AGENTS).toContain("even a small chance");
-  expect(AGENTS).toContain("plugins/<id>.js");
+  expect(AGENTS).toContain("plugins/<id>/<id>.js");
   // `plugins` is where the route is, so that is where the rule has to be
   // actionable rather than merely stated.
   expect(skill("plugins")).toContain("even a small chance");

@@ -1,6 +1,6 @@
 ---
 name: biom-diagrams
-description: "WHEN A DRAWING IS WORTH MAKING, and what shape it takes when it is. A diagram here is a CUSTOM drawing and never a library's: HTML elements in the section's own markup, with the boxes and the arrows held as parallel `variables` in `content.yaml` and laid out by the section's own `<script>` — so editing the words edits the diagram, and nothing in the markup holds a position somebody has to maintain. `base/diagram/` is that written out and is what to copy. Use whenever the task is to draw a flow, a hierarchy, an architecture, a sequence, a state machine, a timeline, or anything else where the answer might be a picture of relationships. Leads with the shape that works and the section it sits in, then the test for whether the subject earns a drawing at all (and when a table or a list beats one), then the layout the script computes and the rules that keep a drawing readable: top to bottom, sibling-only edges, names not sentences, edges labelled with the contract, solid versus dashed, and never colour alone. Carries how a drawing arrives behind `--motion`, palette tokens only (R30), reflow rather than pixels (R25), when a drawing becomes a `plugins/<id>.js` rather than a script in one section, the `-->`-in-a-comment trap, and the FENCE MECHANISM — a fenced block whose info string names a plugin this workspace carries is handed to that plugin, which is how a vault that wants a diagram LANGUAGE gets one without the framework picking it."
+description: "WHEN A DRAWING IS WORTH MAKING, and what shape it takes when it is. A diagram here is a CUSTOM drawing and never a library's: HTML elements in the section's own markup, with the boxes and the arrows held as parallel `variables` in `content.yaml` and laid out by the section's own `<script>` — so editing the words edits the diagram, and nothing in the markup holds a position somebody has to maintain. `base/diagram/` is that written out and is what to copy. Use whenever the task is to draw a flow, a hierarchy, an architecture, a sequence, a state machine, a timeline, or anything else where the answer might be a picture of relationships. Leads with the shape that works and the section it sits in, then the test for whether the subject earns a drawing at all (and when a table or a list beats one), then the layout the script computes and the rules that keep a drawing readable: top to bottom, sibling-only edges, names not sentences, edges labelled with the contract, solid versus dashed, and never colour alone. Carries how a drawing arrives behind `--motion`, palette tokens only (R30), reflow rather than pixels (R25), when a drawing becomes a `plugins/<id>/` rather than a script in one section, the `-->`-in-a-comment trap, and the FENCE MECHANISM — a fenced block whose info string names a plugin this workspace carries is handed to that plugin, which is how a vault that wants a diagram LANGUAGE gets one without the framework picking it."
 ---
 
 # Diagrams
@@ -146,7 +146,7 @@ contents:
 
 **The drawing goes in the section's own `<script>`** — handed the same `ctx` a named plugin gets — **when it is genuinely about this one section's content.**
 
-**Write `plugins/<id>.js` the moment a second page might want the same drawing.** A workspace's own plugin file loads: the server reads `plugins/` and hands the page every `.js` in it, so the choice is between a script that belongs to one section and a plugin that belongs to the workspace, and nothing else decides it. [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) is that contract in full, and §3 is the decision.
+**Write `plugins/<id>/<id>.js` the moment a second page might want the same drawing.** A workspace's own plugin folder loads: the server reads `plugins/` and hands the page every plugin in it, so the choice is between a script that belongs to one section and a plugin that belongs to the workspace, and nothing else decides it. [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) is that contract in full, and §3 is the decision.
 
 **A drawing that has to DO something is the same question one step on.** Respond to a click, filter itself, read rows out of a table and redraw when they change, be dragged or zoomed — that is a verb, and a verb belongs in a plugin the moment it is worth having twice. **A large graph that only needs ROOM needs none of that**: give it its own section at whatever width that section chooses, and let the plate scroll sideways inside itself.
 
@@ -156,7 +156,7 @@ contents:
 
 ## A fence can be handed to a plugin
 
-**A fenced block whose info string names a plugin this workspace carries is handed to that plugin** — the markdown plugin looks the name up with `ctx.has` and mounts it with the fence's source. So a vault that writes `plugins/flow.js` gets ```` ```flow ```` blocks drawn by it, with nothing else to wire up, and a vault carrying its own copy of some diagram library's plugin goes on getting that library's fences drawn.
+**A fenced block whose info string names a plugin this workspace carries is handed to that plugin** — the markdown plugin looks the name up with `ctx.has` and mounts it with the fence's source. So a vault that writes `plugins/flow/` gets ```` ```flow ```` blocks drawn by it, with nothing else to wire up, and a vault carrying its own copy of some diagram library's plugin goes on getting that library's fences drawn.
 
 **The framework names no language there, and that is the point.** This vault's `plugins/` folder is the whole of the list: a drawing language is a workspace's own choice rather than one picked for everybody. **A fence naming something the workspace has no plugin for stays an ordinary code block**, which is the correct reading of it.
 
@@ -185,7 +185,7 @@ contents:
 | `base/diagram/` | the starter: the lists, the layout, the reveal, the fault slot. Copy it |
 | [`../biom-pages/SKILL.md`](../biom-pages/SKILL.md) | what a page is on disk, the part types, and the numbered rule index |
 | [`../biom-sections/SKILL.md`](../biom-sections/SKILL.md) | the section a diagram sits in: slots, R56, `/vendor/`, what the box cannot do |
-| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | the contract a section's script and a `plugins/<id>.js` share |
+| [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) | the contract a section's script and a `plugins/<id>/` share |
 | [`../biom-markdown/SKILL.md`](../biom-markdown/SKILL.md) | how the prose around a diagram is sized |
 | [`../biom-tables/SKILL.md`](../biom-tables/SKILL.md) | where the facts go when the answer was never a picture |
 | [`../biom-design/SKILL.md`](../biom-design/SKILL.md) | the palette a diagram draws in, and R30 |

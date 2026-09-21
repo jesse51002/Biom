@@ -57,7 +57,8 @@ means it is not a page.
 | `*.html` | a section's own markup, named by that section's `data:`. See [`sections.md`](./sections.md) |
 | `child.html` | how *this* page draws when another page holds it as a child. Below |
 | `markdown.yaml` | this page's own type scale, merged over the workspace's. See [`styling.md`](./styling.md) |
-| `_assets/` | files a section or an `html` part names, one level down. The one reserved subdirectory |
+| `_assets/` | files a section or an `html` part names, one level down. One of the two reserved subdirectories |
+| `plugins/` | this page's own plugins, and its rung over any plugin's variables — `plugins/biom-doc/extensions.yaml` reaches this page and no other. The other reserved subdirectory; it is never a page, and a page called `plugins` under `children/` still is one. See [`plugins.md`](./plugins.md) |
 | `children/` | where this page's children live. It is not a page |
 
 **There are no `.md` files and no `.mermaid` files in a page directory.** A
@@ -81,7 +82,7 @@ its contents written down here; these are the ones with a reason worth knowing.
 | `.agents/skills/` | one directory per subject: how to write well in this format, and the checker that reports it |
 | `design/` | this workspace's own brand, voice, patterns and density. **It is a page** — a directory with a `content.yaml`, drawn by the same runtime — kept out of `pages/` so it never appears in the tree |
 | `base/` | starter sections. Copy one into a page and the copy is yours; nothing links back and nothing updates it |
-| `plugins/` | every plugin this workspace draws with, as files. See [`plugins.md`](./plugins.md) |
+| `plugins/` | every plugin this workspace wrote, one folder each, and its rungs over the framework's. See [`plugins.md`](./plugins.md) |
 | `assets/` | pictures. A photograph is usually wanted on more than one page, so it is a root rather than a folder inside one. Named from a page by its filename alone |
 | `theme.json` | the palette and the type roles. See [`styling.md`](./styling.md) |
 | `markdown.yaml` | the house type scale every page inherits |

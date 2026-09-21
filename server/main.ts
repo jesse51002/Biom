@@ -1135,8 +1135,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // is all the notification a move gives — was dropped as nothing that
       // happened. So the page document is probed as well, exactly as the branch
       // above probes it: what this process knew about a departed directory is
-      // whatever was inside it.
-      if (!held.seen.known(abs) && !held.seen.known(doc)) return null;
+      // whatever was inside it — its document, or any file beneath it, which
+      // is how a page's `plugins/` deleted whole is a change to that page.
+      if (!held.seen.known(abs) && !held.seen.known(doc) && !held.seen.holds(abs)) return null;
       // Recursive, so forgetting a page directory forgets its document with it.
       held.seen.forget(abs);
       return { structural: true };

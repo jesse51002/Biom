@@ -76,7 +76,7 @@ contents:
         rows:
           - [Piece, Where, What changes]
           - [The part, "`contracts/types.ts`", A fifth part kind beside the four]
-          - [The drawing, "`plugins/biom-grid.js`", Draws the rows as a board]
+          - [The drawing, "`plugins/biom-grid/`", Draws the rows as a board]
 ```
 
 **The line between the two is who else needs the rows and what happens to them.** Rows a second page names, rows that arrive one at a time over months, rows somebody sorts, filters or counts, rows with a type per column — a table, in the database, with a name. Rows that are this page's own argument, whose cells are sentences, and that change when the page changes — a grid, in the document. A grid holds words; a table holds values. The mechanism of a grid — the shape on disk, the board, the cell edit, the four controls, the mirror, and what the conversion does to a document — is the last section of [`../../../docs/tables.md`](../../../docs/tables.md).

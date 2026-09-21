@@ -216,7 +216,7 @@ contents:
         rows:
           - [Piece, Where, What changes]
           - [The part, "`contracts/types.ts`", A fifth part kind beside the four]
-          - [The drawing, "`plugins/biom-grid.js`", "Draws the rows as a board"]
+          - [The drawing, "`plugins/biom-grid/`", "Draws the rows as a board"]
 ```
 
 `head` is true when left out, because every markdown table has a header and that
@@ -228,7 +228,7 @@ the file reads as the table it holds; a cell holding a comma, a pipe or a line
 break is quoted on that line.
 
 **It is drawn as a board by the framework's `biom-grid`** — or by a
-`plugins/grid.js` of this workspace's own, which wins by existing — a header band, the cells in
+`plugins/grid/` of this workspace's own, which wins by existing — a header band, the cells in
 the sheet face, one hairline — and it needs no section file: a section with no
 `data:` takes the shipped default, which widens from the reading measure to the
 figure width when its slot holds a grid, and the board scrolls sideways inside

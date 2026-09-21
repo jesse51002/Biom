@@ -165,10 +165,18 @@ test("the content baseline answers about content and forgets a whole subtree", (
   expect(seen.matches(a, "name: Home\n")).toBe(true);
   expect(seen.matches(a, "name: Away\n")).toBe(false);
 
+  // A DIRECTORY IS NEVER NOTED, but what was read inside it is, and that is
+  // how a departed folder is recognised: a page's `plugins/` deleted whole is
+  // the folder's path and nothing else on the watch.
+  expect(seen.holds(join("/w", "pages", "home"))).toBe(true);
+  expect(seen.holds(join("/w", "pages", "hom"))).toBe(false);
+  expect(seen.holds(join("/w", "pages", "home", "content.yaml"))).toBe(false);
+
   // A page removed takes its files' baselines with it, so a page written again
   // under that name reads as changed rather than as what used to be there.
   seen.forget(join("/w", "pages", "home"));
   expect(seen.known(a)).toBe(false);
+  expect(seen.holds(join("/w", "pages", "home"))).toBe(false);
 });
 
 /* ── the watch itself ──────────────────────────────────────────────────── */
@@ -427,6 +435,38 @@ test("a page deleted from outside loses its markdown", async () => {
     // just lost one.
     expect(await Bun.file(join(g.at("one"), "_markdown", "home.md")).exists()).toBe(true);
 
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("a page's plugins/ deleted whole from outside is a change to that page", async () => {
+  // THE ONLY NOTIFICATION IS THE BARE FOLDER PATH, exactly as a page directory's
+  // is — and `plugins/` holds no `content.yaml` to probe. What this process
+  // knew about it is the rung it read inside, so the departure is recognised
+  // by what was beneath the path, and the page whose rung just went redraws.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+    const dir = pageDir(g.at("one"), "home");
+    const rung = join(dir, "plugins", "biom-doc");
+    await mkdir(rung, { recursive: true });
+    await writeFile(join(rung, "extensions.yaml"), "foot:\n", "utf8");
+    const before = heard.get();
+    expect(await until(() => heard.get() > before)).toBe(true);
+
+    // Read through the page, so the rung is in the baseline.
+    const deps = await host.deps(g.at("one"));
+    const read = (await deps.pages.read("home"))!;
+    expect(read.extensions["biom-doc"]?.from.foot).toBe("page");
+
+    const heardBefore = heard.get();
+    await rm(join(dir, "plugins"), { recursive: true, force: true });
+    expect(await until(() => heard.get() > heardBefore)).toBe(true);
     off();
   } finally {
     host.close();

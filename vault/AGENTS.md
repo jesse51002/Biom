@@ -6,7 +6,7 @@
 
 # If somebody else might use it, it is a plugin
 
-**Anything you draw or code that has even a small chance of being used by another page, or by another person, is written as a PUBLIC PLUGIN from the start — never as a copy inside a section.** It goes in `plugins/<id>.js`, it registers an id, and every page in the workspace can reach it by name. The route is real and it needs nothing from you but the file: the server reads `plugins/` and the page is handed every `.js` in it.
+**Anything you draw or code that has even a small chance of being used by another page, or by another person, is written as a PUBLIC PLUGIN from the start — never as a copy inside a section.** It goes in `plugins/<id>/<id>.js` — every plugin is a folder — it registers an id, and every page in the workspace can reach it by name. The route is real and it needs nothing from you but the folder: the server reads `plugins/` and the page is handed every plugin in it.
 
 **The threshold is deliberately low, because the failure is not hypothetical.** In the workspace this framework was built alongside, one drawing became **176** copies, another **162**, and a third **88** — and that third one had drifted into **eleven different shapes**, differing in the teardown, the empty-list case and the observer. Nobody decided any of that. Each copy was one reasonable "just this once", and the eleventh shape was written by somebody who had no way to know the other ten existed.
 

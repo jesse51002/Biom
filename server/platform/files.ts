@@ -56,6 +56,10 @@ export interface Seen {
   /** Has this path a baseline at all? A file the server has never seen counts as
    *  changed, and the caller wants to know which of the two it is. */
   known(abs: string): boolean;
+  /** Is anything BENEATH this path known? A directory is never noted, so a
+   *  departed one — a page's `plugins/` deleted whole, say — is recognised by
+   *  the files this process had read inside it. */
+  holds(abs: string): boolean;
   /** Drop `abs` and everything beneath it. A deleted path drops its baseline, so
    *  a file written again under that name reads as changed. */
   forget(abs: string): void;
@@ -71,6 +75,11 @@ export function makeSeen(): Seen {
     note: (abs: string, text: string) => void held.set(abs, digest(text)),
     matches: (abs: string, text: string) => held.get(abs) === digest(text),
     known: (abs: string) => held.has(abs),
+    holds(abs: string) {
+      const under = abs + sep;
+      for (const key of held.keys()) if (key.startsWith(under)) return true;
+      return false;
+    },
     forget(abs: string) {
       held.delete(abs);
       const under = abs + sep;
@@ -84,6 +93,7 @@ export function makeSeen(): Seen {
 const FORGETFUL: Seen = {
   note: () => {},
   matches: () => false,
+  holds: () => false,
   known: () => false,
   forget: () => {},
 };
