@@ -681,6 +681,7 @@
     splitCss: splitCss,
     makeCtx: makeCtx,
     mountWith: mountWith,
+    fail: fail,
     // For a page that has no sections: its own document declares the slots and
     // the page's top-level keys fill them, so the filler is reached directly
     // rather than through `draw`.

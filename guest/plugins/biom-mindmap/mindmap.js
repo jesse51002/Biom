@@ -233,6 +233,12 @@
   }
 
   async function main() {
+    // THE GUARD. This script is in the bundle every page carries, because
+    // every plugin folder's scripts are: on a page that is not a map there is
+    // no `#g-map`, and the script does nothing at all.
+    const root = document.getElementById("g-map");
+    if (!root) return;
+
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
@@ -240,7 +246,6 @@
     const page = biom.input || {};
     const follow = page.follow === true;   // keep the sky centred always, hand or no hand
     const zoom = Number(page.zoom) > 0 ? Number(page.zoom) : 1;   // the homed fit, times this
-    const root = document.getElementById("g-map") || document.body;
 
     /* ── the furniture ────────────────────────────────────────────────── */
     const shell = el("div", "mm");

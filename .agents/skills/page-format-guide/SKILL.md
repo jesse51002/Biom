@@ -84,9 +84,12 @@ for every other kind and reports it over `page.projection`.
 
 Names starting with `_` or `.` belong to the host — one rule, true everywhere
 including the database, and `_markdown/` is under it. `_assets/` is per-page host
-bookkeeping; `children/` is the tree; the root-level `assets/` beside `pages/` is
-the shared, served, never-parsed one; `plugins/<id>/index.html` is a plugin this
-workspace installed, reached exactly as a shipped one is.
+bookkeeping; a page's own `plugins/` is the other reserved subdirectory — its
+plugins and its rung over any plugin's variables, never a page, walked by
+`pageDirs` for the loader and read by `extensionsFor` for the page's read;
+`children/` is the tree; the root-level `assets/` beside `pages/` is the
+shared, served, never-parsed one; `plugins/<id>/index.html` is a plugin this
+workspace wrote, reached exactly as the framework's own is.
 
 **`markdown.yaml` beside it is the page's type scale**, and it is the one other
 file the reader looks for by name. See §12.
@@ -125,7 +128,10 @@ the host understood, and each of them was a branch in the host. This one names a
 DOCUMENT, the host has no opinion about what it does, and the set is open: the
 framework's own plugins are the rung UNDER the workspace's `plugins/`, resolved
 by the same lookup, so the framework's own and one a workspace wrote are the same
-shape of thing — and a workspace file at the framework's path is an override.
+shape of thing — and what a workspace changes about the framework's is its
+VARIABLES, in `plugins/biom-<id>/extensions.yaml`, never a file at its path:
+`plugin-guide` §7 carries the three rungs and `Page.extensions` carries the
+merge.
 
 **SECTIONS ARE THE DOC PLUGIN'S CONCEPT.** A board has none; an html page has
 none; child reconciliation, `section.order` and the whole section runtime belong

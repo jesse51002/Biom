@@ -48,26 +48,42 @@
  * fails that test, which is what keeps this from being the roster that is wrong
  * in the release where being right matters.
  *
- * A RESERVED ID IS FILLED BY THE FILE THE FORMAT NAMES, NOT BY WHOEVER IS FIRST.
- * It used to be first-past-the-post, which quietly made the reservation a race
- * the alphabet decided: the loader concatenates `plugins/*.js` in name order, so
- * a vault file called `0-notes.js` sorted ahead of `table.js` and took `table`.
- * `plugins/<kind>.js` is the one file that may draw `<kind>` — which is still
- * A FILE IN THE VAULT, so editing the seeded `markdown.js` is editing the
- * drawing, exactly as intended. Adding a second file that claims the name is not.
+ * A RESERVED ID IS FILLED BY THE FOLDER THE FORMAT NAMES, NOT BY WHOEVER IS
+ * FIRST. It used to be first-past-the-post, which quietly made the reservation
+ * a race the alphabet decided: the loader concatenates the vault's plugins in
+ * name order, so a file called `0-notes.js` sorted ahead of `table.js` and took
+ * `table`. Every plugin is a FOLDER now — `plugins/<id>/` with its scripts
+ * inside — and `plugins/<kind>/` is the one folder that may draw `<kind>`:
+ * the vault's own, or the framework's `biom-<kind>/`, and only a folder at
+ * the top of its root, never an inner one. Adding a second folder that claims
+ * the name is refused in a sentence naming both.
  *
  * WHICH FILE IS REGISTERING IS A FACT THE LOADER HANDS OVER. Every plugin in a
  * vault arrives inside one concatenated script, so `document.currentScript` says
- * "the bundle" for all of them; the loader sets `rt.pluginFile` around each
- * file's own function instead, and `whereFrom()` below reads it. It is what the
- * reservation is decided on and what a refusal prints, because a refusal that
- * does not name the two files is one the reader cannot act on.
+ * "the bundle" for all of them; the loader sets `rt.pluginFile` — the path
+ * under its root, `biom-doc/plugins/holds/holds.js` — and `rt.pluginRoot` —
+ * `framework`, `plugins`, or a page's `pages/…/plugins` — around each file's
+ * own function, and `whereFrom()` below reads them. They are what the
+ * reservation is decided on, what a refusal prints, and what
+ * `biom.plugin.list()` answers as each plugin's root.
+ *
+ * A `biom-` ID IS THE FRAMEWORK'S TO REGISTER. A vault or a page script
+ * registering one is refused by name: the prefix is what keeps a workspace's
+ * plugin from ever colliding with one the framework ships later, and a vault
+ * that could wear it would be back to file-based overrides by another route.
  *
  * THERE IS NO `shipped` ANY MORE, and dropping it was the point of the vault
- * owning every plugin. A vault's `table.js` IS the table plugin — the person's
+ * owning every plugin. A vault's `table/` IS the table plugin — the person's
  * edit of it is the shipped one — so there is nothing left to shadow.
  * What is refused is a SECOND file taking an id that is already drawn, part kind
  * or not, in a sentence naming both files.
+ *
+ * `biom.plugin` IS THE READING SIDE, beside `biom.plugins` the registration
+ * side: `list()` answers every registered plugin and where it came from,
+ * `get(id)` answers one as `ctx.use` does, and `extensions(id?)` answers the
+ * merged variables the server put on the page read — the drawing plugin's
+ * when the id is left out — current on every draw. A test holds `biom.plugin.get`
+ * and `biom.plugins.get` equal.
  */
 (function () {
   "use strict";
@@ -94,9 +110,13 @@
    *   one region.
    * @property {boolean} [edit] this plugin's content is editable in place.
    * @property {string} [from] set here, never by the caller: the file that
-   *   registered this plugin — `plugins/<name>.js`, a `/guest/` path for the
-   *   runtime's own, or `an unnamed script`. Read when a second file claims the
-   *   same id, so the refusal can name both.
+   *   registered this plugin — `plugins/<id>/<file>.js`, `framework/…`, a
+   *   page's `pages/…/plugins/…`, a `/guest/` path for the runtime's own, or
+   *   `an unnamed script`. Read when a second file claims the same id, so the
+   *   refusal can name both.
+   * @property {"framework" | "vault" | "page" | "runtime"} [root] set here: which
+   *   root the registering file was read from, which is what
+   *   `biom.plugin.list()` answers.
    */
 
   /** @type {Map<string, GPlugin>} */
@@ -124,8 +144,9 @@
    *  THE BUNDLE NAMES ITS OWN SEGMENTS. Every plugin in a vault arrives inside
    *  one concatenated script, so `document.currentScript` is that one script for
    *  all of them and cannot tell two files apart. The loader that builds the
-   *  bundle wraps each source in a function and sets `rt.pluginFile` to the file
-   *  name around the call, so this reads the file that is executing right now.
+   *  bundle wraps each source in a function and sets `rt.pluginFile` to the path
+   *  under its root and `rt.pluginRoot` to the root's words around the call, so
+   *  this reads the file that is executing right now.
    *
    *  `/guest/` IS THE RUNTIME AND NOTHING ELSE NOW — every plugin is a file in
    *  the vault, served from `/v/<enc>/plugin/` — so a script src under it is the
@@ -133,7 +154,9 @@
    *  able to say.
    *  @returns {string} */
   function whereFrom() {
-    if (typeof rt.pluginFile === "string" && rt.pluginFile) return "plugins/" + rt.pluginFile;
+    if (typeof rt.pluginFile === "string" && rt.pluginFile) {
+      return (typeof rt.pluginRoot === "string" && rt.pluginRoot ? rt.pluginRoot : "plugins") + "/" + rt.pluginFile;
+    }
     const cur = typeof document === "object" && document ? document.currentScript : null;
     const src = cur && /** @type {HTMLScriptElement} */ (cur).src;
     if (!src) return "an unnamed script";
@@ -144,20 +167,43 @@
     }
   }
 
+  /** WHICH ROOT IS REGISTERING: the loader's words, read back as the answer
+   *  `biom.plugin.list()` gives. The runtime's own scripts come from `/guest/`.
+   *  @returns {"framework" | "vault" | "page" | "runtime"} */
+  function rootNow() {
+    if (typeof rt.pluginFile !== "string" || !rt.pluginFile) return "runtime";
+    const root = typeof rt.pluginRoot === "string" ? rt.pluginRoot : "plugins";
+    return root === "framework" ? "framework" : root === "plugins" ? "vault" : "page";
+  }
+
   /** Is this the framework's own runtime registering? `/guest/` is served to the
    *  box by the framework and by nothing else. @param {string} from */
   function isRuntime(from) {
     return from.startsWith("/guest/");
   }
 
-  /** THE ONE FILE A PART KIND MAY BE DRAWN FROM. A reserved id is not filled by
-   *  whoever registers first — that made the reservation a race the alphabet
-   *  decided, and `plugins/0-notes.js` could take `table` from `plugins/table.js`
-   *  by sorting ahead of it. It is filled by the file the format names: the
-   *  vault's own `plugins/<kind>.js`, or the framework's `biom-<kind>.js`, and
-   *  the id says which. @param {string} id @param {string} from */
+  /** THE ONE FOLDER A PART KIND MAY BE DRAWN FROM. A reserved id is not filled
+   *  by whoever registers first — that made the reservation a race the alphabet
+   *  decided, and a `0-notes.js` could take `table` from `table.js` by sorting
+   *  ahead of it. It is filled by the folder the format names: the vault's own
+   *  `plugins/<kind>/`, or the framework's `biom-<kind>/`, at the top of its
+   *  root and never inside another plugin — a page's `plugins/` may not, because
+   *  one bundle serves every page and a part kind is every page's.
+   *  @param {string} id @param {string} from */
   function mayReserve(id, from) {
-    return from === "plugins/" + id + ".js" || isRuntime(from);
+    if (isRuntime(from)) return true;
+    const root = rootNow();
+    if (root !== "vault" && root !== "framework") return false;
+    const name = String(rt.pluginFile);
+    const cut = name.indexOf("/");
+    if (cut < 0) return false;
+    return name.slice(0, cut) === id && name.indexOf("/", cut + 1) < 0;
+  }
+
+  /** The folder a part kind must be drawn from, as a refusal says it.
+   *  @param {string} id */
+  function folderFor(id) {
+    return (id.startsWith(OURS) ? "framework/" : "plugins/") + id + "/";
   }
 
   /** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED, and why a bare name is not.
@@ -223,8 +269,17 @@
          `table.js` and took `table` — replacing the drawing of every table in
          the workspace, on pages its author never opened, with nothing anywhere
          saying so. The file name is not a race. */
+      /* THE PREFIX IS THE FRAMEWORK'S. A vault or a page script wearing it is
+         a copy by another name, and it is refused before anything else is
+         asked about the id. */
+      const root = rootNow();
+      if (id.startsWith(OURS) && root !== "framework" && root !== "runtime") {
+        say('"' + id + '" wears the framework\'s prefix — ' + from + " must register under a name of its own");
+        return false;
+      }
+
       if (isKind(id) && !mayReserve(id, from)) {
-        say('"' + id + '" is a part kind and only plugins/' + id + '.js draws it — ' + from + " must register under an id of its own");
+        say('"' + id + '" is a part kind and only ' + folderFor(id) + " draws it — " + from + " must register under an id of its own");
         return false;
       }
 
@@ -252,6 +307,7 @@
         // is a change here, which is where somebody will look for it.
         blocks: typeof def.blocks === "function" ? def.blocks : undefined,
         from: from,
+        root: root,
       });
       return true;
     },
@@ -280,6 +336,46 @@
 
   rt.plugins = plugins;
 
+  /** THE READING SIDE. `biom.plugins` registers; this answers. It is one
+   *  object rather than three more methods on the registry because a plugin
+   *  asking what it may read is a different act from a file saying what it
+   *  draws, and the two names say which. */
+  const plugin = {
+    /** Every registered plugin and where it came from, in registration order.
+     *  @returns {{ id: string, root: string, file: string }[]} */
+    list() {
+      return [...byId.values()].map((def) => ({ id: def.id, root: def.root || "runtime", file: def.from || "" }));
+    },
+
+    /** One plugin, as `ctx.use` finds it: the workspace's own for a bare id,
+     *  the framework's `biom-` one when it has none. Held equal to
+     *  `biom.plugins.get` by a test. @param {string} id @returns {GPlugin | null} */
+    get(id) {
+      return plugins.get(id);
+    },
+
+    /** THE MERGED VARIABLES OF ONE PLUGIN, as the server put them on the page
+     *  read: its `plugin.yaml` defaults, the vault's `extensions.yaml` over
+     *  them, the page's over those, one key at a time. Left out, the id is the
+     *  plugin drawing this page. Resolved nearest-first like every other bare
+     *  name — the workspace's own `doc` if it declared variables, the
+     *  framework's `biom-doc` otherwise. Synchronous, off the last read: empty
+     *  before the first draw, and current on every one after, because the read
+     *  that draws the page is the read that carries them.
+     *  @param {string} [id] @returns {Record<string, any>} */
+    extensions(id) {
+      const held = rt.page && typeof rt.page.extensions === "function" ? rt.page.extensions() : {};
+      const want = id === undefined || id === null || id === "" ? (rt.page ? String(rt.page.plugin || "") : "") : String(id);
+      if (!want) return {};
+      const found = held[want] ? want : !want.startsWith(OURS) && held[OURS + want] ? OURS + want : null;
+      if (found === null) return {};
+      const values = held[found] && held[found].values;
+      return values && typeof values === "object" ? Object.assign({}, values) : {};
+    },
+  };
+
+  rt.plugin = plugin;
+
   /* biom.plugins IS THE PUBLIC NAME. The shim owns `window.biom` and
    * is loaded ahead of this file, so the ordinary case is attaching to an object
    * that is already there. The other case is real and is not a fallback for a
@@ -288,6 +384,8 @@
    * about one. A stand-in carrying nothing but `plugins` keeps that frame
    * honest. */
   const g = glob.biom;
-  if (g && typeof g === "object") g.plugins = plugins;
-  else glob.biom = { plugins: plugins };
+  if (g && typeof g === "object") {
+    g.plugins = plugins;
+    g.plugin = plugin;
+  } else glob.biom = { plugins: plugins, plugin: plugin };
 })();

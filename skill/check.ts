@@ -88,6 +88,16 @@
 //   R64  a grid cell holding a bare pipe — outside a wikilink or a code span —
 //        which is the mark of a row pasted into a cell; kept as a character,
 //        and reported so somebody looks.
+//   R65  a loose `plugins/<id>.js` — a plugin is a folder, and nothing loads
+//        the old shape.
+//   R66  a `biom-` folder in `plugins/` holding anything beside
+//        `extensions.yaml` — it extends the framework's plugin and never
+//        shadows it, so a script or a document in it never draws.
+//   R67  a key in an `extensions.yaml` that the plugin's `plugin.yaml` does not
+//        declare — a typo, and it draws nothing.
+//   R68  a bare-named document in `plugins/` shaped like the framework's own —
+//        a copy that draws and stops following the framework, where a line in
+//        a rung would do.
 //
 // **R50 IS NOT IN HERE.** It belongs to `.agents/skills/biom-plugins/SKILL.md` — a vault
 // plugin may never claim a shipped id — and is checked where plugins are
@@ -227,6 +237,44 @@ export interface PageSource {
    *  when it was handed a directory in isolation. Only R53 reads it, and R53 is
    *  about the vault rather than about this page — see `checkVault`. */
   vault?: VaultSource | null;
+  /** This page's own `plugins/`, beside its `content.yaml` — its plugins and
+   *  its rung over any plugin's variables — or null when it has none. R65 to
+   *  R67 read it. */
+  plugins?: PluginsSource | null;
+  /** Every plugin's declared variables, by id, as far as the checker knows
+   *  them: the framework's from the mirror in `docs/plugins/`, the
+   *  workspace's from `plugins/<id>/plugin.yaml`. R67 holds a page's rung
+   *  against them; handed nothing, it says nothing about an undeclared key,
+   *  because it cannot tell one from a contract it never saw. */
+  contracts?: Record<string, string[]> | null;
+}
+
+/** One folder directly under a `plugins/` root, as the checker sees it. */
+export interface PluginFolderSource {
+  /** The folder's name, which is the plugin's id. */
+  name: string;
+  /** What is directly inside, files and folders alike, by name. */
+  entries: string[];
+  /** `plugin.yaml`, verbatim, or null. */
+  contract: string | null;
+  /** `extensions.yaml`, verbatim, or null. */
+  extensions: string | null;
+  /** `index.html`, verbatim, or null. */
+  document: string | null;
+}
+
+/** A `plugins/` root — the vault's, or a page's own. */
+export interface PluginsSource {
+  /** `.js` files directly in the root: the old shape, which nothing loads. */
+  loose: string[];
+  /** Every folder directly in the root, in name order. */
+  folders: PluginFolderSource[];
+}
+
+/** One framework plugin as the mirror in `docs/plugins/` shows it. */
+export interface ShippedPlugin {
+  contract: string | null;
+  document: string | null;
 }
 
 /** The vault root, as text, for the one rule that is about the workspace rather
@@ -248,6 +296,13 @@ export interface VaultSource {
    *  the house scale lost is one fact about the workspace, and repeating it per
    *  directory would bury every finding about the pages themselves. */
   scale: string | null;
+  /** The vault's own `plugins/`, or null when it has none. R65 to R68 read it
+   *  here, once per run, because a folder shape is one fact about the vault. */
+  plugins?: PluginsSource | null;
+  /** The framework's plugins as `docs/plugins/` mirrors them, by id — the
+   *  contract each declares and the document each carries. What R67 holds a
+   *  rung against, and what R68 holds a bare-named document beside. */
+  shipped?: Record<string, ShippedPlugin>;
 }
 
 /* ── the vault's own grammars, copied because they are the format ───────── */
@@ -323,8 +378,14 @@ const PAGE_DOCUMENT = "index.html";
 
 /** Everything `content.yaml` may say, and nothing else. `server/platform/yaml.ts`
  *  REFUSES an unknown key rather than dropping it, so a page carrying one does
- *  not open at all — which is why this is R1 and not a note about tidiness. */
-const PAGE_KEYS = new Set(["name", "plugin", "variables", "contents", "input"]);
+ *  not open at all — which is why this is R1 and not a note about tidiness.
+ *  `uid` is the framework's: minted on the mount and written into every page
+ *  that has none, so a page the server has opened carries one — and this set
+ *  without it failed every such page in every workspace. */
+const PAGE_KEYS = new Set(["name", "uid", "plugin", "variables", "contents", "input"]);
+/** What a `uid` looks like — `UID` in `contracts/types.ts`, said again here
+ *  because this file reaches nothing under `contracts/` but `_lib/`. */
+const UID = /^[a-z0-9]{8,32}$/;
 /** The keys a SECTION may carry. There is no `type:`, because a section is the
  *  only thing `contents` can hold and a key that distinguishes nothing is a key
  *  that can be written wrong. */
@@ -1281,6 +1342,12 @@ export function check(src: PageSource): Report {
   plugin = typeof rawPlugin === "string" && PLUGIN_NAME.test(rawPlugin) ? rawPlugin : (rawPlugin === undefined ? "html" : DOC_PLUGIN);
   const isDoc = plugin === DOC_PLUGIN;
 
+  /* R1 — `uid` is the framework's, and the parser refuses one it did not mint. */
+  const rawUid = doc["uid"];
+  if (rawUid !== undefined && rawUid !== null && (typeof rawUid !== "string" || !UID.test(rawUid))) {
+    say("R1", "FAIL", DOC, lineOfKey(text, "uid"), "uid is a short id the framework wrote; it is not a thing to type. The parser refuses one that is not its own, so this page does not open at all — take the line out and the next open writes one in.");
+  }
+
   /* R61 — the plugin has to resolve to a document somebody can draw with.
    *
    * A page names one and the host looks in two places, in this order: the
@@ -1940,6 +2007,12 @@ export function check(src: PageSource): Report {
    * here — see `checkVault`. */
   const ownScale = src.files[SCALE];
   if (ownScale !== undefined) checkScale(ownScale, SCALE, findings);
+
+  /* R65 to R67 — this page's own `plugins/`, judged as the vault's is. */
+  if (src.plugins !== undefined && src.plugins !== null) {
+    const known = src.contracts ?? (src.vault ? contractsOf(src.vault) : null);
+    checkPlugins(src.plugins, "plugins", known === null ? null : { ...known, ...declaredIn(src.plugins) }, null, findings);
+  }
 
   /* R53 — the workspace's design language is still the one it shipped with */
   if (src.vault !== undefined && src.vault !== null) findings.push(...checkVault(src.vault));
@@ -2659,6 +2732,27 @@ export function checkVault(src: VaultSource): Finding[] {
    * least about the pages in front of you. */
   if (typeof src.scale === "string") checkScale(src.scale, SCALE, out);
 
+  /* R65 to R68 — the vault's `plugins/`: the folder shape, the rungs and the
+   * one copy a warning is for. Said with the workspace for the same reason the
+   * scale is: it is one fact about the vault. */
+  if (src.plugins !== undefined && src.plugins !== null) {
+    checkPlugins(src.plugins, "plugins", contractsOf(src), src.shipped ?? null, out);
+    // THE MIRROR IS NOT HERE, and a rung over a framework plugin is. Said once
+    // for the vault rather than as a FAIL per rung: nothing is wrong with the
+    // workspace, the checker simply cannot read what the framework declares
+    // until the server has opened the folder and written `docs/plugins/`.
+    const rungs = src.plugins.folders.filter((f) => f.name.startsWith(OURS) && f.extensions !== null);
+    if (rungs.length > 0 && Object.keys(src.shipped ?? {}).length === 0) {
+      out.push({
+        rule: "R67",
+        severity: "WARN",
+        file: "docs/plugins/",
+        line: 0,
+        says: "docs/plugins/ is not here, so " + rungs.map((f) => "plugins/" + f.name + "/" + EXTENSIONS).join(", ") + " cannot be held against what the framework declares. The server writes the mirror when it opens the workspace; open it once and run this again.",
+      });
+    }
+  }
+
   if (!src.pages) return out;
 
   const worked =
@@ -2714,6 +2808,224 @@ function designHasSection(text: string | null): boolean {
     isMap(s) && typeof s["data"] === "string" && s["data"] !== "" && !SHIPPED_DESIGN.has(s["data"] as string));
 }
 
+/* ── plugin folders: R65 to R68 ─────────────────────────────────────────── */
+
+/** What the framework's own plugins are called. `OURS` in the server, said
+ *  here because the checker imports nothing. */
+const OURS = "biom-";
+const CONTRACT = "plugin.yaml";
+const EXTENSIONS = "extensions.yaml";
+const PLUGIN_ID = /^[a-z][a-z0-9-]*$/;
+
+/** The keys a contract text declares, or null when the text is not a flat map
+ *  of variables. */
+function keysOf(text: string | null): string[] | null {
+  if (text === null || text.trim() === "") return [];
+  let doc: Yaml;
+  try {
+    doc = readYaml(text);
+  } catch {
+    return null;
+  }
+  if (doc === null) return [];
+  if (!isMap(doc)) return null;
+  return Object.keys(doc);
+}
+
+/** Every plugin's declared keys, by id, out of a `plugins/` root: each folder
+ *  with a `plugin.yaml`. */
+function declaredIn(src: PluginsSource): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const f of src.folders) {
+    if (f.contract === null) continue;
+    const keys = keysOf(f.contract);
+    if (keys !== null) out[f.name] = keys;
+  }
+  return out;
+}
+
+/** Every plugin's declared keys the vault knows: the framework's from the
+ *  mirror, then the vault's own. */
+export function contractsOf(src: VaultSource): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [id, shipped] of Object.entries(src.shipped ?? {})) {
+    if (shipped.contract === null) continue;
+    const keys = keysOf(shipped.contract);
+    if (keys !== null) out[id] = keys;
+  }
+  if (src.plugins) Object.assign(out, declaredIn(src.plugins));
+  return out;
+}
+
+/** How alike two documents are: the share of one's non-blank lines the other
+ *  also has, trimmed. A copy taken and edited a little scores high; a document
+ *  somebody wrote from scratch scores low, whatever it draws. */
+function alike(a: string, b: string): { shared: number; of: number } {
+  const lines = (t: string) => t.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 8);
+  const mine = lines(a);
+  const theirs = new Set(lines(b));
+  let shared = 0;
+  for (const l of mine) if (theirs.has(l)) shared++;
+  return { shared, of: mine.length };
+}
+
+/** R65 to R68 over one `plugins/` root. `where` is the root as a finding names
+ *  it — `plugins` for the vault's and for a page's, each relative to what the
+ *  checker was handed. `contracts` is every declared key the checker knows, or
+ *  null when it knows none, in which case R67 says nothing. `shipped` is the
+ *  framework's set for R68, or null under a page, where R68 does not apply. */
+export function checkPlugins(
+  src: PluginsSource,
+  where: string,
+  contracts: Record<string, string[]> | null,
+  shipped: Record<string, ShippedPlugin> | null,
+  out: Finding[],
+): void {
+  const say = (rule: string, severity: Severity, file: string, says: string) =>
+    out.push({ rule, severity, file, line: 0, says });
+
+  /* IS THE FRAMEWORK'S SET KNOWN AT ALL? Its contracts come out of the mirror
+   * in `docs/plugins/`, which is written when the server opens the workspace
+   * and kept out of its history — so a fresh clone the server has never opened
+   * has none. Against nothing, a rung over `biom-doc` cannot be held to
+   * anything, and saying it names a plugin that declares nothing would be a
+   * FAIL on a correct workspace. So the framework's side of R67 is skipped
+   * until the mirror is there, and `checkVault` says so once. */
+  const framework = contracts !== null && Object.keys(contracts).some((id) => id.startsWith(OURS));
+
+  /* R65 — a loose script is the old shape, and nothing loads it. */
+  for (const name of src.loose) {
+    const stem = name.slice(0, -3);
+    say("R65", "FAIL", where + "/" + name,
+      name + " is a loose script and nothing loads it — a plugin is a folder. mkdir " + where + "/" + stem + " && mv " + where + "/" + name + " " + where + "/" + stem + "/ is the whole fix.");
+  }
+
+  for (const f of src.folders) {
+    const at = where + "/" + f.name;
+    if (!PLUGIN_ID.test(f.name)) {
+      say("R65", "FAIL", at + "/", f.name + "/ is not a plugin folder — a plugin's folder is its id: lowercase letters, digits and dashes.");
+      continue;
+    }
+    const extension = f.name.startsWith(OURS);
+
+    /* R66 — a folder wearing the framework's prefix extends and never
+     * shadows: `extensions.yaml` and nothing else. */
+    if (extension) {
+      const strays = f.entries.filter((e) => e !== EXTENSIONS && !e.startsWith("."));
+      for (const stray of strays) {
+        const bare = f.name.slice(OURS.length);
+        say("R66", "FAIL", at + "/" + stray,
+          at + "/ extends the framework's " + f.name + " and may hold " + EXTENSIONS + " alone — " + stray + " in it never draws. " +
+          (stray === PAGE_DOCUMENT
+            ? "A document of this workspace's own goes under the bare name, " + where + "/" + bare + "/, and every page saying plugin: " + bare + " draws with it; "
+            : stray.endsWith(".js")
+              ? "A plugin of this workspace's own goes under a name of its own; "
+              : "") +
+          "a change to the framework's plugin is a line in " + EXTENSIONS + ".");
+      }
+    }
+
+    /* R67 — a rung names only what the plugin declares. */
+    if (f.extensions !== null && contracts !== null && !(extension && !framework)) {
+      const declared = contracts[f.name];
+      const keys = keysOf(f.extensions);
+      if (declared === undefined) {
+        say("R67", "FAIL", at + "/" + EXTENSIONS,
+          at + "/" + EXTENSIONS + " extends \"" + f.name + "\", which declares no " + CONTRACT + " — there is nothing to extend. " +
+          (extension ? "Is the id spelled as the framework spells it? docs/plugins/ lists the framework's." : "A plugin declares the variables it reads in its own " + CONTRACT + "."));
+      } else if (keys === null) {
+        say("R67", "FAIL", at + "/" + EXTENSIONS, at + "/" + EXTENSIONS + " is not a map of variables — a key and its value, one per line — so the whole rung is skipped and the rung beneath stands.");
+      } else {
+        for (const key of keys) {
+          if (declared.includes(key)) continue;
+          say("R67", "FAIL", at + "/" + EXTENSIONS,
+            at + "/" + EXTENSIONS + " names \"" + key + "\", which " + f.name + " does not declare — its " + CONTRACT + " holds " + (declared.length === 0 ? "no variables" : declared.join(", ")) + ". A key the plugin does not read draws nothing.");
+        }
+      }
+    }
+
+    /* R68 — a bare-named document shaped like the framework's own: a copy that
+     * draws, as a plugin of the workspace's, and stops following the framework. */
+    if (!extension && f.document !== null && shipped !== null) {
+      const theirs = shipped[OURS + f.name];
+      if (theirs !== undefined && theirs.document !== null) {
+        const { shared, of } = alike(f.document, theirs.document);
+        if (of > 0 && shared * 2 >= of) {
+          say("R68", "WARN", at + "/" + PAGE_DOCUMENT,
+            at + "/" + PAGE_DOCUMENT + " is shaped like the framework's own document — " + String(shared) + " of its " + String(of) + " lines are the framework's. It draws, as a plugin of this workspace's, and stops following the framework from the day it was copied. A variable, or a plugin of your own named in one, in " + where + "/" + OURS + f.name + "/" + EXTENSIONS + " follows every release; docs/plugins/" + OURS + f.name + "/" + CONTRACT + " says what it declares.");
+        }
+      }
+    }
+  }
+}
+
+/** Read a `plugins/` root off disk, or null when there is none. */
+export async function readPlugins(root: string): Promise<PluginsSource | null> {
+  let entries: { name: string; isDirectory(): boolean; isFile(): boolean }[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const read = async (rel: string): Promise<string | null> => {
+    try {
+      return await readFile(join(root, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
+  const loose = entries.filter((e) => e.isFile() && e.name.endsWith(".js")).map((e) => e.name).sort();
+  const folders: PluginFolderSource[] = [];
+  for (const e of entries.filter((e) => e.isDirectory() && !e.name.startsWith(".") && !e.name.startsWith("_")).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    let inside: string[] = [];
+    try {
+      inside = (await readdir(join(root, e.name))).sort();
+    } catch {
+      inside = [];
+    }
+    folders.push({
+      name: e.name,
+      entries: inside,
+      contract: inside.includes(CONTRACT) ? await read(e.name + "/" + CONTRACT) : null,
+      extensions: inside.includes(EXTENSIONS) ? await read(e.name + "/" + EXTENSIONS) : null,
+      document: inside.includes(PAGE_DOCUMENT) ? await read(e.name + "/" + PAGE_DOCUMENT) : null,
+    });
+  }
+  return { loose, folders };
+}
+
+/** The framework's plugins as the mirror shows them, by id, walked to every
+ *  depth with the framework's own prefix rule: a folder under the mirror is its
+ *  name with `biom-` put on where it is missing, so `biom-doc/plugins/holds/`
+ *  is `biom-holds`. */
+export async function readShipped(mirror: string): Promise<Record<string, ShippedPlugin>> {
+  const out: Record<string, ShippedPlugin> = {};
+  const read = async (abs: string): Promise<string | null> => {
+    try {
+      return await readFile(abs, "utf8");
+    } catch {
+      return null;
+    }
+  };
+  const walk = async (dir: string): Promise<void> => {
+    let entries: { name: string; isDirectory(): boolean }[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || !PLUGIN_ID.test(e.name)) continue;
+      const id = e.name.startsWith(OURS) ? e.name : OURS + e.name;
+      const at = join(dir, e.name);
+      out[id] = { contract: await read(join(at, CONTRACT)), document: await read(join(at, PAGE_DOCUMENT)) };
+      await walk(join(at, "plugins"));
+    }
+  };
+  await walk(mirror);
+  return out;
+}
+
 /* ── reading a page off disk ────────────────────────────────────────────── */
 
 /** An empty report for a directory that could not be read at all. Written out
@@ -2725,7 +3037,7 @@ const noReport = (id: string, says: string): Report => ({
   fails: 1, warns: 0, ok: false, slots: [], artifacts: [], plugin: "html", sections: 0, defaults: 0,
 });
 
-export async function checkDir(dir: string, vault: VaultSource | null = null): Promise<Report> {
+export async function checkDir(dir: string, vault: VaultSource | null = null, contracts: Record<string, string[]> | null = null): Promise<Report> {
   const id = basename(dir.replace(/\/+$/, ""));
   const files: Record<string, string> = {};
   let doc: string | null = null;
@@ -2737,10 +3049,15 @@ export async function checkDir(dir: string, vault: VaultSource | null = null): P
     return noReport(id, "no such directory.");
   }
 
+  // THE PAGE'S OWN `plugins/`, the other reserved subdirectory: its plugins,
+  // and its rung over any plugin's variables. Read as the vault's is.
+  const plugins = entries.includes("plugins") ? await readPlugins(join(dir, "plugins")) : null;
+
   for (const name of entries) {
-    // `.` belongs to the tooling, and `children/` is where the page's children
-    // live — each is a page of its own and is checked as one.
-    if (name.startsWith(".") || name === "children") continue;
+    // `.` belongs to the tooling, `children/` is where the page's children
+    // live — each is a page of its own and is checked as one — and `plugins/`
+    // was read above.
+    if (name.startsWith(".") || name === "children" || name === "plugins") continue;
     // `_assets/` is the ONE directory that is read, one level down and html
     // only. An `html` part may name `_assets/<file>` and the server will find
     // it, so a checker that could not see in there reported every one of them
@@ -2777,7 +3094,7 @@ export async function checkDir(dir: string, vault: VaultSource | null = null): P
     else files[name] = text;
   }
 
-  return check({ id, doc, files, vault });
+  return check({ id, doc, files, vault, plugins, contracts });
 }
 
 /* ── reading the workspace off disk ─────────────────────────────────────── */
@@ -2828,7 +3145,9 @@ export async function readVault(root: string): Promise<VaultSource> {
   const theme = await read("theme.json");
   const pages = (await list("pages")).some((n) => !n.startsWith("."));
   const scale = await read(SCALE);
-  return { design, designFiles, theme, pages, scale };
+  const plugins = await readPlugins(join(root, "plugins"));
+  const shipped = await readShipped(join(root, "docs", "plugins"));
+  return { design, designFiles, theme, pages, scale, plugins, shipped };
 }
 
 /* ── saying it ──────────────────────────────────────────────────────────── */
@@ -2869,7 +3188,10 @@ if (import.meta.main) {
 
     let bad = 0;
     for (const dir of dirs) {
-      const report = await checkDir(dir);
+      // The vault's contracts travel with each page's own read, so a page's rung
+      // over the framework's document is held against what that document
+      // declares — and nothing about the vault is said per page.
+      const report = await checkDir(dir, null, source === null ? null : contractsOf(source));
       console.log(formatReport(report));
       if (!report.ok) bad++;
     }

@@ -133,12 +133,16 @@ export function weaveRuntime(html, input, vault) {
   const tags = headTags(vault) + inputTag(input);
   if (typeof html !== "string" || html.trim() === "") return `<!doctype html><html><head><meta charset="utf-8">${tags}</head><body></body></html>`;
   html = resolveSiblings(html, vault);
-  const head = html.match(/<head[^>]*>/i);
+  // `\b`, exactly as `frame.js` spells its own: `<head[^>]*>` matched the
+  // `<header id="g-head">` the doc document draws — the first time it was in
+  // the file's own header comment — and every runtime tag was woven into a
+  // comment, so the box loaded three inline scripts and nothing else.
+  const head = html.match(/<head\b[^>]*>/i);
   if (head && head.index !== undefined) {
     const at = head.index + head[0].length;
     return html.slice(0, at) + tags + html.slice(at);
   }
-  const open = html.match(/<html[^>]*>/i);
+  const open = html.match(/<html\b[^>]*>/i);
   if (open && open.index !== undefined) {
     const at = open.index + open[0].length;
     return html.slice(0, at) + "<head>" + tags + "</head>" + html.slice(at);

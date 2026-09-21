@@ -113,7 +113,7 @@
 // and the shipped default section is a string it is given rather than a file it
 // goes looking for.
 
-import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec } from "../../contracts/types.ts";
+import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec, PluginExtension } from "../../contracts/types.ts";
 import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
@@ -628,6 +628,38 @@ function sectionOf(value: unknown): Section | null {
   return out;
 }
 
+/** EVERY PAGE DIRECTORY IN A VAULT, in id order, the design doc's last — the
+ *  directories alone, with no document read out of any of them. The loader
+ *  asks this to find every page's own `plugins/`, and it is a walk of
+ *  `readdir` rather than of `content.yaml` because a bundle is asked for once
+ *  per box and a vault of three hundred pages must not parse three hundred
+ *  documents to answer. A directory is a page directory by position — under
+ *  `pages/` and under a `children/` — and not by holding a document: a
+ *  directory that has none has no page to read but may still hold plugins
+ *  somebody is about to write a page beside. */
+export async function pageDirs(files: Files): Promise<string[]> {
+  const out: string[] = [];
+  const dirs = async (rel: string): Promise<string[]> => {
+    let entries: { name: string; dir: boolean }[];
+    try {
+      entries = await files.list(rel);
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((e) => e.dir && SEGMENT.test(e.name))
+      .map((e) => e.name)
+      .sort();
+  };
+  const walk = async (dir: string): Promise<void> => {
+    out.push(dir);
+    for (const name of await dirs(`${dir}/${CHILDREN}`)) await walk(`${dir}/${CHILDREN}/${name}`);
+  };
+  for (const name of await dirs(PAGES_DIR)) await walk(`${PAGES_DIR}/${name}`);
+  out.push(DESIGN_DIR);
+  return out;
+}
+
 /** THE ONE PLACE A PAGE BECOMES A DIRECTORY, and it is a walk: `a/b/c` is
  *  `pages/a/children/b/children/c`.
  *
@@ -671,6 +703,11 @@ export const pageDocPath = (id: PageId): string => `${pageDir(id)}/${DOC}`;
  *  A table has no directory, so it is the one child the folder cannot state. Its
  *  parent is registry state and arrives here. */
 export type TableList = () => readonly { name: TableName; rows: number; parent: PageId | null }[];
+
+/** The merged variables of every plugin that declares any, for the page whose
+ *  directory is given — null for a page with none, which reads the framework's
+ *  and the vault's rungs alone. `makePlugins` in `plugins.ts` builds one. */
+export type ExtensionsFor = (pageDir: string | null) => Promise<Record<string, PluginExtension>>;
 
 /** WHAT A NEW VAULT'S ROOT PAGE SAYS, and it is every word on it.
  *
@@ -780,6 +817,12 @@ export const ROOT_PAGE_STANDIN =
  *   read-only — the last rung a page's document is resolved from. Left out, a
  *   page names a plugin the vault has not got and draws `MISSING_DOCUMENT`,
  *   which is what a test that stands the module up alone should see.
+ * @param extensionsFor EVERY PLUGIN'S VARIABLES, MERGED FOR ONE PAGE — the
+ *   contract, the vault's rung and the page's rung, one key at a time — handed
+ *   in by the composition root because `domain/plugins.ts` is this module's
+ *   sibling and the layering rule forbids reaching it. It takes the page's
+ *   directory, whose own `plugins/` is the nearest rung, and null for a page
+ *   that has no directory. Left out, every page reads no extensions at all.
  */
 export function makePages(
   files: Files,
@@ -789,6 +832,7 @@ export function makePages(
   rootName: string = "Home",
   rootPage: string = ROOT_PAGE_STANDIN,
   framework: Files | null = null,
+  extensionsFor: ExtensionsFor = async () => ({}),
 ): Pages {
   const dirOf = pageDir;
 
@@ -797,26 +841,49 @@ export function makePages(
    *
    *  THE ORDER IS THE WHOLE STATEMENT OF WHAT A PLUGIN IS, AND IT IS NEAREST
    *  FIRST. A page's OWN `index.html` wins, because a page that drew itself
-   *  asked for nothing else. Then one in this workspace's `plugins/`, which is
-   *  the person's — written by them, or copied in to be changed. Then the
-   *  FRAMEWORK'S OWN, which is never the winner: a vault file at the same path
-   *  always replaces it, and a vault that holds no such file follows every
-   *  framework release without a copy going stale. `MISSING_DOCUMENT` is what is
-   *  left underneath, reached only by a page naming a plugin nobody has.
+   *  asked for nothing else. Then one in the page's own `plugins/`, which
+   *  reaches this page alone. Then one in this workspace's `plugins/` under the
+   *  BARE name the page said, which is a plugin of the workspace's own. Then
+   *  the FRAMEWORK'S OWN under its `biom-` name, which a vault never shadows:
+   *  what a vault changes about the framework's document is its variables,
+   *  in a rung, and a vault that writes none follows every framework release.
+   *  `MISSING_DOCUMENT` is what is left underneath, reached only by a page
+   *  naming a plugin nobody has.
    *
    *  THE FRAMEWORK'S SET USED TO BE SEEDED INTO THE VAULT INSTEAD, so that the
    *  second rung was always occupied — and the cost, named at the time, was
-   *  that a framework fix never reached a copy already made. The last rung is
-   *  what pays that down: nothing is copied unasked, and what a person wants
-   *  to change they copy into `plugins/` themselves. */
+   *  that a framework fix never reached a copy already made; then a copy under
+   *  the prefixed name was the paved override, which was the same cost by
+   *  choice. Neither stands: nothing is copied unasked and nothing copied
+   *  shadows. `pluginDocument` below says the rest. */
   const htmlOf = async (id: PageId, doc: PageDoc): Promise<string> => {
-    const own = await files.read(`${dirOf(id)}/${PAGE_DOCUMENT}`);
+    const dir = dirOf(id);
+    const own = await files.read(`${dir}/${PAGE_DOCUMENT}`);
     if (own !== null) return own;
+    // THE PAGE'S OWN `plugins/` IS THE NEAREST RUNG FOR A DOCUMENT TOO: a plugin
+    // folder beside this page's `content.yaml`, under the bare name the page
+    // said, draws this page and no other. A `biom-` folder there is an
+    // extension and holds a rung alone, exactly as in the vault.
+    if (!doc.plugin.startsWith(OURS)) {
+      const mine = await files.read(`${dir}/${PLUGINS_DIR_VAULT}/${doc.plugin}/${PAGE_DOCUMENT}`);
+      if (mine !== null) return mine;
+    }
     return await pluginDocument(doc.plugin);
   };
 
   /** One plugin's document: the vault's own under the name the page said,
-   *  then the framework's under its `biom-` name. */
+   *  then the framework's under its `biom-` name.
+   *
+   *  THE VAULT'S IS READ UNDER THE BARE NAME AND NOWHERE ELSE, and that is the
+   *  rule rather than an omission. A vault folder wearing `biom-` is an
+   *  EXTENSION — it holds `extensions.yaml` and nothing more, and the loader
+   *  refuses anything else in it by name — so `plugins/biom-doc/index.html`
+   *  dropped into a vault is never a document that draws. There are no
+   *  file-based overrides: a workspace that wants a document of its own
+   *  writes `plugins/doc/index.html`, a plugin of the workspace's OWN, and
+   *  every page saying `plugin: doc` draws with it; one that wants the
+   *  framework's document to draw differently changes its variables in a
+   *  rung, or names a plugin of its own in one. */
   const pluginDocument = async (plugin: string): Promise<string> => {
     const mine = await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`);
     if (mine !== null) return mine;
@@ -1104,6 +1171,7 @@ export function makePages(
           html: await pluginDocument(MAP_PLUGIN),
           input: { rail: true },
           ports: null,
+          extensions: await extensionsFor(null),
         };
       }
       const dir = dirOf(id);
@@ -1118,7 +1186,7 @@ export function makePages(
       if (!("doc" in found)) {
         return {
           ...brokenRef(id), markdown: {}, variables: {}, sections: [],
-          plugin: DEFAULT_PLUGIN, html: MISSING_DOCUMENT, input: {}, ports: null,
+          plugin: DEFAULT_PLUGIN, html: MISSING_DOCUMENT, input: {}, ports: null, extensions: {},
         };
       }
       const doc = found.doc;
@@ -1181,6 +1249,10 @@ export function makePages(
         html: await htmlOf(id, doc),
         input: doc.input,
         ports: null, // declared, never enforced — the framework grants everything
+        // THE THREE RUNGS, MERGED FOR THIS PAGE. The page's own `plugins/` is
+        // the nearest, and it reaches this page alone: a child's read walks
+        // its own directory and never this one.
+        extensions: await extensionsFor(dir),
       };
 
       async function sectionOfPage(section: Section): Promise<DrawnSection | null> {

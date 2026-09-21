@@ -54,6 +54,7 @@
 /** @import { TerminalStore } from "../store/terminals.js" */
 /** @import { TerminalView } from "../views/terminal.js" */
 
+import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { remember } from "../platform/dom.js";
 import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
@@ -77,8 +78,10 @@ import { makeDock } from "./dock.js";
  * @property {(page: Page) => HTMLElement} page
  * @property {(view: TableView | null) => HTMLElement} table
  * @property {() => HTMLElement} vault
- * @property {() => HTMLElement} design
- * @property {() => HTMLElement} map
+ * @property {(page: Page) => HTMLElement} design THE DESIGN DOC, as the page
+ *   read the store made of `@design`.
+ * @property {(page: Page) => HTMLElement} map THE MAP, as the page read the
+ *   store made of `@map`.
  * @property {() => HTMLElement} runs THE OVERVIEW: running now, finished, Start.
  * @property {{ vault: () => HTMLElement, page: (page: Page) => HTMLElement }} instructions
  *   the workspace's INSTRUCTIONS.md with its skills, and a page's own.
@@ -313,18 +316,16 @@ export function makeShell(deps) {
       case "table":
         return ["table", r.id, w.table, w.pages];
       case "design":
-        // Nothing in the snapshot can see the design doc — it lives at
-        // `design/`, outside `pages/` — so there is nothing here to compare and
-        // the body is asked for exactly once per entry into the route, which is
-        // when the view re-reads. `reloads` is the other way in: pressing Reload
-        // on this screen has to re-read the doc an agent may have just rewritten,
-        // and it is the only signal the shell has that says so.
-        return ["design", reloads];
+        // THE DESIGN DOC IS READ LIKE A PAGE: `@design` is opened through the
+        // store, and what the view takes is that read, so the inputs are the
+        // page's — the read itself, and `pages`, because the doc plugin's
+        // document reads its own rungs off the read and a redraw is a new one.
+        return ["design", w.page, w.pages, missing.has(DESIGN_PAGE)];
       case "map":
-        // The map reads the whole workspace itself, over its port, and re-reads
-        // on every refresh the box is sent — so the body is built once per entry
-        // into the route and nothing in the snapshot has to be compared.
-        return ["map"];
+        // THE MAP TOO: `@map` is a page read the server answers with the
+        // mindmap plugin's document. The map reads the whole workspace itself,
+        // over its port, and re-reads on every refresh the box is sent.
+        return ["map", w.page, missing.has(MAP_PAGE)];
       case "runs":
         // The overview reads the registry itself and rereads on the stream and
         // on its own clock, so it is built once per entry into the route.
@@ -395,13 +396,24 @@ export function makeShell(deps) {
         if (w.table && w.table.schema.name === route.id) return views.table(w.table);
         return h("p.hold", "Opening…");
       }
-      case "design":
+      case "design": {
         // The doc view, over the design source. Not a second renderer: a doc is
-        // a preset, and this is the proof.
-        return views.design();
-      case "map":
-        // The whole workspace as a sky, drawn by the shipped map plugin.
-        return views.map();
+        // a page, read through `page.read` as `@design` and drawn like one — and
+        // a workspace whose `design/` is gone is told so rather than left at
+        // "Opening…", exactly as a page that is not there is.
+        if (missing.has(DESIGN_PAGE)) return h("p.hold", "There is no design doc in this workspace — design/content.yaml is missing.");
+        const page = w.page;
+        if (!page || page.id !== DESIGN_PAGE) return h("p.hold", "Opening…");
+        return views.design(page);
+      }
+      case "map": {
+        // The whole workspace as a sky, drawn by the map plugin's document the
+        // server resolved for `@map`.
+        if (missing.has(MAP_PAGE)) return h("p.hold", "The map could not be read.");
+        const page = w.page;
+        if (!page || page.id !== MAP_PAGE) return h("p.hold", "Opening…");
+        return views.map(page);
+      }
       case "runs":
         // What is running across the workspace, and Start.
         return views.runs();
@@ -950,7 +962,10 @@ export function makeShell(deps) {
     /** @type {[string, string][]} */
     const items = [];
 
-    if (route.view === "page" && w.page && w.page.id === route.id) {
+    // THE DESIGN DOC AND THE MAP ARE PAGE READS TOO, so the same report is
+    // given for them: the design doc declares sections and the map none.
+    const shown = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
+    if (shown !== null && w.page && w.page.id === shown) {
       const page = w.page;
       // DECLARED, THEN DRAWN, and they are two items because they can disagree.
       // The first is what `content.yaml` says the page is; the second is what the
@@ -1123,9 +1138,16 @@ export function makeShell(deps) {
       // the mount; the new realm is put back there on its `ready`, clamped to
       // whatever the page is now. It is said here and nowhere else, so a page
       // navigated to starts at the top and only a redraw keeps its place.
+      const reserved = route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
       if (route.view === "page" && route.id) {
         frameHost.keep(route.id);
         await ws.reloadPage(route.id);
+      } else if (reserved !== null) {
+        // The design doc and the map are pages read under reserved ids, and a
+        // reload of either is a page reload: the box torn down, the read taken
+        // again from disk, the reader's place kept.
+        frameHost.keep(reserved);
+        await ws.reloadPage(reserved);
       } else if (route.view === "table" && route.id) await ws.loadTable(route.id);
       await ws.loadTree();
     } catch (err) {
@@ -1175,12 +1197,15 @@ export function makeShell(deps) {
     const { route } = ui.get();
     const w = ws.get();
 
-    if (route.view === "page" && route.id && !missing.has(route.id)) {
-      if (w.page && w.page.id === route.id) return;
-      const key = "page:" + route.id;
+    // THE DESIGN DOC AND THE MAP ARE PAGES UNDER RESERVED IDS, fetched exactly
+    // as a routed page is: the id is the route's, and the read is a page read.
+    const wanted = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
+    if (wanted && !missing.has(wanted)) {
+      if (w.page && w.page.id === wanted) return;
+      const key = "page:" + wanted;
       if (awaiting === key) return;
       awaiting = key;
-      const id = route.id;
+      const id = wanted;
       ws.loadPage(id)
         .then((page) => { if (!page) { missing.add(id); paint(); } })
         .catch((err) => { troubled = message(err); paint(); })

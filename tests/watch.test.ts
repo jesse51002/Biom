@@ -165,10 +165,36 @@ test("the content baseline answers about content and forgets a whole subtree", (
   expect(seen.matches(a, "name: Home\n")).toBe(true);
   expect(seen.matches(a, "name: Away\n")).toBe(false);
 
+  // A SIGHTING IS KNOWN AND SILENCES NOTHING. What a read found is a baseline
+  // for whether this process has seen the path at all — a page directory's
+  // departure is told by it — and never for dropping a notification, because
+  // the read may have landed after the outside write the notification is
+  // about. Sighting the bytes already noted keeps the note.
+  seen.sight(a, "name: Home\n");
+  expect(seen.matches(a, "name: Home\n")).toBe(true);
+  seen.sight(a, "name: Away\n");
+  expect(seen.known(a)).toBe(true);
+  expect(seen.matches(a, "name: Away\n")).toBe(false);
+  expect(seen.matches(a, "name: Home\n")).toBe(false);
+  const b = join("/w", "pages", "home", "children", "b", "content.yaml");
+  seen.sight(b, "name: B\n");
+  expect(seen.known(b)).toBe(true);
+  expect(seen.matches(b, "name: B\n")).toBe(false);
+  seen.note(b, "name: B\n");
+  expect(seen.matches(b, "name: B\n")).toBe(true);
+
+  // A DIRECTORY IS NEVER NOTED, but what was read inside it is, and that is
+  // how a departed folder is recognised: a page's `plugins/` deleted whole is
+  // the folder's path and nothing else on the watch.
+  expect(seen.holds(join("/w", "pages", "home"))).toBe(true);
+  expect(seen.holds(join("/w", "pages", "hom"))).toBe(false);
+  expect(seen.holds(join("/w", "pages", "home", "content.yaml"))).toBe(false);
+
   // A page removed takes its files' baselines with it, so a page written again
   // under that name reads as changed rather than as what used to be there.
   seen.forget(join("/w", "pages", "home"));
   expect(seen.known(a)).toBe(false);
+  expect(seen.holds(join("/w", "pages", "home"))).toBe(false);
 });
 
 /* ── the watch itself ──────────────────────────────────────────────────── */
@@ -408,6 +434,10 @@ test("a page deleted from outside loses its markdown", async () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "content.yaml"), "name: Removed\nplugin: doc\ncontents: []\n", "utf8");
     expect(await until(() => Bun.file(mirror).size > 0)).toBe(true);
+    // The arrival's own event, before the departure's is counted from: the
+    // mirror is written before the subscribers are told, so a count taken
+    // between the two would be satisfied by the arrival.
+    expect(await until(() => heard.get() > 0)).toBe(true);
 
     // A PAGE DIRECTORY TAKEN AWAY FROM OUTSIDE. The only notification this gets
     // is the BARE DIRECTORY PATH, reported on the parent's watch — measured, and
@@ -426,6 +456,164 @@ test("a page deleted from outside loses its markdown", async () => {
     // The parent is re-projected, because a parent lists its children and has
     // just lost one.
     expect(await Bun.file(join(g.at("one"), "_markdown", "home.md")).exists()).toBe(true);
+
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("a page's plugins/ deleted whole from outside is a change to that page", async () => {
+  // THE ONLY NOTIFICATION IS THE BARE FOLDER PATH, exactly as a page directory's
+  // is — and `plugins/` holds no `content.yaml` to probe. What this process
+  // knew about it is the rung it read inside, so the departure is recognised
+  // by what was beneath the path, and the page whose rung just went redraws.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+    const dir = pageDir(g.at("one"), "home");
+    const rung = join(dir, "plugins", "biom-doc");
+    await mkdir(rung, { recursive: true });
+    await writeFile(join(rung, "extensions.yaml"), "foot:\n", "utf8");
+    const before = heard.get();
+    expect(await until(() => heard.get() > before)).toBe(true);
+
+    // Read through the page, so the rung is in the baseline.
+    const deps = await host.deps(g.at("one"));
+    const read = (await deps.pages.read("home"))!;
+    expect(read.extensions["biom-doc"]?.from.foot).toBe("page");
+
+    const heardBefore = heard.get();
+    await rm(join(dir, "plugins"), { recursive: true, force: true });
+    expect(await until(() => heard.get() > heardBefore)).toBe(true);
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("a page made through the app is not a change, and the pages beside it keep their baselines", async () => {
+  // THE DIRECTORY ABOVE A NEW PAGE CHANGES TOO. `pages/home/children` gains an
+  // entry, and the notification for it is a bare path holding no `content.yaml`
+  // — the same shape a departed page directory has. It is NOT departed: it is
+  // still there, and everything this process knows beneath it is every page
+  // in it. Read as gone, it forgot every one of those baselines and redrew the
+  // page just made, a second draw that an outside write then landed in the
+  // middle of — measured, in the end-to-end walk, as a page that never redrew.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    // A sibling already on disk and read, so its baseline is there to lose.
+    const other = pageDir(g.at("one"), "home/other");
+    await mkdir(other, { recursive: true });
+    await writeFile(join(other, "content.yaml"), "name: Other\nplugin: doc\ncontents: []\n", "utf8");
+    value(await call(host, g.at("one"), { kind: "page.read", page: "home/other" }));
+
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+
+    // NEW, in the app: the document, the child.html copied beside it, the
+    // commit, the mirror. None of it reaches the screen — and the entry the
+    // parent's `children/` gained is nothing that happened to the parent.
+    const made = value(await call(host, g.at("one"), { kind: "page.create", init: { name: "Made" } })) as { id: string };
+    expect(made.id).toBe("home/Made");
+    await quiet(1200);
+    expect(heard.get()).toBe(0);
+
+    // AND THE SIBLING'S BASELINE SURVIVED: the app's next write to it is still
+    // dropped, which it would not be had the directory's notification forgotten
+    // everything beneath it.
+    value(await call(host, g.at("one"), { kind: "doc.writeRaw", page: "home/other", text: "name: Other\nplugin: doc\ncontents: []\nvariables:\n  touched: yes\n" }));
+    await quiet(1200);
+    expect(heard.get()).toBe(0);
+
+    // The watch is still live: an outside write to the new page redraws it.
+    await writeFile(join(pageDir(g.at("one"), "home/Made"), "content.yaml"),
+      "name: Made\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body: An agent wrote this.\n", "utf8");
+    expect(await until(() => heard.get() > 0)).toBe(true);
+
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("an outside write is reported even when this process reads the page before the watcher's verdict", async () => {
+  // THE READ THAT LANDS IN THE WINDOW. A notification is coalesced for SETTLE
+  // ms, and in that window the server reads pages all the time: the box asks
+  // for the one it is drawing, the mirror reads a page to project it. Such a
+  // read used to set the baseline to the new bytes, the verdict then found the
+  // file matching its baseline, and the one change somebody outside had just
+  // made was dropped as nothing that happened — measured as a page that never
+  // redrew, about one run in two of the end-to-end walk. A read is a sighting
+  // now, and a sighting silences nothing.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    const dir = pageDir(g.at("one"), "home/raced");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "content.yaml"), "name: Before\nplugin: doc\ncontents: []\n", "utf8");
+    value(await call(host, g.at("one"), { kind: "page.read", page: "home/raced" }));
+
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+
+    // The outside write, and a read of it before SETTLE can have elapsed —
+    // the projection's, which is the read the walk measured, and the box's.
+    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: doc\ncontents: []\n", "utf8");
+    value(await call(host, g.at("one"), { kind: "page.projection", page: "home/raced", markdown: "" }));
+    const seen = value(await call(host, g.at("one"), { kind: "page.read", page: "home/raced" })) as { name: string };
+    expect(seen.name).toBe("After");
+
+    expect(await until(() => heard.get() > 0)).toBe(true);
+
+    // AND ONLY ONCE THE WATCHER HAS REPORTED IT is the same content quiet: the
+    // notification for an identical rewrite is nothing that happened.
+    await quiet(300);
+    const once = heard.get();
+    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: doc\ncontents: []\n", "utf8");
+    await quiet(1200);
+    expect(heard.get()).toBe(once);
+
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("a page deleted from outside is reported even when this process misses it before the watcher's verdict", async () => {
+  // THE SAME WINDOW, FOR A DEPARTURE. A parent projected while one of its pages
+  // was being deleted read that page's file, missed, and used to FORGET it —
+  // and the directory notification that followed, which is all a departing
+  // page gets, found nothing this process had ever known there and dropped
+  // it. The mirror kept a file about a page that was gone. A miss forgets
+  // nothing now; the watcher forgets when it reports.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+    const mirror = join(g.at("one"), "_markdown", "home", "going.md");
+    const dir = pageDir(g.at("one"), "home/going");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "content.yaml"), "name: Going\nplugin: doc\ncontents: []\n", "utf8");
+    expect(await until(() => Bun.file(mirror).size > 0)).toBe(true);
+    expect(await until(() => heard.get() > 0)).toBe(true);
+    const before = heard.get();
+
+    await rm(dir, { recursive: true, force: true });
+    // The miss, inside the window: the page read and not there.
+    const gone = await call(host, g.at("one"), { kind: "page.read", page: "home/going" });
+    expect(gone.ok).toBe(false);
+
+    expect(await until(() => heard.get() > before)).toBe(true);
+    expect(await until(async () => !(await Bun.file(mirror).exists()))).toBe(true);
 
     off();
   } finally {

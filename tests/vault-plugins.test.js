@@ -34,7 +34,7 @@ function box() {
   // can never be refused as the duplicate of one the framework ships later. A
   // bare id still answers — `get("items")` falls back to `biom-items` — which
   // is what every page and slot relies on.
-  for (const id of ["items", "open-list", "checklist", "reveal"]) load(`plugins/biom-${id}.js`);
+  for (const id of ["items", "open-list", "checklist", "reveal"]) load(`plugins/biom-${id}/${id}.js`);
   return { plugins: glob.__gRuntime.plugins, said, done: () => { delete glob.document; } };
 }
 
@@ -80,7 +80,7 @@ test("a workspace plugin under the bare name is what the bare name reaches, and 
   // every section saying `reveal` draws with the workspace's.
   const g = box();
   const glob = /** @type {any} */ (globalThis);
-  glob.__gRuntime.pluginFile = "reveal.js";
+  glob.__gRuntime.pluginFile = "reveal/reveal.js";
   expect(g.plugins.register({ id: "reveal", mount() {} })).toBe(true);
   expect(g.plugins.get("reveal").id).toBe("reveal");
   expect(g.plugins.get("biom-reveal").id).toBe("biom-reveal");
@@ -213,7 +213,7 @@ const skill = (name) =>
 
 test("the seeded AGENTS.md carries modularity, and the skills where the work happens echo it", () => {
   expect(AGENTS).toContain("even a small chance");
-  expect(AGENTS).toContain("plugins/<id>.js");
+  expect(AGENTS).toContain("plugins/<id>/<id>.js");
   // `plugins` is where the route is, so that is where the rule has to be
   // actionable rather than merely stated.
   expect(skill("plugins")).toContain("even a small chance");
@@ -340,7 +340,7 @@ function fence(info, source) {
   return { box, pre, code };
 }
 
-/** Load `guest/plugins/biom-markdown.js` and reach its private `upgradeFences` the
+/** Load `guest/plugins/biom-markdown/markdown.js` and reach its private `upgradeFences` the
  *  way a page reaches it: through `mount`. Markdown-it is stubbed to a renderer
  *  that draws nothing, because the rendered HTML is not what is under test —
  *  `tests/markdown.test.js` holds the real parser to the joint this relies on,
@@ -348,11 +348,11 @@ function fence(info, source) {
 function fences(registered, made) {
   const glob = /** @type {any} */ (globalThis);
   const said = [];
-  // THE LOADER NAMES THE FILE, and it has to here: `biom-markdown` is the
-  // framework's plugin for a part kind, so only `plugins/biom-markdown.js` may
-  // register it. Left unset the registry refuses the registration, and the
-  // test below would be testing the refusal.
-  glob.__gRuntime = { report: (m) => said.push(m), pluginFile: "biom-markdown.js" };
+  // THE LOADER NAMES THE FILE AND ITS ROOT, and it has to here: `biom-markdown`
+  // is the framework's plugin for a part kind, so only the framework's
+  // `biom-markdown/` folder may register it. Left unset the registry refuses
+  // the registration, and the test below would be testing the refusal.
+  glob.__gRuntime = { report: (m) => said.push(m), pluginFile: "biom-markdown/markdown.js", pluginRoot: "framework" };
   delete glob.biom;
   glob.document = {
     currentScript: null,
@@ -364,7 +364,7 @@ function fences(registered, made) {
     parse: () => [],
   });
   new Function(readFileSync(new URL("../guest/runtime/registry.js", import.meta.url), "utf8"))();
-  new Function(readFileSync(new URL("../guest/plugins/biom-markdown.js", import.meta.url), "utf8"))();
+  new Function(readFileSync(new URL("../guest/plugins/biom-markdown/markdown.js", import.meta.url), "utf8"))();
 
   /** @type {{id: string, source: string}[]} */
   const drew = [];

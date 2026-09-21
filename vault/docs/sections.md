@@ -22,6 +22,8 @@ Everything below this line is about `plugin: doc`.
 ```yaml
 name: Q3 review                 # what a reader sees. Optional; the directory's
                                 # last segment stands in, but that is an id
+uid: qm4vxbco4bt2xruw           # the framework's, written in the first time the
+                                # page is opened. Leave it alone; never type one
 plugin: doc
 variables:                      # this page's own values. See variables.md
   quarter: Q3
@@ -197,7 +199,7 @@ refused the same way. A row shorter than the widest is padded with empty cells
 on the right when the page is read, so a column is a column all the way down;
 write every row the same length and the file says what the page shows.
 
-It is drawn as a board by the framework's `biom-grid` — or by a `plugins/grid.js`
+It is drawn as a board by the framework's `biom-grid` — or by a `plugins/grid/`
 of this workspace's own, which wins by existing — and **edited a cell at a time**:
 click a cell and it opens as its raw markdown, Enter or leaving it writes the
 rows back, Escape puts it back. A row or a column is added or removed from the

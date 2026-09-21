@@ -105,7 +105,7 @@ contents:
 
 **Drawn in HTML, and animated.** A figure is elements in the section's own markup — grid and flex for the layout, borders and backgrounds on the palette's tokens for the ink — never a raster and never a screenshot of a chart. Its words come out of the section's `variables`, so the figure is edited in the document. And it moves when it arrives: the bars grow, the edge draws itself, the reached step lights. The animation is a reveal, once, on the `--motion` switch, so a reduced-motion reader gets the finished figure and nothing else; a loop that decorates is the same ornament as a figure that says nothing. `base/` holds starters that already do both — copy one rather than drawing the first bar from nothing. **A diagram of what connects to what is no exception**: it is the same drawing with boxes and edges in it, laid out by the section's own script from the nodes and edges in its `variables`, and `base/diagram/` is that starter — [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md).
 
-**A drawing with even a small chance of being wanted on a second page is a PLUGIN and not a copy in this section** — `plugins/<id>.js`, from the start. That is the other rule at the top of `AGENTS.md`, and [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §3 is the route.
+**A drawing with even a small chance of being wanted on a second page is a PLUGIN and not a copy in this section** — `plugins/<id>/<id>.js`, a folder, from the start. That is the other rule at the top of `AGENTS.md`, and [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §3 is the route.
 
 **What a figure LOOKS like is `design/`**, which is authoritative over your taste; read it before drawing one. [`../biom-diagrams/SKILL.md`](../biom-diagrams/SKILL.md) is the other family — what is connected to what.
 
@@ -131,7 +131,7 @@ contents:
 tree, the folder as the hierarchy, the id grammar, what a page directory holds and
 what sits beside `pages/`. Read it once; the rules it produces are here.
 
-**R1 — a directory is a page if and only if it holds `content.yaml`, and that file has to read back as a page.** Without one it is not an empty page, it is not a page at all: the host answers `not_found` and the rail does not list it. `children/` is not a page; it is where pages live. `content.yaml` is **required**, and the same rule covers the document's shape all the way down — a `contents` that is not a list, an entry in it that is not a map, a `parts` that is not a map. *(FAIL)*
+**R1 — a directory is a page if and only if it holds `content.yaml`, and that file has to read back as a page.** Without one it is not an empty page, it is not a page at all: the host answers `not_found` and the rail does not list it. `children/` is not a page; it is where pages live. `content.yaml` is **required**, and the same rule covers the document's shape all the way down — a `contents` that is not a list, an entry in it that is not a map, a `parts` that is not a map — and its top level, which is closed: `name`, `uid`, `plugin`, `variables`, `contents`, `input` and nothing else. `uid` is the framework's, written into every page the first time it is opened; leave it where it is and never type one — the parser refuses a `uid` it did not mint. *(FAIL)*
 
 **R6 — the ids are the format.** A directory name is one segment of a page id and matches `^[A-Za-z0-9][A-Za-z0-9_-]*$`; the page's id is the segments from the root, joined with `/`. Case is part of the id and is kept, with one rule against it: two siblings may not differ only in case. A section name matches `^[a-z][a-z0-9_-]*$` and never contains a dot, and so does a slot id. A section the host cannot name is skipped and never draws, because a name is how the editor reorders it, how the runtime redraws it, and how every finding about it is addressed. *(FAIL)*
 
@@ -150,7 +150,7 @@ every key a page and a section may carry, the keys that are refused by name and
 what replaced each, `contents` as the order, and the shipped default section. The
 rules it produces are here.
 
-**R61 — the plugin a page names has to be able to draw it.** The host looks in three places, in order: the page's own `index.html`, then this workspace's `plugins/<id>/index.html` — an override, if you made one — then the framework's own `<id>/index.html`, which is never the winner. A page that names a plugin nobody has draws a stand-in saying so, which is a page nobody can use.
+**R61 — the plugin a page names has to be able to draw it.** The host looks in three places, in order: the page's own `index.html`, then this workspace's `plugins/<id>/index.html` under the bare name — a plugin of your own — then the framework's own `biom-<id>/index.html`, which a workspace never shadows. A page that names a plugin nobody has draws a stand-in saying so, which is a page nobody can use.
 
 **The checker can only see the first of the three**, because it is handed one page directory and cannot see the workspace or the framework around it — so a page naming a plugin the checker cannot find is never a finding, and might well be the framework's own. What it does report is the case with no ambiguity in it: **a page that names no plugin, and therefore draws its own `index.html`, and has no `index.html`.** *(FAIL.)*
 
@@ -321,7 +321,7 @@ Complete. The **Skill** column says which file carries the prose; the number is 
 | R47 | The keys a page states itself: `name` and `contents` | pages | WARN/FAIL |
 | R48 | A slot's value is a string, a `Content`, or a LIST of either; a content has no name | pages | FAIL |
 | R49 | The part types, and `data` read the right way for each | pages | FAIL |
-| R50 | A part kind is drawn by `plugins/<kind>.js`, and one file owns each id | plugins | FAIL |
+| R50 | A part kind is drawn by `plugins/<kind>/`, and one folder owns each id | plugins | FAIL |
 | R51 | A slot's id is its key in `parts`, and the markup declares it | pages | FAIL/WARN |
 | R53 | The workspace never chose its own palette or wrote its own design doc | design | WARN |
 | R54 | A line in a type scale the reader threw away | markdown | WARN |
@@ -335,6 +335,10 @@ Complete. The **Skill** column says which file carries the prose; the number is 
 | R62 | A grid is square — every row as long as the widest, a row a list, a cell text | tables | WARN / FAIL |
 | R63 | A grid's head is a row — `head` true or false, and a header with a row under it | tables | FAIL / WARN |
 | R64 | A bare pipe in a grid cell — outside a wikilink or a code span — is kept as a character and reported, because it is usually a row pasted into a cell | tables | WARN |
+| R65 | A loose `plugins/<id>.js` — a plugin is a folder, and the finding names the one to move it into | plugins | FAIL |
+| R66 | A `biom-` folder in `plugins/` holding anything beside `extensions.yaml` — it is an extension, not a copy | plugins | FAIL |
+| R67 | A key in an `extensions.yaml` that the plugin's `plugin.yaml` does not declare — a typo that draws nothing | plugins | FAIL |
+| R68 | A bare-named document in `plugins/` that is a copy of the framework's — it draws, and stops following the framework; an extension would do | plugins | WARN |
 
 **R50 is the one number in here that `.agents/skills/check.ts` does not cite.** It is checked where plugins register, in the box, rather than where pages are read — see [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md).
 

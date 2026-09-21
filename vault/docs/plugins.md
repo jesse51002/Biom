@@ -5,101 +5,190 @@ prose in a slot is the `markdown` plugin, a grid is `table`, a child's row is
 `child`, and the document itself is `doc`. There is no privileged path underneath
 any of them.
 
-## The framework's plugins draw your pages until you put a file at the same path in `plugins/`
+## Every plugin is a folder, and the folder has one shape
 
-**Every plugin the framework ships is called `biom-<name>`, file and id alike,
-and you keep saying the bare name.** `plugin: doc` in a page, `data-g-plugin="reveal"`
-in a section and a `markdown` slot all resolve nearest-first: a plugin of yours
-under that name if you wrote one, the framework's `biom-doc`, `biom-reveal` or
-`biom-markdown` otherwise. So a plugin you write can never share a name with one
-the framework ships later — under bare names it would have been refused as the
-framework's duplicate on every page, the day the framework shipped it, with
-nothing saying so.
-
-**Your `plugins/` folder holds only what you wrote or overrode.** Nothing is
-copied into it. The framework's own plugin set is the rung underneath: when a
-page names a plugin, the server looks in your folder first and in the
-framework's set second, so a fresh workspace has no `plugins/` at all and every
-page still draws, and every workspace follows a framework release the moment it
-is installed. The filename alone says which kind a plugin is:
+**`plugins/<id>/` is a plugin, and there is no other shape.** Directly inside
+it:
 
 ```
-plugins/callout.js            <- a SLOT plugin: a classic script that registers an id
-plugins/timeline/index.html   <- a PAGE plugin: the document a page names with `plugin: timeline`
+plugins/timeline/
+  timeline.js         <- every .js directly inside is the plugin's own script, loaded in name order
+  index.html          <- if present, the document a page names with `plugin: timeline`
+  plugin.yaml         <- its variables, each with its default — flat, a key and a value, nothing around them
+  plugins/            <- inner plugins, each a folder of this same shape, to any depth
+    marks/
+      marks.js
 ```
+
+**The shape is the same in the three places a plugin folder can sit** — the
+framework's own set, this workspace's `plugins/`, and a page's own `plugins/`
+beside its `content.yaml` — and the loader refuses anything else by name. A
+loose `plugins/reveal.js` is the old shape, and the page tells you where to
+move it: `mkdir plugins/reveal && mv plugins/reveal.js plugins/reveal/` is the
+whole migration. A folder whose name is not an id — `My Plugin/` — is refused
+the same way. Anything else loose in `plugins/` — a README, a note — is left
+alone.
+
+**The folder is the id.** `plugins/timeline/` is `timeline`, whatever its
+scripts are called. Inner ids are free: a script under `plugins/timeline/plugins/marks/`
+registers whatever it registers, and the folder is organisation rather than a
+namespace. A page's `plugins/` sits beside `content.yaml` and `children/`,
+never inside `children/`, so a page may still be called `plugins`.
+
+## The framework's plugins are the rung underneath yours
+
+**Every plugin the framework ships is called `biom-<name>`, folder and id
+alike, and you keep saying the bare name.** `plugin: doc` in a page,
+`data-g-plugin="reveal"` in a section and a `markdown` slot all resolve
+nearest-first: a plugin of yours under that name if you wrote one, the
+framework's `biom-doc`, `biom-reveal` or `biom-markdown` otherwise. So a plugin
+you write can never share a name with one the framework ships later — under
+bare names it would have been refused as the framework's duplicate on every
+page, the day the framework shipped it, with nothing saying so. **And a script
+of yours may not register a `biom-` id**: the prefix is the framework's, and
+the registry refuses one by name.
+
+**Your `plugins/` folder holds only what you wrote, and what you changed about
+the framework's.** Nothing is copied into it. When a page names a plugin, the
+server looks in your folder first and in the framework's set second, so a
+fresh workspace has no `plugins/` at all and every page still draws, and every
+workspace follows a framework release the moment it is installed.
 
 **To read one, open `docs/plugins/`.** The server writes the framework's whole
-plugin set there every time the workspace opens — the same bytes that draw your
-page. It is a mirror, not a source: nothing reads it to draw, a file edited
-there is gone on the next open, and it is kept out of the workspace's history.
+plugin set there every time the workspace opens — the same folders, the same
+bytes that draw your page, `plugin.yaml` included. It is a mirror, not a
+source: nothing reads it to draw, a file edited there is gone on the next
+open, and it is kept out of the workspace's history.
 
-**To change one, override it: put a file in `plugins/` at the same PREFIXED
-path.** The paved way is a copy of the whole plugin out of the mirror —
-`plugins/biom-kanban/` from `docs/plugins/biom-kanban/`, `plugins/biom-markdown.js`
-from `docs/plugins/biom-markdown.js` — and from that moment your copy draws, the
-framework's is ignored, and your copy no longer follows framework updates. That
-is the deal every override has, and you take it one plugin at a time. A file
-under the BARE name is not an override but a plugin of your own, which the bare
-name reaches first; both work, and the first is the one that says what it is.
-**Copy a plugin whole**: resolution is per file, so a `plugins/biom-kanban/index.html`
-on its own still gets the framework's `biom-kanban/kanban.js` underneath it,
-which is right for a partial override and surprising for somebody who wanted
-isolation.
+## A plugin's variables come in three rungs, and that is how you change one
 
-**Deleting an override is how you go back.** Nothing writes the file again, and
-the framework's own draws on the next read.
+**A plugin declares the variables it reads, each with a default, in its own
+`plugin.yaml`.** The framework's document, for instance:
 
-**A copy that was already in `plugins/` stays there, and it is yours now.**
-Workspaces made before this existed were seeded with a copy of every plugin,
-under the bare names, and those copies went stale. Nothing on open removes
-them: a file in `plugins/` is a file of yours, whether you wrote it or a seed
-did, and a bare copy of `markdown.js` draws in place of the framework's
-`biom-markdown.js` — as it stood the day it was copied. If you never edited
-those copies, delete them, and the framework's current plugins draw from then
-on; if you edited one, keep it as the override it already is. This is a
-breaking change, made once, and the delete is the whole migration.
+```yaml
+head:               # the plugin mounted before the stack — nothing, by default
+foot: biom-holds    # the plugin mounted after it — the framework's board of children
+rows: false         # whether the bare child rows are drawn as well
+convert: true       # whether a markdown table in a prose part is cut out into a grid section
+```
 
-## How a slot plugin gets loaded
+**You change a variable in `plugins/biom-<id>/extensions.yaml`**, and a page
+changes it again for itself in the same file beside its own `content.yaml`:
+
+```
+plugins/biom-doc/extensions.yaml                       <- this workspace's rung
+pages/home/children/Specs/plugins/biom-doc/extensions.yaml   <- that page's rung, reaching that page only
+```
+
+**Nearest wins, one key at a time.** The plugin's own defaults, then the
+workspace's file, then the page's: a rung naming one variable changes that one
+and every other keeps the rung beneath. A variable is a scalar or a list of
+scalars, never a map, so there is nothing deeper to merge. **Empty is a value**:
+`foot:` with nothing after it wins over the rung beneath and mounts nothing.
+Deleting a rung's file is the whole undo.
+
+**A value is typed by its default's own type.** `true` makes a boolean, `3` a
+number, a list a list of scalars, a word a string — and a null default, like
+`head:` above, accepts anything. What is refused, in a sentence naming the file,
+the plugin and the key, with the page drawing on the rung beneath: a map where
+a scalar goes; a key the plugin does not declare, which is a typo; a value of
+the wrong type; and a file that will not parse, which is skipped whole. The
+sentence reaches the page's console and the status strip, once, and the checker
+says it too.
+
+**A folder wearing `biom-` holds `extensions.yaml` and nothing else.** It is an
+extension of the framework's plugin, not a copy of it: a script or a document
+dropped into it is refused by name and never draws. There are no file-based
+overrides. A workspace that wants a document of its own writes a plugin of its
+own under a bare name — `plugins/doc/index.html` — and every page saying
+`plugin: doc` draws with it; from that day it is yours to keep current.
+
+**A plugin reads its variables in the box through `biom.plugin.extensions()`** —
+its own when the id is left out, any plugin's by id — merged by the server and
+carried on the page read, so the answer is there synchronously and current on
+every draw. The framework carries the values and reads none of them: what
+`head` means is the document's business, and its `plugin.yaml` is where it
+says so. Nothing enforces the file at run time; it is read to merge, by the
+checker to catch a typo, and by you to know what a plugin can be told.
+
+## A variable can name a plugin, and that is how a piece is swapped or added
+
+**The `doc` document draws one node before the stack and one after, reads
+`head` and `foot`, and mounts the plugin each names** — exactly as a section
+mounts a `data-g-plugin` node, with the same context and the same containment,
+so a plugin that throws fails in its node in words and the stack draws. That is
+the document reading two of its own variables, not a framework feature: the
+runtime has no notion of a point, and a plugin that wants extending draws a
+node and reads a variable.
+
+So the board of children under every document is `foot: biom-holds`, one line
+in the framework's own `plugin.yaml`. Another board is `foot: my-board` in a
+rung and a plugin of yours called `my-board`. No board is `foot:` with nothing
+after it. A look for the board is a plugin of yours named at `head` that
+appends a `<style>` — a plugin mounted from a document's variable may carry a
+look, because the document asked for it. And the board is an ordinary plugin,
+so a section may place it where it likes with `<div data-g-plugin="biom-holds">`
+and the page's rung empties `foot`.
+
+**The order to try things in**: change a variable where the plugin declares
+one; name a plugin of your own in a variable where the plugin reads one; write a
+plugin of your own under a bare name where you want the whole thing. The first
+two follow every framework release. The third is yours to keep current, and
+that is the whole of what it costs.
+
+## How the plugins get loaded
 
 `GET /v/<vault>/plugin/` — the route with nothing appended — answers **one
-script: the framework's slot plugins minus every name your `plugins/` also has,
-then your own, each set in id order.** A `plugins/markdown.js` of yours means the
-framework's `markdown.js` never enters the script, so a name is drawn by one file.
-The framework's go first, so a plugin of yours that uses one finds it registered.
-Each file is preceded by a comment naming it and its root, and wrapped in its own
-function, so **one broken plugin is one broken plugin** rather than a workspace
-whose every page draws nothing. The failure reads `plugins/<file> did not load: …`
-or `framework/<file> did not load: …`, naming the file and which copy, rather than
-a slot somewhere saying *no plugin named "…" is registered* — which reads as the
-page author's bug and is the plugin's.
+script: every plugin folder in the framework's set, then in your `plugins/`,
+then in every page's own `plugins/` in page order; within a folder its own
+scripts in name order, then its inner plugins.** A page-level plugin's script
+loads on every page and only that page's rung names it — the cost of one tag
+that is the same for every page, and cheaper than a document that differs per
+page, which is a box rebuilt on every navigation. A page plugin's own script —
+the board's, the map's — is in the bundle like any other, and draws only where
+its root node is on the page.
+
+Each file is preceded by a comment naming it and its root, and wrapped in its
+own function, so **one broken plugin is one broken plugin** rather than a
+workspace whose every page draws nothing. The failure reads
+`plugins/<folder>/<file> did not load: …` or `framework/<folder>/<file> did not
+load: …`, naming the file and which copy, rather than a slot somewhere saying
+*no plugin named "…" is registered* — which reads as the page author's bug and
+is the plugin's. A loose script, a stray file in a `biom-` folder and a folder
+that is not an id come out of the same walk as sentences and are said the same
+way.
 
 A source that does not **parse** is the case a `try` cannot catch, so each one is
 compiled on the server first and a file that fails is replaced by the sentence
 saying so.
 
 **The client weaves one script tag for that route and carries no list of plugin
-ids at all.** What answers *which plugins does this workspace have* is your
-folder union the framework's set, and this route is the only thing that computes
-the union. An absent or empty `plugins/` answers the framework's set alone.
+ids at all.** What answers *which plugins does this workspace have* is the
+folders, and this route is the only thing that reads them. An absent or empty
+`plugins/` answers the framework's set alone. In the box, `biom.plugin.list()`
+answers every registered plugin and where it came from — framework, vault or
+page — and `biom.plugin.get(id)` answers one, as `ctx.use` finds it.
 
 ## How a page plugin is resolved
 
 A page says `plugin: <id>`, and the host looks in three places, **in order**:
 
 1. **the page's own `index.html`**, beside its `content.yaml`;
-2. **`plugins/<id>/index.html`** in this workspace — an override, if you made one;
-3. **the framework's own `<id>/index.html`**, which is never the winner.
+2. **`plugins/<id>/index.html`** in this workspace, under the bare name — a plugin of your own;
+3. **the framework's own `biom-<id>/index.html`**, which a workspace never shadows.
 
-A page that names a plugin nobody has draws a stand-in saying so. A plugin's
-other files — the `kanban.js` its document names — resolve the same way, per
-file.
+A page that names a plugin nobody has draws a stand-in saying so. A document
+under a `biom-` folder in your workspace is not read: that folder is an
+extension and holds a rung alone.
 
 The host resolves the document server-side for the reason it resolves everything
 else: the box has an opaque origin and cannot fetch.
 
 **`plugin: doc` is the document** and `plugin: html` — which is what leaving
 `plugin:` out means — is the page's own `index.html`. Both go through exactly the
-same lookup as a plugin you wrote.
+same lookup as a plugin you wrote. `biom.plugin.extensions()` on a page drawn by
+its own `index.html` answers the `html` plugin's rungs — nothing, unless you
+wrote some.
 
 **Never name a section file `index.html`.** That name is the html plugin's page
 document, so a file called `index.html` beside a `content.yaml` wins over the
@@ -107,41 +196,49 @@ plugin the page named: it is injected into the body as well as drawn as a sectio
 its script runs once unwrapped, and the console carries an error nothing on screen
 explains. Name a section file for what it is — `masthead.html`, `@page-notes.html`.
 
-### Two files in a workspace cannot name a path into the install
+### A file in a workspace cannot name a path into the install
 
 A plugin's document was written to disk long before anybody knew which folder it
 would land in, and the box is a `srcdoc` frame with no base to resolve a relative
-`src` against. So the host spells both: a `<script data-g-src="biom-kanban/kanban.js">`
+`src` against. So the host spells it: a `<script data-g-src="timeline/lib/vendor.js">`
 inside a plugin's own document becomes a real `src` under that workspace's own
-`/plugin/` route. **No file in a workspace may name a path into the application's
-own directory** — that is wrong the first time somebody moves the application.
+`/plugin/` route. Every `.js` directly inside a plugin folder is already in the
+bundle every page carries, so a file named this way must be one the walk does
+not take — a library in a subfolder of its own, `plugins/timeline/lib/`, and
+never one beside the plugin's script, which would run twice.
+**No file in a workspace may name a path into the application's own directory**
+— that is wrong the first time somebody moves the application.
 
-## Four names are spoken for
+## Five names are spoken for
 
 `markdown`, `html`, `table`, `child` and `grid` are the **part kinds** — a slot's plugin
-is named by its part's type — so a second file registering one of them does not
+is named by its part's type — so a second plugin registering one of them does not
 add a plugin: it replaces the drawing of every slot of that kind in the workspace,
 on every page, including pages somebody else wrote. Nothing in `content.yaml`
 would say it had happened.
 
-**`plugins/<kind>.js` is the one file that may draw `<kind>`, and
-`biom-<kind>.js` the one file that may draw `biom-<kind>`.** The framework's
-markdown plugin is `biom-markdown.js` registering `biom-markdown`; a `markdown`
-slot reaches it because a bare name falls back to the framework's `biom-` one
-when this workspace registered none of its own. Write `plugins/markdown.js`
-registering `markdown` and every markdown slot draws with yours — it is nearer. It is not whoever registers first: the loader hands the page every
-`plugins/*.js` in name order, so first-past-the-post would have let a file called
-`0-notes.js` take `table` by sorting ahead of `table.js`. Any other file claiming
-a part kind is refused in a sentence naming the kind and the file that owns it.
-The set of four is the format's own, read off the part types and held equal to
-them by a test, rather than a list somebody has to re-count.
+**`plugins/<kind>/` is the one folder that may draw `<kind>`, and the
+framework's `biom-<kind>/` the one that may draw `biom-<kind>`.** The framework's
+markdown plugin is `biom-markdown/markdown.js` registering `biom-markdown`; a
+`markdown` slot reaches it because a bare name falls back to the framework's
+`biom-` one when this workspace registered none of its own. Write
+`plugins/markdown/markdown.js` registering `markdown` and every markdown slot
+draws with yours — it is nearer. It is not whoever registers first: the loader
+hands the page every folder in name order, so first-past-the-post would have let
+a folder called `a-notes/` take `table` by sorting ahead of `table/`. Only a
+folder at the top of this workspace's `plugins/` may: not an inner one, and not
+a page's, because one script serves every page and a part kind is every page's.
+Any other file claiming a part kind is refused in a sentence naming the kind and
+the folder that owns it. The set of five is the format's own, read off the part
+types and held equal to them by a test, rather than a list somebody has to
+re-count.
 
 **Two files claiming any other id: the first one stands and the second is refused,
-naming both** — `two plugins registered as "reveal": plugins/reveal.js has it and
-plugins/aaa-reveal.js is refused — rename one of them`. There is no shipped-versus-
-yours: your edit of `plugins/reveal.js` *is* the reveal plugin, because nothing
-is served from anywhere else. What is refused is a second file taking an id the
-folder already draws.
+naming both** — `two plugins registered as "reveal": plugins/reveal/reveal.js has
+it and plugins/aaa-reveal/aaa-reveal.js is refused — rename one of them`. There is
+no shipped-versus-yours: your `plugins/reveal/` *is* the reveal plugin, because
+nothing is served from anywhere else. What is refused is a second file taking an
+id the folder already draws, at any depth and from any root.
 
 **A `parts` entry can therefore never name a plugin of yours.** A slot's type is
 markdown, html, table, child or grid and nothing else. Yours is reached by a
@@ -201,7 +298,10 @@ node**. Both cases go through the same `mount`, because a plugin with two entry
 points would be two plugins wearing one name.
 
 **`plugins.has(id)`, `plugins.get(id)` and `plugins.ids()` are public.** `ids()` is
-how an error message says what actually exists.
+how an error message says what actually exists. **`biom.plugins` is the
+registration side and `biom.plugin` the reading side**: `biom.plugin.list()`,
+`biom.plugin.get(id)` and `biom.plugin.extensions(id?)`, and a test holds the two
+`get`s equal.
 
 ## `ctx.use(id)` is the entire composition mechanism
 
@@ -250,7 +350,7 @@ boundary.**
 **A fenced block whose info string names a plugin this workspace carries is handed
 to that plugin, in place of being drawn as code.** The markdown plugin looks the
 name up and mounts it with the fence's source as an option — so a ` ```flow ` block
-is drawn by your `plugins/flow.js`, with nothing else to wire up.
+is drawn by your `plugins/flow/`, with nothing else to wire up.
 
 - **The framework names no language there.** Your `plugins/` folder is the whole of
   the list, which is what makes a drawing language this workspace's own choice

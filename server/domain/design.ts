@@ -151,6 +151,10 @@ export function makeDesign(
         html: await docDocument(),
         input: {},
         ports: null,
+        // NONE HERE. This kind is `design.read`, which nothing in the client
+        // calls any more; the design doc is drawn through `page.read` as
+        // `@design`, and that read carries its rungs like every other page's.
+        extensions: {},
       };
     },
 

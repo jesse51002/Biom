@@ -38,7 +38,12 @@ import type { FileEntry, Files } from "../../contracts/types.ts";
  *  time they stop typing. A timestamp window would be a guess about how slow
  *  this disk is; a set of paths a request is about to touch would be a promise
  *  about ordering. A hash IS the content, and comparing it is not a guess:
- *  equal to the baseline means nobody outside wrote it, whoever did.
+ *  equal to what this process wrote means nobody outside wrote it, whoever did.
+ *
+ *  A READ AND A WRITE ARE NOT THE SAME BASELINE. What was written, or what the
+ *  watcher has already reported, silences a notification carrying the same
+ *  bytes; what was merely read does not, because a read may have landed after
+ *  an outside write and before the watcher got to it — `sight` below.
  *
  *  It lives here because this is the only module that both writes a file and
  *  reads one, and the baseline has to be recorded at the moment of the write.
@@ -48,14 +53,37 @@ import type { FileEntry, Files } from "../../contracts/types.ts";
  *  at `<vault>/design` — and the vault's own share one map without either
  *  knowing the other exists. */
 export interface Seen {
-  /** Remember what `abs` holds right now. */
+  /** Remember what `abs` holds right now, as something this process WROTE or
+   *  the watcher has REPORTED: a notification carrying these bytes back is
+   *  nothing that happened. */
   note(abs: string, text: string): void;
-  /** Is `text` exactly what this process last wrote or read there? A path never
-   *  seen answers false: unknown content is changed content. */
+  /** Remember that this process READ `abs` and found `text`. A sighting makes
+   *  the path known — a page directory's arrival and departure are told by it —
+   *  and SILENCES NOTHING, which is the difference from `note` and the reason
+   *  there are two. A read lands wherever it lands: after an outside write and
+   *  before the watcher has read that write's notification, as often as not,
+   *  because the box asks for the page and the mirror reads it to project it.
+   *  A read that set the baseline made the notification a match, and the one
+   *  change somebody outside had just made was dropped as nothing that
+   *  happened — measured, a page that never redrew. So a sighting of bytes
+   *  the watcher has not reported leaves the notification to report them, and
+   *  the cost of that is one redundant redraw when a read turns out to have
+   *  drawn them already. A sighting of the bytes already noted keeps the note. */
+  sight(abs: string, text: string): void;
+  /** Is `text` exactly what this process last wrote there, or last reported? A
+   *  path never seen answers false, and so does one only ever READ: unknown
+   *  content is changed content, and so is content nobody has reported. */
   matches(abs: string, text: string): boolean;
-  /** Has this path a baseline at all? A file the server has never seen counts as
-   *  changed, and the caller wants to know which of the two it is. */
+  /** Has this path a baseline at all — noted or sighted? A file the server has
+   *  never seen counts as changed, and the caller wants to know which of the
+   *  two it is. */
   known(abs: string): boolean;
+  /** Is anything BENEATH this path known? A directory is never noted, so a
+   *  departed one — a page's `plugins/` deleted whole, say — is recognised by
+   *  the files this process had read inside it. It says nothing about whether
+   *  the path is still there: `children/` is one that is, and it holds every
+   *  page inside it, so the caller asks the disk before asking this. */
+  holds(abs: string): boolean;
   /** Drop `abs` and everything beneath it. A deleted path drops its baseline, so
    *  a file written again under that name reads as changed. */
   forget(abs: string): void;
@@ -66,11 +94,27 @@ const digest = (text: string): string => createHash("sha1").update(text).digest(
 /** The baseline map. One per mounted vault, built by the composition root and
  *  handed to every `Files` rooted inside that vault. */
 export function makeSeen(): Seen {
-  const held = new Map<string, string>();
+  /** The hash, and whether it was noted (written or reported) or only sighted
+   *  (read). A sighting is a baseline for `known` and never for `matches`. */
+  const held = new Map<string, { hash: string; noted: boolean }>();
   return {
-    note: (abs: string, text: string) => void held.set(abs, digest(text)),
-    matches: (abs: string, text: string) => held.get(abs) === digest(text),
+    note: (abs: string, text: string) => void held.set(abs, { hash: digest(text), noted: true }),
+    sight(abs: string, text: string) {
+      const hash = digest(text);
+      const had = held.get(abs);
+      if (had !== undefined && had.hash === hash) return;
+      held.set(abs, { hash, noted: false });
+    },
+    matches(abs: string, text: string) {
+      const had = held.get(abs);
+      return had !== undefined && had.noted && had.hash === digest(text);
+    },
     known: (abs: string) => held.has(abs),
+    holds(abs: string) {
+      const under = abs + sep;
+      for (const key of held.keys()) if (key.startsWith(under)) return true;
+      return false;
+    },
     forget(abs: string) {
       held.delete(abs);
       const under = abs + sep;
@@ -83,7 +127,9 @@ export function makeSeen(): Seen {
  *  watched vault — the presets, the vault seed, the checker's library. */
 const FORGETFUL: Seen = {
   note: () => {},
+  sight: () => {},
   matches: () => false,
+  holds: () => false,
   known: () => false,
   forget: () => {},
 };
@@ -179,16 +225,22 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
       const abs = await safe(rel);
       try {
         const text: string = await readFile(abs, "utf8");
-        // THE BASELINE IS SET BY A READ AS WELL AS BY A WRITE. A page drawn is a
-        // page whose files this process has seen; a notification that carries the
-        // same bytes back is nothing that happened.
-        seen.note(abs, text);
+        // A READ IS A SIGHTING AND NOT A NOTE. It makes the path known — a page
+        // this process has read is one whose directory departing is a change —
+        // and it silences no notification, because a read may land after an
+        // outside write and before the watcher has reported it. `Seen.sight`
+        // says why.
+        seen.sight(abs, text);
         return text;
       } catch (e) {
-        if (isMissing(e)) {
-          seen.forget(abs);
-          return null;
-        }
+        // A MISS FORGETS NOTHING. A path with a baseline that is not there any
+        // more was taken away from outside, and the baseline is what the
+        // watcher recognises the departure by — a parent projected while one
+        // of its pages was being deleted read the page's file, missed, and
+        // forgot it, and the directory notification that followed found
+        // nothing this process had ever known there. The app's own remove
+        // forgets, below, because that one is not a departure to report.
+        if (isMissing(e)) return null;
         throw e;
       }
     },

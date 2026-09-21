@@ -125,6 +125,26 @@ Both are nested under a key of their own rather than written beside `name:` and
 title its cards by a column, and the obvious key for that is `name`, which the
 page has already spent.
 
+## A plugin's own variables are a third thing, and they come in rungs
+
+A plugin — the framework's document, a board, a plugin you wrote — declares the
+variables it reads, each with a default, in its folder's `plugin.yaml`. Those
+are not the page's variables and not its `input:`: they are set once, in files,
+and held. **Three rungs, nearest wins, one key at a time**: the plugin's own
+defaults, then this workspace's `plugins/biom-<id>/extensions.yaml`, then the
+same file in a page's own `plugins/`, which reaches that page only. They are
+never written back by the app, `{{name}}` never resolves against them, and a
+plugin reads them in the box through `biom.plugin.extensions()`. A value is a
+scalar or a list of scalars, exactly as here, typed by its default; a map, a
+key the plugin does not declare and a value of the wrong type are refused by
+name and the rung beneath stands. [`plugins.md`](./plugins.md) carries the
+whole of it.
+
+`input:` stays the door the app writes into for a page drawn by a plugin; a
+page's rung is the door a person writes into for the plugin drawing it. Both
+are per-page configuration a plugin reads, and whether the first folds into the
+second later is not decided here.
+
 ## A comment beside a variable does not survive
 
 The server does not patch the file it parsed — it builds a fresh document from the
