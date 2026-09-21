@@ -1013,7 +1013,13 @@ export function makePages(
       const childId = `${id}/${name}`;
       const found = await readDoc(childId);
       if (found === null) continue; // a directory is a page iff it holds content.yaml
-      out.push({ kind: "page", id: childId, name: "doc" in found ? found.doc.name : name });
+      const child: Child = { kind: "page", id: childId, name: "doc" in found ? found.doc.name : name };
+      // WHEN IT WAS MADE, off the directory, where the store keeps a clock. A
+      // page type that shows children newest first sorts on it; a store with
+      // no clock leaves the field out rather than inventing one.
+      const created = files.created ? await files.created(dirOf(childId)) : null;
+      if (created !== null) child.created = created;
+      out.push(child);
     }
     // BY ID, WHICH IS THE DIRECTORY NAME, and never by the page's name.
     //

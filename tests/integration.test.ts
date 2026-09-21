@@ -309,9 +309,14 @@ test("a child is not lost by a reorder, because its entry is reconciled and not 
   // A CHILD KEY IS ONE SEGMENT, never a path, and it goes in the slot the
   // shipped default section declares — which is what draws it until somebody
   // writes an `@page-Ashgrove.html` beside the document.
-  expect(partOf(read, "@page-Ashgrove")).toEqual({
+  // Off real files, so the child carries when it was made — an instant, not
+  // a fixed one — beside what it is and what it is called.
+  const part = partOf(read, "@page-Ashgrove");
+  expect(typeof part.child.created).toBe("string");
+  expect(isNaN(Date.parse(part.child.created))).toBe(false);
+  expect({ ...part, child: { ...part.child, created: undefined } }).toEqual({
     kind: "child",
-    child: { kind: "page", id: child.id, name: "Ashgrove" },
+    child: { kind: "page", id: child.id, name: "Ashgrove", created: undefined },
   });
   second.db.close();
 });

@@ -509,7 +509,7 @@ test("a page made in a seeded vault carries the bundled child.html, and can drop
   expect(section!.fallback).toBe(true);
   expect(section!.parts["body"]).toMatchObject({
     kind: "child",
-    child: { kind: "page", id: ref.id, name: "Ashgrove" },
+    child: { kind: "page", id: ref.id, name: "Ashgrove", created: expect.any(String) },
     draw: { file: "child.html", html: bundled },
   });
 
@@ -522,7 +522,7 @@ test("a page made in a seeded vault carries the bundled child.html, and can drop
   const after = (await pages.read(clients.id))!.sections.find((s) => s.name === key);
   expect(after!.parts["body"]).toEqual({
     kind: "child",
-    child: { kind: "page", id: ref.id, name: "Ashgrove" },
+    child: { kind: "page", id: ref.id, name: "Ashgrove", created: expect.any(String) },
   });
   // And nothing on the read path puts it back, or deleting it would be an act
   // the next read undid.

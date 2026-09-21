@@ -278,6 +278,13 @@ export interface Child {
   name: string;
   /** Tables only. */
   rows?: number;
+  /** Pages only: when the page was MADE, as an ISO instant — the directory's
+   *  birth time as the filesystem records it, its modification time where the
+   *  filesystem keeps no birth, and absent where the platform answers neither.
+   *  Read off the file for now; a page type that shows children newest first
+   *  sorts on it, and a later version may keep the date in the page without
+   *  the field or that plugin changing. The tenth contracts edit. */
+  created?: string;
 }
 
 /** The block id standing for a child, and it has to be derived rather than
@@ -1305,6 +1312,12 @@ export interface Files {
   write(rel: string, text: string): Promise<void>;
   remove(rel: string): Promise<void>;
   list(rel: string): Promise<FileEntry[]>;
+  /** When a path was made, as an ISO instant: its birth time where the
+   *  filesystem records one, its modification time otherwise, null for a path
+   *  that is not there. Optional, because a store that keeps no clock — a test's
+   *  files in memory — has nothing to answer, and `Child.created` is absent
+   *  rather than invented. */
+  created?(rel: string): Promise<string | null>;
   /** Commit the vault before an agent write, so undo exists without a
    *  snapshot mechanism. No-op when the vault is not a git repo. */
   commit(message: string): Promise<void>;

@@ -186,7 +186,16 @@ else: the box has an opaque origin and cannot fetch.
 
 **`plugin: doc` is the document** and `plugin: html` — which is what leaving
 `plugin:` out means — is the page's own `index.html`. Both go through exactly the
-same lookup as a plugin you wrote. `biom.plugin.extensions()` on a page drawn by
+same lookup as a plugin you wrote, and so does every other document the
+framework ships — `docs/plugins/` lists them, each folder's `index.html` the
+document and its `plugin.yaml` what a rung can tell it. **`plugin:
+automations-runs` shows a page's children one at a time, newest first**, each
+filling the frame between a strip to the newer and a strip to the older, the
+bar naming the child by its H1; it reads three variables — `home`, a plugin
+drawn as the slide the page opens on when nothing is running; `progress`, a
+plugin drawn first while its node is shown, handed over hidden and shown by
+the plugin itself; `skip`, child names never shown — and knows nothing about
+runs beyond its name. `biom.plugin.extensions()` on a page drawn by
 its own `index.html` answers the `html` plugin's rungs — nothing, unless you
 wrote some.
 

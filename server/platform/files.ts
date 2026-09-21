@@ -22,7 +22,7 @@
 // depend on — nothing the server runs is a package. Bun runs this file as
 // written; tsc cannot see the module, so the import is suppressed and every
 // value that comes out of it is annotated by hand below.
-import { mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, readlink, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -280,6 +280,21 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
         // readdir order is whatever the filesystem feels like; the page tree
         // must not reshuffle between two runs.
         .sort(byName);
+    },
+
+    async created(rel: string): Promise<string | null> {
+      const abs = await safe(rel === "" ? "." : rel, true);
+      let found: { birthtimeMs: number; mtimeMs: number };
+      try {
+        found = await stat(abs);
+      } catch (e) {
+        if (isMissing(e)) return null;
+        throw e;
+      }
+      // A filesystem that keeps no birth time reports zero, and the
+      // modification time is the nearest thing it has.
+      const ms = found.birthtimeMs > 0 ? found.birthtimeMs : found.mtimeMs;
+      return new Date(ms).toISOString();
     },
 
     async commit(message: string): Promise<void> {

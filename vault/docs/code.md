@@ -200,9 +200,15 @@ const other = await biom.children("home/team-hub");
 ```
 
 ```js
-{ kind: "page",  id: "home/team/notes", name: "Team notes" }
+{ kind: "page",  id: "home/team/notes", name: "Team notes", created: "2026-09-20T10:04:00.000Z" }
 { kind: "table", id: "jobs",            name: "jobs", rows: 42 }
 ```
+
+`created` is when the page was made — its directory's birth time as the
+filesystem records it, its modification time where the filesystem keeps no
+birth — and it is absent where the host has neither. A page that shows its
+children newest first sorts on it, and on the date a name leads with where it
+is absent.
 
 **It is a normalised read** — the name and the kind arrive resolved and a table's
 row count is already there, so nothing makes a second call to find out what it is

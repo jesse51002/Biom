@@ -1,0 +1,20 @@
+# The runs page type's variables, each with its default. Three keys, flat, and
+# nothing written back. This file is the framework's rung; a vault writes over
+# any key in plugins/biom-automations-runs/extensions.yaml, a page in the same
+# file beside its content.yaml, and the nearest rung wins one key at a time.
+
+# A plugin id: the slide the page opens on when nothing is running. Mounted
+# once into a node of the document's own, with the page's variables in ctx.
+# Empty mounts nothing, and the first slide is the newest child.
+home: ""
+
+# A plugin id: what is running now, drawn first while its node is shown. The
+# node is handed to the plugin HIDDEN, and the plugin takes `hidden` off it
+# while something is running and puts it back when nothing is — that one
+# attribute is how it says it has something to show. Meant to differ per page:
+# each automation names its own in its page's rung, and the workspace's rung
+# holds the plain default a page gets until it draws its own.
+progress: ""
+
+# Child names never shown: a folder under the page that is not a run.
+skip: []
