@@ -1158,9 +1158,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       return { structural: true };
     }
 
+    // WHAT THIS PROCESS WROTE, OR ALREADY REPORTED, and nothing it merely read:
+    // a read that landed between the outside write and this verdict saw the
+    // new bytes, and the screen may not have — `Seen.sight` in `files.ts`.
     if (held.seen.matches(abs, text)) return null;
     if (!parses(rel, text)) return null;
     const fresh = !held.seen.known(abs);
+    // REPORTED, from here on: the same bytes notified again are nothing new.
     held.seen.note(abs, text);
     return { structural: fresh || (page !== null && page.rest === "") };
   }
