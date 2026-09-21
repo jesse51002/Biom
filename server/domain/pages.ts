@@ -1152,6 +1152,24 @@ export function makePages(
       return childrenOf(id);
     },
 
+    /** ONE WALK FOR THE WHOLE TREE. The ids come from the same listing the
+     *  rail draws, root first, and each page's children are read exactly as
+     *  `children(id)` reads them, so the two can never disagree; a page whose
+     *  children could not be read answers an empty list rather than taking
+     *  the whole answer down with it. */
+    async childrenAll(): Promise<Record<PageId, Child[]>> {
+      const out: Record<PageId, Child[]> = {};
+      const ids = [ROOT_PAGE, ...(await listPages()).map((p) => p.id).filter((id) => id !== ROOT_PAGE)];
+      for (const id of ids) {
+        try {
+          out[id] = await childrenOf(id);
+        } catch {
+          out[id] = [];
+        }
+      }
+      return out;
+    },
+
     async read(id: PageId): Promise<Page | null> {
       // THE MAP HAS NO DIRECTORY, AND THAT IS THE DESIGN. `@map` is the rail's
       // own map of the whole workspace: a bare plugin page — the vault's own

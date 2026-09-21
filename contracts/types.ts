@@ -1141,6 +1141,16 @@ export type ApiRequest =
   | (Envelope &
       (
         | { kind: "page.list" }
+        /** EVERY PAGE'S CHILDREN IN ONE ANSWER, root included, keyed by page
+         *  id — what the workspace UI reads to draw the tree. Layer one for the
+         *  whole mount at once: the same rows `children` answers page by page,
+         *  in the same order, so a page drawn from either reads the same. It is
+         *  here and not on `HostRequest` because a box asks about the page it is
+         *  on and nothing wider; the tree is the shell's. The NINTH contracts
+         *  edit, and the reason is in the store: one request per page was a
+         *  throwaway instrument's cost until a workspace of eighteen hundred
+         *  pages met a browser that refuses that many at once. */
+        | { kind: "children.all" }
         | { kind: "page.create"; init: PageInit }
         | { kind: "page.remove"; page: PageId }
         /** MOVE A PAGE, which is now moving a directory.
@@ -1367,6 +1377,10 @@ export interface Pages {
    *  order its own `order:` puts them. Available to every page whether or not
    *  it draws any of them. */
   children(id: PageId): Promise<Child[]>;
+  /** Layer one for every page in the mount at once, root included, keyed by
+   *  id — each entry exactly what `children(id)` answers. One walk of the
+   *  tree rather than one request per page. */
+  childrenAll(): Promise<Record<PageId, Child[]>>;
   read(id: PageId): Promise<Page | null>;
   /** REMOVE A CONTENT ENTIRELY, which is one write now and not three.
    *
