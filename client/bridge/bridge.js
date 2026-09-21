@@ -145,23 +145,34 @@ function scopeOfSection(doc, section) {
 
 /** The prose of a page, in order, RAW — `{{rate}}` and all.
  *
- *  Every markdown part of every section, which is what "what this page says"
- *  means once a section can hold three columns of it. A table, an html part or
- *  a child is not prose and does not project into this: a page reading another
- *  page is reading what it says, not reconstructing its structure.
+ *  The page-level `input` slots first — a string, or a list of strings — in
+ *  the order the page wrote them, then every markdown part of every section,
+ *  which is what "what this page says" means once a section can hold three
+ *  columns of it. A page drawn by its own `index.html` has no sections, and
+ *  its words are exactly those `input` slots, filled into its `data-g-part`s
+ *  by the box — so the H1 a runs bar names a slide by is as often there as in
+ *  a section. A map in `input` is the plugin's configuration and never prose.
+ *  A table, an html part or a child is not prose and does not project into
+ *  this: a page reading another page is reading what it says, not
+ *  reconstructing its structure.
  *
  *  Section order is the array; slot order within a section is the insertion
  *  order of `parts`, which is the order the document declares them in. Neither
  *  is a second statement of anything, so neither can disagree with the file.
+ *  The server's `doc.get` states the same rule for a plugin outside a box, and
+ *  its test and this one hold the two to one answer.
  *
  *  It is deliberately not interpolated. Resolving here would mean resolving
  *  against ANOTHER page's variables, which is the join `biom.variables`
  *  exists to make explicit — and a page that wants the words with the numbers
  *  in them can make both calls and say so. @param {Page} page */
 const proseOf = (page) =>
-  page.sections
-    .flatMap((s) =>
-      Object.values(s.parts).flatMap((/** @type {Part} */ p) => (p.kind === "markdown" ? [p.md] : [])),
+  Object.values(page.input || {})
+    .flatMap((v) => (typeof v === "string" ? [v] : Array.isArray(v) && v.every((one) => typeof one === "string") ? v : []))
+    .concat(
+      page.sections.flatMap((s) =>
+        Object.values(s.parts).flatMap((/** @type {Part} */ p) => (p.kind === "markdown" ? [p.md] : [])),
+      ),
     )
     .join("\n\n");
 
