@@ -530,8 +530,19 @@
           /* The prose before goes back into its slot first — a write the box
              does not redraw for — and then the list is rewritten, which comes
              back as a change to the page's shape and draws the page again
-             from disk, three sections where there was one. */
-          Promise.all(todo.writes.map(function (w) { return rt.page.write(w.section, w.part, w.text); }))
+             from disk, three sections where there was one.
+
+             ONE WRITE AFTER ANOTHER, never all at once. Each write is the server
+             reading the document, changing one slot and writing it back, so
+             three in flight together on a page with three tables were three
+             read-modify-writes racing on one file: two of the three edits lost
+             to the last writer, and the file itself torn — the front of one
+             write, NUL bytes where the rest of another should have been, and
+             the page unopenable. The server writes whole now; this stops
+             asking it to race with itself. */
+          todo.writes.reduce(function (done, w) {
+            return done.then(function () { return rt.page.write(w.section, w.part, w.text); });
+          }, Promise.resolve())
             .then(function () { return rt.page.order(todo.contents); })
             .then(function () { busy = false; }, function (e) {
               busy = false;

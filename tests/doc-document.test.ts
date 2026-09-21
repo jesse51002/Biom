@@ -161,6 +161,51 @@ test("the conversion is switched by the document's own convert variable, so a pa
   expect((await run({})).orders).toHaveLength(1);
 });
 
+test("the conversion writes one slot after another and orders last, never several writes at once", async () => {
+  // THE TORN PAGE. Each write is the server reading the document, changing a
+  // slot and writing it back; three fired together on a page with three
+  // tables were three read-modify-writes racing on one file — two edits lost
+  // to the last writer, and before the server wrote whole, a file holding the
+  // front of one write and NUL bytes for the rest of another. So the script
+  // may not start a write before the one before it has answered.
+  const glob = globalThis as any;
+  const had = { biom: glob.biom, rt: glob.__gRuntime };
+  const table = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+  const section = (name: string) => ({
+    name, html: "", fallback: true, source: { name, parts: { body: "before\n\n" + table + "\nafter\n" } },
+    parts: { body: { kind: "markdown", md: "before\n\n" + table + "\nafter\n", vars: {} } }, vars: {},
+  });
+  const log: string[] = [];
+  let inFlight = 0;
+  let mostAtOnce = 0;
+  let draw: (() => void) | null = null;
+  glob.__gRuntime = {
+    page: {
+      onDraw: (fn: () => void) => { draw = fn; },
+      sections: () => [section("one"), section("two"), section("three")],
+      write: (name: string) => {
+        inFlight++;
+        mostAtOnce = Math.max(mostAtOnce, inFlight);
+        log.push("write " + name);
+        return new Promise<void>((r) => setTimeout(() => { inFlight--; r(); }, 2));
+      },
+      order: () => { log.push("order"); return Promise.resolve(); },
+    },
+  };
+  glob.biom = { plugin: { extensions: () => ({}) } };
+  const script = [...DOC.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? "").find((s) => s.includes("rt.convert")) ?? "";
+  try {
+    new Function(script)();
+    if (draw) draw();
+    await new Promise((r) => setTimeout(r, 30));
+  } finally {
+    glob.biom = had.biom;
+    glob.__gRuntime = had.rt;
+  }
+  expect(log).toEqual(["write one", "write two", "write three", "order"]);
+  expect(mostAtOnce).toBe(1);
+});
+
 test("the board's look is a document stylesheet in its own layer, keyed on what the plugin draws, so it reaches the board wherever it is mounted", () => {
   expect(DOC).toContain("@layer biom.scale, biom.frame, biom.holds;");
   expect(DOC).toContain("@layer biom.holds {");

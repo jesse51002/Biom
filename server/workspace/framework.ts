@@ -228,6 +228,14 @@ export const MIRROR_DIR = "docs/plugins";
  *  because vaults made before this existed have a `.gitignore` already. */
 export const MIRROR_IGNORE = `${MIRROR_DIR}/`;
 
+/** The name a write wears while it lands — `Files.write` in
+ *  `server/platform/files.ts` puts the bytes in `.<file>.<hex>.tmp` beside the
+ *  file and renames, so a reader never sees a torn file. One is left behind
+ *  only by a process dying between the two, and the server commits the vault
+ *  ahead of every write, so without this line that leftover would be the
+ *  next commit's. Ensured beside the mirror's line, on every open. */
+export const TEMP_IGNORE = ".*.tmp";
+
 /** Every file under `dir` in `root`, relative to `dir`, forward-slashed. A
  *  `dir` that is not there is an empty list, which is what `Files.list`
  *  answers for one. */
@@ -262,12 +270,15 @@ export async function mirrorPlugins(vault: Files, framework: Files): Promise<voi
   await ignoreMirror(vault);
 }
 
-/** Add the mirror to `.gitignore` if it is not there. Appends, never rewrites:
- *  a hand-edited ignore file is the person's. */
+/** Add the mirror and the write's temporary name to `.gitignore` where they are
+ *  not there. Appends, never rewrites: a hand-edited ignore file is the person's. */
 async function ignoreMirror(vault: Files): Promise<void> {
   const had = (await vault.read(".gitignore")) ?? "";
   const lines = had.split("\n").map((l) => l.trim());
-  if (lines.includes(MIRROR_IGNORE) || lines.includes(MIRROR_DIR)) return;
+  const missing: string[] = [];
+  if (!lines.includes(MIRROR_IGNORE) && !lines.includes(MIRROR_DIR)) missing.push(MIRROR_IGNORE);
+  if (!lines.includes(TEMP_IGNORE)) missing.push(TEMP_IGNORE);
+  if (missing.length === 0) return;
   const joined = had === "" || had.endsWith("\n") ? had : had + "\n";
-  await vault.write(".gitignore", `${joined}${MIRROR_IGNORE}\n`);
+  await vault.write(".gitignore", `${joined}${missing.join("\n")}\n`);
 }
