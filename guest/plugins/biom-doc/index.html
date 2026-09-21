@@ -40,20 +40,35 @@
   true rather than a hope: an unlayered author rule beats every layered one
   whatever its specificity, so a section's own `<style>` wins by existing.
 
-  AND THE BOARD OF CHILDREN, which is the one thing here that draws. Every page
-  that holds pages gets a count, a sort control and a row per child at the
-  bottom, read from `biom.children()`, with NO FILE WRITTEN FOR IT. That
-  replaced eighteen hand-written `row.html` files in the workspace it came from,
-  and the reason it belongs to the framework rather than to that workspace is
-  that a stranger's second page is a child of their first: without this, the
-  paved path is two files per folder page, written against a design doc they
-  have not read yet.
+  TWO NODES OF ITS OWN, AND WHAT EACH ONE NAMES. `<header id="g-head">` sits
+  before the stack and `<footer id="g-foot">` after it, both drawn empty. Once
+  the runtime has drawn the stack for the first time, the first script below
+  reads this document's own variables — `head` and `foot`, declared with their
+  defaults in `plugin.yaml` beside this file, and merged by the server with the
+  vault's `plugins/biom-doc/extensions.yaml` and the page's own, nearest rung
+  winning one key at a time — and mounts the plugin each names into its node
+  exactly as a section mounts a `data-g-plugin` node: the same context, the
+  same containment, so a plugin that throws fails in its node in words and the
+  stack draws. THAT IS THE DOCUMENT READING TWO OF ITS OWN VARIABLES, NOT A
+  FRAMEWORK FEATURE: the runtime has no notion of a point, and a plugin that
+  wants extending draws a node and reads a variable. It happens once per box —
+  a section edit redraws the stack and not the document, and a change on disk
+  tears the whole box down — so nothing mounts twice and nothing leaks.
 
-  IT IS A SIBLING OF THE STACK rather than inside it, which is what makes it
-  unconditionally last: no ordering to respect, no section to place, nothing for
-  a page to get wrong. `children()`'s own contract invites it — *a page that
-  wants to draw its children its own way reads this and draws it* — and this is
-  that page, for every page in the vault at once.
+  THE BOARD OF CHILDREN IS `foot: biom-holds`, and it is the one line that puts
+  the board under every document. The board itself is `plugins/holds/holds.js`
+  inside this folder, registering `biom-holds` — markup, sort, tally, rows and
+  the `holds`/`holdWords` reading, off `biom.children()` and `biom.data()` —
+  because it is a thing that DRAWS, and everything that draws is a plugin. So a
+  vault swaps it with `foot: my-board` and a plugin called `my-board`, drops it
+  with `foot:` left empty, dresses it with a plugin named at `head` that adds
+  a stylesheet, and a section may place it — `<div data-g-plugin="biom-holds">`
+  — where a gallery wants the board somewhere other than the bottom.
+
+  THE BOARD'S LOOK STAYS HERE, in `@layer biom.holds`, keyed on the `.g-holds`
+  root the plugin draws, because a plugin inks nothing: it is a document
+  stylesheet, so it reaches the board wherever on the page it is mounted, and
+  an unlayered rule from anywhere beats it by existing.
 
   WHY THE RECONCILED SECTIONS ARE HIDDEN RATHER THAN REMOVED, AND ONLY THE ONES
   NOBODY HAS WRITTEN A FILE FOR. The host writes a `@page-<segment>` section
@@ -64,10 +79,12 @@
   the runtime sets on a section that resolved to the SHIPPED default because it
   named no file of its own: a parent that wrote `@page-notes.html` for one child
   still draws it, because they meant that row and the board is not entitled to
-  overrule them. A rule in THIS head is a document stylesheet and is not
-  `@scope`-wrapped, so unlike a section trying to hide a sibling it genuinely
-  reaches them; no `!important`, and nothing is deleted from the DOM that the
-  edit wave might be holding.
+  overrule them. It is the DOCUMENT'S rule and not the board's: a page that
+  empties `foot` and draws nothing else shows neither, and `rows: true` in a
+  rung is the one line that shows the bare rows again. A rule in THIS head is a
+  document stylesheet and is not `@scope`-wrapped, so unlike a section trying
+  to hide a sibling it genuinely reaches them; no `!important`, and nothing is
+  deleted from the DOM that the edit wave might be holding.
 
   AND THE CONVERSION, which is the other thing here that writes. A markdown
   table is a run of pipes inside a paragraph: drawn as a thin strip of wrapped
@@ -87,31 +104,33 @@
 
   IT IS DELIBERATELY PLAIN, and the reason is NOT the one `base/README.md` gives
   about starters — a starter is copied and then owned, so it is free to draw, and
-  those do. This one is not copied at all: it is the board every vault draws
-  until somebody overrides it, so any look in it is a look every workspace wears
-  without choosing it. One hairline, no plate, no
-  second typeface, no accent — every colour a palette token, so it wears
-  `theme.json` and follows a change of palette. A workspace that wants a board
-  of its own opens THIS FILE, in their own `plugins/` folder, and changes it.
+  those do. This one is not copied at all: it is the document every vault draws
+  with, so any look in it is a look every workspace wears without choosing it.
+  One hairline, no plate, no second typeface, no accent — every colour a palette
+  token, so it wears `theme.json` and follows a change of palette. A workspace
+  that wants the board dressed names a plugin at `head`; one that wants another
+  board names it at `foot`; and neither copies this file, which is the one
+  shape that stops following the framework.
 -->
 <html>
   <head>
     <title>Document</title>
     <style>
-      /* The reconciled child sections that nobody wrote a file for. See above. */
-      #g-page > [id^="sec-@page-"][data-g-default],
-      #g-page > [id^="sec-@table-"][data-g-default] { display: none; }
+      /* The reconciled child sections that nobody wrote a file for. See above.
+         `rows: true` in a rung puts `g-rows` on the root and shows them. */
+      :root:not(.g-rows) #g-page > [id^="sec-@page-"][data-g-default],
+      :root:not(.g-rows) #g-page > [id^="sec-@table-"][data-g-default] { display: none; }
 
-      /* THE LAYER ORDER, DECLARED BEFORE EITHER LAYER EXISTS, and it is load
-         bearing. `guest/runtime/scale.js` appends `@layer biom.scale` to this
-         head at draw time, which makes it a LATER layer than one declared in
-         this file — and a later layer beats an earlier one whatever the
+      /* THE LAYER ORDER, DECLARED BEFORE ANY OF THE LAYERS EXISTS, and it is
+         load bearing. `guest/runtime/scale.js` appends `@layer biom.scale` to
+         this head at draw time, which makes it a LATER layer than one declared
+         in this file — and a later layer beats an earlier one whatever the
          specificity, so the scale's `[data-g-md] p { margin-block: … }` was
-         quietly defeating the frame's flatten pair on every page. Naming both
-         here fixes the order once: the scale states the type, the frame flattens
-         the outer margins the type gave, and an unlayered section rule still
-         beats both by existing. */
-      @layer biom.scale, biom.frame;
+         quietly defeating the frame's flatten pair on every page. Naming them
+         here fixes the order once: the scale states the type, the frame
+         flattens the outer margins the type gave, the board's look comes last,
+         and an unlayered section rule still beats all three by existing. */
+      @layer biom.scale, biom.frame, biom.holds;
 
       /* ── the figure frame ───────────────────────────────────────────────
          What every figure opens with, once. A section may stop re-declaring
@@ -156,275 +175,132 @@
         }
       }
 
-      /* ── what this page holds ──────────────────────────────────────────── */
+      /* ── the board of children, as `biom-holds` draws it ──────────────── */
 
-      #g-holds { display: block; container-type: inline-size; }
-      #g-holds[hidden] { display: none; }
+      @layer biom.holds {
+        .g-holds { display: block; container-type: inline-size; }
+        .g-holds[hidden] { display: none; }
 
-      /* THE HEAD IS THE COUNT AND THE SORT, butted against the first row rather
-         than floating above it: one board, one top edge. */
-      #g-holds .rail {
-        display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
-        max-inline-size: 64rem; margin-inline: auto; padding: .55rem 1.25rem;
-        border-block-end: 1px solid var(--rule);
-      }
-      #g-holds .tally {
-        display: inline-flex; align-items: baseline; gap: .4rem;
-        font-size: .8rem; color: var(--ink-2);
-      }
-      #g-holds .tally b { font-weight: 400; color: var(--ink); font-variant-numeric: tabular-nums; }
-      #g-holds .sort { display: inline-flex; align-items: baseline; gap: .1rem; }
-      #g-holds .sort button {
-        background: none; border: 0; padding: .15rem .45rem; cursor: pointer;
-        font: inherit; font-size: .76rem; color: var(--ink-3);
-      }
-      #g-holds .sort button:hover { color: var(--ink-2); }
-      #g-holds .sort button[aria-pressed="true"] { color: var(--ink); }
-      #g-holds .sort button[hidden] { display: none; }
-
-      #g-holds .row {
-        display: grid;
-        grid-template-columns: 2.25rem minmax(9rem, 1fr) auto auto minmax(0, 1.6fr);
-        grid-template-areas: "ord name stamp kind blurb";
-        column-gap: 1rem; align-items: baseline;
-        inline-size: 100%; max-inline-size: 64rem; margin-inline: auto;
-        padding: .7rem 1.25rem;
-        background: none; border: 0;
-        border-block-end: 1px solid var(--rule-soft);
-        color: var(--ink); font: inherit; text-align: left; cursor: pointer;
-      }
-      /* ONE PASS, ON FIRST SIGHT, AND THEN IT RESTS — and `--motion` is the
-         frame's switch, so a reader who has asked for less motion gets none. */
-      #g-holds.is-seen .row {
-        animation: g-holds-in calc(200ms * var(--motion, 1)) ease-out both;
-        animation-delay: calc(var(--i, 0) * 40ms * var(--motion, 1));
-      }
-      @keyframes g-holds-in { from { opacity: 0; } to { opacity: 1; } }
-
-      #g-holds .ord { grid-area: ord; color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums; }
-      #g-holds .name { grid-area: name; color: var(--ink); line-height: 1.35; min-inline-size: 0; overflow-wrap: anywhere; }
-      #g-holds .stamp { grid-area: stamp; color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      #g-holds .stamp:empty { display: none; }
-      #g-holds .kind { grid-area: kind; color: var(--ink-3); font-size: .78rem; white-space: nowrap; }
-      #g-holds .blurb { grid-area: blurb; color: var(--ink-2); font-size: .92rem; line-height: 1.45; min-inline-size: 0; }
-      #g-holds .blurb:empty { display: none; }
-
-      #g-holds .row:hover .name, #g-holds .row:focus-visible .name { color: var(--cyan); }
-      #g-holds :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-
-      /* A CONTAINER QUERY AND NOT A MEDIA QUERY: the board is as wide as the
-         pane it is in, which is not the width of the canvas. */
-      @container (width <= 52rem) {
-        #g-holds .row {
-          grid-template-columns: 2.25rem minmax(0, 1fr) auto;
-          grid-template-areas: "ord name stamp" ". blurb kind";
-          row-gap: .2rem;
+        /* THE HEAD IS THE COUNT AND THE SORT, butted against the first row
+           rather than floating above it: one board, one top edge. */
+        .g-holds .rail {
+          display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+          max-inline-size: 64rem; margin-inline: auto; padding: .55rem 1.25rem;
+          border-block-end: 1px solid var(--rule);
         }
-      }
-      @container (width <= 30rem) {
-        #g-holds .row {
-          grid-template-columns: 2.25rem minmax(0, 1fr);
-          grid-template-areas: "ord name" ". stamp" ". kind" ". blurb";
-          row-gap: .2rem;
+        .g-holds .tally {
+          display: inline-flex; align-items: baseline; gap: .4rem;
+          font-size: .8rem; color: var(--ink-2);
+        }
+        .g-holds .tally b { font-weight: 400; color: var(--ink); font-variant-numeric: tabular-nums; }
+        .g-holds .sort { display: inline-flex; align-items: baseline; gap: .1rem; }
+        .g-holds .sort button {
+          background: none; border: 0; padding: .15rem .45rem; cursor: pointer;
+          font: inherit; font-size: .76rem; color: var(--ink-3);
+        }
+        .g-holds .sort button:hover { color: var(--ink-2); }
+        .g-holds .sort button[aria-pressed="true"] { color: var(--ink); }
+        .g-holds .sort button[hidden] { display: none; }
+
+        .g-holds .row {
+          display: grid;
+          grid-template-columns: 2.25rem minmax(9rem, 1fr) auto auto minmax(0, 1.6fr);
+          grid-template-areas: "ord name stamp kind blurb";
+          column-gap: 1rem; align-items: baseline;
+          inline-size: 100%; max-inline-size: 64rem; margin-inline: auto;
+          padding: .7rem 1.25rem;
+          background: none; border: 0;
+          border-block-end: 1px solid var(--rule-soft);
+          color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+        }
+        /* ONE PASS, ON FIRST SIGHT, AND THEN IT RESTS — and `--motion` is the
+           frame's switch, so a reader who has asked for less motion gets none. */
+        .g-holds.is-seen .row {
+          animation: g-holds-in calc(200ms * var(--motion, 1)) ease-out both;
+          animation-delay: calc(var(--i, 0) * 40ms * var(--motion, 1));
+        }
+        @keyframes g-holds-in { from { opacity: 0; } to { opacity: 1; } }
+
+        .g-holds .ord { grid-area: ord; color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums; }
+        .g-holds .name { grid-area: name; color: var(--ink); line-height: 1.35; min-inline-size: 0; overflow-wrap: anywhere; }
+        .g-holds .stamp { grid-area: stamp; color: var(--ink-3); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .g-holds .stamp:empty { display: none; }
+        .g-holds .kind { grid-area: kind; color: var(--ink-3); font-size: .78rem; white-space: nowrap; }
+        .g-holds .blurb { grid-area: blurb; color: var(--ink-2); font-size: .92rem; line-height: 1.45; min-inline-size: 0; }
+        .g-holds .blurb:empty { display: none; }
+
+        .g-holds .row:hover .name, .g-holds .row:focus-visible .name { color: var(--cyan); }
+        .g-holds :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+        /* A CONTAINER QUERY AND NOT A MEDIA QUERY: the board is as wide as the
+           pane it is in, which is not the width of the canvas. */
+        @container (width <= 52rem) {
+          .g-holds .row {
+            grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+            grid-template-areas: "ord name stamp" ". blurb kind";
+            row-gap: .2rem;
+          }
+        }
+        @container (width <= 30rem) {
+          .g-holds .row {
+            grid-template-columns: 2.25rem minmax(0, 1fr);
+            grid-template-areas: "ord name" ". stamp" ". kind" ". blurb";
+            row-gap: .2rem;
+          }
         }
       }
     </style>
   </head>
   <body>
+    <header id="g-head"></header>
     <main id="g-page"></main>
+    <footer id="g-foot"></footer>
 
-    <footer id="g-holds" hidden>
-      <div class="rail">
-        <span class="tally"><b></b><span class="unit"></span></span>
-        <span class="sort" role="group" aria-label="Sort">
-          <button type="button" data-by="name">Name</button>
-          <button type="button" data-by="date" hidden>Date</button>
-          <button type="button" data-dir="1">&#8595;</button>
-        </span>
-      </div>
-      <div class="rows"></div>
-    </footer>
-
+    <!-- WHAT `head` AND `foot` NAME, mounted once the stack has drawn. See the
+         head of this file. -->
     <script>
       (function () {
         "use strict";
 
-        var holds = document.getElementById("g-holds");
-        var rows = holds.querySelector(".rows");
-        var tally = holds.querySelector(".tally b");
-        var unit = holds.querySelector(".tally .unit");
-        var byName = holds.querySelector('[data-by="name"]');
-        var byDate = holds.querySelector('[data-by="date"]');
-        var dirBtn = holds.querySelector("[data-dir]");
+        /* THE RUNTIME'S OWN NAMESPACE. `rt.page.mount` is the runtime mounting
+           a registered plugin into a node of this document's own — this
+           document is the page the runtime draws into, not a section drawn on
+           it, which is why it may reach it. A closure and not a browser
+           guarantee, as the runtime says of itself. */
+        var glob = /** @type {any} */ (globalThis);
+        var rt = glob.__gRuntime || (glob.__gRuntime = {});
 
-        /* A leading `YYYY-MM-DD`, and the hour after it where a page carries
-           one. This is the ONLY place a date can come from: `children()` hands
-           over `{kind, id, name, rows}` and nothing else, so a folder whose
-           pages are not named for a day cannot be sorted by one and does not
-           offer to. */
-        var DATED = /^(\d{4}-\d{2}-\d{2})(?:-(\d{2}))?[-_](.+)$/;
+        var nodes = { head: document.getElementById("g-head"), foot: document.getElementById("g-foot") };
+        var done = false;
 
-        var by = null;   /* "name" | "date" — null until the first read decides */
-        var dir = 1;     /* 1 ascending, -1 descending */
-
-        /* WHICH WAY A KEY WANTS TO READ. A folder of dated pages wants the
-           newest first and a folder of names wants A to Z, so the direction is a
-           property of the key rather than a setting that survives it. It is one
-           function because the same answer is wanted in three places — the first
-           draw, the fallback when dates stop being available, and the moment
-           somebody switches key. */
-        function facing(key) { return key === "date" ? -1 : 1; }
-
-        /* Switching key resets the direction to that key's own; pressing the
-           same key again is not a switch and leaves the toggle where it was.
-           Without this, going from newest-first dates to names left the names
-           running Z to A, which reads as a broken sort rather than a remembered
-           one. */
-        function sortBy(key) {
-          if (by !== key) dir = facing(key);
-          by = key;
-        }
-        var seen = false;
-
-        function split(child) {
-          var raw = String(child.name || child.id);
-          var m = DATED.exec(raw);
-          if (!m) return { key: "", stamp: "", name: raw.replace(/[-_]+/g, " ") };
-          return {
-            key: m[1] + (m[2] || "00"),
-            stamp: m[1] + (m[2] ? " " + m[2] + "h" : ""),
-            name: m[3].replace(/[-_]+/g, " "),
-          };
+        /* ONE VARIABLE, ONE NODE, ONE PLUGIN. Empty is a value and mounts
+           nothing; a list where a name goes is said in the node; a name that is
+           not an id, or that nothing registered, is the runtime's refusal in
+           the same node, listing what is registered. Nothing is ever a blank. */
+        function place(key) {
+          var node = nodes[key];
+          if (!node) return;
+          var held = biom.plugin.extensions();
+          var value = held[key];
+          if (value === undefined || value === null || value === "") { node.hidden = true; return; }
+          if (typeof value !== "string") {
+            rt.sections.fail(node, key + " holds a " + (Array.isArray(value) ? "list" : typeof value) + " where a plugin name goes");
+            return;
+          }
+          node.hidden = false;
+          rt.page.mount(node, value.trim());
         }
 
-        /* A CHILD IS A PAGE OR A TABLE, so the word has to be true of both when
-           the list holds both. Saying "pages" over a list with a table in it is
-           a small lie in the one place on the page that claims to be counting. */
-        function tag(child) {
-          if (child.kind !== "table") return "page";
-          if (typeof child.rows !== "number") return "table";
-          return child.rows === 1 ? "table · 1 row" : "table · " + child.rows + " rows";
+        function mount() {
+          if (done) return;
+          done = true;
+          var held = biom.plugin.extensions();
+          if (held.rows === true) document.documentElement.classList.add("g-rows");
+          place("head");
+          place("foot");
         }
 
-        function draw(kids, blurbs) {
-          var dated = kids.length > 0 && kids.every(function (c) { return split(c).key !== ""; });
-          byDate.hidden = !dated;
-
-          /* THE DEFAULT IS READ OFF THE CHILDREN, not declared by the page. A
-             folder of dated pages wants the newest first and a folder of names
-             wants A to Z, and a setting for that is a setting nobody sets
-             correctly on the folder where it matters. */
-          if (by === null) sortBy(dated ? "date" : "name");
-          if (by === "date" && !dated) sortBy("name");
-
-          byName.setAttribute("aria-pressed", String(by === "name"));
-          byDate.setAttribute("aria-pressed", String(by === "date"));
-          dirBtn.textContent = dir === 1 ? "↓" : "↑";
-          dirBtn.setAttribute("aria-label", dir === 1 ? "Ascending" : "Descending");
-
-          var list = kids.map(function (c) { return { child: c, bits: split(c) }; });
-          list.sort(function (a, b) {
-            var x = by === "date" ? a.bits.key : a.bits.name.toLowerCase();
-            var y = by === "date" ? b.bits.key : b.bits.name.toLowerCase();
-            return x < y ? -dir : x > y ? dir : 0;
-          });
-
-          tally.textContent = String(list.length);
-          var pages = kids.every(function (c) { return c.kind === "page"; });
-          unit.textContent = pages
-            ? (list.length === 1 ? "page" : "pages")
-            : (list.length === 1 ? "item" : "items");
-
-          rows.textContent = "";
-          list.forEach(function (entry, i) {
-            var child = entry.child, bits = entry.bits;
-            var row = document.createElement("div");
-            row.className = "row";
-            row.style.setProperty("--i", String(i));
-            /* One control per row and never a control inside it — that is two
-               tab stops for one row and a screen reader announcing it twice. */
-            row.setAttribute("role", "button");
-            row.setAttribute("tabindex", "0");
-
-            function cell(cls, text) {
-              var el = document.createElement("span");
-              el.className = cls;
-              el.textContent = text;
-              return el;
-            }
-            row.append(cell("ord", String(i + 1).padStart(2, "0")));
-            row.append(cell("name", bits.name));
-            row.append(cell("stamp", bits.stamp));
-            row.append(cell("kind", tag(child)));
-            /* The parent's own line about THIS child, where it has one. Keyed by
-               the child's last segment, which is the name the folder on disk
-               already has — so a line follows a rename the way nothing else
-               written into a parent does. */
-            var key = child.kind === "page" ? child.id.slice(child.id.lastIndexOf("/") + 1) : child.id;
-            row.append(cell("blurb", blurbs(key)));
-
-            function open() { biom.open(child); }
-            row.addEventListener("click", open);
-            row.addEventListener("keydown", function (e) {
-              if (e.key !== "Enter" && e.key !== " ") return;
-              e.preventDefault();
-              open();
-            });
-            rows.append(row);
-          });
-
-          holds.hidden = list.length === 0;
-        }
-
-        /* THE PARENT'S OWN LINES, AS TWO PARALLEL LISTS. A variable in this
-           format is a scalar or a list of scalars and never a map, so anything
-           tabular is lists sharing a stem and the same length. `holds` names the
-           child — its own last segment, which is the folder name on disk, so the
-           line follows a rename — `holdWords` says the line, and a child named
-           in neither simply has no line. A page with no `holds` is the ordinary
-           case and is what every page starts as. */
-        function linesFrom(vars) {
-          var keys = Array.isArray(vars.holds) ? vars.holds : [];
-          var words = Array.isArray(vars.holdWords) ? vars.holdWords : [];
-          return function (key) {
-            var i = keys.indexOf(key);
-            return i >= 0 && i < words.length ? String(words[i]).trim() : "";
-          };
-        }
-
-        function paint() {
-          return Promise.all([biom.children(), biom.data()]).then(function (answer) {
-            var kids = Array.isArray(answer[0]) ? answer[0] : [];
-            var vars = answer[1] && typeof answer[1] === "object" ? answer[1] : {};
-            draw(kids, linesFrom(vars));
-          }).catch(function (e) {
-            /* A page whose children could not be read still has a document on
-               screen. Say so where a developer will see it and draw nothing —
-               an empty board under a page that has children is a lie, and a
-               broken one under a page that has none is noise. */
-            console.error("[biom] this page's children could not be read", e);
-            holds.hidden = true;
-          });
-        }
-
-        byName.addEventListener("click", function () { sortBy("name"); void paint(); });
-        byDate.addEventListener("click", function () { sortBy("date"); void paint(); });
-        dirBtn.addEventListener("click", function () { dir = -dir; void paint(); });
-
-        /* `onRefresh` fires when a child is added to or removed from this page,
-           among other things, so the board is right without anybody reloading. */
-        if (biom && typeof biom.onRefresh === "function") biom.onRefresh(function () { void paint(); });
-        void paint();
-
-        var io = new IntersectionObserver(function (entries) {
-          entries.forEach(function (e) {
-            if (!e.isIntersecting || seen) return;
-            seen = true;
-            holds.classList.add("is-seen");
-            io.disconnect();
-          });
-        }, { root: null, threshold: 0.05 });
-        io.observe(holds);
+        if (rt.page && typeof rt.page.onDraw === "function") rt.page.onDraw(mount);
       })();
     </script>
 

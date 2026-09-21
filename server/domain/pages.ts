@@ -841,18 +841,20 @@ export function makePages(
    *
    *  THE ORDER IS THE WHOLE STATEMENT OF WHAT A PLUGIN IS, AND IT IS NEAREST
    *  FIRST. A page's OWN `index.html` wins, because a page that drew itself
-   *  asked for nothing else. Then one in this workspace's `plugins/`, which is
-   *  the person's — written by them, or copied in to be changed. Then the
-   *  FRAMEWORK'S OWN, which is never the winner: a vault file at the same path
-   *  always replaces it, and a vault that holds no such file follows every
-   *  framework release without a copy going stale. `MISSING_DOCUMENT` is what is
-   *  left underneath, reached only by a page naming a plugin nobody has.
+   *  asked for nothing else. Then one in this workspace's `plugins/` under the
+   *  BARE name the page said, which is a plugin of the workspace's own. Then
+   *  the FRAMEWORK'S OWN under its `biom-` name, which a vault never shadows:
+   *  what a vault changes about the framework's document is its variables,
+   *  in a rung, and a vault that writes none follows every framework release.
+   *  `MISSING_DOCUMENT` is what is left underneath, reached only by a page
+   *  naming a plugin nobody has.
    *
    *  THE FRAMEWORK'S SET USED TO BE SEEDED INTO THE VAULT INSTEAD, so that the
    *  second rung was always occupied — and the cost, named at the time, was
-   *  that a framework fix never reached a copy already made. The last rung is
-   *  what pays that down: nothing is copied unasked, and what a person wants
-   *  to change they copy into `plugins/` themselves. */
+   *  that a framework fix never reached a copy already made; then a copy under
+   *  the prefixed name was the paved override, which was the same cost by
+   *  choice. Neither stands: nothing is copied unasked and nothing copied
+   *  shadows. `pluginDocument` below says the rest. */
   const htmlOf = async (id: PageId, doc: PageDoc): Promise<string> => {
     const own = await files.read(`${dirOf(id)}/${PAGE_DOCUMENT}`);
     if (own !== null) return own;
@@ -860,7 +862,18 @@ export function makePages(
   };
 
   /** One plugin's document: the vault's own under the name the page said,
-   *  then the framework's under its `biom-` name. */
+   *  then the framework's under its `biom-` name.
+   *
+   *  THE VAULT'S IS READ UNDER THE BARE NAME AND NOWHERE ELSE, and that is the
+   *  rule rather than an omission. A vault folder wearing `biom-` is an
+   *  EXTENSION — it holds `extensions.yaml` and nothing more, and the loader
+   *  refuses anything else in it by name — so `plugins/biom-doc/index.html`
+   *  dropped into a vault is never a document that draws. There are no
+   *  file-based overrides: a workspace that wants a document of its own
+   *  writes `plugins/doc/index.html`, a plugin of the workspace's OWN, and
+   *  every page saying `plugin: doc` draws with it; one that wants the
+   *  framework's document to draw differently changes its variables in a
+   *  rung, or names a plugin of its own in one. */
   const pluginDocument = async (plugin: string): Promise<string> => {
     const mine = await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`);
     if (mine !== null) return mine;

@@ -8,12 +8,12 @@
 // WHAT THIS CANNOT SEE: there is no DOM here, so the canvas, the physics and
 // the hand are not covered. What IS covered is every decision the map makes
 // before it draws — which page a link names, what a page's parent and kind are,
-// what the graph holds, and what the whole sky says as markdown — and the one
-// fact that keeps the rail's map and the plugin's own document from drifting.
+// what the graph holds, and what the whole sky says as markdown. The rail's map
+// is no longer a second copy of this document: the shell reads `@map` through
+// the server like any page, so there is nothing to hold equal.
 
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
-import { MAP_DOCUMENT } from "../client/views/page.js";
 
 const glob = /** @type {any} */ (globalThis);
 
@@ -27,13 +27,6 @@ function mindmap() {
 }
 
 const mm = mindmap();
-
-test("the rail's map and the plugin's own document are one string, said twice", () => {
-  // The host cannot import `guest/` and the box cannot fetch, so `page.js`
-  // carries the document again. This is what stops the copy drifting.
-  const own = readFileSync(new URL("../guest/plugins/biom-mindmap/index.html", import.meta.url), "utf8");
-  expect(MAP_DOCUMENT).toBe(own);
-});
 
 test("a page's parent is its id path and its kind is the top-level page it sits under", () => {
   expect(mm.parentOf("home")).toBeNull();

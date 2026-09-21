@@ -13,8 +13,9 @@
 // tests exactly that and nothing it wishes were still true:
 //
 //   `makePageView`   builds one document and hands it to the frame host
-//   `makeDesignView` draws the design doc in a box, like every other page
-//   `makeMapView`    the same mount again, for the rail's map — `tests/mindmap.test.js`
+//   `makeDesignView` draws the design doc in a box, like every other page, off
+//                    the read the shell made of `@design`
+//   `makeMapView`    the same mount again, for the rail's map, off `@map`
 //
 // CONFIG HAD THE OTHER HALF OF THIS FILE, and it is gone: the screen was made
 // for ports the framework does not have, and the owner decided (2026-09-17)
@@ -29,7 +30,8 @@ import { test, expect, beforeEach } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { makePageView, makeDesignView } from "../client/views/page.js";
+import { makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
+import { weaveRuntime } from "../client/platform/document.js";
 import { vaultBase } from "../contracts/wire.js";
 
 const ROOT = join(import.meta.dir, "..");
@@ -284,29 +286,46 @@ test("every slot plugin is in the document, out of the VAULT, and the vendored b
   expect(doc).not.toContain('type="module"');
 });
 
-/* ══ makeDesignView: the design doc is a page, drawn like one ═════════ */
+test("a document that says <header before its <head> still gets the runtime woven into its head", () => {
+  // The doc document draws `<header id="g-head">` and its header comment says
+  // so; `<head[^>]*>` matched the comment's `<header …>` first and wove every
+  // runtime tag into a comment, so the box loaded nothing and reported nothing.
+  const html = "<!doctype html>\n<!-- a <header id=\"g-head\"> sits before the stack -->\n<html>\n<head><title>T</title></head>\n<body><header id=\"g-head\"></header><main id=\"g-page\"></main></body></html>";
+  const doc = weaveRuntime(html, { id: "home", name: "Home", plugin: "doc", input: {} }, VAULT);
+  const runtimeAt = doc.indexOf("/guest/runtime/boot.js");
+  expect(runtimeAt).toBeGreaterThan(doc.indexOf("<head>"));
+  expect(runtimeAt).toBeLessThan(doc.indexOf("<title>T</title>"));
+});
 
-// It used to render host-side and read-only, and this block used to say so and
-// call it a hole. The hole is closed: `design/` is a page-shaped root beside
-// `pages/`, the design doc answers to the reserved id `@design`, and `pageDir`
-// sends that id to `design/`. So the same reader reads it, the same runtime
-// draws it, and the same wave edits it — there is nothing left here but a mount.
+/* ══ makeDesignView and makeMapView: two pages under reserved ids ══════ */
+
+// The design doc used to render host-side and read-only, and this block used to
+// say so and call it a hole. The hole is closed twice over: `design/` is a
+// page-shaped root beside `pages/`, the design doc answers to the reserved id
+// `@design`, `pageDir` sends that id to `design/`, AND the shell reads it
+// through the store like any page and hands the read here. So the same reader
+// reads it, the same runtime draws it, the same wave edits it, and the document
+// the server resolved for it — the `doc` plugin's, with its rungs, or a
+// `design/index.html` of the vault's own — is what the box loads. There is
+// nothing left here but a mount, and it is the page mount under another name.
 //
 // `@design` cannot collide with a page somebody makes: a page segment is
 // `^[a-z0-9][a-z0-9-]*$`, so the `@` is the whole mechanism. It also closed a
 // real hole, because the doc used to answer to the id `design`, which IS a legal
 // page id.
 
-test("the design doc mounts the same box as a page, keyed by its reserved id", () => {
+test("the design doc mounts the same box as a page, keyed by its reserved id, with the document its read carries", () => {
   const frameHost = fakeFrameHost();
-  const el = makeDesignView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })();
+  const read = { ...page("@design", []), name: "Design", html: "<!doctype html><html><head><title>Doc</title></head><body><main id=\"g-page\"></main></body></html>" };
+  const el = makeDesignView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(read);
 
   expect(frameHost.mounts).toHaveLength(1);
   const mount = frameHost.mounts[0];
   expect(mount.key).toBe("@design");
   expect(mount.ctx).toEqual({ page: "@design" });
-  // The same document as every page: it carries no page content at all, which is
-  // what lets one box be reused across a redraw.
+  // THE PAGE'S OWN DOCUMENT, at last: what the server resolved, with the runtime
+  // woven into its head.
+  expect(mount.html).toContain("<title>Doc</title>");
   expect(mount.html).toContain("/guest/runtime/boot.js");
   expect(mount.html).toContain(`<script src="${vaultBase(VAULT)}/plugin/"></script>`);
   // The keyed element itself, with no wrapper: moving an iframe RELOADS it, so a
@@ -314,13 +333,22 @@ test("the design doc mounts the same box as a page, keyed by its reserved id", (
   expect(el.tagName).toBe("IFRAME");
 });
 
-test("it asks the store for nothing, because the box reads the page itself", () => {
-  // The old view fetched `design.read` and turned the answer into host markup.
-  // Nothing here reads the document: the runtime inside the box asks for it over
-  // its own port, exactly as it does for any page.
+test("the map mounts the same way, off the read the server answers for @map", () => {
+  const frameHost = fakeFrameHost();
+  const read = { ...page("@map", []), name: "Map", plugin: "mindmap", input: { rail: true }, html: "<!doctype html><html><head></head><body><main id=\"g-map\"></main></body></html>" };
+  makeMapView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(read);
+  const mount = frameHost.mounts[0];
+  expect(mount.key).toBe("@map");
+  expect(mount.html).toContain('id="g-map"');
+  expect(mount.html).toContain('"plugin":"mindmap"');
+  expect(mount.html).toContain('"rail":true');
+});
+
+test("neither view asks the store for anything, because the shell already read the page and the box reads the rest itself", () => {
   const asked = [];
   const ws = new Proxy({}, { get: (_, name) => { asked.push(String(name)); return () => {}; } });
-  makeDesignView({ h, frameHost: fakeFrameHost(), ws, ui: {}, vault: VAULT })();
+  makeDesignView({ h, frameHost: fakeFrameHost(), ws, ui: {}, vault: VAULT })(page("@design", []));
+  makeMapView({ h, frameHost: fakeFrameHost(), ws, ui: {}, vault: VAULT })(page("@map", []));
   expect(asked).toEqual([]);
 });
 
@@ -330,6 +358,6 @@ test("the design box is keyed apart from every page box", () => {
   // somebody may legitimately have.
   const frameHost = fakeFrameHost();
   makePageView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(page("design", []));
-  makeDesignView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })();
+  makeDesignView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(page("@design", []));
   expect(frameHost.mounts.map((m) => m.key)).toEqual(["design", "@design"]);
 });

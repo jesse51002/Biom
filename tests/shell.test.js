@@ -268,7 +268,10 @@ function fakeWs(page = DOC) {
     async loadPage(id) {
       await null;
       this.calls.push("loadPage:" + id);
-      state.page = [DOC, WITH_BLOCK, BOARD].find((p) => p.id === id) ?? null;
+      // THE DESIGN DOC AND THE MAP ARE PAGE READS under reserved ids, and the
+      // shell asks for them exactly as it asks for a routed page.
+      const reserved = id === "@design" ? { ...DOC, id, name: "Design" } : id === "@map" ? { ...BOARD, id, name: "Map", plugin: "mindmap" } : null;
+      state.page = reserved ?? [DOC, WITH_BLOCK, BOARD].find((p) => p.id === id) ?? null;
       emit();
       return state.page;
     },
@@ -351,8 +354,8 @@ function fakeViews() {
       page: (p) => { drawn.page++; return h("div.pagebody", p.id); },
       table: one("table", "tbl"),
       vault: one("vault", "vaultpick"),
-      design: one("design", "designdoc"),
-      map: one("map", "sky"),
+      design: (p) => { drawn.design++; return h("div.designdoc", p.id); },
+      map: (p) => { drawn.map++; return h("div.sky", p.id); },
       runs: one("runs", "overview"),
       instructions: {
         vault: one("instructions", "vaultins"),
@@ -1361,15 +1364,19 @@ test("Design is a route like any other, and the rail names the folder it is", as
   expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Design"]);
 });
 
-test("nothing in the snapshot rebuilds the design doc, and Reload re-reads it", async () => {
+test("the design doc is read through the store as @design, an unrelated repaint leaves it alone, and Reload re-reads it as a page", async () => {
   const g = harness(DOC, { view: "design", id: "" });
   await tick();
+  // A PAGE READ UNDER A RESERVED ID, asked for exactly as a routed page is, and
+  // handed to the view as that read — which is what lets the `doc` document
+  // the server resolved draw it, rungs and all.
+  expect(g.ws.calls).toContain("loadPage:@design");
   const node = g.plate.firstChild;
   expect(g.drawn.design).toBe(1);
+  expect(flat(node)).toBe("@design");
 
-  // A design write moves nothing in WorkspaceSnapshot, so nothing that repaints
-  // the shell may take this screen apart — an artifact on the design doc would
-  // be restarted by an unrelated keystroke somewhere else.
+  // Nothing that repaints the shell may take this screen apart — an artifact on
+  // the design doc would be restarted by an unrelated keystroke somewhere else.
   g.ws.emit();
   g.ui.set({ treeOrder: "desc" });
   await tick();
@@ -1377,11 +1384,11 @@ test("nothing in the snapshot rebuilds the design doc, and Reload re-reads it", 
   expect(g.drawn.design).toBe(1);
 
   // Reload IS the loop, and an agent rewriting `design/` is the case it is for.
-  // Nothing in the snapshot can say that moved, so the button says it instead.
-  // The button itself, not the bar around it: on this route Reload is the only
-  // tool in the rail, so the span holding it carries the same text.
+  // It is a page reload: the box torn down and the read taken again from disk.
   find(g.rail, (el) => el.tagName === "BUTTON" && flat(el) === "Reload").fire("click");
   await tick();
+  expect(g.ws.calls).toContain("reloadPage:@design");
+  expect(g.frameHost.kept).toContain("@design");
   expect(g.drawn.design).toBe(2);
 });
 

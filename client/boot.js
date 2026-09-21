@@ -242,16 +242,14 @@ const views = {
   // above it, so it is a route rather than a dialog.
   vault: makeVaultView({ h, ws, ui, production }),
   // The design doc, and it is the same mount as every other page: `@design` is
-  // a reserved id, `pageDir` sends it to the `design/` root beside `pages/`, and
-  // the same runtime draws it. What it does NOT get is a document of its own —
-  // the box is woven empty, so a `design/index.html` never loads and the doc
-  // plugin always draws it. See the comment on `makeDesignView`.
+  // a reserved id, `pageDir` sends it to the `design/` root beside `pages/`, the
+  // shell reads it through the store like any page, and the same runtime draws
+  // the document the server resolved for it. See the comment on `makeDesignView`.
   design: makeDesignView({ h, frameHost, ws, ui, vault: vault ?? "" }),
-  // The map of the whole workspace: the `mindmap` plugin's document, mounted on
-  // `@map`, which the server answers as a bare plugin page — the vault's own
-  // `plugins/mindmap/` if it overrode one, the framework's otherwise — so what
-  // this draws is the document `page.js` carries as `MAP_DOCUMENT`, held equal
-  // to the framework's own file by `tests/mindmap.test.js`.
+  // The map of the whole workspace: `@map`, which the server answers as a bare
+  // plugin page carrying the `mindmap` plugin's document — the vault's own
+  // `plugins/mindmap/` if it has one, the framework's otherwise — read through
+  // the store like any page and drawn as one.
   map: makeMapView({ h, frameHost, ws, ui, vault: vault ?? "" }),
   // AUTOMATIONS AND INSTRUCTIONS: the rail's overview of every run and the
   // workspace's own instructions, and a page's two screens. Each reads the

@@ -1,0 +1,19 @@
+# The `doc` document's variables, each with its default. This file is the
+# framework's rung; a vault writes over any key in plugins/biom-doc/extensions.yaml,
+# a page in the same file beside its content.yaml, and the nearest rung wins
+# one key at a time.
+
+# The plugin mounted into the node BEFORE the stack, once the stack has drawn.
+# Empty mounts nothing. A workspace names a plugin of its own here to dress the
+# page — its board, its furniture — without copying this document.
+head:
+
+# The plugin mounted into the node AFTER the stack. The framework's own board
+# of children; another board is another name, and no board is nothing at all.
+foot: biom-holds
+
+# Whether the bare reconciled child sections — the ones the host writes into
+# a parent's contents and nobody wrote a file for — are drawn as well. Hidden
+# by default, because the board at the foot draws the children; a page that
+# empties `foot` and wants the rows back says `rows: true`.
+rows: false
