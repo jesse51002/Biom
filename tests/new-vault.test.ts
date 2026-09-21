@@ -272,9 +272,9 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   // resolve a relative path against inside the box, and was written before
   // anybody knew which folder it landed in — and the host turns the mark into a
   // real `src` under the vault's route as it weaves.
-  const marked = kanban.replace("</head>", '<script data-g-src="timeline/lib.js"></script></head>');
+  const marked = kanban.replace("</head>", '<script data-g-src="timeline/lib/vendor.js"></script></head>');
   const doc = weaveRuntime(marked, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
-  expect(doc).toContain(`src="${base}timeline/lib.js"`);
+  expect(doc).toContain(`src="${base}timeline/lib/vendor.js"`);
   // The mark is gone from the tag; the comment above it explaining the mark is
   // the plugin author's words and stays, like every other word in their file.
   expect(doc).not.toContain("<script data-g-src");

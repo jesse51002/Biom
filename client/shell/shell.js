@@ -320,12 +320,12 @@ export function makeShell(deps) {
         // store, and what the view takes is that read, so the inputs are the
         // page's — the read itself, and `pages`, because the doc plugin's
         // document reads its own rungs off the read and a redraw is a new one.
-        return ["design", w.page, w.pages];
+        return ["design", w.page, w.pages, missing.has(DESIGN_PAGE)];
       case "map":
         // THE MAP TOO: `@map` is a page read the server answers with the
         // mindmap plugin's document. The map reads the whole workspace itself,
         // over its port, and re-reads on every refresh the box is sent.
-        return ["map", w.page];
+        return ["map", w.page, missing.has(MAP_PAGE)];
       case "runs":
         // The overview reads the registry itself and rereads on the stream and
         // on its own clock, so it is built once per entry into the route.
@@ -398,7 +398,10 @@ export function makeShell(deps) {
       }
       case "design": {
         // The doc view, over the design source. Not a second renderer: a doc is
-        // a page, read through `page.read` as `@design` and drawn like one.
+        // a page, read through `page.read` as `@design` and drawn like one — and
+        // a workspace whose `design/` is gone is told so rather than left at
+        // "Opening…", exactly as a page that is not there is.
+        if (missing.has(DESIGN_PAGE)) return h("p.hold", "There is no design doc in this workspace — design/content.yaml is missing.");
         const page = w.page;
         if (!page || page.id !== DESIGN_PAGE) return h("p.hold", "Opening…");
         return views.design(page);
@@ -406,6 +409,7 @@ export function makeShell(deps) {
       case "map": {
         // The whole workspace as a sky, drawn by the map plugin's document the
         // server resolved for `@map`.
+        if (missing.has(MAP_PAGE)) return h("p.hold", "The map could not be read.");
         const page = w.page;
         if (!page || page.id !== MAP_PAGE) return h("p.hold", "Opening…");
         return views.map(page);

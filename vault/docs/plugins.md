@@ -199,10 +199,12 @@ explains. Name a section file for what it is — `masthead.html`, `@page-notes.h
 
 A plugin's document was written to disk long before anybody knew which folder it
 would land in, and the box is a `srcdoc` frame with no base to resolve a relative
-`src` against. So the host spells it: a `<script data-g-src="timeline/lib.js">`
+`src` against. So the host spells it: a `<script data-g-src="timeline/lib/vendor.js">`
 inside a plugin's own document becomes a real `src` under that workspace's own
-`/plugin/` route. A plugin's own `.js` is already in the bundle every page
-carries, so name only a file that is not — a library beside the plugin, say.
+`/plugin/` route. Every `.js` directly inside a plugin folder is already in the
+bundle every page carries, so a file named this way must be one the walk does
+not take — a library in a subfolder of its own, `plugins/timeline/lib/`, and
+never one beside the plugin's script, which would run twice.
 **No file in a workspace may name a path into the application's own directory**
 — that is wrong the first time somebody moves the application.
 

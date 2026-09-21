@@ -1763,6 +1763,34 @@ test("R65 to R68 — the folder shape, a rung naming nothing, and the copy a war
   }
 });
 
+test("without the mirror a rung over a framework plugin is not a FAIL: R67 skips the framework's side and says once why", async () => {
+  const root = await pluginVault({
+    "plugins/biom-doc/extensions.yaml": "head: board-look\nsort: date\n",
+    "plugins/board-look/board-look.js": "",
+    "plugins/board-look/plugin.yaml": "dots: true\n",
+    "plugins/board-look/extensions.yaml": "size: 3\n",
+  });
+  try {
+    await rm(join(root, "docs"), { recursive: true, force: true });
+    const source = await readVault(root);
+    expect(source.shipped).toEqual({});
+    const found = checkVault(source).filter((f) => f.rule === "R67");
+    // The vault's own contract is still held to — the checker can read that
+    // one — and the framework's rung earns one WARN naming the mirror rather
+    // than a FAIL naming a typo it cannot see.
+    expect(found.map((f) => [f.severity, f.file])).toEqual([
+      ["FAIL", "plugins/board-look/extensions.yaml"],
+      ["WARN", "docs/plugins/"],
+    ]);
+    expect(found[1]?.says).toContain("plugins/biom-doc/extensions.yaml cannot be held against what the framework declares");
+    // A page's rung the same way, through the CLI's path.
+    const page = await checkDir(join(root, "pages", "home"), null, contractsOf(source));
+    expect(page.findings.filter((f) => f.rule === "R67")).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a page's own plugins/ takes R65 to R67 against the contracts the vault knows, and R68 does not apply there", async () => {
   const root = await pluginVault({
     "pages/home/children/notes/content.yaml": "name: Notes\nplugin: doc\ncontents: []\n",

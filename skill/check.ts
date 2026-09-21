@@ -2725,6 +2725,20 @@ export function checkVault(src: VaultSource): Finding[] {
    * scale is: it is one fact about the vault. */
   if (src.plugins !== undefined && src.plugins !== null) {
     checkPlugins(src.plugins, "plugins", contractsOf(src), src.shipped ?? null, out);
+    // THE MIRROR IS NOT HERE, and a rung over a framework plugin is. Said once
+    // for the vault rather than as a FAIL per rung: nothing is wrong with the
+    // workspace, the checker simply cannot read what the framework declares
+    // until the server has opened the folder and written `docs/plugins/`.
+    const rungs = src.plugins.folders.filter((f) => f.name.startsWith(OURS) && f.extensions !== null);
+    if (rungs.length > 0 && Object.keys(src.shipped ?? {}).length === 0) {
+      out.push({
+        rule: "R67",
+        severity: "WARN",
+        file: "docs/plugins/",
+        line: 0,
+        says: "docs/plugins/ is not here, so " + rungs.map((f) => "plugins/" + f.name + "/" + EXTENSIONS).join(", ") + " cannot be held against what the framework declares. The server writes the mirror when it opens the workspace; open it once and run this again.",
+      });
+    }
   }
 
   if (!src.pages) return out;
@@ -2858,6 +2872,15 @@ export function checkPlugins(
   const say = (rule: string, severity: Severity, file: string, says: string) =>
     out.push({ rule, severity, file, line: 0, says });
 
+  /* IS THE FRAMEWORK'S SET KNOWN AT ALL? Its contracts come out of the mirror
+   * in `docs/plugins/`, which is written when the server opens the workspace
+   * and kept out of its history — so a fresh clone the server has never opened
+   * has none. Against nothing, a rung over `biom-doc` cannot be held to
+   * anything, and saying it names a plugin that declares nothing would be a
+   * FAIL on a correct workspace. So the framework's side of R67 is skipped
+   * until the mirror is there, and `checkVault` says so once. */
+  const framework = contracts !== null && Object.keys(contracts).some((id) => id.startsWith(OURS));
+
   /* R65 — a loose script is the old shape, and nothing loads it. */
   for (const name of src.loose) {
     const stem = name.slice(0, -3);
@@ -2891,7 +2914,7 @@ export function checkPlugins(
     }
 
     /* R67 — a rung names only what the plugin declares. */
-    if (f.extensions !== null && contracts !== null) {
+    if (f.extensions !== null && contracts !== null && !(extension && !framework)) {
       const declared = contracts[f.name];
       const keys = keysOf(f.extensions);
       if (declared === undefined) {

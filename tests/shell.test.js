@@ -2111,6 +2111,23 @@ test("the grip hangs off the bed, not off the rack that scrolls", () => {
   expect(grip.moved).toBe(moved);
 });
 
+test("a design doc that is not there is said in a sentence, not left at Opening…", async () => {
+  // A workspace whose `design/` is gone: `page.read` answers null for
+  // `@design`, exactly as it does for a page that does not exist, and the
+  // screen has to say so — before this it sat at "Opening…" with nothing to
+  // act on.
+  const g = harness();
+  g.ws.loadPage = async (id) => { await null; g.ws.calls.push("loadPage:" + id); g.ws.state.page = null; g.ws.emit(); return null; };
+  g.ui.go("design", "");
+  await tick();
+  expect(g.ws.calls).toContain("loadPage:@design");
+  expect(flat(g.plate.firstChild)).toContain("There is no design doc in this workspace");
+  // Asked once, not on every repaint.
+  g.ws.emit();
+  await tick();
+  expect(g.ws.calls.filter((c) => c === "loadPage:@design")).toHaveLength(1);
+});
+
 test("the Map is a route like Design, and it takes the canvas whole", async () => {
   const g = harness();
   await tick();

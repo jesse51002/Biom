@@ -546,9 +546,11 @@ builds to reach one file, with nothing appended — is `pluginBundle` in
 > **`pluginFile`, the per-file route**, answers `/v/<enc>/plugin/<rel>` from
 > the vault's `plugins/<rel>` under a bare name and the framework's `<rel>`
 > otherwise — never a vault file under a `biom-` folder. It is what a vault
-> page plugin's `data-g-src` reaches for a file that is not already in the
-> bundle, a library beside the plugin say; `/guest/plugins/` itself is refused
-> by `locate()`, so there is one url per plugin.
+> page plugin's `data-g-src` reaches for a file the walk does not bundle — a
+> library in a subfolder of the plugin's own, `timeline/lib/vendor.js`, never
+> a `.js` beside the plugin's script, which is in the bundle already and would
+> run twice; `/guest/plugins/` itself is refused by `locate()`, so there is one
+> url per plugin.
 >
 > **§5 is what happens when one of them claims a part kind**, and the order the
 > folder happens to sort in decides nothing: only `plugins/<kind>/` may draw

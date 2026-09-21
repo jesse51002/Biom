@@ -245,6 +245,32 @@ test("the page read carries the merged extensions, the design doc reads its own 
   }
 });
 
+test("a page's own plugins/<id>/index.html draws that page before the vault's and the framework's, and a biom- folder there never does", async () => {
+  const fw = await tree(FRAMEWORK);
+  const vault = await tree({
+    "plugins/timeline/index.html": "<main>the vault's timeline</main>",
+    "pages/home/content.yaml": "name: Home\nplugin: timeline\ncontents: []\n",
+    "pages/home/plugins/timeline/index.html": "<main>this page's timeline</main>",
+    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: timeline\ncontents: []\n",
+    "pages/home/children/other/content.yaml": "name: Other\nplugin: doc\ncontents: []\n",
+    "pages/home/children/other/plugins/biom-doc/index.html": "<main>a copy by another name</main>",
+    "pages/home/children/other/plugins/biom-doc/extensions.yaml": "rows: true\n",
+  });
+  try {
+    const files = makeFiles(vault);
+    const pages = makePages(files, { parse, parseAny, format, formatAny }, () => [], undefined, "Home", undefined, makeFiles(fw));
+    expect((await pages.read("home"))!.html).toBe("<main>this page's timeline</main>");
+    // The child reads its own directory and never its parent's.
+    expect((await pages.read("home/notes"))!.html).toBe("<main>the vault's timeline</main>");
+    // A `biom-` folder under a page is an extension: its document is not read
+    // and the framework's draws.
+    expect((await pages.read("home/other"))!.html).toContain('id="g-page"');
+  } finally {
+    await rm(fw, { recursive: true, force: true });
+    await rm(vault, { recursive: true, force: true });
+  }
+});
+
 test("pageDirs walks positions and not documents, in id order, the design doc's last, and never a plugins/ or a _ folder as a page", async () => {
   const vault = await tree({
     "pages/home/content.yaml": "",

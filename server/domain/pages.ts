@@ -841,7 +841,8 @@ export function makePages(
    *
    *  THE ORDER IS THE WHOLE STATEMENT OF WHAT A PLUGIN IS, AND IT IS NEAREST
    *  FIRST. A page's OWN `index.html` wins, because a page that drew itself
-   *  asked for nothing else. Then one in this workspace's `plugins/` under the
+   *  asked for nothing else. Then one in the page's own `plugins/`, which
+   *  reaches this page alone. Then one in this workspace's `plugins/` under the
    *  BARE name the page said, which is a plugin of the workspace's own. Then
    *  the FRAMEWORK'S OWN under its `biom-` name, which a vault never shadows:
    *  what a vault changes about the framework's document is its variables,
@@ -856,8 +857,17 @@ export function makePages(
    *  choice. Neither stands: nothing is copied unasked and nothing copied
    *  shadows. `pluginDocument` below says the rest. */
   const htmlOf = async (id: PageId, doc: PageDoc): Promise<string> => {
-    const own = await files.read(`${dirOf(id)}/${PAGE_DOCUMENT}`);
+    const dir = dirOf(id);
+    const own = await files.read(`${dir}/${PAGE_DOCUMENT}`);
     if (own !== null) return own;
+    // THE PAGE'S OWN `plugins/` IS THE NEAREST RUNG FOR A DOCUMENT TOO: a plugin
+    // folder beside this page's `content.yaml`, under the bare name the page
+    // said, draws this page and no other. A `biom-` folder there is an
+    // extension and holds a rung alone, exactly as in the vault.
+    if (!doc.plugin.startsWith(OURS)) {
+      const mine = await files.read(`${dir}/${PLUGINS_DIR_VAULT}/${doc.plugin}/${PAGE_DOCUMENT}`);
+      if (mine !== null) return mine;
+    }
     return await pluginDocument(doc.plugin);
   };
 
