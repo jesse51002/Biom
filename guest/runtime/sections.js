@@ -319,7 +319,7 @@
        *  plugin exists, and draws an ordinary code block where it does not.
        *  @param {string} id */
       has(id) {
-        return rt.plugins.has(id);
+        return rt.plugins.reach(id) !== null;
       },
 
       /** REACH ANOTHER PLUGIN. There are no imports in here, so this is the
@@ -329,13 +329,19 @@
        *      const md = ctx.use("markdown");
        *      md.mount(cell, { kind: "markdown", md: text, vars: {} });
        *
+       *  BY NAME, AS WRITTEN — `ctx.use("biom-items")` for the framework's —
+       *  except that a PART KIND's word reaches whatever draws that kind:
+       *  `ctx.use("markdown")` is the question "what draws markdown here", and
+       *  the answer is the workspace's own `markdown` or the framework's
+       *  `biom-markdown`, exactly as a slot of that kind is drawn.
+       *
        *  It THROWS on a name nothing registered rather than returning null,
        *  because a plugin composing on a plugin that is not there is a bug its
        *  author has to see — a silent null draws a blank cell and looks like
        *  missing data. Ask `ctx.has` first when the dependency is optional.
        *  @param {string} id */
       use(id) {
-        const def = rt.plugins.get(id);
+        const def = rt.plugins.reach(id);
         if (!def) {
           throw new Error(
             'no plugin named "' + id + '" is registered — ' +
@@ -513,7 +519,7 @@
       if (content.kind === "list") {
         node.textContent = "";
         (content.items || []).forEach((/** @type {any} */ item, /** @type {number} */ at) => {
-          const itemDef = rt.plugins.get(String(item.kind));
+          const itemDef = rt.plugins.forKind(String(item.kind));
           const holder = document.createElement("div");
           if (!itemDef) {
             fail(holder, 'nothing draws a "' + String(item.kind) + '" item');
@@ -534,7 +540,7 @@
         continue;
       }
 
-      const def = rt.plugins.get(String(content.kind));
+      const def = rt.plugins.forKind(String(content.kind));
       if (!def) {
         fail(node, 'nothing draws a "' + String(content.kind) + '" part — the plugin for it is not registered');
         continue;

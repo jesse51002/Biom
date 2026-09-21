@@ -237,7 +237,7 @@ test("the design doc reads as a page, in the shape pages.read answers with", asy
   // `PageId` is ever resolved against.
   expect(page.id).toBe("design");
   expect(page.ports).toBeNull();
-  expect(page!.plugin).toBe("doc");
+  expect(page!.plugin).toBe("biom-doc");
   expect(page.name.length).toBeGreaterThan(0);
 
   // SECTIONS in the order `contents` puts them — the array IS the order, so

@@ -232,31 +232,57 @@ nothing ever shipped one, so nothing was lost when it went.
 and everything under `input:` is **that plugin's own configuration, passed through
 untouched**: a host that validated a plugin's options would have to know every
 plugin. A page that wants a progress bar over a document is an html page that
-draws one; a page that wants a board is `plugin: kanban`.
+draws one; a page that wants a board is `plugin: biom-kanban`.
 
 ---
 
-## 4b. The framework's plugins wear `biom-`, and a bare name resolves nearest-first
+## 4b. The framework's plugins wear `biom-`, and the name is the folder
 
-**Every plugin the framework ships is `biom-<name>`, folder and id alike.**
-`guest/plugins/biom-markdown/markdown.js` registers `biom-markdown`; `biom-doc/index.html`
-is what a page saying `plugin: doc` falls back to. The reason is the one the
-skills have: a plugin a workspace wrote must never share a name with one the
-framework ships later. Under bare names, the day the framework shipped a
-`flow.js` a workspace's `flow` — in a file of any other name — loaded second and
-was refused as the framework's duplicate, on every page, with nothing saying so.
+**Every plugin the framework ships is `biom-<name>`, folder and id alike, and
+that is what a page, a section and a plugin say.** `guest/plugins/biom-markdown/markdown.js`
+registers `biom-markdown`; `biom-doc/index.html` is what a page saying
+`plugin: biom-doc` draws with. The reason for the prefix is the one the skills
+have: a plugin a workspace wrote must never share a name with one the framework
+ships later. Under bare names, the day the framework shipped a `flow.js` a
+workspace's `flow` — in a file of any other name — loaded second and was refused
+as the framework's duplicate, on every page, with nothing saying so.
 
-**Nothing a page or a section says changes, because a bare name is resolved
-nearest-first on both sides of the wall.** `resolve` in `guest/runtime/registry.js`
-answers `get("reveal")` and `has("reveal")` with the workspace's own `reveal` if
-one registered and the framework's `biom-reveal` otherwise — for
-`data-g-plugin`, for `ctx.use`, and for a slot's part kind, because every one of
-them goes through `get`. `frameworkPlugin` in `server/domain/pages.ts` does the
-same for a page's document: the vault's `plugins/doc/index.html`, then the
-framework's `biom-doc/index.html`; `idOf` in `server/domain/plugins.ts` does
-the same for a folder's id. `OURS` is the one spelling in each file, and
-`tests/plugins-without-copies.test.ts` holds the three equal. A prefixed id is
-exactly what it says, so a page can pin the framework's by saying `biom-reveal`.
+**THERE IS NO TRANSLATION, ON EITHER SIDE OF THE WALL, and taking it out was
+vault format 5 (2026-09-21).** There used to be one: a bare name was resolved
+nearest-first — the workspace's own if it registered one, the framework's
+`biom-` one otherwise — by `resolve` in the box, by `frameworkPlugin` for a
+page's document and by `idOf` for a framework folder's id, so a page said one
+word and a folder wore another and every reader of either had to know the rule.
+Now `resolve` in `guest/runtime/registry.js` answers `get("reveal")` with the
+workspace's own `reveal` or null; `frameworkPlugin` in `server/domain/pages.ts`
+is `${id}/index.html` and is asked only for an id wearing the prefix, a bare id
+being read from the vault's `plugins/` and never the framework's; `idOf` in
+`server/domain/plugins.ts` is the folder's name, and a framework folder without
+the prefix is refused by name rather than given it. `OURS` is the one spelling
+in each file, and `tests/plugins-without-copies.test.ts` holds them equal.
+
+**The one lookup that still crosses the prefix is a PART KIND.** `markdown`,
+`html`, `table`, `child` and `grid` are the format's words — a slot's `kind`,
+named by nobody as a plugin — so `forKind(kind)` in the registry answers the
+workspace's own `<kind>` where a folder reserved it and the framework's
+`biom-<kind>` otherwise, and the runtime's slot drawing asks that and never
+`get`. `ctx.use` and `ctx.has` go through `reach`: a name as written, or — for
+those five words — the kind's drawer, so `ctx.use("markdown")` keeps meaning
+*what draws markdown here* while `ctx.use("items")` names the workspace's own
+`items` or nothing. `data-g-plugin` and `rt.page.mount` are names and go
+through `get`.
+
+**A workspace still saying the bare word is format 4 and is refused on open.**
+`checkVaultFormat` in `server/workspace/migrate.ts` is handed every id the
+framework ships and whether it carries a document, walks every page-shaped
+directory, and reads `plugin:` on the page (a document-holding plugin only —
+`plugin: html` is the page's own document, not `biom-html`) and
+`data-g-plugin=` in the markup beside it and in the vault's own plugin
+documents; a word the framework ships as `biom-<word>` where the workspace has
+no folder under `<word>` — the page's own `plugins/` counted — is the tell.
+`tools/migrate-format-5.ts` rewrites exactly those words and names a
+`ctx.use("<word>")` in code for a person to fix; `tests/migrate-format-5.test.ts`
+runs it as the command it is. R69 in the checker says the same per page.
 
 **A part kind is reserved to its file under either name.** `markdown` to
 `plugins/markdown/`, `biom-markdown` to the framework's `biom-markdown/` — `isKind` in the
@@ -327,7 +353,7 @@ nothing anywhere saying so.
 is one `<script>`, so `document.currentScript` says *"the bundle"* for every
 plugin in a vault and cannot tell two of them apart. `file(name, root, run)` in
 the bundle's preamble sets `rt.pluginFile` — the path under its root,
-`biom-doc/plugins/holds/holds.js` — and `rt.pluginRoot` — `framework`,
+`biom-doc/plugins/biom-holds/holds.js` — and `rt.pluginRoot` — `framework`,
 `plugins`, or a page's `pages/…/plugins` — around each file's own function, and
 `whereFrom()` in the registry reads them; `rootNow()` reads the same for
 `biom.plugin.list()`. It falls back to `document.currentScript` for the
@@ -377,11 +403,10 @@ the same in the three places a plugin folder can sit** — the framework's
 `content.yaml` — and `walkPlugins` in `server/domain/plugins.ts` is the one
 walk that reads it. A loose `plugins/reveal.js` comes out of it as a sentence
 naming the folder to move it into; so does a folder whose name is not an id,
-and a stray file in an extension folder. **The folder is the id**: under the
-framework's root a folder is its name with `biom-` put on where it is missing
-— `idOf`, the same rule `frameworkPlugin` applies to a document — so
-`biom-doc/plugins/holds/` is the contract of `biom-holds`; a vault's or a
-page's folder is its name as written. Inner ids are otherwise free.
+and a stray file in an extension folder. **The folder is the id, as written,
+under every root** — `idOf` — so `biom-doc/plugins/biom-holds/` is the
+contract of `biom-holds`, and a framework folder that does not wear `biom-`
+is refused by name rather than given it. Inner ids are otherwise free.
 
 **Two roots and the framework's is the rung underneath, and a vault never
 shadows it by file.** A page naming `plugin: timeline` is handed a document by
@@ -394,7 +419,7 @@ read through the read-only `Files` the composition root hands `makePages`.
 a script or a document in it by name, `pluginDocument` never reads a document
 under it, and `pluginFile` never answers a file under it. There are no
 file-based overrides; a workspace that wants the whole document writes one
-under a bare name and keeps it current from that day. The prefixed copy was the
+under a bare name of its own and keeps it current from that day. The prefixed copy was the
 paved override once, and the resolver never read it — a copy served and never
 drawn — which is the finding that took it out.
 
@@ -423,7 +448,7 @@ and answers `rt.page.extensions()`; the registry publishes **`biom.plugin`**, th
 reading side beside `biom.plugins` the registration side: `list()` — every
 registered plugin with its `root` and `file` — `get(id)` as `ctx.use` finds it,
 and `extensions(id?)` — the merged values, synchronously, the drawing plugin's
-when the id is left out, resolved nearest-first like every other bare name.
+when the id is left out, by the id as written.
 `tests/plugin-folders.test.ts` walks the shape and every refusal;
 `tests/plugins-without-copies.test.ts` holds `biom.plugin.get` to `biom.plugins.get`.
 
@@ -447,7 +472,7 @@ its own variables and not a framework feature**: the runtime has no notion of a
 point. A plugin mounted from a document's variable may append a `<style>`,
 because the document asked for it; a plugin a section mounts still inks nothing.
 
-**The board of children is `biom-holds`**, `guest/plugins/biom-doc/plugins/holds/holds.js`
+**The board of children is `biom-holds`**, `guest/plugins/biom-doc/plugins/biom-holds/holds.js`
 — markup, sort, tally, rows, the `holds`/`holdWords` reading off `biom.children()`
 and `biom.data()`, `onRefresh` and a teardown — registered from inside the
 document's folder and named by the document's own default. Its look stays in
@@ -652,7 +677,7 @@ as long as the box does.
   The PAGE plugins each carry an `index.html`: `biom-doc/` (the FIGURE FRAME as
   a layered document stylesheet, the two nodes that take what `head` and
   `foot` name, the board's look in `@layer biom.holds`, the `plugin.yaml`
-  declaring `head`, `foot` and `rows`, and `plugins/holds/holds.js` inside it
+  declaring `head`, `foot` and `rows`, and `plugins/biom-holds/holds.js` inside it
   registering `biom-holds`, the board of children — `tests/doc-document.test.ts`
   and `tests/holds.test.ts`), `biom-kanban/` (a table as lanes) and
   `biom-mindmap/` (the workspace as a sky — every page a light sized by what
@@ -672,7 +697,7 @@ as long as the box does.
   document any more. The Map row and its route are in EVERY build — it was
   withheld from the built application because a one-page vault maps to one
   light, and the owner decided on 2026-09-17 that one light is what a one-page
-  workspace looks like — and a page saying `plugin: mindmap` draws everywhere
+  workspace looks like — and a page saying `plugin: biom-mindmap` draws everywhere
   too.
 - **The vault-plugin route:** `inVault()` and the `STATIC` table in
   `server/main.ts` — `/v/<enc>/plugin/<rel>` → `<vault>/plugins/<rel>`,

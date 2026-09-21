@@ -177,6 +177,9 @@ test("a vault's own plugin file wins by being there, and deleting it hands the p
   const root = await scratch();
   const vault = join(root, "older");
   await mkdir(join(vault, "pages/home"), { recursive: true });
+  // `plugin: doc`, bare, with a `plugins/doc/` of the vault's own: a plugin
+  // of the vault's, which is what a bare name is, and nothing to do with the
+  // framework's `biom-doc`.
   await writeFile(join(vault, "pages/home/content.yaml"), "name: Home\nplugin: doc\ncontents: []\n");
   await mkdir(join(vault, "plugins/doc"), { recursive: true });
   const mine = "<!doctype html><title>mine</title><!-- the board of children -->";
@@ -195,15 +198,18 @@ test("a vault's own plugin file wins by being there, and deleting it hands the p
     first.close();
   }
 
-  // DELETING THE OVERRIDE IS HOW YOU GO BACK. Nothing writes the file again —
-  // there is no seeder — and the framework's own document draws on the next
-  // read, which is what a person deleting it meant.
+  // THERE IS NO OVERRIDE TO DELETE AND NO FALLING BACK. A page naming the
+  // vault's `doc` with its document gone draws the sentence for a plugin
+  // nobody has — never the framework's, whose name is `biom-doc`; the way to
+  // the framework's is to say so on the page.
   await rm(join(vault, "plugins/doc/index.html"));
   const second = await hostAt(root, vault);
   try {
     await second.settled(vault);
     expect(existsSync(join(vault, "plugins/doc/index.html"))).toBe(false);
     const deps = await second.deps(vault);
+    expect((await deps.pages.read("home"))!.html).toContain("names a plugin that is not installed");
+    await writeFile(join(vault, "pages/home/content.yaml"), "name: Home\nplugin: biom-doc\ncontents: []\n");
     expect((await deps.pages.read("home"))!.html).toBe(readFileSync(join(SEED, "biom-doc/index.html"), "utf8"));
   } finally {
     second.close();
@@ -273,7 +279,7 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   // anybody knew which folder it landed in — and the host turns the mark into a
   // real `src` under the vault's route as it weaves.
   const marked = kanban.replace("</head>", '<script data-g-src="timeline/lib/vendor.js"></script></head>');
-  const doc = weaveRuntime(marked, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
+  const doc = weaveRuntime(marked, { id: "home", name: "Home", plugin: "biom-kanban", input: {} }, vault);
   expect(doc).toContain(`src="${base}timeline/lib/vendor.js"`);
   // The mark is gone from the tag; the comment above it explaining the mark is
   // the plugin author's words and stays, like every other word in their file.

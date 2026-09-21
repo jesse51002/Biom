@@ -15,14 +15,17 @@
 // `mkdir plugins/reveal && mv plugins/reveal.js plugins/reveal/` is the whole
 // migration.
 //
-// THE FOLDER IS THE ID. A folder under the framework's root is its name with
-// `biom-` put on where it is missing — `frameworkPlugin` in `pages.ts` does the
-// same for a document — so `biom-doc/plugins/holds/` is the contract of
-// `biom-holds`; a vault's or a page's folder is its name as written. Inner ids
-// are otherwise free: a script registers whatever it registers, and the folder
-// is organisation rather than a namespace. Two folders of one id, at any depth
-// and from any root, meet in the registry inside the box, which refuses the
-// second by name.
+// THE FOLDER IS THE ID, AS WRITTEN, UNDER EVERY ROOT. The framework's folders
+// wear `biom-` themselves — `biom-doc/plugins/biom-holds/` is the contract of
+// `biom-holds` — and one that does not is refused by name rather than given
+// the prefix here: there used to be a translation, `biom-` put on under the
+// framework root where a name lacked it, with its twin in `pages.ts` for a
+// document, and both went on 2026-09-21 as the one place a name was not the
+// name. A vault's or a page's folder is its name as written and may not wear
+// the prefix except as an extension. Inner ids are otherwise free: a script
+// registers whatever it registers, and the folder is organisation rather than
+// a namespace. Two folders of one id, at any depth and from any root, meet in
+// the registry inside the box, which refuses the second by name.
 //
 // A VAULT FOLDER WEARING `biom-` IS AN EXTENSION, NOT A COPY. It holds
 // `extensions.yaml` and nothing else; a script or a document in it is refused
@@ -75,12 +78,11 @@ export type PluginRoot = "framework" | "vault" | "page";
 
 /** One plugin folder as the walk found it. */
 export interface PluginFolder {
-  /** The id the folder stands for: its name, `biom-`-prefixed under the
-   *  framework root. */
+  /** The id the folder stands for: its name, as written. */
   id: string;
   root: PluginRoot;
   /** The folder, relative to its root's plugins directory, forward-slashed:
-   *  `biom-doc/plugins/holds`. */
+   *  `biom-doc/plugins/biom-holds`. */
   path: string;
   /** Script file names directly inside, in name order. */
   scripts: string[];
@@ -116,9 +118,10 @@ export interface PluginWalk {
 
 const byName = (a: FileEntry, b: FileEntry): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
-/** The id a folder stands for under a root. */
-export function idOf(folder: string, root: PluginRoot): string {
-  return root === "framework" && !folder.startsWith(OURS) ? OURS + folder : folder;
+/** The id a folder stands for under any root: its name. Kept as a function
+ *  because it is the one spelling of the rule, and the rule used to be more. */
+export function idOf(folder: string, _root: PluginRoot): string {
+  return folder;
 }
 
 /** Where a root's plugins directory is, as the words a refusal prints: the
@@ -177,6 +180,14 @@ export async function walkPlugins(files: Files, base: string, root: PluginRoot, 
 
   /** One plugin folder. */
   const folder = async (path: string, name: string): Promise<void> => {
+    // THE FRAMEWORK'S FOLDERS WEAR THE PREFIX THEMSELVES. One that does not is
+    // a folder nobody can name — a page writes the folder, and a bare name
+    // under this root would be a plugin a vault could shadow by writing one of
+    // its own — so it is refused rather than renamed on the way in.
+    if (root === "framework" && !name.startsWith(OURS)) {
+      faults.push({ root, path, message: `${said(path)}/ is the framework's and must wear ${OURS}: its folder is its id, and a page writes the folder` });
+      return;
+    }
     const inside = await listed(path);
     const has = (file: string): boolean => inside.some((e) => !e.dir && e.name === file);
     const extension = root !== "framework" && name.startsWith(OURS);

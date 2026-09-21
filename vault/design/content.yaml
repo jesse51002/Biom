@@ -1,5 +1,5 @@
 name: Design
-plugin: doc
+plugin: biom-doc
 variables:
   day:
     - Mon

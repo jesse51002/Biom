@@ -5,7 +5,7 @@ A page names the plugin that draws it, and that plugin decides what the rest of
 
 ```yaml
 name: Q3 review
-plugin: doc
+plugin: biom-doc
 ```
 
 | `plugin:` | What draws the page |
@@ -15,7 +15,7 @@ plugin: doc
 | anything else | a document in this workspace's `plugins/<id>/index.html`. See [`plugins.md`](./plugins.md) |
 
 **Sections exist only on a doc page.** A board has none; an html page has none.
-Everything below this line is about `plugin: doc`.
+Everything below this line is about `plugin: biom-doc`.
 
 ## The document, key by key
 
@@ -24,7 +24,7 @@ name: Q3 review                 # what a reader sees. Optional; the directory's
                                 # last segment stands in, but that is an id
 uid: qm4vxbco4bt2xruw           # the framework's, written in the first time the
                                 # page is opened. Leave it alone; never type one
-plugin: doc
+plugin: biom-doc
 variables:                      # this page's own values. See variables.md
   quarter: Q3
 contents:                       # SECTIONS. Nothing else. Ever.

@@ -205,11 +205,11 @@ export const fail = (code, message) => ({
 export const DESIGN_PAGE = "@design";
 
 /** THE MAP'S ID, for the same reason and by the same mechanism. The rail's own
- *  Map row draws the whole workspace with the shipped `mindmap` plugin, and it
+ *  Map row draws the whole workspace with the framework's `biom-mindmap` plugin, and it
  *  needs a mount the runtime can `page.read`: this id answers a bare plugin
  *  page with no directory behind it, so no folder is ever made for it and no
  *  page a person creates can collide with it. A page that wants a map of its
- *  own says `plugin: mindmap` and is an ordinary page. */
+ *  own says `plugin: biom-mindmap` and is an ordinary page. */
 export const MAP_PAGE = "@map";
 
 /** AN ID FOLDED FOR COMPARISON, and the only place case is ever ignored.

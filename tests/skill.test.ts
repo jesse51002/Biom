@@ -60,7 +60,7 @@ import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
 
 import {
-  check, checkDir, checkVault, contractsOf, findVault, formatReport, readVault, readYaml,
+  check, checkDir, checkVault, contractsOf, findVault, formatReport, namesOf, readVault, readYaml,
   type PageSource, type Report, type VaultSource,
 } from "../skill/check.ts";
 import { parse } from "../server/platform/yaml.ts";
@@ -134,7 +134,7 @@ const html = (parts: { body?: string; style?: string; script?: string; head?: st
  *  goes in each slot that markup declares — the key IS the slot's id. */
 const PAGE_YAML = [
   "name: Rates",
-  "plugin: doc",
+  "plugin: biom-doc",
   "contents:",
   "  - name: hero",
   "    data: hero.html",
@@ -152,7 +152,7 @@ const page = (file: string, doc = PAGE_YAML): PageSource => ({
 
 /** A doc whose `contents` are exactly these lines. */
 const withContents = (...lines: string[]): string =>
-  ["name: Rates", "plugin: doc", "contents:", ...lines, ""].join("\n");
+  ["name: Rates", "plugin: biom-doc", "contents:", ...lines, ""].join("\n");
 
 /** One section with its own file and one markdown part in it, so a template can
  *  be checked against the three scopes it resolves in — the part's own values,
@@ -165,7 +165,7 @@ const prose = (
   id: "rates-note",
   doc: [
     "name: Rates",
-    "plugin: doc",
+    "plugin: biom-doc",
     ...(vars.page === undefined ? [] : ["variables:", ...vars.page.map((v) => "  " + v)]),
     "contents:",
     "  - name: intro",
@@ -538,14 +538,14 @@ test("R1 — a directory with no content.yaml is not a page", () => {
 });
 
 test("R1 — a document that will not parse is refused at the same door the host uses", () => {
-  const report = check(page(html({}), "name: Rates\nplugin: doc\ncontents:\n  - name: hero\n   data: hero.html\n"));
+  const report = check(page(html({}), "name: Rates\nplugin: biom-doc\ncontents:\n  - name: hero\n   data: hero.html\n"));
   expect(rules(report).has("R1")).toBe(true);
   expect(report.ok).toBe(false);
 });
 
 test("R1 — a page that is not a map, and a contents that is not a list", () => {
   expect(rules(check(page(html({}), "- hero\n"))).has("R1")).toBe(true);
-  expect(rules(check(page(html({}), "name: Rates\nplugin: doc\ncontents: hero\n"))).has("R1")).toBe(true);
+  expect(rules(check(page(html({}), "name: Rates\nplugin: biom-doc\ncontents: hero\n"))).has("R1")).toBe(true);
   expect(rules(check(page(html({}), withContents("  - hero")))).has("R1")).toBe(true);
 });
 
@@ -562,12 +562,12 @@ test("R1 — parts are a map of slot id to what goes in it, never a list", () =>
  *  that plugin's own input, and the host never validates it. */
 test("R1 — plugin: names the reader, and a plugin page's own keys are its input", () => {
   // A doc page has a closed shape and an unknown key stops it parsing.
-  expect(rules(check(page(html({}), "name: Rates\nplugin: doc\nwidget: 3\n" + PAGE_YAML.slice("name: Rates\n".length)))).has("R1")).toBe(true);
+  expect(rules(check(page(html({}), "name: Rates\nplugin: biom-doc\nwidget: 3\n" + PAGE_YAML.slice("name: Rates\n".length)))).has("R1")).toBe(true);
   // A plugin declares what it reads, under `input:`, and the host has no way to
   // know whether one of its keys is missing — so they pass through unremarked.
   expect(said(check({
     id: "plants-board",
-    doc: "name: Plants\nplugin: kanban\ninput:\n  table: plants\n  lanes: status\n  name: species\n",
+    doc: "name: Plants\nplugin: biom-kanban\ninput:\n  table: plants\n  lanes: status\n  name: species\n",
     // `index.html` is exempt from the stray-file rule: it IS the page, so no
     // document anywhere names it.
     files: { "index.html": "<main></main>" },
@@ -610,7 +610,7 @@ test("R47 — a page states its name and its contents", () => {
 
   // ON A DOC PAGE, because `contents` is the doc plugin's input: on a page drawn
   // by anything else its absence is the correct shape rather than a lost spine.
-  const noContents = check({ id: "rates-note", doc: "name: Rates\nplugin: doc\n", files: {} });
+  const noContents = check({ id: "rates-note", doc: "name: Rates\nplugin: biom-doc\n", files: {} });
   expect(rules(noContents).has("R47")).toBe(true);
   expect(noContents.ok).toBe(true);
 
@@ -1084,7 +1084,7 @@ test("a page of nothing but default sections is a document, not a finding", () =
  *  true because R53 is about a workspace that has STARTED — one with nothing in
  *  it has not skipped its design work, it has not begun. */
 const untouched = (): VaultSource => ({
-  design: "name: Design\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body: Write this.\n",
+  design: "name: Design\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body: Write this.\n",
   designFiles: [],
   theme: JSON.stringify({ palette: { name: "Biom" } }),
   pages: true,
@@ -1120,7 +1120,7 @@ test("R53 — either half of the work started is enough to silence it", () => {
   // workspace's design rather than kept the one it was handed.
   expect(checkVault({ ...vault, designFiles: ["cover.html"] })).toEqual([]);
   // Or a design doc whose section names its own markup.
-  expect(checkVault({ ...vault, design: "name: Design\nplugin: doc\ncontents:\n  - name: cover\n    data: cover.html\n" })).toEqual([]);
+  expect(checkVault({ ...vault, design: "name: Design\nplugin: biom-doc\ncontents:\n  - name: cover\n    data: cover.html\n" })).toEqual([]);
   // A workspace with no pages in it has not skipped the work; it has not begun.
   expect(checkVault({ ...vault, pages: false })).toEqual([]);
 });
@@ -1136,7 +1136,7 @@ test("R53 — the design doc a vault SHIPS with is not a design somebody did", (
   const seeded: VaultSource = {
     ...vault,
     designFiles: shipped,
-    design: "name: Design\nplugin: doc\ncontents:\n" +
+    design: "name: Design\nplugin: biom-doc\ncontents:\n" +
       shipped.map((f) => "  - name: " + f.replace(".html", "") + "\n    data: " + f + "\n").join(""),
   };
   expect(checkVault(seeded).map((f) => f.rule)).toEqual(["R53"]);
@@ -1613,7 +1613,7 @@ test("checkDir reads a page directory and never walks into children/", async () 
     // A child is a page of its own and is checked as one. Reading its files as
     // this page's would report every child's markup against this page's
     // variables — several failures on a file the page never wrote.
-    "children/notes/content.yaml": "name: Notes\nplugin: doc\ncontents: []\n",
+    "children/notes/content.yaml": "name: Notes\nplugin: biom-doc\ncontents: []\n",
     "children/notes/hero.html": html({ style: ".band { color: red }" }),
   }, async (dir) => {
     const report = await checkDir(dir);
@@ -1671,7 +1671,7 @@ test("findVault walks up to pages/ beside theme.json, and stops rather than gues
     await mkdir(deep, { recursive: true });
     await mkdir(join(root, "vault", "design"), { recursive: true });
     await writeFile(join(root, "vault", "theme.json"), JSON.stringify({ palette: { name: "Biom" } }));
-    await writeFile(join(root, "vault", "design", "content.yaml"), "name: Design\nplugin: doc\ncontents: []\n");
+    await writeFile(join(root, "vault", "design", "content.yaml"), "name: Design\nplugin: biom-doc\ncontents: []\n");
 
     expect(await findVault(deep)).toBe(join(root, "vault"));
     // A directory that is not in a workspace costs one walk and no findings,
@@ -1713,12 +1713,12 @@ async function pluginVault(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "biom-plugfold-"));
   const seed: Record<string, string> = {
     "theme.json": JSON.stringify({ palette: { name: "Biom" } }),
-    "design/content.yaml": "name: Design\nplugin: doc\ncontents: []\n",
+    "design/content.yaml": "name: Design\nplugin: biom-doc\ncontents: []\n",
     "docs/plugins/biom-doc/plugin.yaml": "head:\nfoot: biom-holds\nrows: false\n",
     "docs/plugins/biom-doc/index.html": FRAMEWORK_DOC,
-    "docs/plugins/biom-doc/plugins/holds/holds.js": "",
-    "docs/plugins/biom-doc/plugins/holds/plugin.yaml": "sort: name\n",
-    "pages/home/content.yaml": "name: Home\nplugin: doc\ncontents: []\n",
+    "docs/plugins/biom-doc/plugins/biom-holds/holds.js": "",
+    "docs/plugins/biom-doc/plugins/biom-holds/plugin.yaml": "sort: name\n",
+    "pages/home/content.yaml": "name: Home\nplugin: biom-doc\ncontents: []\n",
   };
   for (const [rel, text] of Object.entries({ ...seed, ...files })) {
     await mkdir(join(root, rel, ".."), { recursive: true });
@@ -1812,7 +1812,7 @@ test("without the mirror a rung over a framework plugin is not a FAIL: R67 skips
 
 test("a page's own plugins/ takes R65 to R67 against the contracts the vault knows, and R68 does not apply there", async () => {
   const root = await pluginVault({
-    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: doc\ncontents: []\n",
+    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: biom-doc\ncontents: []\n",
     "pages/home/children/notes/plugins/loose.js": "",
     "pages/home/children/notes/plugins/biom-doc/extensions.yaml": "foot:\nrows: true\ntypo: 1\n",
     "pages/home/children/notes/plugins/biom-doc/doc.js": "",
@@ -2184,4 +2184,68 @@ test("two rules stop failing pages that were right all along", () => {
   const body = '<div class="col"><div data-g-part="lede"></div>'
     + '<div data-g-part="figures"></div></div>';
   expect(rules(check(page(html({ body }), mixed))).has("R57")).toBe(false);
+});
+
+/* ── R69: the name is the folder ─────────────────────────────────────────── */
+
+test("R69 — a framework plugin named by its bare word fails on the page and in markup, a word the workspace owns is left alone, and without names the checker says nothing", async () => {
+  const root = await pluginVault({
+    "docs/plugins/biom-reveal/reveal.js": "",
+    "docs/plugins/biom-inview/inview.js": "",
+    "docs/plugins/biom-items/items.js": "",
+    "docs/plugins/biom-html/html.js": "",
+    // `plugin: html` is the page's own document, and `biom-html` draws a part.
+    "pages/home/children/Page/content.yaml": "name: Page\nplugin: html\n",
+    "pages/home/children/Page/index.html": '<div data-g-part="body"></div>',
+    "pages/home/children/Page/plugins/x/x.js": "",
+    // The old spelling on a page, and in its section.
+    "pages/home/children/Old/content.yaml": "name: Old\nplugin: doc\ncontents:\n  - name: hero\n    data: hero.html\n    parts:\n      body: words\n",
+    "pages/home/children/Old/hero.html": '<section data-g-part="body"></section>\n<span data-g-plugin="inview"></span>\n<span data-g-plugin="items" data-g-for="body"></span>\n',
+    // The workspace's own `reveal`, so that word is its own; `cards` is nobody's.
+    "plugins/reveal/reveal.js": "",
+    "pages/home/children/Own/content.yaml": "name: Own\nplugin: biom-doc\ncontents:\n  - name: hero\n    data: hero.html\n    parts:\n      body: words\n",
+    "pages/home/children/Own/hero.html": '<section data-g-part="body"></section>\n<span data-g-plugin="reveal"></span>\n<span data-g-plugin="cards"></span>\n',
+    // A page's own plugin folder makes the word that page's.
+    "pages/home/children/Mine/content.yaml": "name: Mine\nplugin: biom-doc\ncontents:\n  - name: hero\n    data: hero.html\n    parts:\n      body: words\n",
+    "pages/home/children/Mine/hero.html": '<section data-g-part="body"></section>\n<span data-g-plugin="items" data-g-for="body"></span>\n',
+    "pages/home/children/Mine/plugins/items/items.js": "",
+  });
+  try {
+    const source = await readVault(root);
+    const names = namesOf(source);
+    expect(names.framework.sort()).toEqual(["biom-doc", "biom-holds", "biom-html", "biom-inview", "biom-items", "biom-reveal"]);
+    expect(names.documents).toEqual(["biom-doc"]);
+    expect(names.own).toEqual(["reveal"]);
+
+    const old = await checkDir(join(root, "pages", "home", "children", "Old"), null, contractsOf(source), names);
+    const r69 = old.findings.filter((f) => f.rule === "R69");
+    expect(r69.map((f) => [f.file, f.line, f.severity])).toEqual([
+      ["content.yaml", 2, "FAIL"],
+      ["hero.html", 2, "FAIL"],
+      ["hero.html", 3, "FAIL"],
+    ]);
+    expect(r69[0]!.says).toContain("say plugin: biom-doc");
+    expect(r69[1]!.says).toContain('say data-g-plugin="biom-inview"');
+    expect(r69[2]!.says).toContain("tools/migrate-format-5.ts");
+    expect(old.ok).toBe(false);
+
+    // The workspace's own `reveal` is its own; `cards` is not the framework's.
+    const own = await checkDir(join(root, "pages", "home", "children", "Own"), null, contractsOf(source), names);
+    expect(own.findings.filter((f) => f.rule === "R69")).toEqual([]);
+    // The page's own `plugins/items/` makes `items` that page's.
+    const mine = await checkDir(join(root, "pages", "home", "children", "Mine"), null, contractsOf(source), names);
+    expect(mine.findings.filter((f) => f.rule === "R69")).toEqual([]);
+
+    // `plugin: html` is never `biom-html`: only a framework plugin WITH a
+    // document is one a page could have meant.
+    const html = await checkDir(join(root, "pages", "home", "children", "Page"), null, contractsOf(source), names);
+    expect(html.findings.filter((f) => f.rule === "R69")).toEqual([]);
+
+    // Handed no names — a directory checked on its own — nothing is said,
+    // because a bare word cannot be told from a plugin the workspace wrote.
+    const alone = await checkDir(join(root, "pages", "home", "children", "Old"));
+    expect(alone.findings.filter((f) => f.rule === "R69")).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

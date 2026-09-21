@@ -98,6 +98,10 @@
 //   R68  a bare-named document in `plugins/` shaped like the framework's own —
 //        a copy that draws and stops following the framework, where a line in
 //        a rung would do.
+//   R69  a framework plugin named by its bare word — `plugin: doc`,
+//        `data-g-plugin="reveal"` — where the workspace has none of its own
+//        under that word. The name is the folder, `biom-doc`, `biom-reveal`;
+//        the server refuses the workspace until the tool rewrites them.
 //
 // **R50 IS NOT IN HERE.** It belongs to `.agents/skills/biom-plugins/SKILL.md` — a vault
 // plugin may never claim a shipped id — and is checked where plugins are
@@ -247,6 +251,24 @@ export interface PageSource {
    *  against them; handed nothing, it says nothing about an undeclared key,
    *  because it cannot tell one from a contract it never saw. */
   contracts?: Record<string, string[]> | null;
+  /** Every plugin id the checker knows by folder: the framework's from the
+   *  mirror in `docs/plugins/`, `biom-` and all, and the workspace's own from
+   *  `plugins/`, the page's own added. R69 reads it; handed nothing, it says
+   *  nothing about a bare word, because it cannot tell the framework's from a
+   *  plugin the workspace wrote. */
+  names?: PluginNames | null;
+}
+
+/** The ids the checker knows, by where they live. */
+export interface PluginNames {
+  /** Every id the framework ships, `biom-` and all. */
+  framework: string[];
+  /** The ones among them that carry a document a page can name — `biom-doc`
+   *  does, `biom-html` does not: `plugin: html` is the page's own document and
+   *  has nothing to do with the part plugin. */
+  documents: string[];
+  /** The workspace's own, under bare names. */
+  own: string[];
 }
 
 /** One folder directly under a `plugins/` root, as the checker sees it. */
@@ -332,7 +354,7 @@ const CHILD_KEY = /^@(?:page|table)-[A-Za-z0-9][A-Za-z0-9_-]*$/;
  *  see `plugins/` around it. A vault that rewrites `items.js` into something that
  *  writes nothing is out of reach here; a vault that writes its own adder under
  *  its own id is too, and calls `ctx.write` where this rule can see it. */
-const MUTATES = new Set(["items", "open-list", "checklist"]);
+const MUTATES = new Set(["biom-items", "biom-open-list", "biom-checklist"]);
 
 /** The per-page assets directory, one level down, holding markup an `html` part
  *  may name. `_` is reserved for the host by the vault format, so nothing a
@@ -401,7 +423,7 @@ const PART_KEYS = new Set(["type", "data", "variables", "rows", "head"]);
  *  and neither is `page:`, which most pages simply do not have. */
 const REQUIRED = ["name", "contents"];
 /** The reader that draws a page. A page naming none is its own `index.html`. */
-const DOC_PLUGIN = "doc";
+const DOC_PLUGIN = "biom-doc";
 const PLUGIN_NAME = /^[a-z][a-z0-9-]*$/;
 /** The old format's keys, named on sight so "this page will not open" reads as
  *  "this page has not been migrated". `kind:` and `render:` are here rather than
@@ -1363,7 +1385,7 @@ export function check(src: PageSource): Report {
    * that names NO plugin, and so is its own `index.html`, and has none.
    */
   if (plugin === "html" && src.files[PAGE_DOCUMENT] === undefined) {
-    say("R61", "FAIL", DOC, lineOfKey(text, "plugin"), "this page names no plugin, so it draws its own " + PAGE_DOCUMENT + " — and there is no " + PAGE_DOCUMENT + " in this directory. Write one, or name the plugin that should draw the page: plugin: doc is the document (sections, slots, markdown), and it is what almost every page wants.");
+    say("R61", "FAIL", DOC, lineOfKey(text, "plugin"), "this page names no plugin, so it draws its own " + PAGE_DOCUMENT + " — and there is no " + PAGE_DOCUMENT + " in this directory. Write one, or name the plugin that should draw the page: plugin: biom-doc is the document (sections, slots, markdown), and it is what almost every page wants.");
   }
 
   /* R61 — `contents:` on a page a document is not drawing.
@@ -1373,7 +1395,19 @@ export function check(src: PageSource): Report {
    * every word in `contents` is invisible. It is the shape a page ends up in
    * when `plugin:` was changed and the body was not. */
   if (!isDoc && Object.hasOwn(doc, "contents")) {
-    say("R61", "WARN", DOC, lineOfKey(text, "contents"), "contents: is the doc plugin's input, and this page is drawn by " + plugin + " — so nothing here reads it and every word in it is invisible. Move the words into the page that draws them, or say plugin: doc.");
+    say("R61", "WARN", DOC, lineOfKey(text, "contents"), "contents: is the doc plugin's input, and this page is drawn by " + plugin + " — so nothing here reads it and every word in it is invisible. Move the words into the page that draws them, or say plugin: biom-doc.");
+  }
+
+  /* R69 — the framework's plugin, named by its bare word on the page.
+   *
+   * The name IS the folder: the framework's are `biom-<name>/`, so a page says
+   * `plugin: biom-doc`. A bare word is a plugin of the workspace's own and
+   * nothing else — and `plugin: doc` on a page in a workspace with no
+   * `plugins/doc/` is format 4's spelling, which the server refuses the whole
+   * workspace on until `bun run tools/migrate-format-5.ts` rewrites it. */
+  if (src.names && typeof rawPlugin === "string" && !rawPlugin.startsWith(OURS)
+      && src.names.documents.includes(OURS + rawPlugin) && !src.names.own.includes(rawPlugin)) {
+    say("R69", "FAIL", DOC, lineOfKey(text, "plugin"), 'plugin: ' + rawPlugin + ' names the framework\'s plugin by a bare word, and the name is the folder: say plugin: ' + OURS + rawPlugin + '. The server refuses a workspace that still says the bare word — bun run tools/migrate-format-5.ts <workspace> rewrites every one of them and nothing else.');
   }
 
   for (const key of Object.keys(doc)) {
@@ -2410,7 +2444,7 @@ export function check(src: PageSource): Report {
       );
       const bare = lists.filter((id) => !handled.has(id));
       if (bare.length > 0 && !writes) {
-        say("R59", "WARN", file, 0, bare.join(", ") + (bare.length > 1 ? " hold lists" : " holds a list") + " and nothing in this section can add an item or take one away. The short way is the harness this workspace already has: <span data-g-plugin=\"items\" data-g-for=\"" + bare[0] + "\"></span> draws the add and the per-item delete and inks nothing, so the look stays yours — open-list numbers as well, and checklist reads a status word off each item. The long way is your own script: ctx.read(part) answers the array, ctx.write(part, array) puts it back whole, and the page redraws itself — order included, since the array you write is the order. A list a reader can only retype is a picture of a document.");
+        say("R59", "WARN", file, 0, bare.join(", ") + (bare.length > 1 ? " hold lists" : " holds a list") + " and nothing in this section can add an item or take one away. The short way is the harness this workspace already has: <span data-g-plugin=\"biom-items\" data-g-for=\"" + bare[0] + "\"></span> draws the add and the per-item delete and inks nothing, so the look stays yours — biom-open-list numbers as well, and biom-checklist reads a status word off each item. The long way is your own script: ctx.read(part) answers the array, ctx.write(part, array) puts it back whole, and the page redraws itself — order included, since the array you write is the order. A list a reader can only retype is a picture of a document.");
       }
     }
 
@@ -2422,6 +2456,19 @@ export function check(src: PageSource): Report {
      * moved from a variable to a part, and neither has two homes. */
     for (const key of new Set(dupes)) {
       say("R9", "FAIL", file, seenSlots.get(key) ?? 0, '"' + key + '" is on more than one element. The runtime fills one node per part, so the second is either drawn stale or not drawn at all — and an editable part commits one value, which leaves the other wrong until a reload.');
+    }
+
+    /* R69 — the framework's plugin, named by its bare word in markup.
+     *
+     * `data-g-plugin="reveal"` in a workspace with no `plugins/reveal/` of its
+     * own is a slot nothing draws: the framework's is `biom-reveal`, and the
+     * box looks a name up exactly as written. The same tool rewrites these. */
+    if (src.names) {
+      for (const m of html.matchAll(/\bdata-g-plugin\s*=\s*"([^"]*)"/g)) {
+        const word = m[1] ?? "";
+        if (word === "" || word.startsWith(OURS) || src.names.own.includes(word) || !src.names.framework.includes(OURS + word)) continue;
+        say("R69", "FAIL", file, at(m.index ?? 0), 'data-g-plugin="' + word + '" names the framework\'s plugin by a bare word, and the name is the folder: say data-g-plugin="' + OURS + word + '". The box looks a name up exactly as written, so this slot draws nothing — bun run tools/migrate-format-5.ts <workspace> rewrites every one of them and nothing else.');
+      }
     }
 
     /* ── the scripts ────────────────────────────────────────────────────── */
@@ -2846,6 +2893,17 @@ function declaredIn(src: PluginsSource): Record<string, string[]> {
 
 /** Every plugin's declared keys the vault knows: the framework's from the
  *  mirror, then the vault's own. */
+/** The ids the checker knows in a workspace, by where they live: the
+ *  framework's from the mirror, the workspace's own from `plugins/`. */
+export function namesOf(src: VaultSource): PluginNames {
+  const shipped = src.shipped ?? {};
+  return {
+    framework: Object.keys(shipped),
+    documents: Object.keys(shipped).filter((id) => shipped[id]?.document !== null),
+    own: src.plugins?.folders.map((f) => f.name) ?? [],
+  };
+}
+
 export function contractsOf(src: VaultSource): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const [id, shipped] of Object.entries(src.shipped ?? {})) {
@@ -2995,9 +3053,8 @@ export async function readPlugins(root: string): Promise<PluginsSource | null> {
 }
 
 /** The framework's plugins as the mirror shows them, by id, walked to every
- *  depth with the framework's own prefix rule: a folder under the mirror is its
- *  name with `biom-` put on where it is missing, so `biom-doc/plugins/holds/`
- *  is `biom-holds`. */
+ *  depth: a folder is its id, as written, so `biom-doc/plugins/biom-holds/` is
+ *  `biom-holds`. */
 export async function readShipped(mirror: string): Promise<Record<string, ShippedPlugin>> {
   const out: Record<string, ShippedPlugin> = {};
   const read = async (abs: string): Promise<string | null> => {
@@ -3016,7 +3073,7 @@ export async function readShipped(mirror: string): Promise<Record<string, Shippe
     }
     for (const e of entries) {
       if (!e.isDirectory() || !PLUGIN_ID.test(e.name)) continue;
-      const id = e.name.startsWith(OURS) ? e.name : OURS + e.name;
+      const id = e.name;
       const at = join(dir, e.name);
       out[id] = { contract: await read(join(at, CONTRACT)), document: await read(join(at, PAGE_DOCUMENT)) };
       await walk(join(at, "plugins"));
@@ -3037,7 +3094,7 @@ const noReport = (id: string, says: string): Report => ({
   fails: 1, warns: 0, ok: false, slots: [], artifacts: [], plugin: "html", sections: 0, defaults: 0,
 });
 
-export async function checkDir(dir: string, vault: VaultSource | null = null, contracts: Record<string, string[]> | null = null): Promise<Report> {
+export async function checkDir(dir: string, vault: VaultSource | null = null, contracts: Record<string, string[]> | null = null, names: PluginNames | null = null): Promise<Report> {
   const id = basename(dir.replace(/\/+$/, ""));
   const files: Record<string, string> = {};
   let doc: string | null = null;
@@ -3094,7 +3151,9 @@ export async function checkDir(dir: string, vault: VaultSource | null = null, co
     else files[name] = text;
   }
 
-  return check({ id, doc, files, vault, plugins, contracts });
+  // The page's own plugin folders are the workspace's own, for this page.
+  const known = names === null ? null : { ...names, own: [...names.own, ...(plugins?.folders.map((f) => f.name) ?? [])] };
+  return check({ id, doc, files, vault, plugins, contracts, names: known });
 }
 
 /* ── reading the workspace off disk ─────────────────────────────────────── */
@@ -3191,7 +3250,7 @@ if (import.meta.main) {
       // The vault's contracts travel with each page's own read, so a page's rung
       // over the framework's document is held against what that document
       // declares — and nothing about the vault is said per page.
-      const report = await checkDir(dir, null, source === null ? null : contractsOf(source));
+      const report = await checkDir(dir, null, source === null ? null : contractsOf(source), source === null ? null : namesOf(source));
       console.log(formatReport(report));
       if (!report.ok) bad++;
     }

@@ -254,7 +254,7 @@ test("a page written from outside is heard, and its markdown follows", async () 
     // straight to disk, with the server told nothing.
     const dir = pageDir(g.at("one"), "home/notes");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Notes\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Notes\nplugin: biom-doc\ncontents: []\n", "utf8");
 
     expect(await until(() => heard.get() > 0)).toBe(true);
 
@@ -286,10 +286,10 @@ test("a burst settles into one event, and a directory created after the watch st
     // kernel does it. Either way the writes inside have to report.
     const dir = pageDir(g.at("one"), "home/deep");
     await mkdir(join(dir, "children", "deeper"), { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Deep\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Deep\nplugin: biom-doc\ncontents: []\n", "utf8");
     await writeFile(
       join(dir, "children", "deeper", "content.yaml"),
-      "name: Deeper\nplugin: doc\ncontents: []\n",
+      "name: Deeper\nplugin: biom-doc\ncontents: []\n",
       "utf8",
     );
     await writeFile(join(dir, "bits.html"), "<p>\n", "utf8");
@@ -309,7 +309,7 @@ test("a burst settles into one event, and a directory created after the watch st
     const before = heard.get();
     await writeFile(
       join(dir, "children", "deeper", "content.yaml"),
-      "name: Deeper still\nplugin: doc\ncontents: []\n",
+      "name: Deeper still\nplugin: biom-doc\ncontents: []\n",
       "utf8",
     );
     expect(await until(() => heard.get() > before)).toBe(true);
@@ -341,7 +341,7 @@ test("two sibling pages created in one burst each get their markdown", async () 
     // its markdown is never written. Every verdict in a burst is therefore
     // taken before any projection runs.
     await Promise.all(dirs.map((dir, i) =>
-      writeFile(join(dir, "content.yaml"), `name: ${["Alpha", "Beta"][i]}\nplugin: doc\ncontents: []\n`, "utf8")));
+      writeFile(join(dir, "content.yaml"), `name: ${["Alpha", "Beta"][i]}\nplugin: biom-doc\ncontents: []\n`, "utf8")));
 
     expect(await until(() => heard.get() > 0)).toBe(true);
     for (const name of ["alpha", "beta"]) {
@@ -394,7 +394,7 @@ test("a file replaced by rename goes on reporting", async () => {
   try {
     const dir = pageDir(g.at("one"), "home/swap");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Swap\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Swap\nplugin: biom-doc\ncontents: []\n", "utf8");
 
     const heard = ear();
     const off = await host.watch(g.at("one"), heard.hear);
@@ -406,7 +406,7 @@ test("a file replaced by rename goes on reporting", async () => {
     // and would never report again; a watch on the DIRECTORY survives it.
     for (const name of ["One", "Two", "Three"]) {
       const tmp = join(dir, ".content.yaml.tmp");
-      await writeFile(tmp, `name: ${name}\nplugin: doc\ncontents: []\n`, "utf8");
+      await writeFile(tmp, `name: ${name}\nplugin: biom-doc\ncontents: []\n`, "utf8");
       await rename(tmp, join(dir, "content.yaml"));
       const before = heard.get();
       expect(await until(() => heard.get() > before)).toBe(true);
@@ -432,7 +432,7 @@ test("a page deleted from outside loses its markdown", async () => {
     const mirror = join(g.at("one"), "_markdown", "home", "removed.md");
     const dir = pageDir(g.at("one"), "home/removed");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Removed\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Removed\nplugin: biom-doc\ncontents: []\n", "utf8");
     expect(await until(() => Bun.file(mirror).size > 0)).toBe(true);
     // The arrival's own event, before the departure's is counted from: the
     // mirror is written before the subscribers are told, so a count taken
@@ -510,7 +510,7 @@ test("a page made through the app is not a change, and the pages beside it keep 
     // A sibling already on disk and read, so its baseline is there to lose.
     const other = pageDir(g.at("one"), "home/other");
     await mkdir(other, { recursive: true });
-    await writeFile(join(other, "content.yaml"), "name: Other\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(other, "content.yaml"), "name: Other\nplugin: biom-doc\ncontents: []\n", "utf8");
     value(await call(host, g.at("one"), { kind: "page.read", page: "home/other" }));
 
     const heard = ear();
@@ -527,13 +527,13 @@ test("a page made through the app is not a change, and the pages beside it keep 
     // AND THE SIBLING'S BASELINE SURVIVED: the app's next write to it is still
     // dropped, which it would not be had the directory's notification forgotten
     // everything beneath it.
-    value(await call(host, g.at("one"), { kind: "doc.writeRaw", page: "home/other", text: "name: Other\nplugin: doc\ncontents: []\nvariables:\n  touched: yes\n" }));
+    value(await call(host, g.at("one"), { kind: "doc.writeRaw", page: "home/other", text: "name: Other\nplugin: biom-doc\ncontents: []\nvariables:\n  touched: yes\n" }));
     await quiet(1200);
     expect(heard.get()).toBe(0);
 
     // The watch is still live: an outside write to the new page redraws it.
     await writeFile(join(pageDir(g.at("one"), "home/Made"), "content.yaml"),
-      "name: Made\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body: An agent wrote this.\n", "utf8");
+      "name: Made\nplugin: biom-doc\ncontents:\n  - name: t\n    parts:\n      body: An agent wrote this.\n", "utf8");
     expect(await until(() => heard.get() > 0)).toBe(true);
 
     off();
@@ -557,7 +557,7 @@ test("an outside write is reported even when this process reads the page before 
   try {
     const dir = pageDir(g.at("one"), "home/raced");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Before\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Before\nplugin: biom-doc\ncontents: []\n", "utf8");
     value(await call(host, g.at("one"), { kind: "page.read", page: "home/raced" }));
 
     const heard = ear();
@@ -565,7 +565,7 @@ test("an outside write is reported even when this process reads the page before 
 
     // The outside write, and a read of it before SETTLE can have elapsed —
     // the projection's, which is the read the walk measured, and the box's.
-    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: biom-doc\ncontents: []\n", "utf8");
     value(await call(host, g.at("one"), { kind: "page.projection", page: "home/raced", markdown: "" }));
     const seen = value(await call(host, g.at("one"), { kind: "page.read", page: "home/raced" })) as { name: string };
     expect(seen.name).toBe("After");
@@ -576,7 +576,7 @@ test("an outside write is reported even when this process reads the page before 
     // notification for an identical rewrite is nothing that happened.
     await quiet(300);
     const once = heard.get();
-    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: After\nplugin: biom-doc\ncontents: []\n", "utf8");
     await quiet(1200);
     expect(heard.get()).toBe(once);
 
@@ -602,7 +602,7 @@ test("a page deleted from outside is reported even when this process misses it b
     const mirror = join(g.at("one"), "_markdown", "home", "going.md");
     const dir = pageDir(g.at("one"), "home/going");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Going\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Going\nplugin: biom-doc\ncontents: []\n", "utf8");
     expect(await until(() => Bun.file(mirror).size > 0)).toBe(true);
     expect(await until(() => heard.get() > 0)).toBe(true);
     const before = heard.get();
@@ -632,7 +632,7 @@ test("the app's own write is dropped by content hash, and so is its commit and i
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, "content.yaml"),
-      "name: Typed\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body: |\n        Before.\n",
+      "name: Typed\nplugin: biom-doc\ncontents:\n  - name: t\n    parts:\n      body: |\n        Before.\n",
       "utf8",
     );
     value(await call(host, g.at("one"), { kind: "page.read", page: "home/typed" }));
@@ -654,7 +654,7 @@ test("the app's own write is dropped by content hash, and so is its commit and i
     // AND THE WATCH IS STILL LIVE. A suppression that worked by going deaf would
     // pass the line above and fail the person.
     await writeFile(join(dir, "content.yaml"),
-      "name: Typed\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body: |\n        An agent wrote this.\n",
+      "name: Typed\nplugin: biom-doc\ncontents:\n  - name: t\n    parts:\n      body: |\n        An agent wrote this.\n",
       "utf8");
     expect(await until(() => heard.get() > 0)).toBe(true);
 
@@ -671,7 +671,7 @@ test("a half-written file is ignored, and the finished save recovers", async () 
   try {
     const dir = pageDir(g.at("one"), "home/torn");
     await mkdir(dir, { recursive: true });
-    const good = "name: Torn\nplugin: doc\ncontents: []\n";
+    const good = "name: Torn\nplugin: biom-doc\ncontents: []\n";
     await writeFile(join(dir, "content.yaml"), good, "utf8");
     value(await call(host, g.at("one"), { kind: "page.read", page: "home/torn" }));
 
@@ -692,7 +692,7 @@ test("a half-written file is ignored, and the finished save recovers", async () 
     // THE FINISHED SAVE RECOVERS. It only can because the baseline never moved
     // to the broken bytes — had it, this write would have looked like more of
     // the same to everything except the disk.
-    await writeFile(join(dir, "content.yaml"), "name: Mended\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Mended\nplugin: biom-doc\ncontents: []\n", "utf8");
     expect(await until(() => heard.get() > 0)).toBe(true);
     const read = value(await call(host, g.at("one"), { kind: "page.read", page: "home/torn" }));
     expect((read as { name: string }).name).toBe("Mended");
@@ -720,7 +720,7 @@ test("an event in one vault reaches only that vault's subscribers", async () => 
 
     const dir = pageDir(g.at("two"), "home/only-here");
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "content.yaml"), "name: Only here\nplugin: doc\ncontents: []\n", "utf8");
+    await writeFile(join(dir, "content.yaml"), "name: Only here\nplugin: biom-doc\ncontents: []\n", "utf8");
 
     expect(await until(() => two.get() > 0)).toBe(true);
     await quiet();

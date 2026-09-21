@@ -77,7 +77,7 @@ async function hostAt(root: string, vault?: string) {
  *  test is the gate in front of the seeder. */
 async function workspaceAt(at: string): Promise<string> {
   await mkdir(join(at, "pages", "home"), { recursive: true });
-  await writeFile(join(at, "pages", "home", "content.yaml"), "name: Home\nplugin: doc\ncontents: []\n");
+  await writeFile(join(at, "pages", "home", "content.yaml"), "name: Home\nplugin: biom-doc\ncontents: []\n");
   return at;
 }
 
@@ -190,7 +190,7 @@ test("a folder inside a workspace says which workspace, rather than that it is n
     const vault = await workspaceAt(join(root, "Work"));
     const inside = join(vault, "pages", "home", "children", "Notes");
     await mkdir(inside, { recursive: true });
-    await writeFile(join(inside, "content.yaml"), "name: Notes\nplugin: doc\ncontents: []\n");
+    await writeFile(join(inside, "content.yaml"), "name: Notes\nplugin: biom-doc\ncontents: []\n");
 
     // IT WAS TRUE AND USELESS. `<vault>/pages/home/children/Notes` is not empty,
     // so the refusal was "pick an empty one, or one that already holds a
@@ -476,19 +476,20 @@ test("a folder that will not mount still answers the kinds that are about vaults
 
 /* ══ what a vault can lose and get back ══════════════════════════════════ */
 
-test("an override of the doc plugin is kept across opens, and removing it hands the page back to the framework's", async () => {
+test("a plugins/doc/ of the vault's own is kept across opens, is the vault's and never the framework's, and goes when removed", async () => {
   const root = await scratch();
   try {
     const at = join(root, "ws");
     (await hostAt(root, at)).close();
     const doc = join(at, "plugins", "doc", "index.html");
     // NOTHING IS IN `plugins/` UNTIL THE PERSON PUTS SOMETHING THERE. The
-    // framework's own `doc` draws every doc page in this workspace through the
-    // fallback rung, and the copy to read is in `docs/plugins/`.
+    // framework's own `biom-doc` draws every doc page in this workspace from
+    // its own root, and the copy to read is in `docs/plugins/`.
     expect(existsSync(doc)).toBe(false);
 
-    // A FILE AT THE FRAMEWORK'S PATH IS AN OVERRIDE, and an override is the
-    // person's: it is never written over, whatever the framework does next.
+    // A FOLDER UNDER A BARE NAME IS A PLUGIN OF THE VAULT'S OWN — `doc` here
+    // has nothing to do with `biom-doc` — and it is the person's: never
+    // written over, whatever the framework does next.
     const theirs = "<!doctype html><p>mine</p>";
     await mkdir(dirname(doc), { recursive: true });
     await writeFile(doc, theirs);

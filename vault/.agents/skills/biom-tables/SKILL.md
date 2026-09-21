@@ -107,7 +107,7 @@ contents:
 `workspace.db` is the server's and not yours to open, every column type and what
 each one DOES in a page's grid, the three ways rows get in, reading with
 `biom.table` and a query, writing with insert/update/remove, a section placing its
-own grid with `data-g-plugin="table"`, why a change to a table redraws the whole
+own grid with `data-g-plugin="biom-table"`, why a change to a table redraws the whole
 stack, and what only the app can do: create a table, retype or rename a column,
 import CSV.
 

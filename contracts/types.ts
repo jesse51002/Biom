@@ -308,7 +308,8 @@ export const ROOT_PAGE: PageId = "home";
 
 /** WHAT DRAWS A PAGE. A plugin is a page that reads a declared input, so naming
  *  one is how a page says which reader it is for — `html` reads the page's own
- *  `index.html`, `doc` reads `contents`, `kanban` reads a table and a column.
+ *  `index.html`, `biom-doc` reads `contents`, `biom-kanban` reads a table and
+ *  a column.
  *
  *  `kind:` was refused for years and this is not its return. That key claimed a
  *  page could be one of a closed set of THINGS the host understood; this one
@@ -322,13 +323,16 @@ export type PluginName = string;
  *  everything else is a reader somebody chose. */
 export const DEFAULT_PLUGIN: PluginName = "html";
 /** The document reader: sections, slots, markdown, the type scale. What every
- *  page in this format was before there was more than one kind of page. */
-export const DOC_PLUGIN: PluginName = "doc";
+ *  page in this format was before there was more than one kind of page. NAMED
+ *  BY ITS FOLDER, `guest/plugins/biom-doc/`, as every framework plugin is:
+ *  the bare `doc` was the one word a page could say that was not a folder,
+ *  and it went with vault format 5 on 2026-09-21 — a value changed in this
+ *  frozen file, and nothing about its type. */
+export const DOC_PLUGIN: PluginName = "biom-doc";
 /** The grammar a plugin name has to satisfy, which is a page-segment's grammar:
- *  it becomes a directory under the vault's `plugins/` — `plugins/<id>/index.html`
- *  for a plugin that draws a page, `plugins/<id>.js` for one that fills a
- *  slot. Nothing is shipped alongside any more: every plugin is a file in the
- *  workspace, so one name space, in one folder, answers for all of them. */
+ *  it IS a directory — the vault's `plugins/<id>/` for the workspace's own,
+ *  the framework's `guest/plugins/biom-<name>/` for the framework's, and a
+ *  page writes the folder's name and nothing else. */
 export const PLUGIN_NAME = /^[a-z][a-z0-9-]*$/;
 
 /** What a page's `uid` looks like: lowercase letters and digits, eight to

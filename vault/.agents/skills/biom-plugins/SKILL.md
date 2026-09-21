@@ -1,6 +1,6 @@
 ---
 name: biom-plugins
-description: "HOW CODE REACHES A SLOT, and the decision order to take before writing any. START HERE BEFORE WRITING ANY CODE THAT DRAWS SOMETHING: most slots need none — a part\'s kind names the plugin that fills it — and where code IS the answer it goes in the section\'s own `<script>`, which is handed the same `ctx` a named plugin gets. The MECHANISM is `docs/plugins.md` at the vault root: where a plugin comes from and how it is resolved, the registration contract, `ctx.use`, `data-g-plugin`, the part kinds that are spoken for, and the fence hand-off. This file is the DECISION and the rules, and it links that rather than restating it. Use whenever the task is to fill a slot with something the plugins in `plugins/` do not draw, to place a `data-g-plugin` node, or to read or repair a plugin. Carries the order to try things in, the rule that decides the rest — if there is even a small chance somebody else will use it, it is a plugin and not a copy inside a section — the four-point bar a plugin has to meet because every one of them is global to every page in the workspace, THE ORDER TO EXTEND A FRAMEWORK PLUGIN IN — a variable in a rung, a plugin of your own named in one, a plugin of your own under a bare name — and why `doc` is never copied, the shape of a plugin folder as a worked example, R50: a plugin may never claim a PART KIND or a `biom-` id, and R65 to R68 on the folder shape and a rung naming a variable nothing declares. Read `../biom-sections/SKILL.md` for the section a plugin is mounted from."
+description: "HOW CODE REACHES A SLOT, and the decision order to take before writing any. START HERE BEFORE WRITING ANY CODE THAT DRAWS SOMETHING: most slots need none — a part\'s kind names the plugin that fills it — and where code IS the answer it goes in the section\'s own `<script>`, which is handed the same `ctx` a named plugin gets. The MECHANISM is `docs/plugins.md` at the vault root: where a plugin comes from and how it is resolved, the registration contract, `ctx.use`, `data-g-plugin`, the part kinds that are spoken for, and the fence hand-off. This file is the DECISION and the rules, and it links that rather than restating it. Use whenever the task is to fill a slot with something the plugins in `plugins/` do not draw, to place a `data-g-plugin` node, or to read or repair a plugin. Carries the order to try things in, the rule that decides the rest — if there is even a small chance somebody else will use it, it is a plugin and not a copy inside a section — the four-point bar a plugin has to meet because every one of them is global to every page in the workspace, THE ORDER TO EXTEND A FRAMEWORK PLUGIN IN — a variable in a rung, a plugin of your own named in one, a plugin of your own under a bare name — and why `doc` is never copied, the shape of a plugin folder as a worked example, R50: a plugin may never claim a PART KIND or a `biom-` id, and R65 to R69 on the folder shape, a rung naming a variable nothing declares, and the name a framework plugin has — its folder, `biom-doc`, never the bare word. Read `../biom-sections/SKILL.md` for the section a plugin is mounted from."
 ---
 
 # Plugins
@@ -27,7 +27,7 @@ contents:
 
 ```html
 <div data-g-part="body"></div>
-<div data-g-plugin="reveal"></div>
+<div data-g-plugin="biom-reveal"></div>
 <div data-g-part="figures"></div>
 ```
 
@@ -120,8 +120,8 @@ time — the mechanism, the typing and every refusal are in
 stop at the first that does it:**
 
 1. **Change a variable, where the plugin declares one.** One line in a rung. It follows every framework release.
-2. **Name a plugin of your own in a variable, where the plugin reads one.** The `doc` document reads `head` and `foot` and mounts what each names; `head: board-look` in a rung and a `plugins/board-look/` folder is how this workspace dresses its board, and `foot:` left empty is how a page drops it. One line and one folder, and it still follows every release.
-3. **Write a plugin of your own under a bare name, where you want the whole thing.** `plugins/doc/index.html` is a document of the workspace's own, and every page saying `plugin: doc` draws with it. It is yours to keep current from that day, which is the whole of what it costs.
+2. **Name a plugin of your own in a variable, where the plugin reads one.** The `biom-doc` document reads `head` and `foot` and mounts what each names; `head: board-look` in a rung and a `plugins/board-look/` folder is how this workspace dresses its board, and `foot:` left empty is how a page drops it. One line and one folder, and it still follows every release.
+3. **Write a plugin of your own under a bare name, where you want the whole thing.** `plugins/sheet/index.html` is a document of the workspace's own, and every page saying `plugin: sheet` draws with it. It is yours to keep current from that day, which is the whole of what it costs. A bare name is always yours: `plugin: doc` names a `plugins/doc/` of this workspace and never the framework's `biom-doc` — the name is the folder, in both directions.
 
 **There is no fourth door.** A folder wearing `biom-` in this workspace holds `extensions.yaml` and nothing else; a script or a document dropped into it is refused by name and never draws. **Do not copy `doc`.** It is the most-used plugin in the framework and the one the framework will change most, and a copy is the one shape that stops following it — the workspace this framework was built alongside measured its copy a layer-order fix behind the day after it was taken, and four hundred lines owned for a hundred it wanted. Where a variable does not reach what you want, say so in the framework rather than take the copy.
 
@@ -173,14 +173,15 @@ The refusal is readable rather than a silent overwrite:
 
 ---
 
-## R65 to R68 — the folder shape, and a rung that names nothing
+## R65 to R69 — the folder shape, a rung that names nothing, and the name a plugin has
 
-Four findings the checker reports on `plugins/`, at the vault root and under a page:
+Five findings the checker reports on `plugins/`, at the vault root and under a page, and on the names pages and sections say:
 
 - **R65 — a loose `plugins/<id>.js`.** A plugin is a folder; `mkdir plugins/<id> && mv plugins/<id>.js plugins/<id>/` is the whole fix. *(FAIL: the loader refuses it, so nothing in it draws.)*
 - **R66 — a `biom-` folder holding anything beside `extensions.yaml`.** It is an extension and holds a rung alone; a script or a document in it never draws. Move a document to a bare-named folder if you meant a plugin of your own. *(FAIL.)*
 - **R67 — a key in an `extensions.yaml` that the plugin's `plugin.yaml` does not declare.** A typo, or a variable the plugin does not read: it draws nothing. The finding names the keys the plugin does declare. *(FAIL.)*
 - **R68 — a document under a bare name that is a copy of a framework document.** `plugins/doc/index.html` shaped like the framework's own draws, as a plugin of the workspace's, and stops following the framework. An extension would do: §4. *(WARN.)*
+- **R69 — a framework plugin named by its bare word.** THE NAME IS THE FOLDER: the framework's are `biom-<name>/`, so a page says `plugin: biom-doc`, a section says `data-g-plugin="biom-reveal"`, a plugin says `ctx.use("biom-items")`. A bare word is a plugin of this workspace's own and nothing else — `plugin: doc` in a workspace with no `plugins/doc/` names nothing, and the server refuses to open a workspace that still says one until `bun run tools/migrate-format-5.ts <workspace>` (in the framework checkout) rewrites every such word and nothing else. *(FAIL: the workspace does not open.)*
 
 ---
 

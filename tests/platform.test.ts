@@ -34,7 +34,7 @@ const scratch = () => mkdtemp(join(tmpdir(), "biom-"));
  *  byte — so a fixture asserting that has to be a file this module would write. */
 const PAGE = [
   "name: Rendering rates",
-  "plugin: doc",
+  "plugin: biom-doc",
   "variables:",
   "  rate: 62",
   "contents:",
@@ -87,7 +87,7 @@ const canonical = (doc: PageDoc): unknown => ({
  *  of the awkward-value tests below want. */
 const oneSlot = (part: string | Content, name = "x"): PageDoc => ({
   name,
-  plugin: "doc",
+  plugin: "biom-doc",
   variables: {},
   contents: [{ name: "intro", parts: { body: part } }],
   input: {},
@@ -98,7 +98,7 @@ const oneSlot = (part: string | Content, name = "x"): PageDoc => ({
 test("the whole page comes out of one file, prose included", () => {
   expect(parse(PAGE)).toEqual({
     name: "Rendering rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     input: {},
     variables: { rate: 62 },
     contents: [
@@ -144,7 +144,7 @@ test("variables nest three deep, and each scope keeps its own", () => {
   const own = parse(
     [
       "name: x",
-      "plugin: doc",
+      "plugin: biom-doc",
       "contents:",
       "  - name: intro",
       "    parts:",
@@ -161,13 +161,13 @@ test("variables nest three deep, and each scope keeps its own", () => {
   // The old spelling. `calc.title` is now a key of the `calc` section, so on a
   // DOC PAGE — whose shape is closed — a dotted key at the top level is simply
   // an unknown key. On a plugin page it would be that plugin's own input, which
-  // is why the page has to say `plugin: doc` for this to be a refusal at all.
-  expect(() => parse("name: x\nplugin: doc\ncalc.title: y\n")).toThrow(FlatnessError);
+  // is why the page has to say `plugin: biom-doc` for this to be a refusal at all.
+  expect(() => parse("name: x\nplugin: biom-doc\ncalc.title: y\n")).toThrow(FlatnessError);
 });
 
 test("contents is the order, and the order is what comes back", () => {
   const doc = parse(
-    ["name: Three", "plugin: doc", "contents:", "  - name: c", "  - name: a", "  - name: b", ""].join("\n"),
+    ["name: Three", "plugin: biom-doc", "contents:", "  - name: c", "  - name: a", "  - name: b", ""].join("\n"),
   );
   expect(doc.contents.map((s) => s.name)).toEqual(["c", "a", "b"]);
   // and format does not sort it back into something tidier
@@ -178,7 +178,7 @@ test("a slot's id is its key in parts, and the keys keep the order they were wri
   const doc = parse(
     [
       "name: x",
-      "plugin: doc",
+      "plugin: biom-doc",
       "contents:",
       "  - name: hero",
       "    data: hero.html",
@@ -197,11 +197,11 @@ test("a slot's id is its key in parts, and the keys keep the order they were wri
 });
 
 test("a bare string is markdown, and the short spelling survives a save", () => {
-  const short = parse("name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body: hello\n");
+  const short = parse("name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body: hello\n");
   expect(short.contents[0]?.parts?.["body"]).toBe("hello");
 
   const long = parse(
-    "name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        type: markdown\n        data: hello\n",
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        type: markdown\n        data: hello\n",
   );
   expect(long.contents[0]?.parts?.["body"]).toEqual({ type: "markdown", data: "hello" });
 
@@ -212,35 +212,35 @@ test("a bare string is markdown, and the short spelling survives a save", () => 
   expect(format(long)).toBe(format(short));
   expect(format(short)).not.toContain("type: markdown");
   // Prose gets the block scalar, which is the readable spelling of a string.
-  expect(format(short)).toBe("name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body: |-\n        hello\n");
+  expect(format(short)).toBe("name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body: |-\n        hello\n");
 });
 
 test("a Content has no name of its own: the key in parts already states it", () => {
   expect(() =>
     parse(
-      "name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        name: body\n        type: markdown\n        data: hi\n",
+      "name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        name: body\n        type: markdown\n        data: hi\n",
     ),
   ).toThrow(FlatnessError);
   expect(() =>
     parse(
-      "name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        name: body\n        type: markdown\n        data: hi\n",
+      "name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body:\n        name: body\n        type: markdown\n        data: hi\n",
     ),
   ).toThrow(/"name" is not part of/);
 });
 
 test("a bare number or boolean in a slot is prose YAML read as a value", () => {
   // `body: 2026` is a paragraph somebody forgot to quote, not a broken page.
-  const doc = parse("name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body: 2026\n      done: true\n");
+  const doc = parse("name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body: 2026\n      done: true\n");
   expect(doc.contents[0]?.parts).toEqual({ body: "2026", done: "true" });
 });
 
 test("a section that names no file takes the shipped default, spelled by an absence", () => {
-  const doc = parse("name: x\nplugin: doc\ncontents:\n  - name: intro\n    parts:\n      body: hello\n");
+  const doc = parse("name: x\nplugin: biom-doc\ncontents:\n  - name: intro\n    parts:\n      body: hello\n");
   expect(doc.contents[0]?.data).toBeUndefined();
   // Writing `data: null` on every plain section would put a key in the file
   // that says nothing, so the absence is what the writer produces too.
   expect(format(doc)).not.toContain("data:");
-  expect(format({ name: "x", plugin: "doc", variables: {}, contents: [{ name: "intro", data: "" }], input: {} })).not.toContain("data:");
+  expect(format({ name: "x", plugin: "biom-doc", variables: {}, contents: [{ name: "intro", data: "" }], input: {} })).not.toContain("data:");
 });
 
 test("a child key is one segment and stays a legal filename", () => {
@@ -248,7 +248,7 @@ test("a child key is one segment and stays a legal filename", () => {
   const doc = parse(
     [
       "name: Team",
-      "plugin: doc",
+      "plugin: biom-doc",
       "contents:",
       "  - name: \"@page-Notes\"",
       "    parts:",
@@ -267,13 +267,13 @@ test("a child key is one segment and stays a legal filename", () => {
 
 test("plugin: names the ONE reader that draws a page, and its own keys pass through untouched", () => {
   const doc = parse(
-    ["name: Plants", "plugin: kanban", "input:", "  table: plants", "  lanes: status", "  name: species", "  show:", "    - bed", "    - height", ""].join("\n"),
+    ["name: Plants", "plugin: biom-kanban", "input:", "  table: plants", "  lanes: status", "  name: species", "  show:", "    - bed", "    - height", ""].join("\n"),
   );
   // The host has no opinion about a plugin's input and never validates it,
   // because a host that validated one would have to know every plugin. It sits
   // UNDER `input:` so the host's keys and the plugin's cannot collide — which
   // they would here: the board titles its cards by a column called `name`.
-  expect(doc.plugin).toBe("kanban");
+  expect(doc.plugin).toBe("biom-kanban");
   expect(doc.input).toEqual({ table: "plants", lanes: "status", name: "species", show: ["bed", "height"] });
   expect(doc.name).toBe("Plants");
   // A plugin page has no sections: a section is the doc plugin's concept.
@@ -282,10 +282,10 @@ test("plugin: names the ONE reader that draws a page, and its own keys pass thro
 
   // `page:` was the list of plugins mounting on the whole page. One page, one
   // plugin now, so the old key is refused by name rather than read as input.
-  expect(() => parse("name: x\nplugin: kanban\npage:\n  - plugin: progress\n")).toThrow(/older format/);
+  expect(() => parse("name: x\nplugin: biom-kanban\npage:\n  - plugin: progress\n")).toThrow(/older format/);
   // And a plugin's key beside the host's, rather than under input:, is refused
   // on every kind of page.
-  expect(() => parse("name: x\nplugin: kanban\ntable: plants\n")).toThrow(FlatnessError);
+  expect(() => parse("name: x\nplugin: biom-kanban\ntable: plants\n")).toThrow(FlatnessError);
   expect(() => parse("name: x\nplugin: Kanban\n")).toThrow(FlatnessError);
   expect(() => parse("name: x\nplugin: 3\n")).toThrow(FlatnessError);
 });
@@ -296,7 +296,7 @@ test("what a page may leave out, and what it gets when it does", () => {
   // A page that names no plugin is its own html: the shape with the fewest
   // assumptions in it, and what a page written by hand outside this format is.
   expect(parse("name: Bare\n")).toEqual({ name: "Bare", plugin: "html", variables: {}, contents: [], input: {} });
-  expect(parse("name: Bare\nplugin: doc\n")).toEqual({ name: "Bare", plugin: "doc", variables: {}, contents: [], input: {} });
+  expect(parse("name: Bare\nplugin: biom-doc\n")).toEqual({ name: "Bare", plugin: "biom-doc", variables: {}, contents: [], input: {} });
   // A page with no name at all: the domain names it after its folder, so this
   // is a blank rather than a refusal.
   expect(parse("contents: []\n").name).toBe("");
@@ -305,11 +305,11 @@ test("what a page may leave out, and what it gets when it does", () => {
 });
 
 test("a page with nothing in it is a page, and contents is written even when it is empty", () => {
-  const text = format({ name: "Job board", plugin: "doc", variables: {}, contents: [], input: {} });
+  const text = format({ name: "Job board", plugin: "biom-doc", variables: {}, contents: [], input: {} });
   // `plugin:` is ALWAYS written, even where the file it came from left it out —
   // a page that states what draws it can be read by somebody who has never seen
   // this format, and the default is only a default at the moment of parsing.
-  expect(text).toBe(["name: Job board", "plugin: doc", "contents: []", ""].join("\n"));
+  expect(text).toBe(["name: Job board", "plugin: biom-doc", "contents: []", ""].join("\n"));
   expect(format(parse(text))).toBe(text);
 });
 
@@ -338,7 +338,7 @@ test("a retired key one level down is refused by name too", () => {
   // A section written for the format before this one carries `kind:` or
   // `render:` on the entry rather than on the page.
   for (const line of ["kind: doc", "render: plain", "order: 1"]) {
-    const bad = "name: x\nplugin: doc\ncontents:\n  - name: calc\n    " + line + "\n";
+    const bad = "name: x\nplugin: biom-doc\ncontents:\n  - name: calc\n    " + line + "\n";
     expect(() => parse(bad)).toThrow(FlatnessError);
     expect(() => parse(bad)).toThrow(/is from an older format/);
   }
@@ -346,7 +346,7 @@ test("a retired key one level down is refused by name too", () => {
   // used to carry exactly that. It is refused as a key a SECTION does not have:
   // a section is the only thing contents can hold, so there is nothing for a
   // type to distinguish.
-  expect(() => parse("name: x\nplugin: doc\ncontents:\n  - name: calc\n    type: markdown\n    data: hi\n")).toThrow(
+  expect(() => parse("name: x\nplugin: biom-doc\ncontents:\n  - name: calc\n    type: markdown\n    data: hi\n")).toThrow(
     /"type" is not part of contents entry 1/,
   );
 });
@@ -358,18 +358,18 @@ test("a document that is YAML and is not a page throws FlatnessError", () => {
     "- a\n- b", // a list at the root
     // (a key that is not part of a page is now a PLUGIN PAGE'S INPUT — the case
     //  that is still a refusal is the same key on a doc page, below)
-    "name: x\nplugin: doc\ncontents: nope", // contents is a list
-    "name: x\nplugin: doc\ncontents:\n  - just a string",
-    "name: x\nplugin: doc\ncontents:\n  - data: calc.html", // a section with no name
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n  - name: a", // one name, one section
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n    extra: z",
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n    parts: body", // parts is a map
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: diagram\n        data: y", // gone
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: markdown\n        data: y\n        extra: z",
-    "name: x\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: markdown\n        data: [a, b]",
+    "name: x\nplugin: biom-doc\ncontents: nope", // contents is a list
+    "name: x\nplugin: biom-doc\ncontents:\n  - just a string",
+    "name: x\nplugin: biom-doc\ncontents:\n  - data: calc.html", // a section with no name
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n  - name: a", // one name, one section
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n    extra: z",
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n    parts: body", // parts is a map
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: diagram\n        data: y", // gone
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: markdown\n        data: y\n        extra: z",
+    "name: x\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: markdown\n        data: [a, b]",
     "name: x\nvariables:\n  rate:\n    tier: 1", // a variable is a scalar
     "name: x\nvariables:\n  rate: [[1, 2]]", // or a list of them, once
-    "name: x\nplugin: doc\nextra: y", // a doc page's shape is closed
+    "name: x\nplugin: biom-doc\nextra: y", // a doc page's shape is closed
     "__proto__: 1",
     "name: x\nvariables:\n  __proto__: 1",
   ];
@@ -384,7 +384,7 @@ test("a document that is YAML and is not a page throws FlatnessError", () => {
 
 test("YAML that will not parse throws YamlError and not FlatnessError, and says which line", () => {
   const broken = [
-    "name: x\nplugin: doc\ncontents: [1, 2",
+    "name: x\nplugin: biom-doc\ncontents: [1, 2",
     "name: 'unterminated",
     "name: x\nname: y", // one key, one value
     "name: x\n\tvariables: {}", // a tab as indentation
@@ -451,7 +451,7 @@ test("every variable type reads back as itself, lists included", () => {
 test("format is a pure function of the document and puts the keys in one order", () => {
   const a: PageDoc = {
     name: "Job board",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { heading: "This week" },
     contents: [{ name: "hero", data: "hero.html", variables: { standfirst: "Four releases" }, parts: { body: "hi" } }],
     input: {},
@@ -460,14 +460,14 @@ test("format is a pure function of the document and puts the keys in one order",
     contents: [{ parts: { body: "hi" }, variables: { standfirst: "Four releases" }, data: "hero.html", name: "hero" }],
     input: {},
     variables: { heading: "This week" },
-    plugin: "doc",
+    plugin: "biom-doc",
     name: "Job board",
   };
   expect(format(a)).toBe(format(b));
   expect(format(a)).toBe(
     [
       "name: Job board",
-      "plugin: doc",
+      "plugin: biom-doc",
       "variables:",
       "  heading: This week",
       "contents:",
@@ -486,7 +486,7 @@ test("format is a pure function of the document and puts the keys in one order",
 test("an empty variables map is left out rather than written as furniture", () => {
   const text = format({
     name: "Bare",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{ name: "intro", parts: { body: "words" }, variables: {} }],
   });
@@ -513,7 +513,7 @@ test("format refuses what has no spelling rather than writing a lie", () => {
 
 test("a long line is written long, because folding it would reflow the diff", () => {
   const long = "A single sentence about rendering that runs well past eighty characters and keeps going.";
-  const text = format({ name: "x", plugin: "doc", variables: { blurb: long }, contents: [], input: {} });
+  const text = format({ name: "x", plugin: "biom-doc", variables: { blurb: long }, contents: [], input: {} });
   expect(text).toContain(long);
   expect(text.split("\n").some((l) => l.length > 80)).toBe(true);
 });
@@ -620,7 +620,7 @@ test("parse(format(x)) is x, for every awkward value in every place one can sit"
     // page's name, a section's name and the file a section names
     roundTrips({
       name: s,
-      plugin: "doc",
+      plugin: "biom-doc",
       variables: { one: s, many: [s, "after"] },
       contents: [
         {
@@ -638,7 +638,7 @@ test("format always ends the file with a newline and never leaves a NUL in it", 
   for (const s of AWKWARD) {
     const text = format({
       name: "x",
-      plugin: "doc",
+      plugin: "biom-doc",
       variables: { v: s },
       contents: [{ name: "intro", data: s, parts: { body: s } }],
     });
@@ -658,7 +658,7 @@ test("U+2028 is written RAW, which is the one thing the vendored writer does not
   // recorded here rather than worked around, because working around it would
   // mean either editing a vendored file or dropping a character out of somebody
   // else's sentence.
-  const doc: PageDoc = { name: "x", plugin: "doc", variables: { v: "before\u2028after" }, contents: [], input: {} };
+  const doc: PageDoc = { name: "x", plugin: "biom-doc", variables: { v: "before\u2028after" }, contents: [], input: {} };
   const text = format(doc);
   expect(text).toContain("\u2028");
   expect(parse(text)).toEqual(doc);
@@ -739,7 +739,7 @@ test("parse(format(x)) is x, for fuzzed documents over the awkward alphabet", ()
       contents.push(section);
     }
 
-    const doc: PageDoc = { name: pick(), plugin: "doc", variables: vars(), contents, input: {} };
+    const doc: PageDoc = { name: pick(), plugin: "biom-doc", variables: vars(), contents, input: {} };
     roundTrips(doc);
   }
 });
@@ -968,7 +968,7 @@ test("a list in a slot survives a round trip, and is spelled as a list", () => {
   // will edit by hand when they open it.
   const doc: PageDoc = {
     name: "Board",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{
       name: "cards",

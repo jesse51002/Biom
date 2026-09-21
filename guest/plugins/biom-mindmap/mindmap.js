@@ -3,7 +3,7 @@
  * script; see registry.js for why there are no imports in here.
  *
  * A PLUGIN IS A PAGE THAT READS A DECLARED INPUT, and this is the third one. A
- * page says `plugin: mindmap` and the box is handed this document; the rail's
+ * page says `plugin: biom-mindmap` and the box is handed this document; the rail's
  * own Map row mounts the same document on `@map`. Either way this file asks the
  * host the same questions any page may ask — which pages exist, what each one's
  * prose says, what a page holds — and draws what it hears. It registers nothing:

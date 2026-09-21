@@ -3,7 +3,7 @@
  * registry.js for why there are no imports in here.
  *
  * A PLUGIN IS A PAGE THAT READS A DECLARED INPUT, and this is the second one.
- * The page says `plugin: kanban` and puts the rest under `input:`; this file
+ * The page says `plugin: biom-kanban` and puts the rest under `input:`; this file
  * reads that, asks for the table over the guest port, and draws it. It registers
  * nothing with the plugin registry: a registered plugin fills a SLOT inside
  * somebody else's page, and this IS the page.

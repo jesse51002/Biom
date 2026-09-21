@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE `doc` DOCUMENT — the page every `plugin: doc` page in every vault loads:
+// THE `doc` DOCUMENT — the page every `plugin: biom-doc` page in every vault loads:
 // the frame, the hide rule, the conversion, and the two nodes of its own that
 // take what `head` and `foot` name. The board those used to hard-wire is
 // `tests/holds.test.ts` now, as the plugin it became.

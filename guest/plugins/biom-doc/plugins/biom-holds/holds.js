@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* guest/plugins/biom-doc/plugins/holds/holds.js — THE BOARD OF CHILDREN, as a
+/* guest/plugins/biom-doc/plugins/biom-holds/holds.js — THE BOARD OF CHILDREN, as a
  * plugin of its own inside the document's folder.
  *
  * Every page that holds pages gets a count, a sort control and a row per

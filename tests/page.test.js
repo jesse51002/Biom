@@ -291,7 +291,7 @@ test("a document that says <header before its <head> still gets the runtime wove
   // so; `<head[^>]*>` matched the comment's `<header …>` first and wove every
   // runtime tag into a comment, so the box loaded nothing and reported nothing.
   const html = "<!doctype html>\n<!-- a <header id=\"g-head\"> sits before the stack -->\n<html>\n<head><title>T</title></head>\n<body><header id=\"g-head\"></header><main id=\"g-page\"></main></body></html>";
-  const doc = weaveRuntime(html, { id: "home", name: "Home", plugin: "doc", input: {} }, VAULT);
+  const doc = weaveRuntime(html, { id: "home", name: "Home", plugin: "biom-doc", input: {} }, VAULT);
   const runtimeAt = doc.indexOf("/guest/runtime/boot.js");
   expect(runtimeAt).toBeGreaterThan(doc.indexOf("<head>"));
   expect(runtimeAt).toBeLessThan(doc.indexOf("<title>T</title>"));
@@ -335,12 +335,12 @@ test("the design doc mounts the same box as a page, keyed by its reserved id, wi
 
 test("the map mounts the same way, off the read the server answers for @map", () => {
   const frameHost = fakeFrameHost();
-  const read = { ...page("@map", []), name: "Map", plugin: "mindmap", input: { rail: true }, html: "<!doctype html><html><head></head><body><main id=\"g-map\"></main></body></html>" };
+  const read = { ...page("@map", []), name: "Map", plugin: "biom-mindmap", input: { rail: true }, html: "<!doctype html><html><head></head><body><main id=\"g-map\"></main></body></html>" };
   makeMapView({ h, frameHost, ws: {}, ui: {}, vault: VAULT })(read);
   const mount = frameHost.mounts[0];
   expect(mount.key).toBe("@map");
   expect(mount.html).toContain('id="g-map"');
-  expect(mount.html).toContain('"plugin":"mindmap"');
+  expect(mount.html).toContain('"plugin":"biom-mindmap"');
   expect(mount.html).toContain('"rail":true');
 });
 

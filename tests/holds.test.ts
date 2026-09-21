@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE BOARD OF CHILDREN AS A PLUGIN — `guest/plugins/biom-doc/plugins/holds/holds.js`,
+// THE BOARD OF CHILDREN AS A PLUGIN — `guest/plugins/biom-doc/plugins/biom-holds/holds.js`,
 // registering `biom-holds`, which the `doc` document's `foot: biom-holds` puts
 // under every document and a section may place with `data-g-plugin`.
 //
@@ -11,7 +11,7 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 
-const HOLDS = readFileSync(new URL("../guest/plugins/biom-doc/plugins/holds/holds.js", import.meta.url), "utf8");
+const HOLDS = readFileSync(new URL("../guest/plugins/biom-doc/plugins/biom-holds/holds.js", import.meta.url), "utf8");
 
 test("it registers biom-holds, from a folder inside the document's own, and inks nothing", () => {
   expect(HOLDS).toContain('id: "biom-holds"');

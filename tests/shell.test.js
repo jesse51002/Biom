@@ -270,7 +270,7 @@ function fakeWs(page = DOC) {
       this.calls.push("loadPage:" + id);
       // THE DESIGN DOC AND THE MAP ARE PAGE READS under reserved ids, and the
       // shell asks for them exactly as it asks for a routed page.
-      const reserved = id === "@design" ? { ...DOC, id, name: "Design" } : id === "@map" ? { ...BOARD, id, name: "Map", plugin: "mindmap" } : null;
+      const reserved = id === "@design" ? { ...DOC, id, name: "Design" } : id === "@map" ? { ...BOARD, id, name: "Map", plugin: "biom-mindmap" } : null;
       state.page = reserved ?? [DOC, WITH_BLOCK, BOARD].find((p) => p.id === id) ?? null;
       emit();
       return state.page;

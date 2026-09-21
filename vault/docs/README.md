@@ -58,7 +58,7 @@ it, and — for a document — the ordered list of sections that make it up:
 
 ```yaml
 name: Notes
-plugin: doc
+plugin: biom-doc
 contents:
   - name: opening
     parts:

@@ -636,7 +636,7 @@ reader a row of things they can retype and never re-count.
 
 ```html
 <div data-g-part="steps"></div>
-<span data-g-plugin="items" data-g-for="steps"></span>
+<span data-g-plugin="biom-items" data-g-for="steps"></span>
 ```
 
 `items` draws the add into its own node and a delete into each item, and inks

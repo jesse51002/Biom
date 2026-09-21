@@ -362,7 +362,7 @@ walk("a half-written file does not break the page, and the finished save recover
   // THE MIDDLE OF SOMEBODY ELSE'S SAVE. An editor that writes in two goes leaves
   // exactly this on disk for a moment, and the rule is that the drawn page is
   // left alone rather than replaced by a parse error.
-  writeFileSync(madeDoc, 'name: Kitchen\nplugin: doc\ncontents:\n  - "unterminated\n', "utf8");
+  writeFileSync(madeDoc, 'name: Kitchen\nplugin: biom-doc\ncontents:\n  - "unterminated\n', "utf8");
   await new Promise((r) => setTimeout(r, 1500));
 
   const body = await page.frameLocator("iframe.artifact").locator("body").innerText().catch(() => "");
@@ -684,7 +684,7 @@ walk("nothing threw, and nothing was written outside this run's own folder", asy
 function doc(name: string, words: string): string {
   return [
     `name: ${name}`,
-    "plugin: doc",
+    "plugin: biom-doc",
     "contents:",
     "  - name: body",
     "    parts:",
