@@ -176,7 +176,7 @@ section — `await` at the top level of a section script is a syntax error.
 | `biom.input` | this page's own `input:` map, for a page a plugin draws. Present synchronously |
 | `biom.data()` / `biom.setData(patch)` | this page's variables, read and merged |
 | `biom.variables(pageId)` | **another** page's variables |
-| `biom.doc(pageId)` / `biom.docs()` | another page as prose; every page |
+| `biom.doc(pageId)` / `biom.docs()` | another page as prose — its page-level `input` slots first, then every markdown slot of its sections in order, so a page drawn by its own `index.html` answers with the words it put in `input:`; every page |
 | `biom.children(pageId?)` | what a page holds. Below |
 | `biom.table(name, query?)` | `{ schema, rows, total }`. See [`tables.md`](./tables.md) |
 | `biom.schema(name)` / `biom.tables()` | one table's columns; every table with its row count |
