@@ -380,6 +380,16 @@ test("every ApiRequest kind round-trips", async () => {
     // part is drawn.
     expect(String(value(await call({ kind: "doc.get", page: start.id })))).toContain("# Start here");
     expect((value(await call({ kind: "doc.list" })) as unknown[]).length).toBe(2);
+    // A page drawn by its own document has no sections; its words are the
+    // page-level `input` slots, strings and lists of strings alike, and they
+    // are its prose — the H1 the runs bar names a slide by is read from here.
+    // A map in `input` is the plugin's configuration and never prose.
+    const scene = value(await call({ kind: "page.create", init: { name: "Scene" } })) as PageRef;
+    await call({ kind: "doc.writeRaw", page: scene.id, text: "name: Scene\ninput:\n  head: \"# A burst, then a fade\"\n  captions: [one, two]\n  table: { name: jobs }\n" });
+    const words = String(value(await call({ kind: "doc.get", page: scene.id })));
+    expect(words.startsWith("# A burst, then a fade\n\none\n\ntwo")).toBe(true);
+    expect(words).not.toContain("jobs");
+    await call({ kind: "page.remove", page: scene.id });
 
     // Layer one over the wire: pages and tables in one list, each tagged for
     // what it is, so an artifact drawing its own children reads this and

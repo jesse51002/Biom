@@ -209,11 +209,21 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         if (page === null) return err(id, "not_found", "no such page");
         // A doc read by a plugin is the page's prose: every markdown slot, in
         // section order and then in the order the section's own html declares
-        // its slots. A page whose sections hold no prose honestly returns none.
-        const md = page.sections
-          .flatMap((s) => Object.values(s.parts))
-          .filter((p): p is Extract<typeof p, { kind: "markdown" }> => p.kind === "markdown")
-          .map((p) => p.md)
+        // its slots. A page drawn by its own document has no sections, and its
+        // words are the page-level `input` slots the box fills into its
+        // `data-g-part`s — a string, or a list of strings — so those come first,
+        // in the order the page wrote them: the H1 a runs bar names a slide by
+        // is as often there as in a section. A page with no prose in either
+        // honestly returns none.
+        const own = Object.values(page.input)
+          .flatMap((v) => (typeof v === "string" ? [v] : Array.isArray(v) && v.every((one) => typeof one === "string") ? v : []));
+        const md = own
+          .concat(
+            page.sections
+              .flatMap((s) => Object.values(s.parts))
+              .filter((p): p is Extract<typeof p, { kind: "markdown" }> => p.kind === "markdown")
+              .map((p) => p.md),
+          )
           .join("\n\n");
         return ok(id, md);
       }
