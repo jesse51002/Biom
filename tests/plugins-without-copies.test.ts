@@ -275,10 +275,12 @@ test("the mirror is the framework's set, whole, and the ignore line is appended 
     expect(readFileSync(join(vault, MIRROR_DIR, "a.js"), "utf8")).toBe("A");
     expect(readFileSync(join(vault, MIRROR_DIR, "deep/index.html"), "utf8")).toBe("D");
     expect(existsSync(join(vault, MIRROR_DIR, "stale.js"))).toBe(false);
-    expect(readFileSync(join(vault, ".gitignore"), "utf8")).toBe("workspace.db\ndocs/plugins/\n");
+    // The mirror's line, and the name a write wears while it lands — a temp
+    // left by a process dying mid-write must not be the next commit's.
+    expect(readFileSync(join(vault, ".gitignore"), "utf8")).toBe("workspace.db\ndocs/plugins/\n.*.tmp\n");
     // Idempotent: a second pass adds no second line.
     await mirrorPlugins(makeFiles(vault), makeFiles(framework));
-    expect(readFileSync(join(vault, ".gitignore"), "utf8")).toBe("workspace.db\ndocs/plugins/\n");
+    expect(readFileSync(join(vault, ".gitignore"), "utf8")).toBe("workspace.db\ndocs/plugins/\n.*.tmp\n");
   } finally {
     await rm(framework, { recursive: true, force: true });
     await rm(vault, { recursive: true, force: true });

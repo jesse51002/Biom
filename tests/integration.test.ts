@@ -20,7 +20,7 @@
 // exercised here as the API.
 
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -607,4 +607,49 @@ test("a page that moved is reached by its new id, and its old one is not forward
   // subtree's paths changed.
   expect(ids).toContain(ROOT_PAGE);
   db.close();
+});
+
+/* ── a write lands whole, and a page that will not parse says why ─────────── */
+
+test("two writes in flight on one file leave it whole and in call order, never torn", async () => {
+  // THE TORN PAGE. `writeFile` straight onto a path truncates and then fills,
+  // and two in flight on one path — the doc document's conversion fired one
+  // `section.write` per table, together — left the workspace's Visual Arrival
+  // spec holding the front of one write and 1573 NUL bytes where the rest of
+  // the other should have been: `Missing closing quote — line 289`, and the
+  // page drawn as one naming a plugin nobody installed. Reproduced in one
+  // process in about one run of three hundred; this runs more than that.
+  const files = makeFiles(root);
+  const a = "a: " + "A".repeat(30000) + "\n";
+  const b = "b: " + "B".repeat(28000) + "\n";
+  for (let i = 0; i < 400; i++) {
+    await Promise.all([files.write("pages/torn.yaml", a), files.write("pages/torn.yaml", b)]);
+    const got = readFileSync(join(root, "pages", "torn.yaml"), "utf8");
+    // Whole: one of the two, never a mix and never a NUL.
+    expect(got.includes("\u0000")).toBe(false);
+    // In call order: the later call is the file's last word.
+    expect(got).toBe(b);
+  }
+  // And no temporary is left beside it.
+  expect(readdirSync(join(root, "pages")).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+});
+
+test("a page whose document will not parse opens saying so, with the parser's own line, and not as a page naming a missing plugin", async () => {
+  const { deps } = boot(root);
+  const dir = join(root, "pages", "home", "children", "Torn");
+  mkdirSync(dir, { recursive: true });
+  // The exact shape the torn write left: a row cut mid-cell, then NUL padding.
+  writeFileSync(
+    join(dir, "content.yaml"),
+    'name: Torn\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body:\n        type: grid\n        rows:\n          - [a, "the region arri' + "\u0000".repeat(40),
+    "utf8",
+  );
+  const page = await deps.pages.read("home/Torn");
+  expect(page).not.toBeNull();
+  expect(page!.html).toContain("does not parse");
+  expect(page!.html).toContain("line 9");
+  expect(page!.html).not.toContain("names a plugin");
+  // The raw route says the same reason.
+  const raw = await deps.docs.read("home/Torn").then(() => null, (e: unknown) => (e as Error).message);
+  expect(raw).toContain("line 9");
 });

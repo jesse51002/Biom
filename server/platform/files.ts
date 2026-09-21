@@ -22,9 +22,9 @@
 // depend on — nothing the server runs is a package. Bun runs this file as
 // written; tsc cannot see the module, so the import is suppressed and every
 // value that comes out of it is annotated by hand below.
-import { mkdir, readFile, readdir, readlink, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -90,6 +90,24 @@ export interface Seen {
 }
 
 const digest = (text: string): string => createHash("sha1").update(text).digest("hex");
+
+/** ONE WRITE AT A TIME PER PATH, process-wide. Keyed by absolute path rather
+ *  than held per `Files`, because the design doc's own `Files` and the vault's
+ *  can both write `design/content.yaml`. The rename below makes each write
+ *  whole; this makes the order of two the order they were asked in, so the
+ *  later call is the file's last word rather than whichever finished last. A
+ *  write that fails does not hold up the next. */
+const tails = new Map<string, Promise<void>>();
+function oneAtATime<T>(abs: string, run: () => Promise<T>): Promise<T> {
+  const prev = tails.get(abs) ?? Promise.resolve();
+  const next = prev.then(run);
+  const tail = next.then(() => undefined, () => undefined);
+  tails.set(abs, tail);
+  void tail.then(() => {
+    if (tails.get(abs) === tail) tails.delete(abs);
+  });
+  return next;
+}
 
 /** The baseline map. One per mounted vault, built by the composition root and
  *  handed to every `Files` rooted inside that vault. */
@@ -246,13 +264,35 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
     },
 
     async write(rel: string, text: string): Promise<void> {
-      const abs = await safe(rel);
-      await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, text, "utf8");
-      // AT THE MOMENT OF THE WRITE, and not after the notification arrives. The
-      // watcher may already be reading this file by the time the next line runs,
-      // so the baseline has to be true before anything can ask it.
-      seen.note(abs, text);
+      // THE QUEUE IS JOINED BEFORE THE FIRST AWAIT, on the path as resolved
+      // rather than as realpath'd, so two calls made in one order are written
+      // in that order — `safe` resolves symlinks asynchronously and two of it
+      // in flight finish in whichever order the disk answers.
+      await oneAtATime(resolve(ROOT, rel), async () => {
+        const abs = await safe(rel);
+        await mkdir(dirname(abs), { recursive: true });
+        // WHOLE OR NOT AT ALL. The bytes go to a sibling under a name nobody
+        // reads, and the rename is the write: a reader — the watcher, the other
+        // server on this folder, the person's editor — sees the old file or the
+        // new one and never a torn one. `writeFile` straight onto the path
+        // truncates and then fills, and two of them in flight on one path left
+        // a page holding the front of one write and a run of NUL bytes where the
+        // rest of the other should have been — `Missing closing quote`, and the
+        // page drawn as one naming a plugin nobody installed. Measured, and
+        // reproduced in one process with two concurrent writeFile calls.
+        const tmp = join(dirname(abs), `.${basename(abs)}.${randomBytes(4).toString("hex")}.tmp`);
+        await writeFile(tmp, text, "utf8");
+        // AT THE MOMENT OF THE WRITE, and not after the notification arrives. The
+        // watcher may already be reading this file by the time the next line
+        // runs, so the baseline has to be true before anything can ask it.
+        seen.note(abs, text);
+        try {
+          await rename(tmp, abs);
+        } catch (e) {
+          await rm(tmp, { force: true });
+          throw e;
+        }
+      });
     },
 
     async remove(rel: string): Promise<void> {

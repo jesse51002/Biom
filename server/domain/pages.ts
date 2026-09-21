@@ -246,6 +246,21 @@ export const MISSING_DOCUMENT =
   "This page names a plugin that is not installed, and has no <code>index.html</code> of its own." +
   "</p></body>";
 
+/** WHAT A PAGE DRAWS WHEN ITS DOCUMENT WILL NOT PARSE, saying so and why. It
+ *  used to draw `MISSING_DOCUMENT`, which told the person their page named a
+ *  plugin nobody had installed — the one sentence with nothing true in it for
+ *  a page whose `plugin: doc` was fine and whose line 289 was a torn write. The
+ *  parser's own sentence names the line; the person's way back is the file. */
+export const brokenDocument = (why: string): string =>
+  '<!doctype html><meta charset="utf-8"><title>This page does not open</title>' +
+  '<body><p style="font: 1rem/1.5 system-ui; margin: 3rem auto; max-width: 32rem">' +
+  "This page's <code>content.yaml</code> does not parse: " + escapeHtml(why) + ". " +
+  "The file is the page, so fix the line it names and the page opens again; the version that last opened is in the folder's history." +
+  "</p></body>";
+
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 /** What a section draws with when the file above could not be read — a test
  *  standing this module up on its own, or a checkout missing it.
  *
@@ -902,13 +917,14 @@ export function makePages(
    *  the unit of a fault here: the broken one degrades to something that lists
    *  and opens — enough to reach the raw fallback and repair it — and every other
    *  page is untouched. */
-  const readDoc = async (id: PageId): Promise<{ doc: PageDoc } | { broken: true } | null> => {
+  const readDoc = async (id: PageId): Promise<{ doc: PageDoc } | { broken: true; why: string } | null> => {
     const text = await files.read(`${dirOf(id)}/${DOC}`);
     if (text === null) return null;
     try {
       return { doc: docOf(yaml.parse(text), segmentOf(id)) };
-    } catch {
-      return { broken: true };
+    } catch (e) {
+      // THE REASON TRAVELS: the page that opens in its place says it.
+      return { broken: true, why: e instanceof Error && e.message !== "" ? e.message : "it is not a page" };
     }
   };
 
@@ -1210,7 +1226,7 @@ export function makePages(
       if (!("doc" in found)) {
         return {
           ...brokenRef(id), markdown: {}, variables: {}, sections: [],
-          plugin: DEFAULT_PLUGIN, html: MISSING_DOCUMENT, input: {}, ports: null, extensions: {},
+          plugin: DEFAULT_PLUGIN, html: brokenDocument(found.why), input: {}, ports: null, extensions: {},
         };
       }
       const doc = found.doc;
@@ -1825,7 +1841,7 @@ export function makePages(
       // A page whose document will not parse has words in it somebody wants
       // back, and rewriting the file from a document this could not read would
       // be how they are lost. The raw fallback is the way to repair it.
-      if ("broken" in found) throw bad("flatness", "the page's document does not parse");
+      if ("broken" in found) throw bad("flatness", "the page's document does not parse: " + found.why);
 
       const parent = parentOf(id);
       const segment = segmentOf(id);
