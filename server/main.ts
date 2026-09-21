@@ -84,6 +84,7 @@ import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1098,6 +1099,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   }
   const live = new Map<string, Live>();
 
+  /** Is anything on disk at this path — a directory included, which is what
+   *  `Bun.file(...).exists()` does not say. */
+  const there = (abs: string): Promise<boolean> => stat(abs).then(() => true, () => false);
+
   /** WHAT ONE CHANGED PATH TURNS OUT TO BE. Null means nothing happened: the
    *  bytes are what this process last wrote or last read, or the file does not
    *  parse and is therefore mid-write, or the path names nothing that draws.
@@ -1128,16 +1133,26 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         // own files; one it has never seen is a page that has just arrived.
         return held.seen.known(doc) ? null : { structural: true };
       }
-      // GONE — and the question asked here has to be one the baseline can
-      // answer. It is keyed by FILE and is never noted for a bare directory, so
-      // asking whether this process knows `abs` answers no for every directory
-      // that ever existed, and a page directory moved away in ONE rename — which
-      // is all the notification a move gives — was dropped as nothing that
-      // happened. So the page document is probed as well, exactly as the branch
-      // above probes it: what this process knew about a departed directory is
-      // whatever was inside it — its document, or any file beneath it, which
-      // is how a page's `plugins/` deleted whole is a change to that page.
-      if (!held.seen.known(abs) && !held.seen.known(doc) && !held.seen.holds(abs)) return null;
+      // GONE, OR A DIRECTORY THAT IS NOT A PAGE — and the question asked here
+      // has to be one the baseline can answer. It is keyed by FILE and is never
+      // noted for a bare directory, so asking whether this process knows `abs`
+      // answers no for every directory that ever existed, and a page directory
+      // moved away in ONE rename — which is all the notification a move gives
+      // — was dropped as nothing that happened. So the page document is probed
+      // as well, exactly as the branch above probes it.
+      if (!held.seen.known(abs) && !held.seen.known(doc)) {
+        // WHAT THIS PROCESS KNEW ABOUT A DEPARTED DIRECTORY IS WHATEVER WAS
+        // INSIDE IT — any file beneath the path, which is how a page's
+        // `plugins/` deleted whole is a change to that page. But only a
+        // DEPARTED one: `children/` is a directory holding no document that
+        // is still there, and its entry changes every time a page is made
+        // inside it — through the app included. Read as gone, it forgot the
+        // baseline of every page beneath it and redrew the page just made,
+        // and that second draw is what an outside write landed in the middle
+        // of. So the disk is asked whether the path is still there before
+        // what was beneath it is allowed to say anything.
+        if (!held.seen.holds(abs) || await there(abs)) return null;
+      }
       // Recursive, so forgetting a page directory forgets its document with it.
       held.seen.forget(abs);
       return { structural: true };

@@ -58,7 +58,9 @@ export interface Seen {
   known(abs: string): boolean;
   /** Is anything BENEATH this path known? A directory is never noted, so a
    *  departed one — a page's `plugins/` deleted whole, say — is recognised by
-   *  the files this process had read inside it. */
+   *  the files this process had read inside it. It says nothing about whether
+   *  the path is still there: `children/` is one that is, and it holds every
+   *  page inside it, so the caller asks the disk before asking this. */
   holds(abs: string): boolean;
   /** Drop `abs` and everything beneath it. A deleted path drops its baseline, so
    *  a file written again under that name reads as changed. */

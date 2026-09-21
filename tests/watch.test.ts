@@ -474,6 +474,53 @@ test("a page's plugins/ deleted whole from outside is a change to that page", as
   }
 });
 
+test("a page made through the app is not a change, and the pages beside it keep their baselines", async () => {
+  // THE DIRECTORY ABOVE A NEW PAGE CHANGES TOO. `pages/home/children` gains an
+  // entry, and the notification for it is a bare path holding no `content.yaml`
+  // — the same shape a departed page directory has. It is NOT departed: it is
+  // still there, and everything this process knows beneath it is every page
+  // in it. Read as gone, it forgot every one of those baselines and redrew the
+  // page just made, a second draw that an outside write then landed in the
+  // middle of — measured, in the end-to-end walk, as a page that never redrew.
+  const g = await ground();
+  const host = await stand(g.at("one"), g.memory);
+  try {
+    // A sibling already on disk and read, so its baseline is there to lose.
+    const other = pageDir(g.at("one"), "home/other");
+    await mkdir(other, { recursive: true });
+    await writeFile(join(other, "content.yaml"), "name: Other\nplugin: doc\ncontents: []\n", "utf8");
+    value(await call(host, g.at("one"), { kind: "page.read", page: "home/other" }));
+
+    const heard = ear();
+    const off = await host.watch(g.at("one"), heard.hear);
+
+    // NEW, in the app: the document, the child.html copied beside it, the
+    // commit, the mirror. None of it reaches the screen — and the entry the
+    // parent's `children/` gained is nothing that happened to the parent.
+    const made = value(await call(host, g.at("one"), { kind: "page.create", init: { name: "Made" } })) as { id: string };
+    expect(made.id).toBe("home/Made");
+    await quiet(1200);
+    expect(heard.get()).toBe(0);
+
+    // AND THE SIBLING'S BASELINE SURVIVED: the app's next write to it is still
+    // dropped, which it would not be had the directory's notification forgotten
+    // everything beneath it.
+    value(await call(host, g.at("one"), { kind: "doc.writeRaw", page: "home/other", text: "name: Other\nplugin: doc\ncontents: []\nvariables:\n  touched: yes\n" }));
+    await quiet(1200);
+    expect(heard.get()).toBe(0);
+
+    // The watch is still live: an outside write to the new page redraws it.
+    await writeFile(join(pageDir(g.at("one"), "home/Made"), "content.yaml"),
+      "name: Made\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body: An agent wrote this.\n", "utf8");
+    expect(await until(() => heard.get() > 0)).toBe(true);
+
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
 test("the app's own write is dropped by content hash, and so is its commit and its mirror", async () => {
   const g = await ground();
   const host = await stand(g.at("one"), g.memory);
