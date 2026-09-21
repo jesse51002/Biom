@@ -17,3 +17,11 @@ foot: biom-holds
 # by default, because the board at the foot draws the children; a page that
 # empties `foot` and wants the rows back says `rows: true`.
 rows: false
+
+# Whether a markdown table found in a prose part is cut out into a grid
+# section of its own, once, in place. On by default, because a table drawn as a
+# thin strip of wrapped sentences is a table nobody can add a row to. A page
+# whose sections carry tables as SPECIMENS — the design doc's worlds, each
+# drawing its own table in its own dress — says `convert: false` in its rung,
+# and the vault's seeded design doc ships that line.
+convert: true

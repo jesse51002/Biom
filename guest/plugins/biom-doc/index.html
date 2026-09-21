@@ -98,9 +98,14 @@
   through the RUNTIME'S port, `section.write` and `section.order`, which is
   the door a section can never reach; and it runs on a page only when that
   page is drawn, so a document nobody has opened is never touched, and a
-  document with no table in any prose part is left exactly as it was. The
-  script is the second one below, on its own so the pure half of it can be
-  verified outside a browser.
+  document with no table in any prose part is left exactly as it was. It is
+  switched by this document's own `convert` variable, on by default: a page
+  whose sections carry tables as SPECIMENS — the design doc's worlds, each
+  drawing its own table in its own dress — says `convert: false` in its rung,
+  and the vault's seeded design doc ships that line, because the first open
+  of a fresh vault's design doc otherwise cut eight specimens out of the
+  worlds that styled them. The script is the second one below, on its own so
+  the pure half of it can be verified outside a browser.
 
   IT IS DELIBERATELY PLAIN, and the reason is NOT the one `base/README.md` gives
   about starters — a starter is copied and then owned, so it is free to draw, and
@@ -514,6 +519,11 @@
         var busy = false;
         function convert() {
           if (busy || !rt.page || typeof rt.page.sections !== "function") return;
+          /* `convert` IS THIS DOCUMENT'S OWN VARIABLE, read like `head` and
+             `foot`: a page whose sections carry tables as specimens — the design
+             doc's worlds — says `convert: false` in its rung and keeps them. */
+          var held = glob.biom && glob.biom.plugin && typeof glob.biom.plugin.extensions === "function" ? glob.biom.plugin.extensions() : {};
+          if (held.convert === false) return;
           var todo = plan(rt.page.sections());
           if (todo === null) return;
           busy = true;

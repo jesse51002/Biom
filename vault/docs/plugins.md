@@ -69,6 +69,7 @@ open, and it is kept out of the workspace's history.
 head:               # the plugin mounted before the stack — nothing, by default
 foot: biom-holds    # the plugin mounted after it — the framework's board of children
 rows: false         # whether the bare child rows are drawn as well
+convert: true       # whether a markdown table in a prose part is cut out into a grid section
 ```
 
 **You change a variable in `plugins/biom-<id>/extensions.yaml`**, and a page

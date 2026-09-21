@@ -475,8 +475,17 @@ export async function rebuild(mirror: Mirror, refs: readonly PageRef[]): Promise
  *  above it as much as itself.
  *
  *  Exported for the API layer, which is the lowest one holding both a page write
- *  and the mirror. `pages.ts` cannot call it: this module imports that one. */
+ *  and the mirror. `pages.ts` cannot call it: this module imports that one. A
+ *  reserved id — the design doc — is returned on rather than refused, below. */
 export async function follow(mirror: Mirror, id: PageId, structural = false): Promise<void> {
+  // A RESERVED PAGE HAS NO MIRROR AND IS NOT ASKED FOR ONE. The API layer
+  // follows every write, and the design doc is written like any page — a slot
+  // edited, its document converted — so a write to `@design` used to reach
+  // `check`, which refuses a reserved id by name, and the refusal was a stack
+  // trace in the log for every keystroke on it. `sendProjection` in the runtime
+  // returns on the same id for the same reason; `project`, `write` and `drop`
+  // keep refusing, for a caller that meant it.
+  if (id.startsWith("@")) return;
   await mirror.project(id);
   if (!structural) return;
   const parent = parentOf(id);

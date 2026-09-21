@@ -110,10 +110,55 @@ test("the document draws two nodes of its own around the stack, and they are emp
 test("the contract declares head with no default, foot as the framework's board, and rows off — and nothing else", () => {
   const contract = readFileSync(new URL("../guest/plugins/biom-doc/plugin.yaml", import.meta.url), "utf8");
   const keys = contract.split("\n").filter((l) => /^[a-z]/.test(l)).map((l) => l.split(":")[0]);
-  expect(keys).toEqual(["head", "foot", "rows"]);
+  expect(keys).toEqual(["head", "foot", "rows", "convert"]);
   expect(contract).toMatch(/^head:\s*$/m);
   expect(contract).toMatch(/^foot: biom-holds$/m);
   expect(contract).toMatch(/^rows: false$/m);
+  expect(contract).toMatch(/^convert: true$/m);
+});
+
+test("the conversion is switched by the document's own convert variable, so a page whose sections hold specimen tables keeps them", async () => {
+  // THE BUG THIS IS THE GUARD ON: the design doc is drawn by this document
+  // now, its worlds hold markdown tables as specimens, and the first open of a
+  // fresh vault's design doc cut eight of them out into grid sections. The
+  // seeded design doc says `convert: false` in its rung; this holds the script
+  // to reading it.
+  const run = async (extensions: Record<string, unknown>) => {
+    const glob = globalThis as any;
+    const had = { biom: glob.biom, rt: glob.__gRuntime };
+    const writes: any[] = [];
+    const orders: any[] = [];
+    let draw: (() => void) | null = null;
+    const withTable = [{
+      name: "one", html: "", fallback: true, source: { name: "one", parts: { body: "| a | b |\n|---|---|\n| 1 | 2 |\n" } },
+      parts: { body: { kind: "markdown", md: "| a | b |\n|---|---|\n| 1 | 2 |\n", vars: {} } }, vars: {},
+    }];
+    glob.__gRuntime = {
+      page: {
+        onDraw: (fn: () => void) => { draw = fn; },
+        sections: () => withTable,
+        write: (...a: any[]) => { writes.push(a); return Promise.resolve(); },
+        order: (...a: any[]) => { orders.push(a); return Promise.resolve(); },
+      },
+    };
+    glob.biom = { plugin: { extensions: () => extensions } };
+    const script = [...DOC.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? "").find((s) => s.includes("rt.convert")) ?? "";
+    try {
+      new Function(script)();
+      if (draw) draw();
+      // The order is written after the prose writes settle, a tick later.
+      await new Promise((r) => setTimeout(r, 0));
+      return { writes, orders };
+    } finally {
+      glob.biom = had.biom;
+      glob.__gRuntime = had.rt;
+    }
+  };
+  // Off: the table stays where it is.
+  expect(await run({ convert: false })).toEqual({ writes: [], orders: [] });
+  // On, and when nothing was declared at all: the table is cut out.
+  expect((await run({ convert: true })).orders).toHaveLength(1);
+  expect((await run({})).orders).toHaveLength(1);
 });
 
 test("the board's look is a document stylesheet in its own layer, keyed on what the plugin draws, so it reaches the board wherever it is mounted", () => {

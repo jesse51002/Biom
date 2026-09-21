@@ -170,6 +170,11 @@ test("the furniture still seeds, because none of it is content", async () => {
   // the whole design rests on.
   expect(existsSync(join(root, "design", "content.yaml"))).toBe(true);
   expect(existsSync(join(root, "pages", "design"))).toBe(false);
+  // AND ITS OWN RUNG OVER THE DOC DOCUMENT, switching the table-to-grid
+  // conversion off: the worlds hold tables as specimens, each drawn by its own
+  // section file, and the first open of a fresh vault's design doc otherwise
+  // cut every one of them out into a grid section of its own.
+  expect(readFileSync(join(root, "design", "plugins", "biom-doc", "extensions.yaml"), "utf8")).toContain("convert: false");
 
   // AND `base/`, the starter sections every workspace gets. It rides the same
   // two-level walk as `.agents/skills/` and `design/` and needed no new mechanism, which

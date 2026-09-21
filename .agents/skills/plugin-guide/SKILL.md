@@ -437,8 +437,12 @@ a stack redraw leaves alone and `disposeAll(true)` on `pagehide` takes down. The
 and `footer#g-foot` after, and on the runtime's first `onDraw` reads
 `biom.plugin.extensions()` and mounts what `head` and `foot` name, once per box;
 its `plugin.yaml` says `head:` with no default, `foot: biom-holds` and
-`rows: false`, and `rows: true` puts `g-rows` on the root, which the hide rule
-for bare reconciled child sections reads. **That is the document reading two of
+`rows: false` and `convert: true`; `rows: true` puts `g-rows` on the root,
+which the hide rule for bare reconciled child sections reads, and
+`convert: false` keeps the table-to-grid conversion off a page whose sections
+hold tables as specimens — the seeded design doc ships that line in
+`design/plugins/biom-doc/extensions.yaml`, because the first open of a fresh
+vault's design doc otherwise cut eight of them out. **That is the document reading two of
 its own variables and not a framework feature**: the runtime has no notion of a
 point. A plugin mounted from a document's variable may append a `<style>`,
 because the document asked for it; a plugin a section mounts still inks nothing.

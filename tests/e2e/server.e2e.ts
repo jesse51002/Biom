@@ -273,6 +273,21 @@ walk("the first thing the root page says to do is open the design doc, and the l
 
   await until("the design doc was routed to", BOUNDS.draw, async () =>
     (await page.evaluate(() => location.hash)) === "#/design");
+  await until("the design doc drew", BOUNDS.draw, async () => {
+    const said = await page.frameLocator("iframe.artifact").locator("body").innerText().catch(() => "");
+    return said.includes("How this workspace looks is decided here");
+  });
+
+  // OPENING THE DESIGN DOC WRITES NOTHING INTO IT. It is drawn by the `doc`
+  // document now, whose table-to-grid conversion runs on every doc page it
+  // draws — and the seeded design doc's worlds hold markdown tables as
+  // specimens, each drawn by its own section file. The first open of a fresh
+  // vault's design doc cut eight of them out into grid sections of their own,
+  // with nothing on screen to say so; the seeded rung says `convert: false`,
+  // and this holds the file to the bytes the seed wrote.
+  await page.waitForTimeout(500);
+  expect(readFileSync(join(vault, "design", "content.yaml"), "utf8"))
+    .toBe(readFileSync(join(HERE, "vault", "design", "content.yaml"), "utf8"));
 
   // Back to the root, because everything after this walk is standing on it.
   await page.goto(`${base}/?vault=${encodeURIComponent(vault)}#/page/home`, { waitUntil: "domcontentloaded" });
