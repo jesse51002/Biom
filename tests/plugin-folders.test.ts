@@ -46,7 +46,7 @@ test("a plugins root is walked as folders — own scripts in name order, inner p
     "plugins/.hidden/x.js": "",
     "plugins/biom-doc/extensions.yaml": "head: mine\n",
     "plugins/biom-doc/doc.js": "",
-    "plugins/biom-doc/plugins/holds/holds.js": "",
+    "plugins/biom-doc/plugins/biom-holds/holds.js": "",
   });
   try {
     const walk = await walkPlugins(makeFiles(root), "plugins", "vault");
@@ -67,21 +67,29 @@ test("a plugins root is walked as folders — own scripts in name order, inner p
   }
 });
 
-test("under the framework's root a folder's id wears biom- whether or not its name does, and biom- folders are plugins rather than extensions", async () => {
+test("under the framework's root a folder's id is its name as written, biom- folders are plugins rather than extensions, and a bare one is refused", async () => {
+  // THE FOLDER IS THE ID, with nothing put on: `biom-doc/plugins/biom-holds/`
+  // is `biom-holds` because that is what it is called. A framework folder
+  // without the prefix used to be given it here; it is refused now, because a
+  // page writes the folder and a bare name under this root would be one a
+  // vault could shadow by writing its own.
   const root = await tree({
     "biom-doc/index.html": "",
     "biom-doc/plugin.yaml": "foot: biom-holds\n",
-    "biom-doc/plugins/holds/holds.js": "",
+    "biom-doc/plugins/biom-holds/holds.js": "",
     "biom-markdown/markdown.js": "",
+    "stray/stray.js": "",
   });
   try {
     const walk = await walkPlugins(makeFiles(root), "", "framework");
     expect(walk.folders.map((f) => [f.id, f.path, f.extension])).toEqual([
       ["biom-doc", "biom-doc", false],
-      ["biom-holds", "biom-doc/plugins/holds", false],
+      ["biom-holds", "biom-doc/plugins/biom-holds", false],
       ["biom-markdown", "biom-markdown", false],
     ]);
-    expect(walk.faults).toEqual([]);
+    expect(walk.faults.map((f) => f.message)).toEqual([
+      "framework/stray/ is the framework's and must wear biom-: its folder is its id, and a page writes the folder",
+    ]);
     expect(walk.words).toBe("framework");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -160,8 +168,8 @@ test("rungs merge one key at a time, nearest wins, and every fault travels", () 
 const FRAMEWORK = {
   "biom-doc/index.html": "<main id=\"g-page\"></main>",
   "biom-doc/plugin.yaml": "head:\nfoot: biom-holds\nrows: false\n",
-  "biom-doc/plugins/holds/holds.js": "",
-  "biom-doc/plugins/holds/plugin.yaml": "sort: name\n",
+  "biom-doc/plugins/biom-holds/holds.js": "",
+  "biom-doc/plugins/biom-holds/plugin.yaml": "sort: name\n",
   "biom-markdown/markdown.js": "",
 };
 
@@ -172,8 +180,8 @@ test("extensionsFor merges the contract, the vault's rung and one page's rung, a
     "plugins/board-look/board-look.js": "",
     "plugins/board-look/plugin.yaml": "dots: true\n",
     "plugins/biom-nothing/extensions.yaml": "x: 1\n",
-    "pages/home/content.yaml": "name: Home\nplugin: doc\n",
-    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: doc\n",
+    "pages/home/content.yaml": "name: Home\nplugin: biom-doc\n",
+    "pages/home/children/notes/content.yaml": "name: Notes\nplugin: biom-doc\n",
     "pages/home/children/notes/plugins/biom-doc/extensions.yaml": "foot:\nrows: true\n",
     "pages/home/children/notes/plugins/biom-holds/extensions.yaml": "sort: date\n",
     "pages/home/children/notes/plugins/own/own.js": "",
@@ -220,9 +228,9 @@ test("the page read carries the merged extensions, the design doc reads its own 
   const fw = await tree(FRAMEWORK);
   const vault = await tree({
     "plugins/biom-doc/extensions.yaml": "head: board-look\n",
-    "pages/home/content.yaml": "name: Home\nplugin: doc\ncontents: []\n",
+    "pages/home/content.yaml": "name: Home\nplugin: biom-doc\ncontents: []\n",
     "pages/home/plugins/biom-doc/extensions.yaml": "rows: true\n",
-    "design/content.yaml": "name: Design\nplugin: doc\ncontents: []\n",
+    "design/content.yaml": "name: Design\nplugin: biom-doc\ncontents: []\n",
     "design/plugins/biom-doc/extensions.yaml": "foot:\n",
   });
   try {
@@ -252,7 +260,7 @@ test("a page's own plugins/<id>/index.html draws that page before the vault's an
     "pages/home/content.yaml": "name: Home\nplugin: timeline\ncontents: []\n",
     "pages/home/plugins/timeline/index.html": "<main>this page's timeline</main>",
     "pages/home/children/notes/content.yaml": "name: Notes\nplugin: timeline\ncontents: []\n",
-    "pages/home/children/other/content.yaml": "name: Other\nplugin: doc\ncontents: []\n",
+    "pages/home/children/other/content.yaml": "name: Other\nplugin: biom-doc\ncontents: []\n",
     "pages/home/children/other/plugins/biom-doc/index.html": "<main>a copy by another name</main>",
     "pages/home/children/other/plugins/biom-doc/extensions.yaml": "rows: true\n",
   });

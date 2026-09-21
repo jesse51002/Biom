@@ -129,7 +129,7 @@ const PRESETS: Record<string, Record<string, string>> = {
     "preset.yaml": "name: Job board\npage: Job board\n",
     "content.yaml":
       "name: Job board\n" +
-      "plugin: doc\n" +
+      "plugin: biom-doc\n" +
       "variables:\n  quarter: Q3\n" +
       "contents:\n" +
       "  - name: intro\n" +
@@ -144,10 +144,10 @@ const PRESETS: Record<string, Record<string, string>> = {
   },
   nameless: {
     "preset.yaml": "by: nobody\n",
-    "content.yaml": "name: Nameless\nplugin: doc\ncontents: []\n",
+    "content.yaml": "name: Nameless\nplugin: biom-doc\ncontents: []\n",
   },
   "no-card": {
-    "content.yaml": "name: Half written\nplugin: doc\ncontents: []\n",
+    "content.yaml": "name: Half written\nplugin: biom-doc\ncontents: []\n",
   },
 };
 
@@ -759,7 +759,7 @@ test("base/diagram is a CUSTOM drawing — HTML laid out from the document's own
   // IT MOVES WHEN IT ARRIVES, ONCE, BEHIND THE FRAME'S SWITCH. `reveal` adds the
   // class and disconnects; every duration is multiplied by `--motion`, so a
   // reader who asked for stillness gets the finished drawing and nothing else.
-  expect(html).toContain('data-g-plugin="reveal"');
+  expect(html).toContain('data-g-plugin="biom-reveal"');
   expect(html).toContain(":scope.is-seen");
   expect(html).toContain("var(--motion, 1)");
   expect(html).toContain("prefers-reduced-motion");

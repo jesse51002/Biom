@@ -6,7 +6,7 @@ thing somebody types into a field, and the prose reaches it with `{{name}}`.
 
 ```yaml
 name: Rates
-plugin: doc
+plugin: biom-doc
 variables:
   rate: 62
   currency: "£"
@@ -43,7 +43,7 @@ third.** A bare name is always the closest one and never a surprise.
 
 ```yaml
 name: Tones
-plugin: doc
+plugin: biom-doc
 variables:
   tone: house                 # the page's
 contents:

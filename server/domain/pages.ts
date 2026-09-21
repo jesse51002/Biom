@@ -196,34 +196,31 @@ export const DEFAULT_SECTION_FILE = "guest/sections/default.html";
  *  `makePages` — on disk in a checkout, out of the embedded map in a build. */
 export const PLUGINS_DIR = "guest/plugins";
 
-/** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED. Every plugin the framework
- *  ships is `biom-<name>` — the file `guest/plugins/biom-markdown.js`, the
- *  document `guest/plugins/biom-doc/index.html`, and the id each registers —
- *  so a plugin a workspace wrote can never share a name with one the framework
- *  ships later. A page goes on saying the bare name: `plugin: doc` is resolved
- *  nearest-first, the vault's own `plugins/doc/` and then the framework's
- *  `biom-doc/`, which is the same rule `guest/runtime/registry.js` applies to
- *  an id in the box. Spelled there as well, and a test holds the two equal. */
+/** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED, AND THAT IS WHAT A PAGE
+ *  WRITES. Every plugin the framework ships is `biom-<name>` — the folder
+ *  `guest/plugins/biom-doc/`, the id it registers, and the word a page says:
+ *  `plugin: biom-doc`. THE FOLDER IS THE ID, with nothing put on and nothing
+ *  taken off anywhere: there used to be a translation here, `plugin: doc`
+ *  asked for as `biom-doc/index.html` when the vault had no `doc` of its own,
+ *  and it was taken out on 2026-09-21 as the one place a name was not the
+ *  name — a page said one word and a folder wore another, and every reader of
+ *  either had to know the rule. So a `biom-` id is the framework's alone, a
+ *  vault's `plugins/biom-*` folder is an extension holding a rung and nothing
+ *  else, and a bare id is the workspace's own and nothing else. `format 5` in
+ *  `server/workspace/migrate.ts` refuses a vault still saying the bare word,
+ *  and `tools/migrate-format-5.ts` rewrites it. `guest/runtime/registry.js`
+ *  spells the prefix as well, and a test holds the two equal. */
 export const OURS = "biom-";
 
-/** The `doc` plugin's document, in the vault: the workspace's own override of
- *  it, when it has one. The framework's is `biom-doc/index.html` under
- *  `PLUGINS_DIR`, and `frameworkPlugin` below is the one spelling of that
- *  fallback. The design doc is always a doc page, and design.ts is rooted at
- *  `design/` and cannot see either — so the composition root reads them and
- *  hands the result down. */
-export const DOC_PLUGIN_DOCUMENT = "plugins/doc/index.html";
+/** The document a framework plugin draws with, under the framework's plugin
+ *  root: `biom-doc` is `biom-doc/index.html`, as the folder says. Only an id
+ *  wearing the prefix is ever asked of the framework. */
+export const frameworkPlugin = (id: string): string => `${id}/index.html`;
 
-/** The path under the framework's plugin root that a bare plugin id falls back
- *  to: `doc/index.html` is asked for as `biom-doc/index.html`. An id that
- *  already wears the prefix is asked for as it is. */
-export const frameworkPlugin = (id: string): string =>
-  id.startsWith(OURS) ? `${id}/index.html` : `${OURS}${id}/index.html`;
-
-/** The `mindmap` document the rail's own Map row draws with — resolved like
- *  every other plugin document: the vault's own if it has one, the framework's
- *  otherwise. */
-export const MAP_PLUGIN = "mindmap";
+/** The document the rail's own Map row draws with: the framework's mindmap.
+ *  A vault changes how it draws through a rung over `biom-mindmap`; a map of
+ *  the vault's own is a page saying `plugin: <its own>`. */
+export const MAP_PLUGIN = "biom-mindmap";
 
 /** The page's own document, when it draws itself. */
 export const PAGE_DOCUMENT = "index.html";
@@ -876,9 +873,9 @@ export function makePages(
     const own = await files.read(`${dir}/${PAGE_DOCUMENT}`);
     if (own !== null) return own;
     // THE PAGE'S OWN `plugins/` IS THE NEAREST RUNG FOR A DOCUMENT TOO: a plugin
-    // folder beside this page's `content.yaml`, under the bare name the page
-    // said, draws this page and no other. A `biom-` folder there is an
-    // extension and holds a rung alone, exactly as in the vault.
+    // folder beside this page's `content.yaml`, under the name the page said,
+    // draws this page and no other. A `biom-` folder there is an extension and
+    // holds a rung alone, exactly as in the vault.
     if (!doc.plugin.startsWith(OURS)) {
       const mine = await files.read(`${dir}/${PLUGINS_DIR_VAULT}/${doc.plugin}/${PAGE_DOCUMENT}`);
       if (mine !== null) return mine;
@@ -886,27 +883,28 @@ export function makePages(
     return await pluginDocument(doc.plugin);
   };
 
-  /** One plugin's document: the vault's own under the name the page said,
-   *  then the framework's under its `biom-` name.
+  /** One plugin's document, by the name the page said, which is a folder: the
+   *  framework's `guest/plugins/biom-<name>/index.html` for an id wearing the
+   *  prefix, the vault's `plugins/<name>/index.html` for one that does not.
    *
-   *  THE VAULT'S IS READ UNDER THE BARE NAME AND NOWHERE ELSE, and that is the
-   *  rule rather than an omission. A vault folder wearing `biom-` is an
-   *  EXTENSION — it holds `extensions.yaml` and nothing more, and the loader
-   *  refuses anything else in it by name — so `plugins/biom-doc/index.html`
-   *  dropped into a vault is never a document that draws. There are no
-   *  file-based overrides: a workspace that wants a document of its own
-   *  writes `plugins/doc/index.html`, a plugin of the workspace's OWN, and
-   *  every page saying `plugin: doc` draws with it; one that wants the
-   *  framework's document to draw differently changes its variables in a
-   *  rung, or names a plugin of its own in one. */
+   *  NEITHER IS EVER ASKED FOR THE OTHER'S. A vault folder wearing `biom-` is
+   *  an EXTENSION — it holds `extensions.yaml` and nothing more, and the
+   *  loader refuses anything else in it by name — so `plugins/biom-doc/
+   *  index.html` dropped into a vault is never a document that draws; and
+   *  the framework ships nothing under a bare name, so a bare id that is not
+   *  the vault's own is `MISSING_DOCUMENT`, not the framework's. There are no
+   *  file-based overrides and no translation: a workspace that wants a
+   *  document of its own writes `plugins/<name>/index.html` and its pages say
+   *  `plugin: <name>`; one that wants the framework's document to draw
+   *  differently changes its variables in a rung, or names a plugin of its
+   *  own in one. */
   const pluginDocument = async (plugin: string): Promise<string> => {
-    const mine = await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`);
-    if (mine !== null) return mine;
-    if (framework !== null) {
-      const theirs = await framework.read(frameworkPlugin(plugin));
-      if (theirs !== null) return theirs;
+    if (plugin.startsWith(OURS)) {
+      const theirs = framework === null ? null : await framework.read(frameworkPlugin(plugin));
+      return theirs ?? MISSING_DOCUMENT;
     }
-    return MISSING_DOCUMENT;
+    const mine = await files.read(`${PLUGINS_DIR_VAULT}/${plugin}/${PAGE_DOCUMENT}`);
+    return mine ?? MISSING_DOCUMENT;
   };
 
   /** The tolerant read, and the whole of the isolation: `null` is no page,
@@ -1199,7 +1197,7 @@ export function makePages(
       // runtime in the box has a page to read and draws nothing over the
       // plugin. Nothing is written for it, so there is nothing to migrate, move
       // or remove; `input.rail` tells the plugin it has no page to keep its
-      // settings on. A page that wants a map of its own says `plugin: mindmap`.
+      // settings on. A page that wants a map of its own says `plugin: biom-mindmap`.
       if (id === MAP_PAGE) {
         return {
           id,

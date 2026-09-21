@@ -9,7 +9,7 @@ description: "HOW A PAGE IS WRITTEN WELL, and the complete rule index for this w
 
 **One file holds everything a page says** — its name, the PLUGIN that draws it, its variables, and either `contents` (the ordered list of sections) or the configuration the plugin it named reads. Asked to change what a page says, you open one file.
 
-**A page names the plugin that draws it, and you read the request to know which.** `plugin: doc` is the document — sections, slots, markdown, the type scale — for a page whose WORDS are the point. Leaving `plugin:` out means `html`: the page is its own `index.html`, drawn exactly as written, for a page whose SHAPE is the point, with the freedom that implies and the responsibility that comes with it. `plugin: kanban` is a board over one of this workspace's tables; `plugin: automations-runs` shows the page's children one at a time, newest first, for a page whose children are things that happened in order — runs, days, drafts — and its `home`, `progress` and `skip` are set in a rung as [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §4 says; and any plugin in `plugins/` is named the same way. **Sections exist only on a doc page**; a board has none and an html page has none.
+**A page names the plugin that draws it, and you read the request to know which.** `plugin: biom-doc` is the document — sections, slots, markdown, the type scale — for a page whose WORDS are the point. Leaving `plugin:` out means `html`: the page is its own `index.html`, drawn exactly as written, for a page whose SHAPE is the point, with the freedom that implies and the responsibility that comes with it. `plugin: biom-kanban` is a board over one of this workspace's tables; `plugin: biom-automations-runs` shows the page's children one at a time, newest first, for a page whose children are things that happened in order — runs, days, drafts — and its `home`, `progress` and `skip` are set in a rung as [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md) §4 says; and any plugin in `plugins/` is named the same way. **Sections exist only on a doc page**; a board has none and an html page has none.
 
 **Read it off what the person will want to CHANGE later: the sentences, or the arrangement.** That is the tell, and it is usually in the request already. A doc where the shape was the point is a document nobody wanted to look at; an html page where the words were the point is a page nobody can type into.
 
@@ -150,7 +150,7 @@ every key a page and a section may carry, the keys that are refused by name and
 what replaced each, `contents` as the order, and the shipped default section. The
 rules it produces are here.
 
-**R61 — the plugin a page names has to be able to draw it.** The host looks in three places, in order: the page's own `index.html`, then this workspace's `plugins/<id>/index.html` under the bare name — a plugin of your own — then the framework's own `biom-<id>/index.html`, which a workspace never shadows. A page that names a plugin nobody has draws a stand-in saying so, which is a page nobody can use.
+**R61 — the plugin a page names has to be able to draw it.** The page's own `index.html` draws it whatever it says; otherwise the id says where the document is — a `biom-` id is the framework's, `biom-doc/index.html` in the framework's set, which a workspace never shadows; a bare id is this workspace's own, the page's own `plugins/<id>/index.html` or the root's. A page that names a plugin nobody has draws a stand-in saying so, which is a page nobody can use — and a bare id is never asked of the framework, so `plugin: doc` with no `plugins/doc/` of your own is R69 rather than the document.
 
 **The checker can only see the first of the three**, because it is handed one page directory and cannot see the workspace or the framework around it — so a page naming a plugin the checker cannot find is never a finding, and might well be the framework's own. What it does report is the case with no ambiguity in it: **a page that names no plugin, and therefore draws its own `index.html`, and has no `index.html`.** *(FAIL.)*
 
@@ -168,7 +168,7 @@ rules it produces are here.
 
 ```yaml
 name: Plants board
-plugin: kanban
+plugin: biom-kanban
 variables:
   table: plants
   lanes: status     # a categories column: its options ARE the lanes
@@ -339,6 +339,7 @@ Complete. The **Skill** column says which file carries the prose; the number is 
 | R66 | A `biom-` folder in `plugins/` holding anything beside `extensions.yaml` — it is an extension, not a copy | plugins | FAIL |
 | R67 | A key in an `extensions.yaml` that the plugin's `plugin.yaml` does not declare — a typo that draws nothing | plugins | FAIL |
 | R68 | A bare-named document in `plugins/` that is a copy of the framework's — it draws, and stops following the framework; an extension would do | plugins | WARN |
+| R69 | A framework plugin named by its bare word — `plugin: doc`, `data-g-plugin="reveal"` — where the workspace has none of its own under that word; the name is the folder, `biom-doc`, and the server refuses the workspace until the tool rewrites it | plugins | FAIL |
 
 **R50 is the one number in here that `.agents/skills/check.ts` does not cite.** It is checked where plugins register, in the box, rather than where pages are read — see [`../biom-plugins/SKILL.md`](../biom-plugins/SKILL.md).
 

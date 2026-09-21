@@ -61,7 +61,7 @@ import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { DrawnSection, Page, PageDoc, PageId, VarValue, Variables } from "../contracts/types.ts";
-import { ROOT_PAGE } from "../contracts/types.ts";
+import { DOC_PLUGIN, ROOT_PAGE } from "../contracts/types.ts";
 import { projectDoc } from "../contracts/projection.ts";
 import { parseAny, format } from "../server/platform/yaml.ts";
 
@@ -151,7 +151,7 @@ const SECTION = "note";
 function docOf(note: Note, body: string): PageDoc {
   return {
     name: nameOf(note),
-    plugin: "doc",
+    plugin: DOC_PLUGIN,
     // The note's own frontmatter, which the mirror writes back out as
     // frontmatter. `aliases` is merged with the page's name there rather than
     // here, so what is stored stays what the note said.
@@ -179,7 +179,7 @@ function drawnFrom(id: PageId, doc: PageDoc, body: string): Page {
     markdown: {},
     variables: doc.variables,
     sections: [section],
-    plugin: "doc",
+    plugin: DOC_PLUGIN,
     html: "",
     input: {},
     ports: null,
@@ -330,7 +330,7 @@ async function main(): Promise<void> {
     const at = join(dir, "content.yaml");
     if (await exists(at)) continue; // already a page — the folder being imported meets one the workspace already has
     const name = segmentOfPath(id).replace(/_/g, " ");
-    await writeFile(at, format({ name, plugin: "doc", variables: {}, contents: [] }), "utf8");
+    await writeFile(at, format({ name, plugin: DOC_PLUGIN, variables: {}, contents: [] }), "utf8");
   }
   for (const { id, doc } of built) {
     const dir = pageDir(dst, id);

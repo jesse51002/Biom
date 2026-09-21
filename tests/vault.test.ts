@@ -135,7 +135,7 @@ test("a drawn section carries the STORED entry it came from, which is what makes
   await pages.writeFile("home/Rates", "band.html", `<div data-g-part="body"></div>`);
   await files.write("pages/home/children/Rates/content.yaml", yaml.format({
     name: "Rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { quarter: "Q3" },
     contents: [{
       name: "band",
@@ -181,7 +181,7 @@ test("a list in a slot resolves item by item, and writes back whole", async () =
   await pages.writeFile("home/Board", "cards.html", `<div data-g-part="items"></div>`);
   await files.write("pages/home/children/Board/content.yaml", yaml.format({
     name: "Board",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{
       name: "cards",
@@ -223,7 +223,7 @@ test("an empty list is a real answer, and is what a slot holds before the first 
   const { files, pages } = vault();
   await pages.create({ name: "Board" });
   await pages.writeFile("home/Board", "cards.html", `<div data-g-part="items"></div>`);
-  await files.write("pages/home/children/Board/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Board/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Board", variables: {},
     contents: [{ name: "cards", data: "cards.html", parts: { items: [] } }],
   }));
@@ -308,7 +308,7 @@ test("a page is a directory holding content.yaml, and its id is the path to it",
   // whole-sheet artifact, because a page whose reason to exist is the surface it
   // draws is one section whose `data` names the file that draws it.
   expect(page!.sections.map((s) => s.name)).toEqual(["title"]);
-  expect(page!.plugin).toBe("doc");
+  expect(page!.plugin).toBe("biom-doc");
   expect(page!.ports).toBeNull();
 
   // NO `parent:` ANYWHERE. A second statement of a fact is a chance for the two
@@ -351,7 +351,7 @@ test("children come off the directory, and a document claiming a parent says not
   // replaced it — this is the read path's half of the same sentence.
   await files.write(
     "pages/home/children/Archive/content.yaml",
-    "name: Archive\nplugin: doc\nparent: home/Clients\nvariables: {}\ncontents: []\n",
+    "name: Archive\nplugin: biom-doc\nparent: home/Clients\nvariables: {}\ncontents: []\n",
   );
   expect((await pages.children("home/Clients")).map((c) => c.id))
     .toEqual(["home/Clients/Ashgrove", "home/Clients/Fenton"]);
@@ -438,7 +438,7 @@ test("a markdown slot carries its prose, raw, with the braces still in it", asyn
   // `body: "..."` should not need a wrapper; a map is a full Content.
   await files.write("pages/home/children/Rendering-rates/content.yaml", yaml.format({
     name: "Rendering rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { rate: 62, currency: "GBP" },
     contents: [
       { name: "intro", parts: { body: "# Rendering rates\nThe base rate is {{rate}}.\n" } },
@@ -488,7 +488,7 @@ test("a section is a div with any number of slots, which is the shape the format
     '<div><div data-g-part="left"></div><div data-g-part="middle"></div><div data-g-part="right"></div></div>');
   await files.write("pages/home/children/Rates/content.yaml", yaml.format({
     name: "Rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{
       name: "columns",
@@ -532,7 +532,7 @@ test("a paragraph goes back into one slot, and nothing else in the document move
     '<div><div data-g-part="body"></div><div data-g-part="aside"></div></div>');
   await files.write("pages/home/children/Rates/content.yaml", yaml.format({
     name: "Rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { rate: 62 },
     contents: [
       {
@@ -602,7 +602,7 @@ test("an empty slot the section DECLARES can be typed into; a name it does not i
   );
   await files.write("pages/home/children/Rates/content.yaml", yaml.format({
     name: "Rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{ name: "band", data: "band.html", parts: {} }],
   }));
@@ -623,7 +623,7 @@ test("an empty slot the section DECLARES can be typed into; a name it does not i
 
   // A section that named no file draws the shipped default, so the default's own
   // slot is declared for it and typing into a fresh section works.
-  await files.write("pages/home/children/Rates/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Rates/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Rates", variables: {}, contents: [{ name: "plain", parts: {} }],
   }));
   await pages.writeSlot("home/Rates", "plain", DEFAULT_SLOT, "Typed into a new section.");
@@ -638,7 +638,7 @@ test("only a markdown slot carries its own words, and every other kind is refuse
   await pages.writeFile("home/Rates", "calc.html", "<div>the calculator</div>");
   await files.write("pages/home/children/Rates/content.yaml", yaml.format({
     name: "Rates",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [{
       name: "calc",
@@ -667,7 +667,7 @@ test("only a markdown slot carries its own words, and every other kind is refuse
   await expect(pages.writeSlot("home/Rates", "calc", "nothing", "# Words")).rejects.toThrow();
   await expect(pages.writeSlot("home/Rates", "nothing", DEFAULT_SLOT, "# Words")).rejects.toThrow();
   await expect(pages.writeSlot("home/nowhere", "intro", DEFAULT_SLOT, "# Words")).rejects.toThrow();
-  const broken = "name: Broken\nplugin: doc\ncontents:\n - name: calc\n  parts: {}\n";
+  const broken = "name: Broken\nplugin: biom-doc\ncontents:\n - name: calc\n  parts: {}\n";
   await files.write("pages/home/children/Broken/content.yaml", broken);
   await expect(pages.writeSlot("home/Broken", "calc", DEFAULT_SLOT, "# Words")).rejects.toThrow();
   expect(files.at("pages/home/children/Broken/content.yaml")).toBe(broken);
@@ -678,7 +678,7 @@ test("the list IS the order, so adding, reordering and removing are one write", 
   await pages.create({ name: "Notes" });
   await files.write("pages/home/children/Notes/content.yaml", yaml.format({
     name: "Notes",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [
       { name: "a", parts: { body: "First.\n" } },
@@ -724,7 +724,7 @@ test("a child's section is not the caller's to place, and not theirs to lose", a
   tables.push({ name: "jobs", rows: 2, parent: "home/Clients" });
   await files.write("pages/home/children/Clients/content.yaml", yaml.format({
     name: "Clients",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: {},
     contents: [
       { name: "@page-Ashgrove", parts: { [DEFAULT_SLOT]: { type: "child", data: "Ashgrove" } } },
@@ -773,7 +773,7 @@ test("a section dropped from the list keeps its file, because a file is not text
   const { files, pages } = vault();
   await pages.create({ name: "Rates" });
   await pages.writeFile("home/Rates", "calc.html", "<div>the calculator</div>");
-  await files.write("pages/home/children/Rates/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Rates/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Rates", variables: {},
     contents: [{ name: "calc", data: "calc.html", parts: {} }],
   }));
@@ -799,7 +799,7 @@ test("a section names the file that draws it, and an html slot names one beside 
   await pages.writeFile("home/Quote-calculator", "figure.html", "<figure>the plan</figure>");
   await files.write("pages/home/children/Quote-calculator/content.yaml", yaml.format({
     name: "Quote calculator",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { crew: 2 },
     contents: [
       {
@@ -844,7 +844,7 @@ test("a section names the file that draws it, and an html slot names one beside 
   // Nothing addressed by a section or a slot may leave the page directory. The
   // slot is dropped and the section falls back to the default — in neither case
   // is a file outside the directory read.
-  await files.write("pages/home/children/Quote-calculator/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Quote-calculator/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Quote calculator", variables: {},
     contents: [{ name: "calc", data: "../../../secrets.html", parts: { out: { type: "html", data: "../../../secrets.html" } } }],
   }));
@@ -857,7 +857,7 @@ test("a section names the file that draws it, and an html slot names one beside 
 test("a table on a page is a section whose one slot holds a table, and contents is the order", async () => {
   const { files, pages } = vault();
   await pages.create({ name: "Jobs this week" });
-  await files.write("pages/home/children/Jobs-this-week/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Jobs-this-week/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Jobs this week", variables: {},
     contents: [
       { name: "grid", parts: { body: { type: "table", data: "jobs" } } },
@@ -985,7 +985,7 @@ test("children nobody has placed come back in id order, not title order", async 
   for (const [segment, name] of made) {
     await files.write(
       `pages/home/children/pivots/children/${segment}/content.yaml`,
-      `name: ${name}\nplugin: doc\ncontents: []\n`,
+      `name: ${name}\nplugin: biom-doc\ncontents: []\n`,
     );
   }
 
@@ -1028,7 +1028,7 @@ test("reconciliation is additive: appended at the bottom, then never moved and n
   // The user dragged it to the top. Nothing may put it back.
   const doc = docAt(files, "home/Clients");
   const byName = (n: string) => doc.contents.find((c) => c.name === n)!;
-  await files.write("pages/home/children/Clients/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Clients/content.yaml", yaml.format({ plugin: "biom-doc",
     ...doc,
     contents: [byName("@table-jobs"), byName("title"), byName("@page-Ashgrove")],
   }));
@@ -1143,7 +1143,7 @@ test("the root page holds the top level: it exists, no parent means it, and it c
   await expect(pages.remove("home")).rejects.toThrow();
 
   // Its name is the user's to change; its id is not.
-  await docs.writeRaw("home", yaml.format({ plugin: "doc", name: "Everything", variables: {}, contents: [] }));
+  await docs.writeRaw("home", yaml.format({ plugin: "biom-doc", name: "Everything", variables: {}, contents: [] }));
   expect((await pages.read("home"))!.name).toBe("Everything");
   expect((await pages.list()).find((r) => r.id === "home")!.name).toBe("Everything");
 });
@@ -1204,7 +1204,7 @@ test("a section is an entry, its own variables and the files it names, and remov
   await pages.writeFile("home/Team-notes", "figure.html", "<figure/>");
   await files.write("pages/home/children/Team-notes/content.yaml", yaml.format({
     name: "Team notes",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { week: 32 },
     contents: [
       { name: "title", parts: { body: "# Team notes\n" } },
@@ -1273,7 +1273,7 @@ test("removing a section is tolerant where it should be and refuses where it mus
 
   // A broken document is repaired through the raw fallback, never rewritten from
   // one that could not be read.
-  const broken = "name: Broken\nplugin: doc\ncontents:\n - name: calc\n  parts: {}\n";
+  const broken = "name: Broken\nplugin: biom-doc\ncontents:\n - name: calc\n  parts: {}\n";
   await files.write("pages/home/children/Broken/content.yaml", broken);
   await expect(pages.removeSection("home/Broken", "calc")).rejects.toThrow();
   expect(files.at("pages/home/children/Broken/content.yaml")).toBe(broken);
@@ -1306,27 +1306,27 @@ test("the raw fallback cannot write a document the reader would not read back", 
   const before = files.at("pages/home/children/Team-notes/content.yaml");
 
   // A document that does not parse, and one that is not a map at all.
-  await expect(docs.writeRaw("home/Team-notes", "name: Team notes\nplugin: doc\ncontents:\n - a\n  - b\n")).rejects.toThrow();
+  await expect(docs.writeRaw("home/Team-notes", "name: Team notes\nplugin: biom-doc\ncontents:\n - a\n  - b\n")).rejects.toThrow();
   await expect(docs.writeRaw("home/Team-notes", "- one\n- two\n")).rejects.toThrow();
   // `contents` is the ordered list of SECTIONS, and a section is a map.
-  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "doc",
+  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "biom-doc",
     name: "T", variables: {}, contents: "title" as never,
   }))).rejects.toThrow();
-  await expect(docs.writeRaw("home/Team-notes", "name: T\nplugin: doc\ncontents:\n  - title\n")).rejects.toThrow();
+  await expect(docs.writeRaw("home/Team-notes", "name: T\nplugin: biom-doc\ncontents:\n  - title\n")).rejects.toThrow();
   // A slot has to hold something the reader can draw. There is no `diagram`
   // type: a diagram is a drawing in the section's own markup.
-  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "doc",
+  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "biom-doc",
     name: "T", variables: {},
     contents: [{ name: "calc", parts: { body: { type: "diagram" as never, data: "x" } } }],
   }))).rejects.toThrow();
   // One name, one section.
-  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "doc",
+  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "biom-doc",
     name: "T", variables: {},
     contents: [{ name: "calc", parts: { body: "a" } }, { name: "calc", parts: { body: "b" } }],
   }))).rejects.toThrow();
   // A child is one segment, never a path — that is what keeps the key filename
   // safe and scoped to the document it is in.
-  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "doc",
+  await expect(docs.writeRaw("home/Team-notes", yaml.format({ plugin: "biom-doc",
     name: "T", variables: {},
     contents: [{ name: "@page-Notes", parts: { body: { type: "child", data: "clients/notes" } } }],
   }))).rejects.toThrow(/segment/);
@@ -1339,7 +1339,7 @@ test("the raw fallback cannot write a document the reader would not read back", 
 
   // And the fallback really is a fallback: what parses is written AS TYPED. The
   // prose is in this file now, so a reformat would not be cosmetic.
-  const raw = "name: Team notes\nplugin: doc\nvariables:\n  rate: 62\ncontents:\n  - name: intro\n    parts:\n      body: |\n        # Team notes\n        The base rate is {{rate}}.\n";
+  const raw = "name: Team notes\nplugin: biom-doc\nvariables:\n  rate: 62\ncontents:\n  - name: intro\n    parts:\n      body: |\n        # Team notes\n        The base rate is {{rate}}.\n";
   const parsed = await docs.writeRaw("home/Team-notes", raw);
   expect(parsed.variables).toEqual({ rate: 62 });
   expect(await docs.readRaw("home/Team-notes")).toBe(raw);
@@ -1357,7 +1357,7 @@ test("a patch lands on the page or on one section, and never on the other", asyn
   await files.write("pages/home/children/Rates-note/calc.html", "<div/>");
   await files.write("pages/home/children/Rates-note/content.yaml", yaml.format({
     name: "Rates note",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { rate: 62 },
     contents: [
       { name: "intro", parts: { body: "The base rate is {{rate}}.\n" } },
@@ -1449,7 +1449,7 @@ test("a page whose content.yaml will not parse does not take the tree with it", 
   // One pasted character is enough to write a document the reader refuses, and
   // the rail reads every page. Losing one page is a page-level fault; losing the
   // rail makes every good page unreachable, which is a workspace-level one.
-  const broken = "name: Broken\nplugin: doc\ncontents:\n - name: calc\n  parts: {}\n";
+  const broken = "name: Broken\nplugin: biom-doc\ncontents:\n - name: calc\n  parts: {}\n";
   await files.write("pages/home/children/Broken/content.yaml", broken);
 
   expect((await pages.list()).map((r) => r.id).sort())
@@ -1474,13 +1474,13 @@ test("a page whose content.yaml will not parse does not take the tree with it", 
   // still listed: they are in its `children/` directory, which is not the file
   // that broke.
   expect(drawn(await pages.read("home/Team-notes"))).toEqual(["title"]);
-  await files.write("pages/home/children/Broken/children/Site-B/content.yaml", yaml.format({ plugin: "doc",
+  await files.write("pages/home/children/Broken/children/Site-B/content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Site B", variables: {}, contents: [],
   }));
   expect((await pages.children("home/Broken")).map((c) => c.id)).toEqual(["home/Broken/Site-B"]);
 
   // The repair lands, through the fallback, and the page comes back as itself.
-  await docs.writeRaw("home/Broken", yaml.format({ plugin: "doc", name: "Broken", variables: {}, contents: [] }));
+  await docs.writeRaw("home/Broken", yaml.format({ plugin: "biom-doc", name: "Broken", variables: {}, contents: [] }));
   expect((await pages.read("home/Broken"))!.name).toBe("Broken");
   expect((await pages.list()).find((r) => r.id === "home/Broken")!.name).toBe("Broken");
 
@@ -1498,7 +1498,7 @@ test("removing a page takes its subtree, and the vault is committed before every
   expect(files.commits).toEqual([]);
 
   await pages.writeFile("home/Clients", "calc.html", "<div/>");
-  await docs.writeRaw("home/Clients", yaml.format({ plugin: "doc", name: "Clients", variables: {}, contents: [] }));
+  await docs.writeRaw("home/Clients", yaml.format({ plugin: "biom-doc", name: "Clients", variables: {}, contents: [] }));
 
   // The children are INSIDE the directory, so removing the page removes them —
   // the price of the folder being the hierarchy, and one revert away because the
@@ -1540,7 +1540,7 @@ test("the design doc is a page, read through the same resolver, out of the tree"
 
   await files.write("content.yaml", yaml.format({
     name: "Design",
-    plugin: "doc",
+    plugin: "biom-doc",
     variables: { voice: "plain" },
     contents: [
       { name: "brand", parts: { body: "# Design\nThe voice is {{voice}}.\n" } },
@@ -1576,14 +1576,14 @@ test("the design doc is a page, read through the same resolver, out of the tree"
 
   // IT HAS NO CHILDREN, so a child part resolves to nothing here: this doc is
   // not in the tree, and there is nothing for one to point at.
-  await files.write("content.yaml", yaml.format({ plugin: "doc",
+  await files.write("content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Design", variables: {},
     contents: [{ name: "kid", parts: { body: { type: "child", data: "Notes" } } }],
   }));
   expect((await design.read()).sections[0]!.parts).toEqual({});
 
   // The same merge a page gets, into the same two scopes.
-  await files.write("content.yaml", yaml.format({ plugin: "doc",
+  await files.write("content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Design", variables: { voice: "plain" },
     contents: [{ name: "swatch", variables: { title: "The palette" }, parts: { body: "Colours.\n" } }],
   }));
@@ -1593,13 +1593,13 @@ test("the design doc is a page, read through the same resolver, out of the tree"
 
   // It never rewrites a document it could not read: the repair goes through
   // writeFile, which is the raw fallback here.
-  await files.write("content.yaml", "name: Design\nplugin: doc\ncontents:\n - name: brand\n  parts: {}\n");
+  await files.write("content.yaml", "name: Design\nplugin: biom-doc\ncontents:\n - name: brand\n  parts: {}\n");
   await expect(design.patch(null, { voice: "plain" })).rejects.toThrow();
   expect(files.at("content.yaml")).toContain("name: Design");
 
   // And writeFile is how an agent puts a section's markup there — the same two
   // halves a page needs, the declaration and the file.
-  await files.write("content.yaml", yaml.format({ plugin: "doc",
+  await files.write("content.yaml", yaml.format({ plugin: "biom-doc",
     name: "Design", variables: {},
     contents: [{ name: "system", data: "system.html", parts: {} }],
   }));
@@ -1628,8 +1628,8 @@ test("a page's own document beats the vault's plugin, and a page whose plugin is
   const tables: FakeTable[] = [];
   const pages = makePages(files, yaml, () => tables, DEFAULT_SECTION);
 
-  await files.write("pages/home/content.yaml", "name: Home\nplugin: doc\ncontents: []\n");
-  await files.write("pages/home/children/Plain/content.yaml", "name: Plain\nplugin: doc\ncontents: []\n");
+  await files.write("pages/home/content.yaml", "name: Home\nplugin: biom-doc\ncontents: []\n");
+  await files.write("pages/home/children/Plain/content.yaml", "name: Plain\nplugin: biom-doc\ncontents: []\n");
 
   // With no `plugins/doc/` in the vault there is nothing to draw with, and the
   // page says so rather than coming back blank. In a real mount the seeder has
@@ -1638,7 +1638,7 @@ test("a page's own document beats the vault's plugin, and a page whose plugin is
 
   // The workspace has its own `doc` — seeded, or written by hand over the top of
   // the seeded one. From here on it is the one that draws, on every page that
-  // says `plugin: doc`, including the root.
+  // says `plugin: biom-doc`, including the root.
   await files.write("plugins/doc/index.html", "<!doctype html><title>installed</title>");
   expect((await pages.read("home/Plain"))!.html).toContain("installed");
   expect((await pages.read("home"))!.html).toContain("installed");

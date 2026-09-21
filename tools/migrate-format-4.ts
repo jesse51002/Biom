@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Add `plugin: doc` to every page in a workspace, and nothing else.
+// Add `plugin: biom-doc` to every page in a workspace, and nothing else.
 //
 // WHAT FORMAT 4 CHANGED is what a page SAYS about itself, not what it is. A page
 // used to be sections and only sections; now it names the reader that draws it,
-// and `doc` is that same section runtime. So every page written for format 3 is
-// a format 4 doc page with one line added — which is why this converter exists
-// where the format 1 and 2 ones deliberately do not. Those lost information the
-// vault never held (the markup lived in a render layer that is gone); this loses
-// nothing at all.
+// and the framework's `biom-doc` is that same section runtime. So every page
+// written for format 3 is a doc page with one line added — which is why this
+// converter exists where the format 1 and 2 ones deliberately do not. Those
+// lost information the vault never held (the markup lived in a render layer
+// that is gone); this loses nothing at all. THE LINE IT ADDS IS FORMAT 5'S
+// SPELLING, so a format 3 workspace converts straight to the format this
+// server reads; a format 4 one, saying the bare `doc`, takes
+// `migrate-format-5.ts` instead.
 //
 // IT EDITS TEXT RATHER THAN GOING THROUGH THE CODEC, and that is the whole
 // design. Parsing and re-writing a page would reflow every file — the comments
@@ -58,8 +61,8 @@ async function migrate(vault: string): Promise<number> {
     // and a file the server rewrites later look the same.
     const name = NAME_LINE.exec(next);
     next = name && name.index !== undefined
-      ? next.slice(0, name.index + name[0].length) + "\nplugin: doc" + next.slice(name.index + name[0].length)
-      : "plugin: doc\n" + next;
+      ? next.slice(0, name.index + name[0].length) + "\nplugin: biom-doc" + next.slice(name.index + name[0].length)
+      : "plugin: biom-doc\n" + next;
 
     await writeFile(at, next);
     changed++;
@@ -98,7 +101,7 @@ for (const vault of vaults) {
   // The vault's own history, before anything is written into it — the same
   // commit-before-a-write the server makes, for the same reason.
   await initVault(root);
-  await makeFiles(root).commit("Before adding plugin: doc to every page");
+  await makeFiles(root).commit("Before adding plugin: biom-doc to every page");
 
   const changed = await migrate(vault);
   console.log(`  ${String(changed)} page${changed === 1 ? "" : "s"} now name a plugin`);

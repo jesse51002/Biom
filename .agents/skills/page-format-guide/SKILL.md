@@ -100,7 +100,7 @@ file the reader looks for by name. See §12.
 
 ```yaml
 name: Q3 review
-plugin: doc
+plugin: biom-doc
 variables:
   quarter: Q3
 contents:
@@ -116,9 +116,12 @@ contents:
 ```
 
 **A PAGE NAMES ONE PLUGIN AND THAT DECIDES HOW THE REST IS READ.** `plugin: html`
-is the default and means the page's own `index.html`; `plugin: doc` is the section
-runtime and reads `contents`; anything else is a document in this workspace's own
-`plugins/<id>/`, and reads whatever the page put under `input:`. A plugin's configuration goes UNDER `input:`
+is the default and means the page's own `index.html`; `plugin: biom-doc` is the section
+runtime and reads `contents`; a `biom-` id is a document the framework ships, a bare
+id is a document in this workspace's own `plugins/<id>/`, and either reads whatever
+the page put under `input:`. The name is the folder — `frameworkPlugin` in
+`server/domain/pages.ts` puts nothing on and takes nothing off, and vault format 5 in
+`server/workspace/migrate.ts` refuses a workspace still saying the bare `doc`. A plugin's configuration goes UNDER `input:`
 so the host's keys and the plugin's cannot collide — a board names the column its
 cards are titled by, and the obvious key for that is `name`, which the page has
 already spent.

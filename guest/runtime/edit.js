@@ -890,7 +890,7 @@
       if (content && content.kind === "list") {
         node.setAttribute("data-g-md", "");
         (content.items || []).forEach((/** @type {any} */ item, /** @type {number} */ at) => {
-          const def = rt.plugins.get(String(item.kind));
+          const def = rt.plugins.forKind(String(item.kind));
           if (!def || def.edit !== true) return;
           const holder = /** @type {HTMLElement | null} */ (
             node.querySelector('[data-g-item="' + at + '"]')
@@ -904,7 +904,7 @@
 
       // An unfilled slot is still a slot: it is where somebody types first.
       const kind = content ? String(content.kind) : "markdown";
-      const def = rt.plugins.get(kind);
+      const def = rt.plugins.forKind(kind);
       if (!def || def.edit !== true) continue;
       node.removeAttribute("data-g-empty");
       // The page's type scale attaches to this attribute.

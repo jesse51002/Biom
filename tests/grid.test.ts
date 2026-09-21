@@ -57,7 +57,7 @@ test("section.write takes a grid's rows, and refuses rows mixed with text", () =
 
 const GRID_DOC = [
   "name: Rates",
-  "plugin: doc",
+  "plugin: biom-doc",
   "contents:",
   "  - name: body",
   "    parts:",
@@ -271,12 +271,15 @@ test("the registry reserves grid as a part kind: biom-grid/ fills the framework'
   rt.pluginRoot = "framework";
   rt.pluginFile = "biom-grid/grid.js";
   expect(rt.plugins.register({ id: "biom-grid", mount() {} })).toBe(true);
-  // A `grid` slot resolves to the framework's plugin until the workspace
-  // registers a `grid` of its own, which then wins by existing.
-  expect(rt.plugins.get("grid")).toMatchObject({ id: "biom-grid" });
+  // A `grid` slot — the KIND — is drawn by the framework's plugin until the
+  // workspace registers a `grid` of its own, which then wins by existing. The
+  // NAME `grid` reaches nothing until then: a name is exactly what it says.
+  expect(rt.plugins.forKind("grid")).toMatchObject({ id: "biom-grid" });
+  expect(rt.plugins.get("grid")).toBe(null);
   rt.pluginRoot = "plugins";
   rt.pluginFile = "grid/grid.js";
   expect(rt.plugins.register({ id: "grid", mount() {}, edit: false })).toBe(true);
+  expect(rt.plugins.forKind("grid")).toMatchObject({ id: "grid" });
   expect(rt.plugins.get("grid")).toMatchObject({ id: "grid" });
   expect(rt.plugins.get("biom-grid")).toMatchObject({ id: "biom-grid", edit: false });
 });
@@ -466,7 +469,7 @@ test("the conversion runs after a draw, writes the prose before, then rewrites t
 
 const page = (lines: string[]) => ({
   id: "rates",
-  doc: ["name: Rates", "plugin: doc", "contents:", ...lines, ""].join("\n"),
+  doc: ["name: Rates", "plugin: biom-doc", "contents:", ...lines, ""].join("\n"),
   files: {},
 });
 const rulesOf = (r: { findings: { rule: string }[] }) => new Set(r.findings.map((f) => f.rule));

@@ -1,5 +1,5 @@
 name: Diagram drawn from its own words
-plugin: doc
+plugin: biom-doc
 contents:
   - name: how-to-use-this
     parts:

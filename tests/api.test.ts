@@ -182,7 +182,7 @@ const ROOT_SEED: Record<string, string> = {
   "AGENTS.md": "# This folder is a Biom workspace\n\nRead `.agents/skills/`.\n",
   ".agents/skills/biom-pages/SKILL.md": "# Pages\n\nA page is a directory.\n",
   "design/content.yaml":
-    "name: Design\nplugin: doc\nvariables:\n  mood: quiet\ncontents:\n" +
+    "name: Design\nplugin: biom-doc\nvariables:\n  mood: quiet\ncontents:\n" +
     "  - name: brand\n    parts:\n      body: |\n        # Brand\n        One accent.\n",
 };
 
@@ -347,7 +347,7 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     // Second run. Every write is additive file by file, so a vault made before
     // the design doc existed gains it and anything edited stays edited — which
     // is why this is no longer gated on "has this workspace been used".
-    await writeFile(join(w.vault, "design", "content.yaml"), "name: Ours\nplugin: doc\ncontents: []\n");
+    await writeFile(join(w.vault, "design", "content.yaml"), "name: Ours\nplugin: biom-doc\ncontents: []\n");
     await w.presets.seedIfEmpty();
     expect((await w.deps.pages.list()).map((p) => p.id)).toEqual([ROOT_PAGE]);
     expect(await readFile(join(w.vault, "design", "content.yaml"), "utf8")).toContain("name: Ours");
@@ -433,7 +433,7 @@ test("every ApiRequest kind round-trips", async () => {
     // NO `kind:`, NO `render:`, NO `order:` — `contents` is a list of SECTIONS
     // and the array IS the order.
     const rewritten =
-      "name: Site intake\nplugin: doc\ncontents:\n" +
+      "name: Site intake\nplugin: biom-doc\ncontents:\n" +
       "  - name: title\n    parts:\n      body: |\n        # Site intake\n" +
       "  - name: calc\n    data: calc.html\n    parts:\n      figure: |\n        Four questions.\n";
     const back = value(await call({ kind: "doc.writeRaw", page: made.id, text: rewritten })) as PageDoc;
@@ -715,7 +715,7 @@ test("section.remove takes the entry, its variables and its file, against a real
       kind: "doc.writeRaw",
       page: notes.id,
       text:
-        "name: Team notes\nplugin: doc\ncontents:\n" +
+        "name: Team notes\nplugin: biom-doc\ncontents:\n" +
         "  - name: title\n    parts:\n      body: |\n        # Team notes\n" +
         "  - name: calc\n    data: calc.html\n    parts:\n      sum:\n        type: html\n        data: chart.svg\n" +
         "    variables:\n      heading: Quote\n" +
@@ -832,7 +832,7 @@ test("section.write and section.order refuse in the domain's own sentence, and w
     await call({ kind: "page.writeFile", page: rates.id, file: "calc.html", text: '<div data-g-part="sum"></div>' });
     await call({
       kind: "doc.writeRaw", page: rates.id,
-      text: "name: Rates\nplugin: doc\ncontents:\n" +
+      text: "name: Rates\nplugin: biom-doc\ncontents:\n" +
         "  - name: intro\n    parts:\n      body: |\n        The base rate is {{rate}}.\n" +
         "  - name: calc\n    data: calc.html\n    parts:\n      sum:\n        type: table\n        data: jobs\n",
     });
@@ -975,7 +975,7 @@ test("doc.raw and doc.writeRaw are the way back from a document that will not pa
     const page = value(await call({ kind: "page.create", init: { name: "Rates" } })) as PageRef;
     const yaml = join(dirOf(w.vault, page.id), "content.yaml");
     const good =
-      "name: Rates\nplugin: doc\nvariables:\n  rate: 62\ncontents:\n" +
+      "name: Rates\nplugin: biom-doc\nvariables:\n  rate: 62\ncontents:\n" +
       "  - name: intro\n    parts:\n      body: |\n        # Rendering rates\n        The base rate is {{rate}}.\n";
     await call({ kind: "doc.writeRaw", page: page.id, text: good });
     // BYTE FOR BYTE. They typed it, it parsed, it is theirs — and it holds their
@@ -1004,20 +1004,20 @@ test("doc.raw and doc.writeRaw are the way back from a document that will not pa
     // draws with lived in the render layer rather than in the vault.
     for (const [text, code] of [
       ["name: Rates\n\tcontents: [oh dear\n", "flatness"],                     // will not parse
-      ["name: Rates\nplugin: doc\nkind: doc\ncontents: []\n", "flatness"],                  // format 2
-      ["name: Rates\nplugin: doc\nrender: null\ncontents: []\n", "flatness"],               // format 2
+      ["name: Rates\nplugin: biom-doc\nkind: doc\ncontents: []\n", "flatness"],                  // format 2
+      ["name: Rates\nplugin: biom-doc\nrender: null\ncontents: []\n", "flatness"],               // format 2
       ["name: Rates\norder: [intro]\n", "flatness"],                           // format 1
-      ["name: Rates\nplugin: doc\nparent: home\ncontents: []\n", "flatness"],               // the hierarchy key
+      ["name: Rates\nplugin: biom-doc\nparent: home\ncontents: []\n", "flatness"],               // the hierarchy key
       // A section has no `type`: it is the only thing `contents` can hold.
-      ["name: Rates\nplugin: doc\ncontents:\n  - name: a\n    type: markdown\n    data: x\n", "flatness"],
+      ["name: Rates\nplugin: biom-doc\ncontents:\n  - name: a\n    type: markdown\n    data: x\n", "flatness"],
       // A slot's long spelling has no `name`: the key in `parts` is its id.
-      ["name: Rates\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body:\n        name: b\n        type: markdown\n        data: x\n", "flatness"],
+      ["name: Rates\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body:\n        name: b\n        type: markdown\n        data: x\n", "flatness"],
       // Two sections, one name. Refused by the CODEC rather than by `checkDoc`
       // behind it — the door is where a document that is not a page stops, and
       // the strict re-check guarding this fallback never has to see it.
-      ["name: Rates\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body: x\n  - name: a\n    parts:\n      body: y\n", "flatness"],
+      ["name: Rates\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body: x\n  - name: a\n    parts:\n      body: y\n", "flatness"],
       // A part type nothing has.
-      ["name: Rates\nplugin: doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: sonnet\n        data: x\n", "flatness"],
+      ["name: Rates\nplugin: biom-doc\ncontents:\n  - name: a\n    parts:\n      body:\n        type: sonnet\n        data: x\n", "flatness"],
     ] as const) {
       const said = await call({ kind: "doc.writeRaw", page: page.id, text });
       expect([text.slice(0, 24), said.ok]).toEqual([text.slice(0, 24), false]);
@@ -1245,7 +1245,7 @@ test("a page's variables come back out as its frontmatter, and cannot claim the 
     const page = value(await call({ kind: "page.create", init: { parent: null, name: "Lovable" } })) as PageRef;
     await call({
       kind: "doc.writeRaw", page: page.id,
-      text: "name: Lovable\nplugin: doc\nvariables:\n"
+      text: "name: Lovable\nplugin: biom-doc\nvariables:\n"
         + "  tags: [company, competitor]\n"
         + "  relationship: analogy\n"
         + '  verified: "2026-08-20"\n'
@@ -1431,7 +1431,7 @@ test("the mirror never renders a page it cannot draw, so a board's own markdown 
     const page = value(await call({ kind: "page.create", init: { parent: null, name: "Board" } })) as PageRef;
     // Make it a page the server cannot render: a plugin's input is its own and
     // there are no sections to walk.
-    await call({ kind: "doc.writeRaw", page: page.id, text: "name: Board\nplugin: kanban\ninput:\n  table: jobs\n" });
+    await call({ kind: "doc.writeRaw", page: page.id, text: "name: Board\nplugin: biom-kanban\ninput:\n  table: jobs\n" });
 
     // The box reports what the board actually says, as it does after every draw.
     await call({ kind: "page.projection", page: page.id, markdown: "## Doing\n\n- **Ashgrove**" });

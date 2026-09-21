@@ -1,5 +1,5 @@
 name: Child row
-plugin: doc
+plugin: biom-doc
 contents:
   - name: what-this-is
     parts:

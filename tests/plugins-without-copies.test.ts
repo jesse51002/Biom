@@ -212,6 +212,8 @@ test("what a vault holds under plugins/ stays on open, whatever it is; a bare-na
   const root = await scratch();
   const vault = join(root, "v");
   await mkdir(join(vault, "pages/home"), { recursive: true });
+  // `plugin: doc`, bare: with a `plugins/doc/` of the vault's own beside it,
+  // that is the vault's plugin in format 5 and nothing to do with `biom-doc`.
   await writeFile(join(vault, "pages/home/content.yaml"), "name: Home\nplugin: doc\ncontents: []\n");
   await mkdir(join(vault, "plugins/doc"), { recursive: true });
   // A seeded copy that fell behind, a copy somebody edited, a document copied
@@ -533,12 +535,14 @@ test("every framework plugin wears biom-, folder and id, and the prefix is spell
       if (id !== undefined) expect([entry.name, file.name, id]).toEqual([entry.name, file.name, entry.name]);
     }
   }
-  // A page's bare name falls back to the prefixed document; a prefixed one is itself.
-  expect(frameworkPlugin("doc")).toBe("biom-doc/index.html");
+  // The framework's document is asked for by the folder, and only a prefixed
+  // id is ever asked of the framework: there is no spelling under which `doc`
+  // becomes `biom-doc` any more.
   expect(frameworkPlugin("biom-doc")).toBe("biom-doc/index.html");
+  expect(frameworkPlugin("doc")).toBe("doc/index.html");
 });
 
-test("a bare id in the box resolves nearest-first: the workspace's own, then the framework's biom- one", () => {
+test("a part KIND in the box is drawn by the workspace's own folder or the framework's biom- one, and a NAME is exactly what it says", () => {
   const glob = globalThis as any;
   const had = { rt: glob.__gRuntime, biom: glob.biom, doc: glob.document };
   const said: string[] = [];
@@ -552,14 +556,19 @@ test("a bare id in the box resolves nearest-first: the workspace's own, then the
     rt.pluginRoot = "framework";
     rt.pluginFile = "biom-markdown/markdown.js";
     expect(rt.plugins.register({ id: "biom-markdown", mount() {}, edit: true })).toBe(true);
-    // A bare `markdown` slot reaches it.
-    expect(rt.plugins.has("markdown")).toBe(true);
-    expect(rt.plugins.get("markdown").id).toBe("biom-markdown");
-    // The workspace writes its own, from the one folder that may: now the bare
-    // name is the workspace's and the prefixed one is still the framework's.
+    // A `markdown` slot — the KIND, the format's word — is drawn by it. The
+    // NAME `markdown` reaches nothing: a bare name is the workspace's own or
+    // nothing, and the box looks a name up exactly as written.
+    expect(rt.plugins.forKind("markdown").id).toBe("biom-markdown");
+    expect(rt.plugins.has("markdown")).toBe(false);
+    expect(rt.plugins.get("markdown")).toBe(null);
+    // The workspace writes its own, from the one folder that may: now the kind
+    // is drawn by the workspace's, the name reaches it, and the prefixed one
+    // is still the framework's.
     rt.pluginRoot = "plugins";
     rt.pluginFile = "markdown/markdown.js";
     expect(rt.plugins.register({ id: "markdown", mount() {} })).toBe(true);
+    expect(rt.plugins.forKind("markdown").id).toBe("markdown");
     expect(rt.plugins.get("markdown").id).toBe("markdown");
     expect(rt.plugins.get("biom-markdown").id).toBe("biom-markdown");
     // The prefixed part kind is reserved to its folder exactly as the bare one

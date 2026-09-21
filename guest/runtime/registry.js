@@ -61,7 +61,7 @@
  * WHICH FILE IS REGISTERING IS A FACT THE LOADER HANDS OVER. Every plugin in a
  * vault arrives inside one concatenated script, so `document.currentScript` says
  * "the bundle" for all of them; the loader sets `rt.pluginFile` — the path
- * under its root, `biom-doc/plugins/holds/holds.js` — and `rt.pluginRoot` —
+ * under its root, `biom-doc/plugins/biom-holds/holds.js` — and `rt.pluginRoot` —
  * `framework`, `plugins`, or a page's `pages/…/plugins` — around each file's
  * own function, and `whereFrom()` below reads them. They are what the
  * reservation is decided on, what a refusal prints, and what
@@ -206,15 +206,19 @@
     return (id.startsWith(OURS) ? "framework/" : "plugins/") + id + "/";
   }
 
-  /** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED, and why a bare name is not.
+  /** WHAT THE FRAMEWORK'S OWN PLUGINS ARE CALLED, AND WHAT EVERYTHING SAYS.
    *  Every plugin the framework ships registers as `biom-<name>` — `biom-markdown`,
    *  `biom-reveal`, `biom-doc` — so a plugin a workspace wrote can never share
    *  an id with one the framework ships later and be refused as its duplicate
-   *  on the next release. A page, a slot and a plugin go on saying the bare
-   *  name: `resolve` below answers the workspace's own first and the
-   *  framework's second, which is the same nearest-first rule the server
-   *  applies to a plugin's file. Spelled once here and once in
-   *  `server/domain/pages.ts`, which is the other side of the same lookup, and
+   *  on the next release. And that IS the name: a page says `plugin: biom-doc`,
+   *  a section says `data-g-plugin="biom-reveal"`, a plugin says
+   *  `ctx.use("biom-items")`. There used to be a translation here — a bare
+   *  name answered by the framework's `biom-` one when the workspace had none
+   *  — and it went on 2026-09-21 with vault format 5, as the one place a name
+   *  was not the name. The one lookup that still crosses the prefix is a PART
+   *  KIND, `forKind` below, because `markdown` there is a word of the format
+   *  and not a plugin anybody named. Spelled once here and once in
+   *  `server/domain/pages.ts`, which is the other side of the same rule, and
    *  a test holds the two equal. */
   const OURS = "biom-";
 
@@ -225,16 +229,25 @@
     return PART_KINDS.has(id) || (id.startsWith(OURS) && PART_KINDS.has(id.slice(OURS.length)));
   }
 
-  /** THE LOOKUP, NEAREST FIRST. A bare id is the workspace's own if it
-   *  registered one, and the framework's `biom-<id>` otherwise; a prefixed id
-   *  is exactly what it says. That is the whole of how `plugin: doc`,
-   *  `data-g-plugin="reveal"` and a `markdown` slot go on working when the
-   *  framework's files and ids wear the prefix — and how a workspace that
-   *  registers its own `reveal` is what those draw with, by having one.
+  /** THE LOOKUP, EXACT. An id is what it says: the workspace's own under its
+   *  own name, the framework's under `biom-`. Nothing is tried under another
+   *  spelling — `data-g-plugin="reveal"` in a workspace with no `reveal` of its
+   *  own is a slot nothing draws, said in words, and not `biom-reveal`.
    *  @param {string} id @returns {string | null} the id that is registered */
   function resolve(id) {
-    if (byId.has(id)) return id;
-    if (!id.startsWith(OURS) && byId.has(OURS + id)) return OURS + id;
+    return byId.has(id) ? id : null;
+  }
+
+  /** THE ONE LOOKUP THAT CROSSES THE PREFIX: which plugin draws a PART KIND.
+   *  `markdown`, `html`, `table`, `child` and `grid` are words of the format —
+   *  a slot's `kind`, said by nobody as a plugin name — and the format says the
+   *  workspace's own `plugins/<kind>/` draws the kind when a folder reserved
+   *  it, the framework's `biom-<kind>/` otherwise. That is a reservation the
+   *  folder rule above decides, not a translation of a name a person wrote.
+   *  @param {string} kind @returns {string | null} the id that draws it */
+  function drawerOf(kind) {
+    if (byId.has(kind)) return kind;
+    if (byId.has(OURS + kind)) return OURS + kind;
     return null;
   }
 
@@ -317,13 +330,34 @@
       return resolve(id) !== null;
     },
 
-    /** The definition, or null — the workspace's own for a bare id, the
-     *  framework's `biom-` one when it has none. Public because a plugin
-     *  composing on another wants to know whether it declares `edit` before
-     *  offering to edit it. @param {string} id @returns {GPlugin | null} */
+    /** The definition, or null — by the id as written and no other. Public
+     *  because a plugin composing on another wants to know whether it declares
+     *  `edit` before offering to edit it. @param {string} id @returns {GPlugin | null} */
     get(id) {
       const found = resolve(id);
       return found === null ? null : byId.get(found) || null;
+    },
+
+    /** The definition that draws a part kind, or null: the workspace's own
+     *  `<kind>` where a folder reserved it, the framework's `biom-<kind>`
+     *  otherwise. The runtime's slot drawing asks this and never `get`,
+     *  because a kind is the format's word and not a plugin's name.
+     *  @param {string} kind @returns {GPlugin | null} */
+    forKind(kind) {
+      const found = drawerOf(kind);
+      return found === null ? null : byId.get(found) || null;
+    },
+
+    /** WHAT `ctx.use` AND `ctx.has` REACH: a plugin by its name as written,
+     *  or — for the five words that are part kinds — the drawer of that kind.
+     *  `ctx.use("markdown")` is a plugin asking for whatever draws markdown
+     *  here, which is the format's question and not a name's; `ctx.use("reveal")`
+     *  is a name, and reaches the workspace's own `reveal` or nothing.
+     *  @param {string} id @returns {GPlugin | null} */
+    reach(id) {
+      const named = resolve(id);
+      if (named !== null) return byId.get(named) || null;
+      return PART_KINDS.has(id) ? plugins.forKind(id) : null;
     },
 
     /** Every id registered, in registration order. For the section menu the
@@ -347,8 +381,7 @@
       return [...byId.values()].map((def) => ({ id: def.id, root: def.root || "runtime", file: def.from || "" }));
     },
 
-    /** One plugin, as `ctx.use` finds it: the workspace's own for a bare id,
-     *  the framework's `biom-` one when it has none. Held equal to
+    /** One plugin, as `ctx.use` finds it: by the id as written. Held equal to
      *  `biom.plugins.get` by a test. @param {string} id @returns {GPlugin | null} */
     get(id) {
       return plugins.get(id);
@@ -357,19 +390,15 @@
     /** THE MERGED VARIABLES OF ONE PLUGIN, as the server put them on the page
      *  read: its `plugin.yaml` defaults, the vault's `extensions.yaml` over
      *  them, the page's over those, one key at a time. Left out, the id is the
-     *  plugin drawing this page. Resolved nearest-first like every other bare
-     *  name — the workspace's own `doc` if it declared variables, the
-     *  framework's `biom-doc` otherwise. Synchronous, off the last read: empty
-     *  before the first draw, and current on every one after, because the read
-     *  that draws the page is the read that carries them.
+     *  plugin drawing this page. By the id as written. Synchronous, off the
+     *  last read: empty before the first draw, and current on every one after,
+     *  because the read that draws the page is the read that carries them.
      *  @param {string} [id] @returns {Record<string, any>} */
     extensions(id) {
       const held = rt.page && typeof rt.page.extensions === "function" ? rt.page.extensions() : {};
       const want = id === undefined || id === null || id === "" ? (rt.page ? String(rt.page.plugin || "") : "") : String(id);
-      if (!want) return {};
-      const found = held[want] ? want : !want.startsWith(OURS) && held[OURS + want] ? OURS + want : null;
-      if (found === null) return {};
-      const values = held[found] && held[found].values;
+      if (!want || !held[want]) return {};
+      const values = held[want] && held[want].values;
       return values && typeof values === "object" ? Object.assign({}, values) : {};
     },
   };

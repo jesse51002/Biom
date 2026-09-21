@@ -51,7 +51,7 @@ neither is broken.
 
 ```yaml
 name: Research
-plugin: doc
+plugin: biom-doc
 variables:
   holds:
     - 2026-08-02-attach-rate

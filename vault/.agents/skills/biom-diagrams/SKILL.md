@@ -67,7 +67,7 @@ contents:
   <div class="head"  data-g-part="head"></div>
   <div class="plate"></div>
   <div class="say"   data-g-part="argument"></div>
-  <span data-g-plugin="reveal"></span>
+  <span data-g-plugin="biom-reveal"></span>
 </div>
 <script>
   /* ctx.vars is the page's variables and this section's, merged with the nearest
@@ -132,7 +132,7 @@ contents:
 
 **The edges draw themselves in, once, when the section is first seen.** A figure that arrives reads before the prose does, which is the whole reason it is there.
 
-- **`<span data-g-plugin="reveal">` adds `is-seen` to the section and disconnects.** Everything the reveal does is in the section's own `<style>`, hung off `:scope.is-seen`.
+- **`<span data-g-plugin="biom-reveal">` adds `is-seen` to the section and disconnects.** Everything the reveal does is in the section's own `<style>`, hung off `:scope.is-seen`.
 - **Every duration is multiplied by `--motion`**, which the document declares as 1 and as 0 under `prefers-reduced-motion`. A reader who asked for stillness gets the finished drawing and no move at all, with no second media query to keep in step.
 - **The figure is legible at every frame.** The boxes are already there and the edges draw in over them; a reveal that starts from nothing is a section that is blank while it plays.
 - **The stagger is a custom property.** The script sets `--i` to the edge's index — a custom property is the one thing a script may write onto an element's style — and the stylesheet decides what the delay does with it.

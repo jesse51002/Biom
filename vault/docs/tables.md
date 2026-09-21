@@ -94,7 +94,7 @@ nothing.
 **A section can also place a grid with no stored content at all:**
 
 ```html
-<div data-g-plugin="table" data-g-table="jobs" data-g-max-rows="20"></div>
+<div data-g-plugin="biom-table" data-g-table="jobs" data-g-max-rows="20"></div>
 ```
 
 `data-g-table` is interpolated like everything else in a section's markup, so

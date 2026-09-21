@@ -38,21 +38,29 @@ never inside `children/`, so a page may still be called `plugins`.
 ## The framework's plugins are the rung underneath yours
 
 **Every plugin the framework ships is called `biom-<name>`, folder and id
-alike, and you keep saying the bare name.** `plugin: doc` in a page,
-`data-g-plugin="reveal"` in a section and a `markdown` slot all resolve
-nearest-first: a plugin of yours under that name if you wrote one, the
-framework's `biom-doc`, `biom-reveal` or `biom-markdown` otherwise. So a plugin
-you write can never share a name with one the framework ships later — under
-bare names it would have been refused as the framework's duplicate on every
-page, the day the framework shipped it, with nothing saying so. **And a script
-of yours may not register a `biom-` id**: the prefix is the framework's, and
-the registry refuses one by name.
+alike, and that is the name you say.** `plugin: biom-doc` on a page,
+`data-g-plugin="biom-reveal"` in a section, `ctx.use("biom-items")` in a plugin
+of your own. THE NAME IS THE FOLDER, and nothing is put on or taken off
+anywhere: a `biom-` name is the framework's, and a bare name — `plugin: digest`,
+`data-g-plugin="cards"` — is a plugin of this workspace's own, `plugins/digest/`,
+`plugins/cards/`, and nothing else. So a plugin you write can never share a
+name with one the framework ships later, and a word on a page is exactly the
+folder that draws it. **And a script of yours may not register a `biom-` id**:
+the prefix is the framework's, and the registry refuses one by name.
+
+**The one word that is not a name is a part KIND.** `markdown`, `html`,
+`table`, `child` and `grid` are what a slot IS, said in `parts` — and the
+framework's `biom-markdown` draws a markdown slot unless this workspace put a
+`plugins/markdown/` of its own there, which is a reservation the folder rule
+decides. `ctx.use("markdown")` asks the same question in code — *what draws
+markdown here* — and gets the same answer. That is a kind reaching its drawer,
+not a name being translated.
 
 **Your `plugins/` folder holds only what you wrote, and what you changed about
-the framework's.** Nothing is copied into it. When a page names a plugin, the
-server looks in your folder first and in the framework's set second, so a
-fresh workspace has no `plugins/` at all and every page still draws, and every
-workspace follows a framework release the moment it is installed.
+the framework's.** Nothing is copied into it. A `biom-` name is read from the
+framework's set and a bare one from your folder, so a fresh workspace has no
+`plugins/` at all and every page still draws, and every workspace follows a
+framework release the moment it is installed.
 
 **To read one, open `docs/plugins/`.** The server writes the framework's whole
 plugin set there every time the workspace opens — the same folders, the same
@@ -100,8 +108,8 @@ says it too.
 extension of the framework's plugin, not a copy of it: a script or a document
 dropped into it is refused by name and never draws. There are no file-based
 overrides. A workspace that wants a document of its own writes a plugin of its
-own under a bare name — `plugins/doc/index.html` — and every page saying
-`plugin: doc` draws with it; from that day it is yours to keep current.
+own under a bare name — `plugins/sheet/index.html` — and every page saying
+`plugin: sheet` draws with it; from that day it is yours to keep current.
 
 **A plugin reads its variables in the box through `biom.plugin.extensions()`** —
 its own when the id is left out, any plugin's by id — merged by the server and
@@ -171,25 +179,29 @@ page — and `biom.plugin.get(id)` answers one, as `ctx.use` finds it.
 
 ## How a page plugin is resolved
 
-A page says `plugin: <id>`, and the host looks in three places, **in order**:
+A page says `plugin: <id>`, and the id says where the document is:
 
-1. **the page's own `index.html`**, beside its `content.yaml`;
-2. **`plugins/<id>/index.html`** in this workspace, under the bare name — a plugin of your own;
-3. **the framework's own `biom-<id>/index.html`**, which a workspace never shadows.
+1. **the page's own `index.html`**, beside its `content.yaml`, draws the page whatever it says;
+2. a **`biom-` id** is the framework's — `guest/plugins/biom-<name>/index.html`, which a workspace never shadows;
+3. a **bare id** is this workspace's own — the page's own `plugins/<id>/index.html` if it has one, else `plugins/<id>/index.html` at the root.
 
 A page that names a plugin nobody has draws a stand-in saying so. A document
 under a `biom-` folder in your workspace is not read: that folder is an
-extension and holds a rung alone.
+extension and holds a rung alone. And a bare id is never asked of the
+framework: `plugin: doc` with no `plugins/doc/` of your own names nothing,
+which is why the server refuses to open a workspace still saying it — see
+[the format gate](#the-name-is-the-folder) below.
 
 The host resolves the document server-side for the reason it resolves everything
 else: the box has an opaque origin and cannot fetch.
 
-**`plugin: doc` is the document** and `plugin: html` — which is what leaving
-`plugin:` out means — is the page's own `index.html`. Both go through exactly the
-same lookup as a plugin you wrote, and so does every other document the
-framework ships — `docs/plugins/` lists them, each folder's `index.html` the
-document and its `plugin.yaml` what a rung can tell it. **`plugin:
-automations-runs` shows a page's children one at a time, newest first**, each
+**`plugin: biom-doc` is the document** and `plugin: html` — which is what leaving
+`plugin:` out means — is the page's own `index.html`. The framework's documents
+are read by their `biom-` names from the framework's set and a plugin you wrote
+by its bare name from your folder, and `docs/plugins/` lists the framework's,
+each folder's `index.html` the document and its `plugin.yaml` what a rung can
+tell it. **`plugin: biom-automations-runs` shows a page's children one at a
+time, newest first**, each
 filling the frame between a strip to the newer and a strip to the older, the
 bar naming the child by its H1; it reads three variables — `home`, a plugin
 drawn as the slide the page opens on when nothing is running; `progress`, a
@@ -218,6 +230,24 @@ never one beside the plugin's script, which would run twice.
 **No file in a workspace may name a path into the application's own directory**
 — that is wrong the first time somebody moves the application.
 
+## The name is the folder
+
+**A workspace written before this rule said the bare word — `plugin: doc`,
+`data-g-plugin="reveal"` — and the server put the `biom-` on wherever the
+workspace had no plugin of that name.** It does not any more, and a workspace
+still saying the bare word is refused on open, in a sentence naming the first
+few words and the tool: run
+
+    bun run tools/migrate-format-5.ts <this workspace>
+
+from the framework checkout. It rewrites every such word to its folder's name
+— on every page, in every section's markup, in every document of your own —
+and changes nothing else, so the diff is exactly the list of words. A bare
+word you own, `plugin: digest` beside `plugins/digest/`, is left exactly
+alone. A `ctx.use("items")` in a plugin of your own is code, so the tool names
+the file and the line rather than editing it; the framework's is
+`ctx.use("biom-items")`. The checker says the same as R69.
+
 ## Five names are spoken for
 
 `markdown`, `html`, `table`, `child` and `grid` are the **part kinds** — a slot's plugin
@@ -229,10 +259,10 @@ would say it had happened.
 **`plugins/<kind>/` is the one folder that may draw `<kind>`, and the
 framework's `biom-<kind>/` the one that may draw `biom-<kind>`.** The framework's
 markdown plugin is `biom-markdown/markdown.js` registering `biom-markdown`; a
-`markdown` slot reaches it because a bare name falls back to the framework's
-`biom-` one when this workspace registered none of its own. Write
-`plugins/markdown/markdown.js` registering `markdown` and every markdown slot
-draws with yours — it is nearer. It is not whoever registers first: the loader
+`markdown` slot is drawn by it because a slot's KIND reaches its drawer — the
+workspace's own `markdown` where a folder reserved one, the framework's
+`biom-markdown` otherwise. Write `plugins/markdown/markdown.js` registering
+`markdown` and every markdown slot draws with yours. It is not whoever registers first: the loader
 hands the page every folder in name order, so first-past-the-post would have let
 a folder called `a-notes/` take `table` by sorting ahead of `table/`. Only a
 folder at the top of this workspace's `plugins/` may: not an inner one, and not
@@ -260,9 +290,9 @@ is a markdown part beside it.
 **A node in a section's markup can mount a plugin with no stored content at all.**
 
 ```html
-<div data-g-plugin="table" data-g-table="jobs" data-g-max-rows="20"></div>
+<div data-g-plugin="biom-table" data-g-table="jobs" data-g-max-rows="20"></div>
 <div data-g-part="steps"></div>
-<span data-g-plugin="items" data-g-for="steps"></span>
+<span data-g-plugin="biom-items" data-g-for="steps"></span>
 ```
 
 It is configured entirely by its own `data-g-*` attributes, which arrive as
@@ -318,12 +348,17 @@ registration side and `biom.plugin` the reading side**: `biom.plugin.list()`,
 module script never loads there — it is CORS-gated and refused, while a classic
 `<script src>` loads fine. That was measured rather than reasoned from the spec.
 **There is no import graph to be had in here, so the registry stands in its
-place**, and a plugin that wants markdown inside its cells asks for it by name:
+place**, and a plugin that wants markdown inside its cells asks for it:
 
 ```js
 const md = ctx.use("markdown");
 md.mount(cell, { kind: "markdown", md: text, vars: {} });
 ```
+
+`ctx.use` takes a plugin's name as written — `ctx.use("biom-items")` for the
+framework's, `ctx.use("cards")` for one of yours — and, for the five words that
+are part kinds, whatever draws that kind here: `"markdown"` is the workspace's
+own `markdown` if it reserved one and the framework's `biom-markdown` otherwise.
 
 A third argument sets the mounted plugin's `ctx.options`, for the case where there
 is no node with `data-g-*` attributes to read them off.

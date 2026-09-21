@@ -1,5 +1,5 @@
 name: A figure that plays once
-plugin: doc
+plugin: biom-doc
 contents:
   - name: how-to-use-this
     parts:

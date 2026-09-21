@@ -34,7 +34,7 @@ description: Give a page its moving figures, or brief an agent to build one. Use
 
 ## How a scene is built
 
-**In view, or paused.** The section places `<span data-g-plugin="inview">` once, on a node that costs the layout nothing, and its style says `.run { animation-play-state: paused; }` with `:scope.in-view .run { animation-play-state: running; }`. The plugin keeps the class honest while the section is on screen and disconnects on teardown; the scene never carries an observer of its own.
+**In view, or paused.** The section places `<span data-g-plugin="biom-inview">` once, on a node that costs the layout nothing, and its style says `.run { animation-play-state: paused; }` with `:scope.in-view .run { animation-play-state: running; }`. The plugin keeps the class honest while the section is on screen and disconnects on teardown; the scene never carries an observer of its own.
 
 **One cycle, in CSS, with no script for the motion.** A `.run` rule carries the duration as `calc(<ms> * var(--motion))`, infinite iterations, `both` fill, linear timing; each element names its own keyframes and states its beats as percentages of that one cycle. Offsets between siblings are negative delays, not separate durations. Under reduced motion `--motion` is 0, every duration is 0, and every element rests on its last keyframe, so **the last keyframe of every element is the frame that tells the story on its own**: the verdicts shown, the last caption up.
 

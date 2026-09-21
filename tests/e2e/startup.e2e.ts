@@ -236,7 +236,7 @@ walk("a remembered workspace whose database is not a database opens the picker",
   setup(box) {
     const at = join(box.root, "folders", "Work");
     mkdirSync(join(at, "pages", "home"), { recursive: true });
-    writeFileSync(join(at, "pages", "home", "content.yaml"), "name: Home\nplugin: doc\ncontents: []\n", "utf8");
+    writeFileSync(join(at, "pages", "home", "content.yaml"), "name: Home\nplugin: biom-doc\ncontents: []\n", "utf8");
     writeFileSync(join(at, "workspace.db"), "this is not a sqlite file at all", "utf8");
     return at;
   },

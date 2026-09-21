@@ -365,7 +365,7 @@ test("two vaults are open at once, and neither disturbs the other", async () => 
     await call(host, work, {
       kind: "doc.writeRaw",
       page: made.id,
-      text: "name: Site intake\nplugin: doc\nkind: doc\nrender: null\ncontents:\n  - name: body\n    type: markdown\n    data: |\n      Four questions.\n",
+      text: "name: Site intake\nplugin: biom-doc\nkind: doc\nrender: null\ncontents:\n  - name: body\n    type: markdown\n    data: |\n      Four questions.\n",
     });
     // The first vault's own background work — the framework's skills, the
     // plugin mirror — has to have landed before its bytes are the baseline.

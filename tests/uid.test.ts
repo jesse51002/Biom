@@ -62,9 +62,9 @@ test("a new page is born with a uid, under its name, and the codec round-trips i
 test("identify writes a uid into every page that has none and never touches one that has", async () => {
   const files = memFiles();
   // Two pages written by hand, one of them already identified, and a root.
-  await files.write("pages/home/content.yaml", "name: Home\nplugin: doc\ncontents: []\n");
-  await files.write("pages/home/children/a/content.yaml", "name: A\nplugin: doc\ncontents: []\n");
-  await files.write("pages/home/children/b/content.yaml", "name: B\nuid: keepmekeepme\nplugin: doc\ncontents: []\n");
+  await files.write("pages/home/content.yaml", "name: Home\nplugin: biom-doc\ncontents: []\n");
+  await files.write("pages/home/children/a/content.yaml", "name: A\nplugin: biom-doc\ncontents: []\n");
+  await files.write("pages/home/children/b/content.yaml", "name: B\nuid: keepmekeepme\nplugin: biom-doc\ncontents: []\n");
   // And one that will not parse, which is left alone.
   await files.write("pages/home/children/c/content.yaml", "name: [\n");
   const pages = makePages(files, yaml);
@@ -82,12 +82,12 @@ test("identify writes a uid into every page that has none and never touches one 
 });
 
 test("the codec refuses a uid that is not one, and keeps one through a rewrite", () => {
-  expect(() => parse("name: X\nuid: 12\nplugin: doc\ncontents: []\n")).toThrow(/uid/);
-  expect(() => parse("name: X\nuid: [a]\nplugin: doc\ncontents: []\n")).toThrow();
-  const doc = parse("name: X\nuid: abcdefgh12345678\nplugin: doc\ncontents: []\n");
+  expect(() => parse("name: X\nuid: 12\nplugin: biom-doc\ncontents: []\n")).toThrow(/uid/);
+  expect(() => parse("name: X\nuid: [a]\nplugin: biom-doc\ncontents: []\n")).toThrow();
+  const doc = parse("name: X\nuid: abcdefgh12345678\nplugin: biom-doc\ncontents: []\n");
   expect(format(doc)).toContain("uid: abcdefgh12345678\n");
   // A document with none is written with none: nothing invents one on the way out.
-  expect(format(parse("name: X\nplugin: doc\ncontents: []\n"))).not.toContain("uid:");
+  expect(format(parse("name: X\nplugin: biom-doc\ncontents: []\n"))).not.toContain("uid:");
 });
 
 test("a page moved to another parent keeps its uid", async () => {

@@ -44,7 +44,7 @@ import { makeProcessRunner } from "./platform/process.ts";
 import { makeRunFs } from "./platform/rundir.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, DOC_PLUGIN_DOCUMENT, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir, pageDirs } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir, pageDirs } from "./domain/pages.ts";
 import { makePlugins, walkPlugins } from "./domain/plugins.ts";
 import type { PluginWalk } from "./domain/plugins.ts";
 import { makeDocs } from "./domain/docs.ts";
@@ -713,6 +713,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  once here rather than per vault because it is the same set whichever
    *  folder is open — the routes read it too, through `Host.pluginRoot`. */
   const pluginRoot = seedRoot(PLUGINS_DIR, at.pluginRoot ?? PLUGIN_ROOT);
+  /** EVERY ID THE FRAMEWORK SHIPS, `biom-` and all, walked once for the format
+   *  gate: a vault naming one of them by its bare word is format 4. */
+  const shipped = walkPlugins(pluginRoot, "", "framework").then((walk) => new Map(walk.folders.map((f) => [f.id, f.document])));
 
   /** THE THREE ROOTS THE FRAMEWORK OWNS INSIDE A VAULT, read-only, built once.
    *  `vaultSeed` for the skills as they ship, `skill` for the checker, and the
@@ -783,7 +786,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // vault; so an old workspace refuses out loud instead of half-opening.
     // migrate.ts carries the whole of that argument.
     try {
-      await checkVaultFormat(path);
+      await checkVaultFormat(path, await shipped);
     } catch (e) {
       // Named here rather than in the message, which crosses into the API and
       // must never carry a path. This is the log, and the log is where somebody
@@ -845,14 +848,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         return {};
       }
     };
-    // THE `doc` PLUGIN'S DOCUMENT, resolved the way `pages.ts` resolves every
-    // plugin document: this vault's own `plugins/doc/index.html` if it has one,
-    // the framework's otherwise. The design module's files are rooted at
-    // `design/` and correctly cannot reach either, so it is handed a way to ask
-    // — read live, so editing the plugin changes the design doc on the next
-    // draw exactly as it changes every other doc page.
-    const docDocument = async () =>
-      (await files.read(DOC_PLUGIN_DOCUMENT)) ?? (await pluginRoot.read(frameworkPlugin(DOC_PLUGIN))) ?? "";
+    // THE `biom-doc` DOCUMENT, resolved the way `pages.ts` resolves every
+    // framework plugin's document: the framework's own, by its folder. The
+    // design module's files are rooted at `design/` and correctly cannot reach
+    // it, so it is handed a way to ask — read live, so editing the plugin
+    // changes the design doc on the next draw exactly as it changes every
+    // other doc page.
+    const docDocument = async () => (await pluginRoot.read(frameworkPlugin(DOC_PLUGIN))) ?? "";
     // THE SAME BASELINE AS THE VAULT'S OWN FILES, rooted a level down. A write
     // into `design/` is this process's write wherever it was made from, and two
     // baselines over one tree would make half of them look like somebody else's.

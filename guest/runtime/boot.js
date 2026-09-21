@@ -109,10 +109,12 @@
    *  from them and the edit wave has to reproduce that merge exactly when it
    *  re-renders one block of one part. @type {Record<string, any>} */
   let pageVariables = {};
-  /** WHICH READER DREW THIS PAGE, and what it was handed. `doc` is the section
-   *  stack; anything else drew its own document and reads `input` for whatever
-   *  it declared. @type {string} */
-  let pagePlugin = "doc";
+  /** THE DOCUMENT READER'S ID — `DOC_PLUGIN` in `contracts/types.ts`, spelled
+   *  here because the box imports nothing. A page drawn by it is the section
+   *  stack; anything else drew its own document and reads `input`. */
+  const DOC = "biom-doc";
+  /** WHICH READER DREW THIS PAGE, and what it was handed. @type {string} */
+  let pagePlugin = DOC;
   /** @type {Record<string, any>} */
   let pageInput = {};
   /** EVERY PLUGIN'S VARIABLES, merged for this page by the server — the
@@ -299,7 +301,7 @@
    *  @param {any} answer */
   function normalise(answer) {
     const bare = { sections: [], variables: {}, markdown: {}, plugin: "html", input: {}, name: "", extensions: {} };
-    if (Array.isArray(answer)) return { ...bare, sections: answer, plugin: "doc" };
+    if (Array.isArray(answer)) return { ...bare, sections: answer, plugin: DOC };
     if (!answer || typeof answer !== "object") return bare;
     return {
       sections: Array.isArray(answer.sections) ? answer.sections : [],
@@ -420,9 +422,9 @@
     // runtime's to build and to empty; every other page's body is the author's,
     // already parsed, and clearing it would delete the page in order to draw it
     // — which is exactly what happened the first time a board was asked to draw
-    // itself. So the root is made and cleared for `doc`, and for anything else
+    // itself. So the root is made and cleared for `biom-doc`, and for anything else
     // the type scale goes on the document element and nothing is touched.
-    const owns = page.plugin === "doc";
+    const owns = page.plugin === DOC;
     const el = owns ? root() : document.documentElement;
     if (owns) el.textContent = "";
 
@@ -589,7 +591,7 @@
    *  It never throws and never rejects into the page: a projection that could not
    *  be stored is a stale archive file, not a page that failed to draw. */
   function projectionOf() {
-    if (pagePlugin === "doc") {
+    if (pagePlugin === DOC) {
       if (!rt.project || typeof rt.project.doc !== "function") return null;
       return rt.project.doc({
         name: pageName,
@@ -796,7 +798,7 @@
         vars: pageVariables,
         // The stack's root on a document, and the document element anywhere
         // else — `root()` would MAKE a `#g-page` on a page that has none.
-        root: pagePlugin === "doc" ? root() : document.documentElement,
+        root: pagePlugin === DOC ? root() : document.documentElement,
         bucket: rt.effects.DOCUMENT + (node.id || name),
         node: node,
         call: guestCall,

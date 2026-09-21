@@ -31,9 +31,9 @@ function box() {
     new Function(readFileSync(new URL(`../guest/${name}`, import.meta.url), "utf8"))();
   load("runtime/registry.js");
   // THE FRAMEWORK'S OWN wear `biom-`, file and id alike, so a workspace's plugin
-  // can never be refused as the duplicate of one the framework ships later. A
-  // bare id still answers — `get("items")` falls back to `biom-items` — which
-  // is what every page and slot relies on.
+  // can never be refused as the duplicate of one the framework ships later —
+  // and that is the name a section says: `data-g-plugin="biom-items"`. A bare
+  // `items` reaches a plugin of the workspace's own, or nothing.
   for (const id of ["items", "open-list", "checklist", "reveal"]) load(`plugins/biom-${id}/${id}.js`);
   return { plugins: glob.__gRuntime.plugins, said, done: () => { delete glob.document; } };
 }
@@ -56,28 +56,30 @@ function ctx(options, slots) {
   };
 }
 
-test("every framework slot plugin registers under its biom- id, and the bare id reaches it", () => {
+test("every framework slot plugin registers under its biom- id, and only that id reaches it", () => {
   const g = box();
   for (const id of ["items", "open-list", "checklist", "reveal"]) {
     // Registered as the framework's own name…
     expect([id, g.plugins.ids().includes(`biom-${id}`)]).toEqual([id, true]);
-    // …and reached by the bare name a page or a slot says, nearest first.
-    expect([id, g.plugins.has(id)]).toEqual([id, true]);
-    expect([id, g.plugins.get(id).id]).toEqual([id, `biom-${id}`]);
+    // …and reached by that name and no other. The bare word used to fall
+    // through to it; it names a plugin of the workspace's own now, or nothing.
+    expect([id, g.plugins.has(`biom-${id}`)]).toEqual([id, true]);
+    expect([id, g.plugins.has(id)]).toEqual([id, false]);
+    expect([id, g.plugins.get(id)]).toEqual([id, null]);
     // THE FILE IT CAME FROM, which is what a refusal has to name when a second
     // file claims the same id. These are loaded here without the loader's
     // wrapper around them, so what the registry can say about their provenance
     // is that it was not told.
-    expect([id, g.plugins.get(id).from]).toEqual([id, "an unnamed script"]);
+    expect([id, g.plugins.get(`biom-${id}`).from]).toEqual([id, "an unnamed script"]);
   }
   expect(g.said).toEqual([]);
   g.done();
 });
 
-test("a workspace plugin under the bare name is what the bare name reaches, and the framework's is still there under its own", () => {
+test("a workspace plugin under a bare name is its own, and the framework's is still there under its own", () => {
   // THE WHOLE POINT OF THE PREFIX: a workspace that wrote a `reveal` of its own
-  // is not refused as a duplicate on the day the framework ships one, and
-  // every section saying `reveal` draws with the workspace's.
+  // is not refused as a duplicate on the day the framework ships one, and the
+  // two are two plugins under two names.
   const g = box();
   const glob = /** @type {any} */ (globalThis);
   glob.__gRuntime.pluginFile = "reveal/reveal.js";
@@ -99,7 +101,7 @@ test("none of them claims a part kind, which is what R50 would refuse", () => {
 
 test("items refuses in words when no slot is named, and when the slot is not this section's", () => {
   const g = box();
-  const items = g.plugins.get("items");
+  const items = g.plugins.get("biom-items");
 
   const bare = node();
   items.mount(bare, null, ctx({}, ["steps"]));
@@ -116,7 +118,7 @@ test("checklist refuses in words when the vocabulary is missing, because the wor
   // framework's word appearing in somebody else's document the first time they
   // ticked something — "built" in a list of invoices.
   const g = box();
-  const checklist = g.plugins.get("checklist");
+  const checklist = g.plugins.get("biom-checklist");
 
   const bare = node();
   checklist.mount(bare, null, ctx({ for: "ideas" }, ["ideas"]));
@@ -138,7 +140,7 @@ test("open-list refuses in words when the harness it composes on is not in the v
   // absent-dependency case has a sentence of its own, because it is a real state
   // in a vault somebody emptied.
   const g = box();
-  const openList = g.plugins.get("open-list");
+  const openList = g.plugins.get("biom-open-list");
 
   const bare = node();
   openList.mount(bare, null, ctx({}, ["questions"]));
@@ -156,7 +158,7 @@ test("reveal refuses in words when its selector matches nothing in the section",
   // A typo'd selector is exactly the case that looks like a broken plugin: the
   // class never lands, the animation never plays, and nothing anywhere says why.
   const g = box();
-  const reveal = g.plugins.get("reveal");
+  const reveal = g.plugins.get("biom-reveal");
 
   const missing = node();
   reveal.mount(missing, null, ctx({ on: ".nothing" }, []));
@@ -188,7 +190,7 @@ test("open-list hands its OWN options to the harness, because use() builds a fre
   const glob = /** @type {any} */ (globalThis);
   const hadObserver = glob.MutationObserver;
   glob.MutationObserver = class { observe() {} disconnect() {} };
-  g.plugins.get("open-list").mount(node(), null, c);
+  g.plugins.get("biom-open-list").mount(node(), null, c);
   glob.MutationObserver = hadObserver;
   expect(handed).toEqual({ for: "questions", add: "＋ One more" });
   g.done();
@@ -245,7 +247,7 @@ test("R59 is satisfied by a plugin node naming the slot, not only by ctx.write",
   const page = join(root, "pages", "one");
   mkdirSync(page, { recursive: true });
   writeFileSync(join(page, "content.yaml"),
-    "name: One\nplugin: doc\ncontents:\n  - name: steps\n    data: index.html\n    parts:\n      steps:\n        - First\n        - Second\n");
+    "name: One\nplugin: biom-doc\ncontents:\n  - name: steps\n    data: index.html\n    parts:\n      steps:\n        - First\n        - Second\n");
 
   const run = async () => {
     const out = Bun.spawnSync({
@@ -259,7 +261,7 @@ test("R59 is satisfied by a plugin node naming the slot, not only by ctx.write",
   expect(await run()).toContain("R59");
 
   writeFileSync(join(page, "index.html"),
-    '<div data-g-part="steps"></div>\n<span data-g-plugin="items" data-g-for="steps"></span>\n');
+    '<div data-g-part="steps"></div>\n<span data-g-plugin="biom-items" data-g-for="steps"></span>\n');
   expect(await run()).not.toContain("R59");
 
   // A PLUGIN THAT DOES NOT WRITE THE LIST BACK IS NOT AN ANSWER. `reveal`
@@ -267,7 +269,7 @@ test("R59 is satisfied by a plugin node naming the slot, not only by ctx.write",
   // still a list a reader can only retype — which is the section this rule
   // exists to find.
   writeFileSync(join(page, "index.html"),
-    '<div data-g-part="steps"></div>\n<span data-g-plugin="reveal" data-g-for="steps"></span>\n');
+    '<div data-g-part="steps"></div>\n<span data-g-plugin="biom-reveal" data-g-for="steps"></span>\n');
   expect(await run()).toContain("R59");
 
   // And a misspelled id registers nothing at all, so the page draws a refusal
@@ -278,7 +280,7 @@ test("R59 is satisfied by a plugin node naming the slot, not only by ctx.write",
   expect(await run()).toContain("R59");
 
   // open-list and checklist write the list back too, and each is a whole answer.
-  for (const id of ["open-list", "checklist"]) {
+  for (const id of ["biom-open-list", "biom-checklist"]) {
     writeFileSync(join(page, "index.html"),
       '<div data-g-part="steps"></div>\n<span data-g-plugin="' + id + '" data-g-for="steps" data-g-done="Built"></span>\n');
     expect([id, (await run()).includes("R59")]).toEqual([id, false]);
@@ -382,7 +384,10 @@ function fences(registered, made) {
     set innerHTML(_v) {},
     querySelectorAll: () => made.map((m) => m.code),
   };
-  glob.__gRuntime.plugins.get("markdown").mount(node, null, ctx);
+  // A part kind is asked for as a kind, which is the one lookup that crosses
+  // the prefix: `markdown` is the format's word, and the framework's
+  // `biom-markdown` draws it where the vault reserved none.
+  glob.__gRuntime.plugins.forKind("markdown").mount(node, null, ctx);
   delete glob.document;
   delete glob.markdownit;
   return { drew, said };

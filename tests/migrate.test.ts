@@ -121,7 +121,7 @@ function oldVault(): void {
 /** A page in the format this server reads: one document naming the reader that
  *  draws it, with `contents` a list of SECTIONS and nothing else. */
 const nowFormat = (name: string): string =>
-  ["name: " + name, "plugin: doc", "contents:", "  - name: intro", "    parts:", "      body: Invented.", ""].join("\n");
+  ["name: " + name, "plugin: biom-doc", "contents:", "  - name: intro", "    parts:", "      body: Invented.", ""].join("\n");
 
 /** Every file in the vault and its bytes, so "nothing changed" is a comparison
  *  rather than a spot check. */
@@ -135,10 +135,17 @@ function snapshot(at = ROOT, prefix = ""): Record<string, string> {
   return out;
 }
 
+/** What the framework ships, as the gate is handed it: the ids and whether
+ *  each carries a document. A few of the real ones, spelled here. */
+const SHIPPED: ReadonlyMap<string, boolean> = new Map([
+  ["biom-doc", true], ["biom-kanban", true], ["biom-mindmap", true],
+  ["biom-reveal", false], ["biom-items", false], ["biom-html", false], ["biom-markdown", false],
+]);
+
 /** The error a refusal throws, or a failure saying it did not throw at all. */
 async function refusal(): Promise<VaultFormatError> {
   try {
-    await checkVaultFormat(ROOT);
+    await checkVaultFormat(ROOT, SHIPPED);
   } catch (e) {
     expect(e).toBeInstanceOf(VaultFormatError);
     return e as VaultFormatError;
@@ -156,7 +163,7 @@ test("an old vault is refused, and the sentence names the format and the key", a
   // person is told "this does not work" and nothing else.
   expect(why.message).toMatch(/vault format 1\b/);
   expect(why.message).toContain("format " + String(VAULT_FORMAT));
-  expect(VAULT_FORMAT).toBe(4);
+  expect(VAULT_FORMAT).toBe(5);
 
   // AND THE KEY THAT GAVE IT AWAY, quoted the way it is written on the line the
   // reader has to go and delete.
@@ -268,7 +275,7 @@ test("the design doc and the bundled blocks are read by the same check", async (
 
   // The same for `base/`, the starter sections every workspace is seeded with.
   put("design/content.yaml", nowFormat("Design"));
-  put("base/diagram/content.yaml", "name: Diagram\nplugin: doc\nkind: doc\nrender: null\ncontents: []\n");
+  put("base/diagram/content.yaml", "name: Diagram\nplugin: biom-doc\nkind: doc\nrender: null\ncontents: []\n");
   expect((await refusal()).where).toEqual([join("base", "diagram", "content.yaml")]);
 });
 
@@ -278,7 +285,7 @@ test("market/ is not walked, because the catalogue went with the render layer", 
   // more. A directory somebody left behind is not a page this server reads, so
   // it is not a reason to refuse the whole workspace.
   put("market/week-ahead/content.yaml", "name: Week ahead\nkind: artifact\nrender: null\norder: []\n");
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });
 
 /* ── what it opens ──────────────────────────────────────────────────────── */
@@ -292,18 +299,71 @@ test("a vault in the format this server reads opens, however deep the tree goes"
   put("base/diagram/content.yaml", nowFormat("Diagram"));
   put("theme.json", JSON.stringify({ palette: { name: "Biom" } }));
 
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
   // It runs on every start, so a false positive is a workspace nobody can open.
   // Nothing was written on the way through either.
   const before = snapshot();
-  await checkVaultFormat(ROOT);
+  await checkVaultFormat(ROOT, SHIPPED);
   expect(snapshot()).toEqual(before);
 });
 
+/* ── format 4: a framework plugin by its bare word ─────────────────────── */
+
+test("format 4 is a framework plugin named by its bare word, on a page or in markup, and the refusal names the tool", async () => {
+  put("pages/home/content.yaml", "name: Home\nplugin: doc\ncontents: []\n");
+  put("pages/home/children/Notes/content.yaml", nowFormat("Notes"));
+  put("pages/home/children/Notes/hero.html", "<section data-g-part=\"body\"></section>\n<span data-g-plugin=\"reveal\"></span>\n");
+  put("theme.json", "{}");
+  const why = await refusal();
+  expect(why.message).toMatch(/vault format 4\b/);
+  expect(why.message).toContain("format " + String(VAULT_FORMAT));
+  // The words, where they are, and what they become.
+  expect(why.message).toContain('pages/home/content.yaml:2 says "doc"');
+  expect(why.message).toContain('pages/home/children/Notes/hero.html:2 says "reveal"');
+  expect(why.message).toContain('"biom-doc" for "doc"');
+  expect(why.message).toContain("tools/migrate-format-5.ts");
+  expect(why.where).toEqual(["pages/home/content.yaml", "pages/home/children/Notes/hero.html"]);
+  expect(why.code).toBe("bad_request");
+});
+
+test("a bare word the workspace owns is the workspace's, in a vault folder or the page's own, and a page's html is never biom-html", async () => {
+  // `doc` with a `plugins/doc/` beside it is a plugin of the vault's own; a
+  // page's own `plugins/reveal/` makes `reveal` that page's; `plugin: html` is
+  // the page's own document and has nothing to do with the part plugin.
+  put("pages/home/content.yaml", "name: Home\nplugin: doc\ncontents: []\n");
+  put("plugins/doc/index.html", "<main></main>");
+  put("pages/home/children/Notes/content.yaml", nowFormat("Notes"));
+  put("pages/home/children/Notes/hero.html", "<span data-g-plugin=\"reveal\"></span>\n");
+  put("pages/home/children/Notes/plugins/reveal/reveal.js", "");
+  put("pages/home/children/Own/content.yaml", "name: Own\nplugin: html\n");
+  put("pages/home/children/Own/index.html", "<div data-g-part=\"body\"></div>");
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
+  // And the same word in a page that owns no such plugin is still format 4.
+  put("pages/home/children/Other/content.yaml", nowFormat("Other"));
+  put("pages/home/children/Other/hero.html", "<span data-g-plugin=\"reveal\"></span>\n");
+  const why = await refusal();
+  expect(why.where).toEqual(["pages/home/children/Other/hero.html"]);
+});
+
+test("the workspace's own plugin documents are read for bare words too", async () => {
+  put("pages/home/content.yaml", nowFormat("Home"));
+  put("plugins/mine/index.html", "<main><span data-g-plugin=\"items\" data-g-for=\"x\"></span></main>");
+  const why = await refusal();
+  expect(why.where).toEqual(["plugins/mine/index.html"]);
+  expect(why.message).toContain('"biom-items" for "items"');
+});
+
+test("an older format is refused as itself even when the bare word is there too", async () => {
+  oldVault();
+  put("pages/home/children/Late/content.yaml", "name: Late\nplugin: doc\ncontents: []\n");
+  const why = await refusal();
+  expect(why.message).toMatch(/vault format 1\b/);
+});
+
 test("an empty vault is not a refusal", async () => {
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
   mkdirSync(join(ROOT, "pages"), { recursive: true });
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });
 
 test("a directory with no content.yaml in it is not a page and is walked past", async () => {
@@ -311,7 +371,7 @@ test("a directory with no content.yaml in it is not a page and is walked past", 
   mkdirSync(join(ROOT, "pages/home/_assets"), { recursive: true });
   put("pages/home/_assets/panel.html", "<p>Invented.</p>\n");
   put("pages/home/assets/kitchen.txt", "not a page\n");
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });
 
 /** WHAT IT DELIBERATELY DOES NOT CATCH, stated here because it is a decision
@@ -323,7 +383,7 @@ test("a directory with no content.yaml in it is not a page and is walked past", 
 test("a page carrying only name: and prose beside it is opened rather than guessed at", async () => {
   put("pages/home/content.yaml", "name: Home\n");
   put("pages/home/intro.md", "# Home\n\nInvented.\n");
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });
 
 test("a retired word that is not a key at column zero is not a retired key", async () => {
@@ -334,7 +394,7 @@ test("a retired word that is not a key at column zero is not a retired key", asy
     "pages/home/content.yaml",
     [
       "name: Home",
-      "plugin: doc",
+      "plugin: biom-doc",
       "contents:",
       "  - name: intro",
       "    parts:",
@@ -344,7 +404,7 @@ test("a retired word that is not a key at column zero is not a retired key", asy
       "",
     ].join("\n"),
   );
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });
 
 test("an unreadable page directory is walked past rather than thrown over", async () => {
@@ -352,5 +412,5 @@ test("an unreadable page directory is walked past rather than thrown over", asyn
   // for a gate that runs on every start to throw something nobody expects.
   put("pages/home/content.yaml", nowFormat("Home"));
   mkdirSync(join(ROOT, "pages/broken/content.yaml"), { recursive: true });
-  await expect(checkVaultFormat(ROOT)).resolves.toBeUndefined();
+  await expect(checkVaultFormat(ROOT, SHIPPED)).resolves.toBeUndefined();
 });

@@ -1,5 +1,5 @@
 name: A list where some items are done
-plugin: doc
+plugin: biom-doc
 contents:
   - name: how-to-use-this
     parts:

@@ -272,7 +272,7 @@ test("a vault folder wearing biom- is an extension and holds extensions.yaml alo
     "biom-doc/extensions.yaml": "head: board-look\n",
     "biom-doc/doc.js": plugin("biom-doc"),
     "biom-doc/index.html": "<main></main>",
-    "biom-doc/plugins/holds/holds.js": plugin("biom-holds"),
+    "biom-doc/plugins/biom-holds/holds.js": plugin("biom-holds"),
     "board-look/board-look.js": plugin("board-look"),
   });
   const { took, said } = run(await (await pluginBundle(root)).text());
@@ -288,16 +288,16 @@ test("a vault folder wearing biom- is an extension and holds extensions.yaml alo
 test("a page's own plugins/ loads after the vault's, in page-id order, and is named by its page", async () => {
   const root = vaultWith({
     "mine/mine.js": plugin("mine"),
-    "pages/home/content.yaml": "name: Home\nplugin: doc\n",
+    "pages/home/content.yaml": "name: Home\nplugin: biom-doc\n",
     "pages/home/plugins/root-only/root-only.js": plugin("root-only"),
-    "pages/home/children/zed/content.yaml": "name: Zed\nplugin: doc\n",
+    "pages/home/children/zed/content.yaml": "name: Zed\nplugin: biom-doc\n",
     "pages/home/children/zed/plugins/zed-look/zed-look.js": plugin("zed-look"),
-    "pages/home/children/alpha/content.yaml": "name: Alpha\nplugin: doc\n",
+    "pages/home/children/alpha/content.yaml": "name: Alpha\nplugin: biom-doc\n",
     "pages/home/children/alpha/plugins/alpha-look/alpha-look.js": plugin("alpha-look"),
     "pages/home/children/alpha/plugins/loose.js": plugin("loose"),
     // A page called `plugins` under `children/` is still a page, and its
     // directory is not a plugins root.
-    "pages/home/children/plugins/content.yaml": "name: Plugins\nplugin: doc\n",
+    "pages/home/children/plugins/content.yaml": "name: Plugins\nplugin: biom-doc\n",
     "pages/home/children/plugins/plugins/named/named.js": plugin("named"),
     "design/plugins/design-look/design-look.js": plugin("design-look"),
   });
@@ -313,7 +313,7 @@ test("a page's own plugins/ loads after the vault's, in page-id order, and is na
 
 test("a page's plugins/ may not take a part kind: one bundle serves every page", async () => {
   const root = vaultWith({
-    "pages/home/content.yaml": "name: Home\nplugin: doc\n",
+    "pages/home/content.yaml": "name: Home\nplugin: biom-doc\n",
     "pages/home/plugins/markdown/markdown.js": plugin("markdown"),
   });
   const { took, said } = run(await (await pluginBundle(root)).text());
@@ -324,10 +324,10 @@ test("a page's plugins/ may not take a part kind: one bundle serves every page",
   rmSync(root, { recursive: true, force: true });
 });
 
-test("the framework's folders go first, a folder's id wears biom- whether or not its name does, and an inner folder is free to", async () => {
+test("the framework's folders go first, a folder's id is its name as written, and an inner folder is free to", async () => {
   const fw = frameworkWith({
     "biom-doc/index.html": "<main></main>",
-    "biom-doc/plugins/holds/holds.js": plugin("biom-holds"),
+    "biom-doc/plugins/biom-holds/holds.js": plugin("biom-holds"),
     "biom-markdown/markdown.js": plugin("biom-markdown"),
   });
   const root = vaultWith({ "mine/mine.js": plugin("mine") });
@@ -335,7 +335,7 @@ test("the framework's folders go first, a folder's id wears biom- whether or not
   const { took, said } = run(bundle);
   expect(said).toEqual([]);
   expect(took).toEqual(["biom-holds", "biom-markdown", "mine"]);
-  expect(bundle).toContain("/* framework/biom-doc/plugins/holds/holds.js */");
+  expect(bundle).toContain("/* framework/biom-doc/plugins/biom-holds/holds.js */");
   expect(bundle.indexOf("/* framework/")).toBeLessThan(bundle.indexOf("/* plugins/mine/mine.js */"));
   rmSync(root, { recursive: true, force: true });
   rmSync(fw.root, { recursive: true, force: true });
@@ -400,7 +400,7 @@ test("a plugin larger than the cap is refused by name and the rest of the folder
 test("the bundle is memoised per vault and rebuilt the moment a plugin file changes — a page's included", async () => {
   // Every page in a vault carries this tag, so the rail is a request per page and
   // the folder was read and recompiled on every one of them, on a single thread.
-  const root = vaultWith({ "one/one.js": plugin("one"), "pages/home/content.yaml": "name: Home\nplugin: doc\n" });
+  const root = vaultWith({ "one/one.js": plugin("one"), "pages/home/content.yaml": "name: Home\nplugin: biom-doc\n" });
   const first = await (await pluginBundle(root)).text();
   expect(await (await pluginBundle(root)).text()).toBe(first);
 

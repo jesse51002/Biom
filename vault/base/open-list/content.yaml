@@ -1,5 +1,5 @@
 name: A numbered list where nothing holds
-plugin: doc
+plugin: biom-doc
 contents:
   - name: how-to-use-this
     parts:

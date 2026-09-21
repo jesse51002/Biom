@@ -94,7 +94,7 @@ const NOTES = {
  *  ELSE — no `kind:`, no `render:`, and the array is the order. */
 const NOTES_DOC = {
   name: "Notes",
-  plugin: "doc",
+  plugin: "biom-doc",
   variables: { rate: 62, heading: "The page's own" },
   contents: [
     { name: "intro", parts: { body: "# Notes\n\nThe rate is {{rate}}." } },

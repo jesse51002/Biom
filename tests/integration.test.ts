@@ -77,7 +77,7 @@ function boot(dir: string) {
  *  There is no `kind:` and no `render:` to write: a page holds sections and
  *  nothing else, and yaml.ts refuses either key by name rather than ignoring
  *  it. */
-const doc = (name: string, body: string): string => `name: ${name}\nplugin: doc\n${body}`;
+const doc = (name: string, body: string): string => `name: ${name}\nplugin: biom-doc\n${body}`;
 
 /** A section that names no file and so takes the shipped default, holding one
  *  markdown slot in the slot that default declares. The shortest thing that is
@@ -641,7 +641,7 @@ test("a page whose document will not parse opens saying so, with the parser's ow
   // The exact shape the torn write left: a row cut mid-cell, then NUL padding.
   writeFileSync(
     join(dir, "content.yaml"),
-    'name: Torn\nplugin: doc\ncontents:\n  - name: t\n    parts:\n      body:\n        type: grid\n        rows:\n          - [a, "the region arri' + "\u0000".repeat(40),
+    'name: Torn\nplugin: biom-doc\ncontents:\n  - name: t\n    parts:\n      body:\n        type: grid\n        rows:\n          - [a, "the region arri' + "\u0000".repeat(40),
     "utf8",
   );
   const page = await deps.pages.read("home/Torn");
