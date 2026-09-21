@@ -363,6 +363,34 @@ test("children come off the directory, and a document claiming a parent says not
   ]);
 });
 
+test("a child says when it was made where the store keeps a clock, and says nothing where it does not", async () => {
+  // The in-memory store above has no clock, so no child carries `created` —
+  // absent rather than invented. A store that answers `created` puts the
+  // instant on every page child, off the page's own directory, and never on a
+  // table.
+  const { files, pages } = vault();
+  await pages.create({ name: "Runs" });
+  await pages.create({ name: "2026-09-20-10-04-first", parent: "home/Runs" });
+  expect((await pages.children("home/Runs")).map((c) => c.created)).toEqual([undefined]);
+
+  const asked: string[] = [];
+  const clocked = Object.assign(files, {
+    async created(rel: string) {
+      asked.push(rel);
+      return rel.endsWith("/2026-09-20-10-04-first") ? "2026-09-20T10:04:00.000Z" : null;
+    },
+  });
+  const timed = makePages(clocked, yaml, () => []);
+  await timed.create({ name: "2026-09-21-06-30-second", parent: "home/Runs" });
+  const kids = await timed.children("home/Runs");
+  expect(kids.map((c) => [c.id, c.created])).toEqual([
+    ["home/Runs/2026-09-20-10-04-first", "2026-09-20T10:04:00.000Z"],
+    ["home/Runs/2026-09-21-06-30-second", undefined],
+  ]);
+  // Asked about the page's directory, which is the thing that was made.
+  expect(asked).toContain("pages/home/children/Runs/children/2026-09-20-10-04-first");
+});
+
 test("a child key is one segment, so two parents may each hold a notes", async () => {
   const { files, pages } = vault();
   await pages.create({ name: "Ashgrove" });

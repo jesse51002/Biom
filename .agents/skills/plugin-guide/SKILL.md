@@ -656,8 +656,16 @@ as long as the box does.
   registering `biom-holds`, the board of children — `tests/doc-document.test.ts`
   and `tests/holds.test.ts`), `biom-kanban/` (a table as lanes) and
   `biom-mindmap/` (the workspace as a sky — every page a light sized by what
-  links to it, orbital physics, the hand a black hole); their scripts are in
-  the bundle and guard on their root node. `mindmap` is also what the rail's
+  links to it, orbital physics, the hand a black hole) and
+  `biom-automations-runs/` (a page's children one at a time, newest first,
+  between two strips, the bar naming each by its H1 — reading `home`,
+  `progress` and `skip` off its flat `plugin.yaml` through the three rungs and
+  mounting what the first two name into slides of its own through
+  `rt.page.mount`, the progress slide first while its plugin takes `hidden`
+  off the node it was handed; it sorts on `Child.created`, the tenth contracts
+  edit, and on the date a name leads with where the host answers none —
+  `tests/automations-runs.test.js`); their scripts are in the bundle and guard
+  on their root node. `mindmap` is also what the rail's
   own Map row draws, mounted on `MAP_PAGE` (`@map`), which `server/domain/pages.ts`
   answers as a bare plugin page with no directory and the shell reads through
   the store like any page, so `client/views/page.js` carries no copy of the

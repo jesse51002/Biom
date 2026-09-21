@@ -772,6 +772,27 @@ test("write, read, list and remove, on vault-relative paths", async () => {
   }
 });
 
+test("created answers when a path was made, as an ISO instant, and null for one that is not there", async () => {
+  const root = await scratch();
+  try {
+    const files = makeFiles(root);
+    expect(await files.created!("pages/nowhere")).toBe(null);
+    const before = Date.now() - 5000;
+    await files.write("pages/team-notes/content.yaml", "name: Team notes\n");
+    const when = await files.created!("pages/team-notes");
+    expect(typeof when).toBe("string");
+    const ms = Date.parse(when!);
+    // A real instant, in the last few seconds: the birth time where the
+    // filesystem keeps one, the modification time where it does not.
+    expect(isNaN(ms)).toBe(false);
+    expect(ms).toBeGreaterThanOrEqual(before);
+    expect(ms).toBeLessThanOrEqual(Date.now() + 5000);
+    await expect(files.created!("../outside")).rejects.toBeInstanceOf(PathError);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("every path that would leave the vault is refused", async () => {
   const root = await scratch();
   try {

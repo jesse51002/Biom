@@ -1,0 +1,105 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  guest/plugins/biom-automations-runs/index.html — A PAGE'S CHILDREN, ONE AT
+  A TIME, NEWEST FIRST.
+
+  A page says `plugin: automations-runs` and is handed this document. It shows
+  the page's children one at a time, the newest first, each filling the frame
+  between a strip down either side — newer on the left, older on the right —
+  and a bar across the top that says the page's name, the child's own title
+  and which of how many this is. It is for viewing runs, and it knows nothing
+  about runs: it renders children, and the word is the page's.
+
+  THE SCRIPT IS NOT NAMED HERE. `automations-runs.js` beside this file is in
+  the bundle every page in the vault carries, because every plugin folder's
+  scripts are, and it draws only where `#g-runs` is on the page. The runtime's
+  own tags are spliced in by the host, the same way they are for every page;
+  a `data-g-src` naming the script as well would run it twice.
+
+  TWO SLIDES AHEAD OF THE CHILDREN, AND WHAT EACH ONE NAMES. `progress` and
+  `home` are this document's variables, declared with their defaults in
+  `plugin.yaml` beside this file and merged by the server with the vault's
+  rung and the page's own, nearest winning one key at a time. Each names a
+  plugin, and the script mounts what each names into a slide node of its own
+  exactly as a section mounts a `data-g-plugin` node — the same context, the
+  same containment. `progress` is the first slide while its node is shown and
+  is skipped while the node is `hidden`; `home` is the slide the page opens on
+  otherwise. Neither named, the first slide is the newest child. `skip` is the
+  child names never shown. That is the document reading three of its own
+  variables, not a framework feature.
+
+  THE LOOK IS HERE, because this is a document and a document may ink: every
+  colour a palette token, every face a role, and the classes prefixed `g-runs`
+  so a plugin mounted into a slide is not restyled by a bare name. Motion is
+  behind `--motion`, declared here because the figure frame that declares it
+  for a doc page is the doc document's and not this one's.
+
+  IT IS DELIBERATELY PLAIN, for the reason the doc document is: it is the
+  page every vault that says `plugin: automations-runs` draws with, so any
+  look in it is a look every workspace wears without choosing it. One
+  hairline, no plate, every colour a token — and a vault that wants the
+  strips dressed names a plugin at `home` or `progress`, or writes a page type
+  of its own under a bare name.
+-->
+<html>
+  <head>
+    <title>Runs</title>
+    <style>
+      :root { --motion: 1; }
+      @media (prefers-reduced-motion: reduce) { :root { --motion: 0; } }
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; block-size: 100%; overflow: hidden; }
+      body { background: var(--stock); color: var(--ink); font-family: var(--gauge-face, ui-monospace, monospace); font-size: .75rem; }
+
+      /* THE FRAME: the bar, the two strips, and the stage at every pixel left. */
+      .g-runs { position: fixed; inset: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "bar bar bar" "newer stage older"; background: var(--stock); }
+      .g-runs button { font: inherit; color: var(--ink-2); background: transparent; border: 0; padding: 0; cursor: pointer; }
+      .g-runs button:focus-visible { outline: 2px solid var(--led); outline-offset: -3px; }
+
+      /* THE BAR: the sign, the child's own title, and n of m. */
+      .g-runs-bar { grid-area: bar; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .6rem 1.4rem; align-items: baseline; padding: .6rem 1.1rem .55rem; border-block-end: 1px solid var(--rule); background: var(--stock-hi); min-inline-size: 0; }
+      .g-runs-bar .sign { font-family: var(--furniture-face); font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+      .g-runs-bar .title { font-family: var(--sheet-face); font-size: .95rem; color: var(--ink); min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .g-runs-bar .title:empty { display: none; }
+      .g-runs-bar .n { color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: .06em; }
+      .g-runs-bar .n b { color: var(--ink); font-weight: 400; }
+      .g-runs-bar .n:empty { display: none; }
+
+      /* THE STRIPS: full height, the word set on its side, inert at either end. */
+      .g-runs-edge { inline-size: 3.75rem; border-inline-end: 1px solid var(--rule); background: var(--stock-hi); color: var(--ink-2); display: grid; place-content: center; justify-items: center; gap: 1.1rem; transition: color calc(120ms * var(--motion, 1)) linear, background calc(120ms * var(--motion, 1)) linear; }
+      .g-runs-edge[data-dir=newer] { grid-area: newer; }
+      .g-runs-edge[data-dir=older] { grid-area: older; border-inline-end: 0; border-inline-start: 1px solid var(--rule); }
+      .g-runs-edge .chev { inline-size: 1.15rem; block-size: 1.15rem; border-block-start: 2px solid currentColor; border-inline-start: 2px solid currentColor; transform: rotate(-45deg); margin-inline-start: .45rem; }
+      .g-runs-edge[data-dir=older] .chev { transform: rotate(135deg); margin-inline-start: 0; margin-inline-end: .45rem; }
+      .g-runs-edge .w { font-size: .62rem; letter-spacing: .2em; text-transform: uppercase; writing-mode: vertical-rl; line-height: 1; }
+      .g-runs-edge[data-dir=newer] .w { transform: rotate(180deg); }
+      .g-runs-edge:hover { color: var(--led); background: color-mix(in srgb, var(--led) 8%, var(--stock-hi)); }
+      .g-runs-edge[disabled], .g-runs-edge[disabled]:hover { color: var(--ink-3); opacity: .35; background: var(--stock-hi); cursor: default; }
+
+      /* THE STAGE: one slide shown, filling it; the others kept, not drawn. */
+      .g-runs-stage { grid-area: stage; position: relative; min-inline-size: 0; min-block-size: 0; overflow: hidden; }
+      .g-runs-slide { position: absolute; inset: 0; display: grid; min-inline-size: 0; min-block-size: 0; overflow: auto; }
+      .g-runs-slide:not([data-shown]) { display: none; }
+      .g-runs-slide > .g-runs-mount { min-inline-size: 0; min-block-size: 0; }
+      .g-runs-slide > .g-runs-mount[data-g-failed] { align-self: start; padding: 1.4rem 1.6rem; color: var(--led-red); font-family: var(--furniture-face); font-size: .72rem; letter-spacing: .06em; }
+      .g-runs-child { display: block; inline-size: 100%; block-size: 100%; border: 0; background: var(--stock); }
+      .g-runs-none { align-self: center; justify-self: center; padding: 2rem; font-family: var(--sheet-face); font-size: .95rem; color: var(--ink-3); text-align: center; max-inline-size: 30rem; }
+
+      /* THE CHANGE OF SLIDE: a short slide-in from the side it came from, and
+         none at all where the reader asked for stillness. */
+      .g-runs-stage[data-arrive] .g-runs-slide[data-shown] { animation: g-runs-in calc(220ms * var(--motion, 1)) ease-out both; }
+      .g-runs-stage[data-arrive=older] .g-runs-slide[data-shown] { --g-runs-from: 1.2rem; }
+      .g-runs-stage[data-arrive=newer] .g-runs-slide[data-shown] { --g-runs-from: -1.2rem; }
+      @keyframes g-runs-in { from { opacity: 0; transform: translateX(var(--g-runs-from, 0)); } to { opacity: 1; transform: none; } }
+
+      @media (width < 52rem) {
+        .g-runs-edge { inline-size: 2.5rem; gap: .8rem; }
+        .g-runs-edge .chev { inline-size: .9rem; block-size: .9rem; margin-inline-start: .3rem; }
+        .g-runs-edge[data-dir=older] .chev { margin-inline-start: 0; margin-inline-end: .3rem; }
+        .g-runs-bar { padding-inline: .6rem; }
+      }
+    </style>
+  </head>
+  <body><main id="g-runs"></main></body>
+</html>
