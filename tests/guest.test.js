@@ -35,7 +35,7 @@ function plugin(rel) {
   return registered;
 }
 
-const markdown = plugin("guest/plugins/biom-markdown.js");
+const markdown = plugin("guest/plugins/biom-markdown/markdown.js");
 
 /** The edit wave, evaluated the same way. It hangs itself on the runtime
  *  namespace and, finding no `rt.page`, reports that it loaded early and wires
@@ -146,7 +146,7 @@ test("an empty source has no blocks, and unparseable source is one block", () =>
 test("`edit` and `blocks` travel together, and a plugin that declares neither is not editable", () => {
   expect(markdown.edit).toBe(true);
   expect(typeof markdown.blocks).toBe("function");
-  for (const rel of ["guest/plugins/biom-table.js", "guest/plugins/biom-child.js", "guest/plugins/biom-html.js"]) {
+  for (const rel of ["guest/plugins/biom-table/table.js", "guest/plugins/biom-child/child.js", "guest/plugins/biom-html/html.js"]) {
     // Each says `edit: false` for its own reason, in its own file. None of them
     // is the absence of a decision.
     expect(plugin(rel).edit).toBe(false);
@@ -384,10 +384,10 @@ test("the registry's PART_KINDS is the format's own PartKind, because the box ca
   const said = [];
   rt.report = (m) => said.push(m);
 
-  // A kind is reserved: only `plugins/<kind>.js` may draw it, and any other file
+  // A kind is reserved: only `plugins/<kind>/` may draw it, and any other folder
   // is refused in the sentence naming it.
   const refused = kinds.filter((kind) => {
-    rt.pluginFile = "0-notes.js";
+    rt.pluginFile = "a-notes/a-notes.js";
     return rt.plugins.register({ id: kind, mount() {} }) === false;
   });
   expect(refused).toEqual(kinds);
@@ -395,7 +395,7 @@ test("the registry's PART_KINDS is the format's own PartKind, because the box ca
 
   // And a kind the format does NOT have is an ordinary id, free for anybody's
   // file — which is what makes the list above a list rather than a habit.
-  rt.pluginFile = "0-notes.js";
+  rt.pluginFile = "a-notes/a-notes.js";
   expect(rt.plugins.register({ id: "timeline", mount() {} })).toBe(true);
 
   delete rt.pluginFile;

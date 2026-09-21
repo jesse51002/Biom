@@ -3,7 +3,7 @@
 //
 // A grid is the fifth part kind and the first whose value is not a string: its
 // rows are a list of lists of markdown strings in `content.yaml`, drawn as a
-// board by `plugins/biom-grid.js`, edited a cell at a time, written back whole over
+// board by `plugins/biom-grid/grid.js`, edited a cell at a time, written back whole over
 // `section.write`, and projected into the mirror as a markdown table again. The
 // doc plugin makes one out of every markdown table it finds in a prose part.
 // Each of those is a place the kind has to be spelled the same way, and this
@@ -256,22 +256,26 @@ test("a grid projects as a markdown table — pipes escaped, line breaks as <br>
 
 /* ── 6. the box ────────────────────────────────────────────────────────── */
 
-test("the registry reserves grid as a part kind: biom-grid.js fills the framework's rung and plugins/grid.js the workspace's, and nothing else may", () => {
+test("the registry reserves grid as a part kind: biom-grid/ fills the framework's rung and plugins/grid/ the workspace's, and nothing else may", () => {
   glob.__gRuntime = { report: () => {} };
   glob.document = { currentScript: null };
   new Function(readFileSync(new URL("../guest/runtime/registry.js", import.meta.url), "utf8"))();
   const rt = glob.__gRuntime;
-  // A file that is not `plugins/grid.js` may not take the kind, and one that is
-  // not `biom-grid.js` may not take the framework's name for it either.
-  rt.pluginFile = "notes.js";
+  // A folder that is not `plugins/grid/` may not take the kind, and one that is
+  // not the framework's `biom-grid/` may not take the framework's name for it
+  // either.
+  rt.pluginRoot = "plugins";
+  rt.pluginFile = "notes/notes.js";
   expect(rt.plugins.register({ id: "grid", mount() {} })).toBe(false);
   expect(rt.plugins.register({ id: "biom-grid", mount() {} })).toBe(false);
-  rt.pluginFile = "biom-grid.js";
+  rt.pluginRoot = "framework";
+  rt.pluginFile = "biom-grid/grid.js";
   expect(rt.plugins.register({ id: "biom-grid", mount() {} })).toBe(true);
   // A `grid` slot resolves to the framework's plugin until the workspace
   // registers a `grid` of its own, which then wins by existing.
   expect(rt.plugins.get("grid")).toMatchObject({ id: "biom-grid" });
-  rt.pluginFile = "grid.js";
+  rt.pluginRoot = "plugins";
+  rt.pluginFile = "grid/grid.js";
   expect(rt.plugins.register({ id: "grid", mount() {}, edit: false })).toBe(true);
   expect(rt.plugins.get("grid")).toMatchObject({ id: "grid" });
   expect(rt.plugins.get("biom-grid")).toMatchObject({ id: "biom-grid", edit: false });
@@ -281,7 +285,7 @@ test("the grid plugin registers as biom-grid, the framework's name for the grid 
   let registered: any = null;
   glob.__gRuntime = { report: () => {} };
   glob.biom = { plugins: { register: (d: any) => { registered = d; return true; } } };
-  new Function(readFileSync(new URL("../guest/plugins/biom-grid.js", import.meta.url), "utf8"))();
+  new Function(readFileSync(new URL("../guest/plugins/biom-grid/grid.js", import.meta.url), "utf8"))();
   expect(registered).not.toBeNull();
   expect(registered.id).toBe("biom-grid");
   // `edit: false` is a statement: the runtime's whole-part editor is the wrong
@@ -289,7 +293,7 @@ test("the grid plugin registers as biom-grid, the framework's name for the grid 
   expect(registered.edit).toBe(false);
   expect(typeof registered.mount).toBe("function");
   // Nothing in it inks a colour that is not a token.
-  const src = readFileSync(new URL("../guest/plugins/biom-grid.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../guest/plugins/biom-grid/grid.js", import.meta.url), "utf8");
   expect(src).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   expect(src).not.toMatch(/\brgb\(|\bhsl\(/);
 });

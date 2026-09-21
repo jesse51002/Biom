@@ -377,6 +377,36 @@ export interface Page extends PageRef {
   input: Record<string, unknown>;
   /** Declared but never enforced in the framework. See PortSet. */
   ports: PortSet | null;
+  /** EVERY PLUGIN'S VARIABLES, MERGED FOR THIS PAGE, keyed by plugin id. The
+   *  NINTH contracts edit, taken at its own barrier on 2026-09-20 for the
+   *  workspace's *Document extensions* spec. A plugin declares the variables
+   *  it reads, each with a default, in its folder's `plugin.yaml`; a vault
+   *  writes over them in `plugins/<id>/extensions.yaml`; a page writes over
+   *  those in the same file in its own `plugins/`, reaching that page only.
+   *  The server merges the three one key at a time, nearest wins, and the box
+   *  reads the result through `biom.plugin.extensions()` — resolved here for
+   *  the reason everything else on this read is: the box cannot fetch. The
+   *  framework carries the values and reads none of them: what `head` means
+   *  is the `doc` document's business. */
+  extensions: Record<string, PluginExtension>;
+}
+
+/** WHICH RUNG A VALUE CAME FROM. `plugin` is the plugin's own `plugin.yaml` —
+ *  the framework's for a framework plugin, the vault's or the page's for one
+ *  of theirs — `vault` is `<vault>/plugins/<id>/extensions.yaml`, and `page`
+ *  is the same file beside the page's `content.yaml`. */
+export type PluginRung = "plugin" | "vault" | "page";
+
+/** One plugin's variables as this page reads them: the merged values, the
+ *  rung each key was answered by, and every refusal met on the way — a map
+ *  where a scalar goes, a key the contract does not declare, a value of the
+ *  wrong type, a file that would not parse — as the sentence naming the file,
+ *  the plugin and the key, so the box can say it in words. A refused key
+ *  keeps the rung beneath; a refused file is skipped whole. */
+export interface PluginExtension {
+  values: Variables;
+  from: Record<string, PluginRung>;
+  faults: string[];
 }
 
 

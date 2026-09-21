@@ -221,14 +221,14 @@ test("the mirror in docs/plugins/ is rewritten whole on every open, so a file ed
   const first = await hostAt(root, vault);
   await first.settled(vault);
   first.close();
-  const shown = join(vault, "docs/plugins/biom-markdown.js");
+  const shown = join(vault, "docs/plugins/biom-markdown/markdown.js");
   await writeFile(shown, "// somebody typed here");
   await writeFile(join(vault, "docs/plugins/stray.js"), "// and left this");
 
   const second = await hostAt(root, vault);
   try {
     await second.settled(vault);
-    expect(readFileSync(shown, "utf8")).toBe(readFileSync(join(SEED, "biom-markdown.js"), "utf8"));
+    expect(readFileSync(shown, "utf8")).toBe(readFileSync(join(SEED, "biom-markdown/markdown.js"), "utf8"));
     expect(existsSync(join(vault, "docs/plugins/stray.js"))).toBe(false);
     // And the mirror is not what draws: a page still reads the framework's own.
     expect(existsSync(join(vault, "plugins"))).toBe(false);
@@ -244,7 +244,7 @@ test("`guest/plugins/` is the fallback rung and is not served as a root of its o
   // a page happened to name decided whether the person's override drew or the
   // framework's did; the one url is the vault's `/plugin/` route, which answers
   // the vault's file first and the framework's second.
-  expect(locate("/guest/plugins/biom-markdown.js")).toBeNull();
+  expect(locate("/guest/plugins/biom-markdown/markdown.js")).toBeNull();
   expect(locate("/guest/plugins/biom-kanban/kanban.js")).toBeNull();
   // The runtime and the shim are still served from there, and must stay so: the
   // registry's `shipped` test is `document.currentScript` against `/guest/`, and
@@ -259,15 +259,22 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   const vault = "/some/where else/my vault";
   const base = `${vaultBase(vault)}/plugin/`;
 
-  // A plugin document as it sits on disk in a vault: it names its sibling by a
-  // path under `plugins/` and marks it, because it cannot name the install, has
-  // no base to resolve a relative path against inside the box, and was written
-  // before anybody knew which folder it landed in.
+  // THE FRAMEWORK'S OWN PAGE PLUGINS NAME NO SCRIPT. `kanban.js` is in the
+  // bundle every page carries, because every plugin folder's scripts are, and
+  // it draws only where `#g-board` is — so the document names nothing and a
+  // `data-g-src` naming it as well would run it twice.
   const kanban = readFileSync(join(SEED, "biom-kanban/index.html"), "utf8");
-  expect(kanban).toContain('data-g-src="biom-kanban/kanban.js"');
+  expect(kanban).not.toContain("<script data-g-src");
+  expect(kanban).toContain('id="g-board"');
 
-  const doc = weaveRuntime(kanban, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
-  expect(doc).toContain(`src="${base}biom-kanban/kanban.js"`);
+  // A vault's own plugin document may still name a sibling by a path under
+  // `plugins/` and mark it, because it cannot name the install, has no base to
+  // resolve a relative path against inside the box, and was written before
+  // anybody knew which folder it landed in — and the host turns the mark into a
+  // real `src` under the vault's route as it weaves.
+  const marked = kanban.replace("</head>", '<script data-g-src="timeline/lib.js"></script></head>');
+  const doc = weaveRuntime(marked, { id: "home", name: "Home", plugin: "kanban", input: {} }, vault);
+  expect(doc).toContain(`src="${base}timeline/lib.js"`);
   // The mark is gone from the tag; the comment above it explaining the mark is
   // the plugin author's words and stays, like every other word in their file.
   expect(doc).not.toContain("<script data-g-src");
@@ -288,14 +295,14 @@ test("the slot plugins are woven out of the vault, and a plugin's sibling script
   expect(doc).toContain('<script src="/guest/runtime/boot.js"></script>');
 });
 
-test("the map's document and the mindmap plugin's own file are the same document", () => {
-  // Said twice because the host cannot import `guest/` and the box cannot fetch.
-  // The equality is also what keeps the copy in `client/views/page.js` honest
-  // about `data-g-src`: the plugin is a file in the vault now, and neither copy
-  // may name an install directory.
+test("the map's document names no script and no install directory: its script is in the bundle and guards on its node", () => {
   const onDisk = readFileSync(join(SEED, "biom-mindmap/index.html"), "utf8");
-  expect(onDisk).toContain('data-g-src="biom-mindmap/mindmap.js"');
+  expect(onDisk).not.toContain("<script data-g-src");
   expect(onDisk).not.toContain("/guest/");
+  expect(onDisk).toContain('id="g-map"');
+  const script = readFileSync(join(SEED, "biom-mindmap/mindmap.js"), "utf8");
+  expect(script).toContain('document.getElementById("g-map")');
+  expect(script).not.toContain("|| document.body");
 });
 
 /* ══ the part kinds stay unreplaceable ═══════════════════════════════════ */
@@ -319,9 +326,10 @@ test("the runtime's part kinds are the format's, and a second plugin claiming on
   expect([...declared![1]!.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]!).sort()).toEqual(kinds);
 
   // And the behaviour that list is for. Everything is a vault file now — nothing
-  // is served from `/guest/` — so what holds the name is the FILE the format
-  // names: `plugins/<kind>.js` and nothing else. The loader says which file is
-  // running by setting `pluginFile` around it, which is what this stands in for.
+  // is served from `/guest/` — so what holds the name is the FOLDER the format
+  // names: `plugins/<kind>/` and nothing else. The loader says which file is
+  // running by setting `pluginFile` and `pluginRoot` around it, which is what
+  // this stands in for.
   const glob = globalThis as unknown as Record<string, unknown>;
   glob.__gRuntime = {};
   // `whereFrom` falls back to `document.currentScript` when the loader named no
@@ -333,28 +341,28 @@ test("the runtime's part kinds are the format's, and a second plugin claiming on
   const rt = glob.__gRuntime as { plugins: any; report?: (m: string) => void; pluginFile?: string };
   rt.report = (m: string) => said.push(m);
 
-  // The seeded `markdown.js`, or the person's own edit of it — editing the file
-  // that draws your prose is the whole point of it being in the folder.
-  rt.pluginFile = "markdown.js";
+  // The person's own `plugins/markdown/` — editing the file that draws your
+  // prose is the whole point of it being in the folder.
+  rt.pluginFile = "markdown/markdown.js";
   expect(rt.plugins.register({ id: "markdown", mount() {}, edit: true })).toBe(true);
   expect(said).toEqual([]);
 
   // Any OTHER file claiming it is refused, whether it arrives before or after —
   // because what the author nearly did was replace the drawing of every markdown
   // slot in the workspace, and a file name is not a race the alphabet decides.
-  rt.pluginFile = "0-notes.js";
+  rt.pluginFile = "a-notes/a-notes.js";
   expect(rt.plugins.register({ id: "markdown", mount() {} })).toBe(false);
   expect(said.join("\n")).toContain("part kind");
-  expect(said.join("\n")).toContain("only plugins/markdown.js draws it");
+  expect(said.join("\n")).toContain("only plugins/markdown/ draws it");
 
   // A plugin that is NOT a part kind is the ordinary duplicate, and the sentence
   // names both files, because the reader has two files to choose between.
-  rt.pluginFile = "flow.js";
+  rt.pluginFile = "flow/flow.js";
   expect(rt.plugins.register({ id: "flow", mount() {} })).toBe(true);
-  rt.pluginFile = "aaa-flow.js";
+  rt.pluginFile = "aaa-flow/aaa-flow.js";
   expect(rt.plugins.register({ id: "flow", mount() {} })).toBe(false);
-  expect(said[said.length - 1]).toContain("plugins/flow.js has it");
-  expect(said[said.length - 1]).toContain("plugins/aaa-flow.js is refused");
+  expect(said[said.length - 1]).toContain("plugins/flow/flow.js has it");
+  expect(said[said.length - 1]).toContain("plugins/aaa-flow/aaa-flow.js is refused");
 
   delete glob.document;
 });

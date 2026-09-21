@@ -68,6 +68,10 @@
     }
   }
 
+  /** The bucket prefix of a mount that lives as long as the box: `rt.page.mount`
+   *  in boot.js registers under it. */
+  const DOCUMENT = "@document:";
+
   const effects = {
     /** @param {string} key @param {() => void} fn */
     onTeardown(key, fn) {
@@ -99,9 +103,19 @@
       pageScripts.delete(section);
     },
 
-    /** Every bucket, for a whole-page redraw and for the box going away. */
-    disposeAll() {
+    /** Every bucket, for a whole-page redraw — and, with `everything`, for the
+     *  box going away.
+     *
+     *  THE DOCUMENT'S OWN MOUNTS OUTLIVE A REDRAW. A plugin the document
+     *  mounted into a node of its own — what the `doc` document's `head` and
+     *  `foot` name — sits outside the stack, is not redrawn when the stack
+     *  is, and mounts once per box; its bucket wears `DOCUMENT` and is left
+     *  alone here until the box itself goes, or its observer would be
+     *  disconnected under a board that is still on screen.
+     *  @param {boolean} [everything] */
+    disposeAll(everything) {
       for (const key of [...buckets.keys()]) {
+        if (!everything && key.startsWith(DOCUMENT)) continue;
         const held = buckets.get(key) || [];
         buckets.delete(key);
         for (let i = held.length - 1; i >= 0; i--) {
@@ -111,6 +125,9 @@
       }
       pageScripts.clear();
     },
+
+    /** The bucket prefix a document-life mount registers under. */
+    DOCUMENT: DOCUMENT,
 
     /** Remember a page-scoped script so a reorder can put it back. `run` is
      *  expected to re-create and re-append a fresh script node — a script

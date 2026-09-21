@@ -636,15 +636,20 @@
   }
 
   async function main() {
+    // THIS DOCUMENT'S OWN ELEMENT, AND THE GUARD. The runtime does not build a
+    // root on a page it is not drawing — it did once, and cleared it, which
+    // deleted the board a moment after it was drawn — so the board owns its
+    // markup outright. And this script is in the bundle every page carries,
+    // because every plugin folder's scripts are: on a page that is not a board
+    // there is no `#g-board`, and the script does nothing at all.
+    const root = document.getElementById("g-board");
+    if (!root) return;
+
     const style = document.createElement("style");
     style.textContent = CSS;
     document.head.appendChild(style);
 
     const page = biom.input || {};
-    // THIS DOCUMENT'S OWN ELEMENT. The runtime does not build a root on a page
-    // it is not drawing — it did once, and cleared it, which deleted the board a
-    // moment after it was drawn — so the board owns its markup outright.
-    const root = document.getElementById("g-board") || document.body;
 
     const shell = el("div", "kb");
     const head = el("div", "kb-head");

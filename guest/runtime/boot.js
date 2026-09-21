@@ -115,6 +115,15 @@
   let pagePlugin = "doc";
   /** @type {Record<string, any>} */
   let pageInput = {};
+  /** EVERY PLUGIN'S VARIABLES, merged for this page by the server — the
+   *  contract, the vault's rung and the page's — keyed by plugin id. Held off
+   *  the last read so `biom.plugin.extensions()` answers synchronously and is
+   *  current on every draw. @type {Record<string, any>} */
+  let pageExtensions = {};
+  /** The refusal sentences already said for this box, so a fault the server
+   *  carries on every read is reported once rather than on every redraw.
+   *  @type {Set<string>} */
+  const saidFaults = new Set();
   /** The page's own name, which its projection opens with. @type {string} */
   let pageName = "";
   /** HOW MANY OF OUR OWN WRITES ARE STILL IN THE AIR.
@@ -289,7 +298,7 @@
    *  own variables yet still draws.
    *  @param {any} answer */
   function normalise(answer) {
-    const bare = { sections: [], variables: {}, markdown: {}, plugin: "html", input: {}, name: "" };
+    const bare = { sections: [], variables: {}, markdown: {}, plugin: "html", input: {}, name: "", extensions: {} };
     if (Array.isArray(answer)) return { ...bare, sections: answer, plugin: "doc" };
     if (!answer || typeof answer !== "object") return bare;
     return {
@@ -299,6 +308,7 @@
       plugin: typeof answer.plugin === "string" ? answer.plugin : "html",
       input: answer.input && typeof answer.input === "object" ? answer.input : {},
       name: typeof answer.name === "string" ? answer.name : "",
+      extensions: answer.extensions && typeof answer.extensions === "object" ? answer.extensions : {},
     };
   }
 
@@ -404,7 +414,7 @@
     if (mine !== generation) return; // a later draw has already started
 
     const page = normalise(answer);
-    rt.effects.disposeAll();
+    rt.effects.disposeAll(false);
 
     // THE RUNTIME OWNS THE ROOT ONLY ON A DOCUMENT. A doc page's body is the
     // runtime's to build and to empty; every other page's body is the author's,
@@ -434,6 +444,18 @@
     pagePlugin = page.plugin;
     pageInput = page.input;
     pageName = page.name;
+    pageExtensions = page.extensions;
+    // WHAT THE RUNGS REFUSED, IN WORDS, ONCE. The server dropped the key or the
+    // file and drew the page with the rung beneath; the sentence is the one
+    // thing left to do, and it goes where every other failure in the box goes.
+    for (const id of Object.keys(pageExtensions)) {
+      const faults = pageExtensions[id] && Array.isArray(pageExtensions[id].faults) ? pageExtensions[id].faults : [];
+      for (const fault of faults) {
+        if (saidFaults.has(fault)) continue;
+        saidFaults.add(fault);
+        report(String(fault));
+      }
+    }
     if (rt.edit && typeof rt.edit.reset === "function") rt.edit.reset();
     // THE TYPE SCALE, before a section is drawn. It is inherited, so declaring
     // it on the root first means the first section is measured against the same
@@ -738,6 +760,50 @@
     get input() {
       return pageInput;
     },
+    /** EVERY PLUGIN'S MERGED VARIABLES, keyed by id, as the last read carried
+     *  them. `biom.plugin.extensions()` in the registry reads this. */
+    extensions() {
+      return pageExtensions;
+    },
+    /** MOUNT A REGISTERED PLUGIN INTO A NODE OF THE DOCUMENT'S OWN, exactly as
+     *  a section mounts a `data-g-plugin` node: the same context, the same
+     *  containment — a plugin that throws fails in its node, in words, and
+     *  the stack draws — and a name nothing registered fails there too,
+     *  listing what is. The teardowns go in a bucket of the node's own that
+     *  lives as long as the box: the document mounts once and is not redrawn
+     *  when the stack is, so a redraw must not tear it down.
+     *
+     *  This is how the `doc` document mounts what its `head` and `foot` name.
+     *  The runtime has no notion of a point: this is a node and a name, and
+     *  which variable the name came out of is the document's business.
+     *  @param {Element} node @param {string} id @returns {boolean} */
+    mount(node, id) {
+      const name = String(id || "");
+      if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+        rt.sections.fail(node, '"' + name + '" is not a plugin id — lowercase letters, digits and dashes');
+        return false;
+      }
+      const def = rt.plugins.get(name);
+      if (!def) {
+        rt.sections.fail(node, 'no plugin named "' + name + '" is registered — ' + (rt.plugins.ids().join(", ") || "none are"));
+        return false;
+      }
+      const ctx = rt.sections.makeCtx({
+        page: pageId,
+        section: null,
+        part: null,
+        plugin: def.id,
+        vars: pageVariables,
+        // The stack's root on a document, and the document element anywhere
+        // else — `root()` would MAKE a `#g-page` on a page that has none.
+        root: pagePlugin === "doc" ? root() : document.documentElement,
+        bucket: rt.effects.DOCUMENT + (node.id || name),
+        node: node,
+        call: guestCall,
+      });
+      rt.sections.mountWith(def, node, null, ctx);
+      return !node.hasAttribute("data-g-failed");
+    },
     /** The order, and what is in it. Adding, reordering, duplicating and
      *  removing are one kind because they are one edit to one list.
      *  @param {any[]} sections */
@@ -884,7 +950,7 @@
     report("a promise was rejected and nothing caught it", /** @type {any} */ (e).reason),
   );
   window.addEventListener("pagehide", () => {
-    rt.effects.disposeAll();
+    rt.effects.disposeAll(true);
     if (runtime) runtime.abandon();
     if (guest) guest.abandon();
   });
