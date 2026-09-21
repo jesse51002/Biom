@@ -378,8 +378,14 @@ const PAGE_DOCUMENT = "index.html";
 
 /** Everything `content.yaml` may say, and nothing else. `server/platform/yaml.ts`
  *  REFUSES an unknown key rather than dropping it, so a page carrying one does
- *  not open at all — which is why this is R1 and not a note about tidiness. */
-const PAGE_KEYS = new Set(["name", "plugin", "variables", "contents", "input"]);
+ *  not open at all — which is why this is R1 and not a note about tidiness.
+ *  `uid` is the framework's: minted on the mount and written into every page
+ *  that has none, so a page the server has opened carries one — and this set
+ *  without it failed every such page in every workspace. */
+const PAGE_KEYS = new Set(["name", "uid", "plugin", "variables", "contents", "input"]);
+/** What a `uid` looks like — `UID` in `contracts/types.ts`, said again here
+ *  because this file reaches nothing under `contracts/` but `_lib/`. */
+const UID = /^[a-z0-9]{8,32}$/;
 /** The keys a SECTION may carry. There is no `type:`, because a section is the
  *  only thing `contents` can hold and a key that distinguishes nothing is a key
  *  that can be written wrong. */
@@ -1335,6 +1341,12 @@ export function check(src: PageSource): Report {
   }
   plugin = typeof rawPlugin === "string" && PLUGIN_NAME.test(rawPlugin) ? rawPlugin : (rawPlugin === undefined ? "html" : DOC_PLUGIN);
   const isDoc = plugin === DOC_PLUGIN;
+
+  /* R1 — `uid` is the framework's, and the parser refuses one it did not mint. */
+  const rawUid = doc["uid"];
+  if (rawUid !== undefined && rawUid !== null && (typeof rawUid !== "string" || !UID.test(rawUid))) {
+    say("R1", "FAIL", DOC, lineOfKey(text, "uid"), "uid is a short id the framework wrote; it is not a thing to type. The parser refuses one that is not its own, so this page does not open at all — take the line out and the next open writes one in.");
+  }
 
   /* R61 — the plugin has to resolve to a document somebody can draw with.
    *

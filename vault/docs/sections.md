@@ -22,6 +22,8 @@ Everything below this line is about `plugin: doc`.
 ```yaml
 name: Q3 review                 # what a reader sees. Optional; the directory's
                                 # last segment stands in, but that is an id
+uid: qm4vxbco4bt2xruw           # the framework's, written in the first time the
+                                # page is opened. Leave it alone; never type one
 plugin: doc
 variables:                      # this page's own values. See variables.md
   quarter: Q3

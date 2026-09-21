@@ -246,6 +246,25 @@ test("both readers refuse a retired page key, and the finding names it", () => {
   }
 });
 
+/** `uid` IS THE ONE HOST KEY THE FRAMEWORK WRITES IN ITSELF — minted on the
+ *  mount, written into every page that has none — so a page the server has
+ *  opened carries it, and a checker that did not know the key failed R1 on
+ *  every page of every workspace. Both readers take the one the framework
+ *  mints and refuse anything else under the name. */
+test("both readers accept the framework's uid and refuse one that is not its shape", () => {
+  const good = PAGE_YAML + "uid: qm4vxbco4bt2xruw\n";
+  expect(() => parse(good)).not.toThrow();
+  expect(rules(check(page(html({}), good))).has("R1")).toBe(false);
+
+  for (const key of ["uid: Kitchen", "uid: 12", "uid: [a, b]"]) {
+    const doc = PAGE_YAML + key + "\n";
+    expect(() => parse(doc), `the server accepts ${key}`).toThrow();
+    const report = check(page(html({}), doc));
+    expect(rules(report).has("R1"), `${key} is not reported`).toBe(true);
+    expect(said(report)).toContain("not a thing to type");
+  }
+});
+
 test("both readers refuse a retired key on a section, and an unknown key anywhere", () => {
   // `type:` on a `contents` entry is the biggest of them: an entry used to BE a
   // content and carried one. An entry is a SECTION now and the four types moved
