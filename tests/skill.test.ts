@@ -2193,6 +2193,11 @@ test("R69 — a framework plugin named by its bare word fails on the page and in
     "docs/plugins/biom-reveal/reveal.js": "",
     "docs/plugins/biom-inview/inview.js": "",
     "docs/plugins/biom-items/items.js": "",
+    "docs/plugins/biom-html/html.js": "",
+    // `plugin: html` is the page's own document, and `biom-html` draws a part.
+    "pages/home/children/Page/content.yaml": "name: Page\nplugin: html\n",
+    "pages/home/children/Page/index.html": '<div data-g-part="body"></div>',
+    "pages/home/children/Page/plugins/x/x.js": "",
     // The old spelling on a page, and in its section.
     "pages/home/children/Old/content.yaml": "name: Old\nplugin: doc\ncontents:\n  - name: hero\n    data: hero.html\n    parts:\n      body: words\n",
     "pages/home/children/Old/hero.html": '<section data-g-part="body"></section>\n<span data-g-plugin="inview"></span>\n<span data-g-plugin="items" data-g-for="body"></span>\n',
@@ -2208,7 +2213,8 @@ test("R69 — a framework plugin named by its bare word fails on the page and in
   try {
     const source = await readVault(root);
     const names = namesOf(source);
-    expect(names.framework.sort()).toEqual(["biom-doc", "biom-holds", "biom-inview", "biom-items", "biom-reveal"]);
+    expect(names.framework.sort()).toEqual(["biom-doc", "biom-holds", "biom-html", "biom-inview", "biom-items", "biom-reveal"]);
+    expect(names.documents).toEqual(["biom-doc"]);
     expect(names.own).toEqual(["reveal"]);
 
     const old = await checkDir(join(root, "pages", "home", "children", "Old"), null, contractsOf(source), names);
@@ -2229,6 +2235,11 @@ test("R69 — a framework plugin named by its bare word fails on the page and in
     // The page's own `plugins/items/` makes `items` that page's.
     const mine = await checkDir(join(root, "pages", "home", "children", "Mine"), null, contractsOf(source), names);
     expect(mine.findings.filter((f) => f.rule === "R69")).toEqual([]);
+
+    // `plugin: html` is never `biom-html`: only a framework plugin WITH a
+    // document is one a page could have meant.
+    const html = await checkDir(join(root, "pages", "home", "children", "Page"), null, contractsOf(source), names);
+    expect(html.findings.filter((f) => f.rule === "R69")).toEqual([]);
 
     // Handed no names — a directory checked on its own — nothing is said,
     // because a bare word cannot be told from a plugin the workspace wrote.

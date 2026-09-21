@@ -261,7 +261,13 @@ export interface PageSource {
 
 /** The ids the checker knows, by where they live. */
 export interface PluginNames {
+  /** Every id the framework ships, `biom-` and all. */
   framework: string[];
+  /** The ones among them that carry a document a page can name — `biom-doc`
+   *  does, `biom-html` does not: `plugin: html` is the page's own document and
+   *  has nothing to do with the part plugin. */
+  documents: string[];
+  /** The workspace's own, under bare names. */
   own: string[];
 }
 
@@ -1400,7 +1406,7 @@ export function check(src: PageSource): Report {
    * `plugins/doc/` is format 4's spelling, which the server refuses the whole
    * workspace on until `bun run tools/migrate-format-5.ts` rewrites it. */
   if (src.names && typeof rawPlugin === "string" && !rawPlugin.startsWith(OURS)
-      && src.names.framework.includes(OURS + rawPlugin) && !src.names.own.includes(rawPlugin)) {
+      && src.names.documents.includes(OURS + rawPlugin) && !src.names.own.includes(rawPlugin)) {
     say("R69", "FAIL", DOC, lineOfKey(text, "plugin"), 'plugin: ' + rawPlugin + ' names the framework\'s plugin by a bare word, and the name is the folder: say plugin: ' + OURS + rawPlugin + '. The server refuses a workspace that still says the bare word — bun run tools/migrate-format-5.ts <workspace> rewrites every one of them and nothing else.');
   }
 
@@ -2890,8 +2896,10 @@ function declaredIn(src: PluginsSource): Record<string, string[]> {
 /** The ids the checker knows in a workspace, by where they live: the
  *  framework's from the mirror, the workspace's own from `plugins/`. */
 export function namesOf(src: VaultSource): PluginNames {
+  const shipped = src.shipped ?? {};
   return {
-    framework: Object.keys(src.shipped ?? {}),
+    framework: Object.keys(shipped),
+    documents: Object.keys(shipped).filter((id) => shipped[id]?.document !== null),
     own: src.plugins?.folders.map((f) => f.name) ?? [],
   };
 }
@@ -3144,7 +3152,7 @@ export async function checkDir(dir: string, vault: VaultSource | null = null, co
   }
 
   // The page's own plugin folders are the workspace's own, for this page.
-  const known = names === null ? null : { framework: names.framework, own: [...names.own, ...(plugins?.folders.map((f) => f.name) ?? [])] };
+  const known = names === null ? null : { ...names, own: [...names.own, ...(plugins?.folders.map((f) => f.name) ?? [])] };
   return check({ id, doc, files, vault, plugins, contracts, names: known });
 }
 
