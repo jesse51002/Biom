@@ -89,6 +89,19 @@ const NOTES = {
   ports: null,
 };
 
+/** A page drawn by its own document: no sections, its words in `input` — a
+ *  string, a list, and a map that is configuration rather than words. */
+const SCENE = {
+  id: "scene",
+  name: "scene",
+  plugin: "html",
+  variables: {},
+  sections: [],
+  input: { head: "# A burst, then a fade", captions: ["one", "two"], table: { name: "jobs" } },
+  page: [],
+  ports: null,
+};
+
 /** What `variables.patch` answers with: the whole document, which is everything
  *  needed to say what the page now shows without a re-read. SECTIONS AND NOTHING
  *  ELSE — no `kind:`, no `render:`, and the array is the order. */
@@ -147,7 +160,7 @@ function doubles(overrides = {}) {
       calls.push(req);
       if (overrides.answer) return overrides.answer(req);
       const value =
-        req.kind === "page.read" ? (req.page === "notes" ? NOTES : PAGE)
+        req.kind === "page.read" ? (req.page === "notes" ? NOTES : req.page === "scene" ? SCENE : PAGE)
         : req.kind === "table.get" ? { schema: { name: req.name, kind: "basic", columns: [] }, rows: [], total: 0 }
         : req.kind === "table.schema" ? { name: req.name, kind: "basic", columns: [] }
         : req.kind === "sql" ? { columns: ["n"], rows: [[1]], changes: 0 }
@@ -260,6 +273,13 @@ test("doc.get answers prose, and doc.list answers the tree the user sees", async
     "# Notes\n\nThe rate is {{rate}}.\n\nLeft column.\n\nRight column.\n\nLast.");
   const list = await bridge.resolve(req({ kind: "doc.list" }), CTX);
   expect(list.value).toEqual([{ id: "job-board", name: "Job board" }]);
+  // A page drawn by its own document has no sections; its words are the
+  // page-level `input` slots, strings and lists of strings alike, and they come
+  // first — the H1 the runs bar names a slide by is read from here. A map in
+  // `input` is the plugin's configuration and never prose. The server's
+  // `doc.get` answers the same, so the two cannot drift.
+  const scene = await bridge.resolve(req({ kind: "doc.get", page: "scene" }), CTX);
+  expect(scene.value).toBe("# A burst, then a fade\n\none\n\ntwo");
 });
 
 test("table reads pass through and do not disturb the grid the user has open", async () => {
