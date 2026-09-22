@@ -758,6 +758,13 @@ test("the order is one write, and the page and the rail are both re-read from it
   await ws.loadPage("notes");
   const base = seen.n;
   changes.length = 0;
+  // THE BOX IS TOLD BEFORE THE TREE IS RE-READ. A box re-reads the page from
+  // the server on its own, so the change can go out the moment the order has
+  // landed — and `children.all` on a large workspace is seconds, which is how
+  // long the doc document's table-to-grid conversion used to sit undrawn.
+  /** @type {number[]} */
+  const treeReadsWhenTold = [];
+  ws.onChange(() => treeReadsWhenTold.push(server.count("children.all")));
 
   const next = await ws.setSections("notes", [
     { name: "tail", parts: { body: "More." } },
@@ -781,6 +788,8 @@ test("the order is one write, and the page and the rail are both re-read from it
   // so unlike a slot write, this one says so.
   expect(seen.n).toBe(base + 1);
   expect(changes).toEqual([{ page: "notes", shape: true }]);
+  // Told once, with the tree still un-re-read at that moment.
+  expect(treeReadsWhenTold).toEqual([1]);
 });
 
 /* ── the design doc: one page, and it is not in the page tree ──────────── */
