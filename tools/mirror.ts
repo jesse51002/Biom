@@ -23,7 +23,8 @@
 //   bun run tools/mirror.ts <vault>
 //   bun run tools/mirror.ts <vault> <another vault>
 
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { makeFiles } from "../server/platform/files.ts";
 import { makeDb } from "../server/platform/db.ts";
@@ -31,14 +32,26 @@ import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makePages } from "../server/domain/pages.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makeMirror, rebuild } from "../server/domain/mirror.ts";
+import { walkPlugins } from "../server/domain/plugins.ts";
 import { checkVaultFormat } from "../server/workspace/migrate.ts";
+import type { Shipped } from "../server/workspace/migrate.ts";
 
 declare const Bun: { argv: string[] };
+
+/** This checkout's own plugins, which are what the format gate means by
+ *  "shipped": a vault naming one of them by its bare word is format 4. Walked
+ *  once, the way `server/main.ts` walks them at start, because it is the same
+ *  set whichever vault is being mirrored. */
+const FRAMEWORK_PLUGINS = join(resolve(fileURLToPath(new URL(".", import.meta.url)), ".."), "guest", "plugins");
+async function shippedIds(): Promise<Shipped> {
+  const walk = await walkPlugins(makeFiles(FRAMEWORK_PLUGINS), "", "framework");
+  return new Map(walk.folders.map((f) => [f.id, f.document]));
+}
 
 /** One workspace. Answers how many pages it projected, or null where the folder
  *  is not a workspace — which is a message and not a crash, because the usual
  *  way to get here is a typo in a path. */
-async function mirrorOf(path: string): Promise<number | null> {
+async function mirrorOf(path: string, shipped: Shipped): Promise<number | null> {
   const root = resolve(path);
   const files = makeFiles(root);
 
@@ -51,7 +64,7 @@ async function mirrorOf(path: string): Promise<number | null> {
 
   // The same gate the server applies before it builds anything that could read
   // a page. An older format must refuse here too rather than be half-projected.
-  await checkVaultFormat(root);
+  await checkVaultFormat(root, shipped);
 
   const db = makeDb(`${root}/workspace.db`);
   try {
@@ -78,9 +91,10 @@ if (paths.length === 0) {
 }
 
 let failed = 0;
+const shipped = await shippedIds();
 for (const path of paths) {
   try {
-    const pages = await mirrorOf(path);
+    const pages = await mirrorOf(path, shipped);
     if (pages === null) failed++;
     else console.log(`  ${path}: ${pages} pages projected`);
   } catch (e) {
