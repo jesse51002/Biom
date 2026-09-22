@@ -507,6 +507,15 @@ export function makeWorkspace(transport) {
       const next = /** @type {Section[]} */ (
         await ask({ ...env(), kind: "section.order", page: id, sections })
       );
+      // THE BOX IS TOLD FIRST, BEFORE ANYTHING ELSE IS RE-READ. The change
+      // reaches every box on the page as a `refresh`, and a box re-reads the
+      // page from the server on its own — it never reads this store's copy —
+      // so nothing below has to land before it may redraw. It used to be told
+      // last, after the tree, and `children.all` on a workspace of two thousand
+      // pages is three and a half seconds: the doc document's table-to-grid
+      // conversion, which ends in this call, drew its grids that long after
+      // the order landed, and read as a page that had not redrawn.
+      changed({ page: id, shape: true });
       // Re-read, never merged. The server owns what a page holds — a child key
       // it put back, an entry the caller could not see — and a `DrawnSection` is
       // that list resolved. Dropping the page first, the way `reloadPage` does,
@@ -519,7 +528,6 @@ export function makeWorkspace(transport) {
       // not to have happened.
       await readChildren();
       emit();
-      changed({ page: id, shape: true });
       return next;
     },
 
