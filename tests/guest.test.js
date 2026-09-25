@@ -13,7 +13,7 @@
 // They are covered in a browser, which is where they are real.
 
 import { test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import MarkdownIt from "../vendor/markdown-it.mjs";
 
 const glob = /** @type {any} */ (globalThis);
@@ -162,6 +162,58 @@ test("a heading and the paragraph under it are two blocks, so each is drawn at i
   expect(found.map((r) => src.slice(r.start, r.end)))
     .toEqual(["# Visiting", "No address established."]);
   expect(found.map((r) => r.tag)).toEqual(["h1", "p"]);
+});
+
+/* ── the editor's own marks ────────────────────────────────────────────── */
+
+test("THE EDITOR'S SHEET MATCHES ONLY THE EDITOR'S OWN MARKS, so no plugin node wears its look", () => {
+  // A plugin's options are its node's `data-g-*` attributes and the editor's
+  // stylesheet is page-wide, so a name that is both is a rule painting every
+  // plugin node that takes that option. It happened: the empty-block
+  // placeholder was `[data-g-blank]::after { content: attr(data-g-blank) }`,
+  // `data-g-blank` is also `biom-items`' template for a new item, and beside
+  // every add button in every workspace the whole template was printed in grey
+  // italics, literal `\n`s and all. The open slot was `data-g-src`, which is
+  // also the word a plugin document marks a script with and a diagram node can
+  // take its source by. There is no DOM here, so this holds the NAMES apart,
+  // which is where the fault was.
+  const root = new URL("../", import.meta.url);
+  const src = readFileSync(new URL("guest/runtime/edit.js", root), "utf8");
+  const start = src.indexOf("const CSS = `");
+  const sheet = src.slice(start, src.indexOf("`;", start));
+  const styled = [...new Set([...sheet.matchAll(/\[data-g-([a-z][a-z-]*)/g)].map((m) => m[1]))];
+  expect(styled.length, "the editor's sheet must match on something").toBeGreaterThan(0);
+
+  // Every name the sheet matches is one the editor itself puts on a node.
+  for (const name of styled) {
+    expect([name, src.includes('setAttribute("data-g-' + name + '"')]).toEqual([name, true]);
+  }
+
+  // And no other file the framework ships says it: not a plugin reading it as
+  // an option, not a document or the host spelling it, not markup or a doc an
+  // author copies from.
+  /** @type {Map<string, string>} name → the first file that says it */
+  const said = new Map();
+  const kebab = (/** @type {string} */ s) => s.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+  for (const dir of ["guest", "client", "vault", "skill"]) {
+    for (const rel of /** @type {string[]} */ (readdirSync(new URL(dir, root), { recursive: true }))) {
+      const file = dir + "/" + rel;
+      if (file === "guest/runtime/edit.js" || !/\.(js|ts|html|md|css|yaml)$/.test(file)) continue;
+      const text = readFileSync(new URL(file, root), "utf8");
+      for (const m of text.matchAll(/data-g-([a-z][a-z-]*)/g)) if (!said.has(m[1])) said.set(m[1], file);
+      for (const m of text.matchAll(/ctx\.options\.([a-zA-Z]+)/g)) {
+        const name = kebab(m[1]);
+        if (!said.has(name)) said.set(name, file);
+      }
+    }
+  }
+  const shared = styled.filter((name) => said.has(name)).map((name) => "data-g-" + name + " — " + said.get(name));
+  expect(shared).toEqual([]);
+
+  // `blank` stays `biom-items`' own: the seeded root page and every workspace
+  // section that sets a list's new-item template says it.
+  expect(said.get("blank")).toBeDefined();
+  expect(readFileSync(new URL("guest/plugins/biom-items/items.js", root), "utf8")).toContain("ctx.options.blank");
 });
 
 /* ── the type scale's one non-mechanical decision ──────────────────────── */

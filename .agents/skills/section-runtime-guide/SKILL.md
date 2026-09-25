@@ -542,7 +542,7 @@ slot is rendered. A `<div>` slipped in to hold a block would break every
 selector that already existed.
 
 **Opening makes the slot's own element the editor** — `contenteditable` and
-`data-g-src` go on the `data-g-part` node itself — holding one child per segment,
+`data-g-edit-open` go on the `data-g-part` node itself — holding one child per segment,
 each an element of that block's own tag with the exact source as its text.
 **Nothing is mirrored and no size is named.** The slot already carries
 `data-g-md`, which is what the page's type scale attaches to, and it is the
@@ -583,6 +583,16 @@ placeholder, opens, and writes back. `writeSlot` creates the part on first
 keystroke — **but only where the section's own html declares that slot**, so a
 typo still lands on `no such slot` instead of writing a key into `content.yaml`
 that nothing draws and nobody can see.
+
+The placeholder is a `<p data-g-edit-blank="Write something">` and the sheet
+prints the attribute after it. **Every attribute the editor's sheet matches on
+its own wears `data-g-edit-`**, the open slot's `data-g-edit-open` included,
+because a plugin's options are its node's `data-g-*` attributes and a rule on a
+bare name paints every plugin node that takes an option of that name. It was
+`data-g-blank`, which is also `biom-items`' template for a new item, and every
+add button on every page printed its template beside itself in grey italics;
+`data-g-src` would have tinted a diagram node that takes its source by that name.
+`tests/guest.test.js` holds the sheet's names to the editor alone.
 
 ### `section.order` goes through the store
 

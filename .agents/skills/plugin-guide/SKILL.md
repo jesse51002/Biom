@@ -624,6 +624,13 @@ as long as the box does.
 - **The reserved `data-g-*` names are the runtime's** and are stripped out of
   `ctx.options`, so a plugin can never read `part`, `plugin`, `scope`, `section`,
   `empty`, `default` or `failed` as configuration.
+- **An option shares one namespace with every attribute the editor styles**, so
+  the editor's own marks wear `data-g-edit-` and its page-wide sheet never
+  matches a name a plugin might take (`section-runtime-guide`, *An empty slot is
+  still a slot*). Its placeholder was once `data-g-blank`, and `biom-items`'
+  `data-g-blank` — the markdown a new item starts as — was printed beside every
+  add button in grey italics. `blank` stays the plugin's, and an option whose
+  name does not start `edit-` never meets the editor's sheet.
 - **`edit: true` is not a permission.** Say it again in review whenever somebody
   reaches for a write from inside a plugin: the answer is a declaration plus the
   runtime, never a widened port.
