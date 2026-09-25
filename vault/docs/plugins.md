@@ -299,7 +299,9 @@ It is configured entirely by its own `data-g-*` attributes, which arrive as
 `ctx.options` with the leading `g` taken off and the rest camel-cased:
 `data-g-max-rows` reads as `options.maxRows`. **`part`, `plugin`, `scope`,
 `section`, `empty`, `default` and `failed` belong to the runtime and never reach
-`options`.**
+`options`.** The editor's own marks all start `data-g-edit-`, so every other
+name is yours to take — `biom-items` takes `data-g-add` for its button's label
+and `data-g-blank` for the markdown a new item starts as, `\n` for a line break.
 
 That is what lets a section place a rule, a progress bar, an ambient wash, a
 diagram or a list's add-and-delete **without inventing a slot in `content.yaml`
