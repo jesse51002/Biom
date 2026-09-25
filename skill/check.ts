@@ -442,6 +442,13 @@ const TYPES = new Set(["markdown", "html", "table", "child", "grid"]);
  *  it is words nothing will ever read. */
 const RETIRED_EXT = /\.(?:md|mermaid)$/;
 
+/** THE ONE `.md` BESIDE `content.yaml` THAT SOMETHING READS: the page's own
+ *  instructions, which every run under the page and every agent pointed at it
+ *  reads (`docs/automations.md`). It is not the page's words and the page reader
+ *  never opens it, so R45 has nothing to say about it. The name is
+ *  `INSTRUCTIONS` in `server/domain/runs.ts`, which this file cannot import. */
+const PAGE_INSTRUCTIONS = "INSTRUCTIONS.md";
+
 /** THE SHIPPED DEFAULT SECTION'S ONE SLOT. A section that names no file takes
  *  `guest/sections/default.html`, which is one centred slot called `body` — and
  *  a vault has no copy of that file to read, so the id is written here instead.
@@ -580,6 +587,16 @@ export function readYaml(text: string): Yaml {
         out.push(node(indent + 1));
         continue;
       }
+      // An entry that starts a LIST on the dash's own line — `- - name` — is a
+      // list inside this one, and it is read the way a map on the dash's line is
+      // just below: the line rewritten in place at the column the inner dash
+      // starts at. It comes first because `- a: b` would otherwise read as a key.
+      if (/^-(?:[ \t]|$)/.test(rest)) {
+        const column = line.indent + (line.text.length - rest.length);
+        lines[at] = { n: line.n, indent: column, text: rest };
+        out.push(node(column));
+        continue;
+      }
       // An entry that starts a map on the dash's own line — which is how every
       // `contents` entry is written. The map's indent is the column the key
       // starts at, so the line is rewritten in place and read as one.
@@ -665,9 +682,26 @@ export function readYaml(text: string): Yaml {
   return value;
 }
 
+/** Whether the quote at `i` opens a quoted scalar. YAML reads one only where a
+ *  scalar STARTS — the head of the text, or of an item, key or value inside
+ *  `[…]` and `{…}` — and anywhere else a quote is a character like any other,
+ *  so `editor's` is a word and `A model's labels` a plain scalar. Taking every
+ *  quote as an opening one read the apostrophe as a string that never closed. */
+function opens(text: string, i: number, flowing: boolean): boolean {
+  let j = i - 1;
+  while (j >= 0 && (text[j] === " " || text[j] === "\t")) j--;
+  if (j < 0) return true;
+  return flowing && "[{,:".includes(text[j] ?? "");
+}
+
+/** Whether a value is a flow collection, where a quote may open after a bracket,
+ *  a comma or a colon as well as at the head. */
+const flowing = (text: string): boolean => /^[ \t]*[[{]/.test(text);
+
 /** Split `key: value` at the first colon outside quotes that is followed by
  *  whitespace or the end of the line. `null` when the line is not a key. */
 function keySplit(text: string): [string, string] | null {
+  const inFlow = flowing(text);
   let quote: string | null = null;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -676,7 +710,7 @@ function keySplit(text: string): [string, string] | null {
       if (c === quote) quote = null;
       continue;
     }
-    if (c === '"' || c === "'") { quote = c; continue; }
+    if ((c === '"' || c === "'") && opens(text, i, inFlow)) { quote = c; continue; }
     if (c === "#" && i > 0 && /[ \t]/.test(text[i - 1] ?? "")) return null;
     if (c !== ":") continue;
     const after = text[i + 1];
@@ -706,6 +740,7 @@ function scalar(text: string, line: number): Yaml {
 /** A trailing `# comment`, taken off. Only when the hash follows whitespace: a
  *  hash inside a word is part of the word, which is how YAML reads it too. */
 function strip(text: string): string {
+  const inFlow = flowing(text);
   let quote: string | null = null;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -714,22 +749,23 @@ function strip(text: string): string {
       if (c === quote) quote = null;
       continue;
     }
-    if (c === '"' || c === "'") { quote = c; continue; }
+    if ((c === '"' || c === "'") && opens(text, i, inFlow)) { quote = c; continue; }
     if (c === "#" && (i === 0 || /[ \t]/.test(text[i - 1] ?? ""))) return text.slice(0, i);
   }
   return text;
 }
 
+/** What a backslash and the character after it mean inside double quotes. */
+const ESCAPES: { [c: string]: string } = { n: "\n", t: "\t", r: "\r", '"': '"', "\\": "\\", "/": "/", "0": "\u0000", " ": " " };
+
 function unquote(text: string): string {
   if (text.length > 1 && text.startsWith('"') && text.endsWith('"')) {
-    return text
-      .slice(1, -1)
-      .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
-      .replace(/\\n/g, "\n")
-      .replace(/\\t/g, "\t")
-      .replace(/\\r/g, "\r")
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, "\\");
+    // ONE PASS, left to right, the way YAML reads escapes. Replacing them one
+    // kind after another read `\\n` — a backslash, then an n — as a backslash
+    // and a line break, because the escaped backslash was still there for the
+    // `\n` pass to find.
+    return text.slice(1, -1).replace(/\\(u[0-9a-fA-F]{4}|[\s\S])/g, (all, e: string) =>
+      e.length === 5 ? String.fromCharCode(parseInt(e.slice(1), 16)) : ESCAPES[e] ?? all);
   }
   if (text.length > 1 && text.startsWith("'") && text.endsWith("'")) {
     return text.slice(1, -1).replace(/''/g, "'");
@@ -757,12 +793,20 @@ function flow(text: string, line: number): Yaml {
         at++;
         continue;
       }
-      if (c === '"' || c === "'") { quote = c; at++; continue; }
-      if (c === "," || c === "]" || c === "}" || c === ":") break;
+      // Only at the head of the item: a quote inside a plain one is a character.
+      if ((c === '"' || c === "'") && at === from) { quote = c; at++; continue; }
+      if (c === "," || c === "]" || c === "}") break;
+      // A colon ends the item only where YAML reads it as one: after a quoted
+      // key, or before a space, a bracket, a comma or the end. `http://x` and
+      // `10:30` are words, and stopping at their colon read an item of nothing.
+      if (c === ":" && (quoted(from) || /^(?:[\s,[\]{}]|$)/.test(text.slice(at + 1, at + 2)))) break;
       at++;
     }
     return text.slice(from, at).trim();
   };
+
+  /** Whether the item that started at `from` was a quoted scalar. */
+  const quoted = (from: number): boolean => text[from] === '"' || text[from] === "'";
 
   const value = (): Yaml => {
     skip();
@@ -774,7 +818,19 @@ function flow(text: string, line: number): Yaml {
         skip();
         if (at >= text.length) throw new DocError("this list is never closed", line);
         if (text[at] === "]") { at++; return out; }
-        out.push(value());
+        const from = at;
+        const item = value();
+        // `[a: b]` is a list holding one map, `{a: b}`, which is how YAML reads
+        // a key and a value written straight into a list.
+        while (at < text.length && /[ \t]/.test(text[at] ?? "")) at++;
+        if (text[at] === ":") {
+          at++;
+          out.push({ [String(item ?? "")]: value() });
+        } else out.push(item);
+        // NEVER STANDING STILL. An item that read nothing and moved nowhere is a
+        // shape this reader does not know, and going round again would only read
+        // it again, forever — that is how a checker run ran out of memory.
+        if (at === from) throw new DocError("this list holds something that cannot be read", line);
       }
     }
     if (c === "{") {
@@ -784,10 +840,12 @@ function flow(text: string, line: number): Yaml {
         skip();
         if (at >= text.length) throw new DocError("this map is never closed", line);
         if (text[at] === "}") { at++; return out; }
+        const from = at;
         const key = unquote(token());
         skip();
         if (text[at] === ":") at++;
         out[key] = value();
+        if (at === from) throw new DocError("this map holds something that cannot be read", line);
       }
     }
     const raw = token();
@@ -802,6 +860,33 @@ function flow(text: string, line: number): Yaml {
 }
 
 /* ── small helpers ──────────────────────────────────────────────────────── */
+
+/** Where markdown is code, as `[from, to)` offsets: fenced blocks — three or more
+ *  backticks or tildes, closed by a run of the same character at least as long,
+ *  or by the end — and inline spans, a run of backticks closed by a run of the
+ *  same length. What CommonMark calls code, near enough for R41 to leave what is
+ *  quoted in it alone. */
+function codeIn(md: string): [number, number][] {
+  const out: [number, number][] = [];
+  const fence = /^ {0,3}(`{3,}|~{3,})[^\n]*$/gm;
+  let open: { at: number; mark: string } | null = null;
+  for (const m of md.matchAll(fence)) {
+    const run = m[1] ?? "";
+    const at = m.index ?? 0;
+    if (open === null) { open = { at, mark: run }; continue; }
+    if (run[0] === open.mark[0] && run.length >= open.mark.length && m[0].trim() === run) {
+      out.push([open.at, at + m[0].length]);
+      open = null;
+    }
+  }
+  if (open !== null) out.push([open.at, md.length]);
+  const inFence = (i: number) => out.some(([from, to]) => i >= from && i < to);
+  for (const m of md.matchAll(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g)) {
+    const at = m.index ?? 0;
+    if (!inFence(at)) out.push([at, at + m[0].length]);
+  }
+  return out;
+}
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -1808,7 +1893,7 @@ export function check(src: PageSource): Report {
 
   /* R45 — the page's words are in content.yaml */
   for (const fileName of names) {
-    if (!RETIRED_EXT.test(fileName)) continue;
+    if (!RETIRED_EXT.test(fileName) || fileName === PAGE_INSTRUCTIONS) continue;
     say("R45", "FAIL", fileName, 0, fileName + " is the old format. A markdown part carries its own prose inline and a diagram is drawn in the section that holds it, so nothing reads a file beside content.yaml — the words in here are invisible, and two copies of a paragraph is one of them going stale.");
   }
 
@@ -1877,10 +1962,22 @@ export function check(src: PageSource): Report {
    *  and are therefore never reported as dead. */
   const templates = (
     body: string, where: string, line: number, file: string,
-    scopes: [string, Variables][],
+    scopes: [string, Variables][], markdown = false,
   ): void => {
+    const code = markdown ? codeIn(body) : [];
     for (const m of body.matchAll(/\{\{([^}]*)\}\}/g)) {
       const inner = (m[1] ?? "").trim();
+      /* INSIDE CODE, BRACES THAT NAME NOTHING ARE MEANT. Code is where a page
+       * quotes somebody else's template syntax — Roam's `{{roam/render}}`, a
+       * Handlebars helper — and the runtime leaves a name it cannot fill exactly
+       * as written, so the reader sees what the author typed. One that DOES
+       * resolve is still filled, so it is still credited to its scope for R46. */
+      const quoted = code.some(([from, to]) => (m.index ?? 0) >= from && (m.index ?? 0) < to);
+      if (quoted) {
+        const held = VAR_NAME.test(inner) ? scopes.find(([, vars]) => Object.hasOwn(vars, inner)) : undefined;
+        if (held !== undefined) mark(held[0], inner);
+        continue;
+      }
       if (!VAR_NAME.test(inner)) {
         say("R41", "FAIL", file, line, '"{{' + inner + '}}" in "' + where + '" does not name a variable' + (inner.includes("::")
           ? ": the cross-slot form is gone. It belonged to a flat file where every value shared one dictionary, and the scopes nest now — a bare name reaches this part's variables, then the section's, then the page's."
@@ -1931,7 +2028,7 @@ export function check(src: PageSource): Report {
     for (const part of sect.parts) {
       if (part.type !== "markdown") continue;
       const at = sect.name + "." + part.id;
-      templates(part.data, at, part.line, DOC, [[at, part.own], [sect.name, sect.own], ["", pageVars]]);
+      templates(part.data, at, part.line, DOC, [[at, part.own], [sect.name, sect.own], ["", pageVars]], true);
     }
   }
 

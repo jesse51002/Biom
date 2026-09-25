@@ -219,6 +219,27 @@ test("the checker's own reader answers exactly what the vendored parser answers"
   }
 });
 
+/** THE SHAPES A WORKSPACE WRITES THAT THE FRAMEWORK'S OWN FILES DO NOT. The walk
+ *  above only sees what ships, so a shape no shipped file happens to use was never
+ *  held to anything — and a workspace's pages were refused by the checker while
+ *  the server read them fine. Each of these was one: an apostrophe in a word read
+ *  as a string that never closed, a list starting on its parent's dash read as
+ *  indented too far, a colon inside a word read as an item of nothing forever,
+ *  and an escaped backslash read as a line break. */
+test("the reader agrees with the server on what a workspace writes and the framework does not", () => {
+  const docs = [
+    "rows:\n  - [A redrawn editor's dropped save, \"`guest/runtime/edit.js`\"]\n  - [The Map row in the rail's foot, It's the one]\n",
+    "note: It's the rail's foot # and a comment\ndon't: stop\n",
+    "fields:\n  students:\n    - - name\n      - Student name\n      - true\n    - - - deep\n        - er\n    - - a: 1\n        b: 2\n",
+    "links: [see http://x.dev, at 10:30, \"quoted\": v, plain: v]\n",
+    "said: \"a typed `\\\\n` stays two characters, and \\u00e9 is one\"\n",
+    "mixed: [\"it's quoted\", 'it''s single', plain's]\n",
+  ];
+  for (const text of docs) {
+    expect(readYaml(text), text).toEqual(parseDocument(text, { version: "1.2" }).toJS());
+  }
+});
+
 test("the reader refuses what the server refuses, and says which line", () => {
   const bad = check(page(html({}), "name: Rates\n  contents: []\n"));
   expect(rules(bad).has("R1")).toBe(true);
@@ -884,6 +905,18 @@ test("R45 — the page's words are in content.yaml and nowhere else", () => {
   expect(rules(withMermaid).has("R45")).toBe(true);
 });
 
+/** THE PAGE'S OWN INSTRUCTIONS ARE NOT ITS WORDS. `INSTRUCTIONS.md` beside
+ *  `content.yaml` is read by every run under the page and every agent pointed at
+ *  it (`vault/docs/automations.md`), so it is the one `.md` there that something
+ *  reads — and a workspace with automations failed R45 once per automation page. */
+test("R45 — a page's INSTRUCTIONS.md is read by its runs, and is not the old format", () => {
+  const withInstructions = check({ id: "rates-note", doc: PAGE_YAML, files: { "hero.html": html({}), "INSTRUCTIONS.md": "Keep it short.\n" } });
+  expect(rules(withInstructions).has("R45")).toBe(false);
+  // Only that name: any other .md beside it is still words nothing reads.
+  const withNotes = check({ id: "rates-note", doc: PAGE_YAML, files: { "hero.html": html({}), "INSTRUCTIONS.md": "Keep it short.\n", "notes.md": "# Notes\n" } });
+  expect(rules(withNotes).has("R45")).toBe(true);
+});
+
 /* ── variables and the templates that read them ─────────────────────────── */
 
 test("R41 — the nearest one wins: the part's own values, then the section's, then the page's", () => {
@@ -943,6 +976,21 @@ test("R46 — a variable nothing in its scope reads is dead weight", () => {
   expect(rules(report).has("R46")).toBe(true);
   // Advice: it may be about to be used, and taking it out is the reader's call.
   expect(report.ok).toBe(true);
+});
+
+/** BRACES IN CODE ARE QUOTED. Code is where a page quotes somebody else's template
+ *  syntax, and the runtime leaves a name it cannot fill exactly as written, so the
+ *  reader sees what the author typed. Outside code the same braces are still the
+ *  typo R41 exists to find, and a name that does resolve inside code is still
+ *  filled — so it still counts as read for R46. */
+test("R41 — braces inside code are somebody else's syntax, quoted", () => {
+  expect(rules(check(prose("Roam runs `{{roam/render}}` in the app."))).has("R41")).toBe(false);
+  expect(rules(check(prose("A fence:\n\n```\n{{roam/render}} and {{nothing}}\n```\n\nand after it."))).has("R41")).toBe(false);
+  expect(rules(check(prose("Two ticks: ``a `{{roam/render}}` b``."))).has("R41")).toBe(false);
+  expect(rules(check(prose("Roam runs {{roam/render}} in the app."))).has("R41")).toBe(true);
+  expect(rules(check(prose("After the code `x`, {{rate}} is still a name."))).has("R41")).toBe(true);
+  const credited = check(prose("The rate is `{{rate}}`.", { section: ["rate: 62"] }));
+  expect(rules(credited).has("R46")).toBe(false);
 });
 
 test("R46 — a section's SCRIPT reads its variables too, and `ctx.vars` is not a template", () => {

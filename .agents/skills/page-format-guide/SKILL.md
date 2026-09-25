@@ -525,6 +525,13 @@ This is the sharpest maintenance hazard in the format, and it must be named.
 > When you change what the format accepts, change all four in the same edit and
 > run that test — a change in one alone is a page that opens in the server and
 > fails the checker, or the reverse.
+>
+> **The walk only sees what the framework ships, and a workspace writes shapes it
+> does not.** An apostrophe inside a word, a list that starts on its parent's dash,
+> a colon inside a word in a flow list and an escaped backslash were each read
+> fine by the server and refused or misread by the checker, which failed a real
+> workspace's CI on pages that drew. Those are pinned by a list of documents of
+> their own in the same test; a new one goes there when it is found.
 
 `server/domain/design.ts` reads the same document shape out of `design/`, but it
 is **not** a fifth reader: it goes through `docOf` and `drawSection` deliberately,
