@@ -116,7 +116,7 @@
 import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec, PluginExtension } from "../../contracts/types.ts";
 import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
-import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
+import { AGENT_PAGE, DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
 
 const PAGES_DIR = "pages";
@@ -287,7 +287,7 @@ export const DEFAULT_SLOT = "body";
  *  costs is one rule, enforced in `create` and `move` and nowhere else: two
  *  siblings may not differ only in case, because a case-insensitive filesystem
  *  would make them one directory. See `foldId`. */
-const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+export const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 /** A section name, and a slot name: lowercase, no dot, no `@`. A section may
  *  also be a child key, which is the one form that starts with `@`; the two
  *  namespaces cannot collide because this cannot match the character that
@@ -693,6 +693,11 @@ export function pageDir(id: PageId): string {
   // `@design` cannot collide with anything: SEGMENT forbids `@`, so no page a
   // person creates can ever be called this.
   if (id === DESIGN_PAGE) return DESIGN_DIR;
+  // EVERY OTHER RESERVED ID IS A SCREEN, NOT A PAGE, AND HOLDS NO FILE. `@map`
+  // and `@agent` are answered by `read` as bare plugin pages and have no
+  // directory, so a write addressed to one — a slot, the order, the variables,
+  // the raw document, a file — is refused here, by name, whichever kind asked.
+  if (id.startsWith("@")) throw bad("bad_request", "that is one of the framework's screens, not a page, and it holds no files");
   const parts = id.split("/");
   // A depth nothing legitimate reaches, and a cheap end to a pathological id.
   if (parts.length > 12 || !parts.every((p) => SEGMENT.test(p))) {
@@ -1682,6 +1687,7 @@ export function makePages(
       // the whole point of the id; its existence is not.
       if (init.parent === DESIGN_PAGE) throw bad("bad_request", "the design doc holds no pages");
       if (init.parent === MAP_PAGE) throw bad("bad_request", "the map holds no pages");
+      if (init.parent === AGENT_PAGE) throw bad("bad_request", "the Agent screen holds no pages");
       const name = typeof init.name === "string" ? init.name.trim() : "";
       if (name === "") throw bad("bad_request", "a page needs a name");
 
@@ -1739,6 +1745,7 @@ export function makePages(
     async remove(id: PageId): Promise<void> {
       if (id === DESIGN_PAGE) throw bad("bad_request", "the design doc cannot be removed");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be removed");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be removed");
       const dir = dirOf(id);
       // The top level is this page's children. Removing it would leave every
       // ordering in the workspace with nowhere to live.
@@ -1779,6 +1786,8 @@ export function makePages(
       if (parent === DESIGN_PAGE) throw bad("bad_request", "the design doc holds no pages");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be moved");
       if (parent === MAP_PAGE) throw bad("bad_request", "the map holds no pages");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be moved");
+      if (parent === AGENT_PAGE) throw bad("bad_request", "the Agent screen holds no pages");
       const from = dirOf(id);
       const parentDir = dirOf(parent);
       if (id === ROOT_PAGE) throw bad("bad_request", "the root page cannot be moved");
@@ -1832,6 +1841,7 @@ export function makePages(
     async rename(id: PageId, name: string): Promise<PageId> {
       if (id === DESIGN_PAGE) throw bad("bad_request", "the design doc cannot be renamed");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be renamed");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be renamed");
       const next = name.trim();
       if (next === "") throw bad("bad_request", "a page needs a name");
       const found = await readDoc(id);

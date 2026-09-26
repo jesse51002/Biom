@@ -335,6 +335,9 @@ export function makeBridge(ws, transport, ui, vault = "") {
       // The ports are not minted here: this module never sees a frame, so the
       // frame host reads this answer, mints a session for the page it names and
       // adds the two ports to the transfer list on the way out.
+      // A RESERVED SCREEN — `@agent`, `@map`, `@design` — is never drawn inside
+      // a page: `isHostRequest` refuses any `@` id before this case can run, so
+      // no box can hold the Agent screen's look and be fed the chats.
       case "page.embed": {
         const page = await readPage(req.page);
         const input = { id: page.id, name: page.name, plugin: page.plugin, input: page.input };

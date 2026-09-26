@@ -233,3 +233,10 @@ test("the stream's named events: the two that were, and the three that carry JSO
   expect({ ...STREAM }).toEqual({ CHANGE: "change", RUN: "run", HISTORY: "history", CHAT: "chat", AGENTS: "agents" });
   expect(Object.isFrozen(STREAM)).toBe(true);
 });
+
+test("page.embed never names a framework screen — every `@` id is refused, and an ordinary page is not", () => {
+  for (const page of ["@agent", "@map", "@design", "@anything"]) {
+    expect([page, isHostRequest(env("page.embed", { page })), isRuntimeRequest(env("page.embed", { page }))]).toEqual([page, false, false]);
+  }
+  expect(isHostRequest(env("page.embed", { page: "home/notes" }))).toBe(true);
+});

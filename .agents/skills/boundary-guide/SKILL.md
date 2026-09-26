@@ -461,6 +461,14 @@ page)` is that relay, written once in the shim.
 
 **One more thing travels over `window` between the box and its nested frame, and it is not data.** The `ports` message a box relays carries `embedded: true`, and a realm told that reports its scroll position to `window.parent` as `{ kind: "scrolled", at }` — a fraction of its run — and takes `{ kind: "scroll", at }` back from it. Neither reaches the host: a top-level box's parent is the host and it is never told it is embedded, so it never says either. The host's own `hello` listener would ignore them anyway, because neither is a `GuestNotice`. **They are not the redraw's pair** (§3): a box of its own says `position` in pixels over the PORT and takes `place` back, and a nested realm says neither — its embedder holds it level in fractions over `window`, and an embedded session is minted afresh on every grant, so there is no mount for it to keep a place on.
 
+**A framework screen is never drawn inside a page.** `page.embed` naming any
+`@` id — `@agent`, `@map`, `@design` — is refused by `isHostRequest` before a
+session is minted: `@` is outside a page segment's grammar so no page is lost,
+and a page that could hold the Agent screen's box would hold the box the host
+feeds the chats. The same edit made the other half a thrown error rather than a
+convention: `look.state` and `look.patch` go through the Agent view's own
+`Frame.post` and nowhere else, and `broadcast` throws on either.
+
 A session **dies with its parent**: `shut` closes a realm's embeds before its
 own ports, so a re-hello, a changed document and `drop` all take the nested
 pages with them. `unembed { embed }` is a `GuestNotice` that closes one sooner,

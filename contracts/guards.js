@@ -327,8 +327,14 @@ function wellFormed(v, allowed) {
       return (t.kind === "page" || t.kind === "table") && typeof t.id === "string" && t.id !== "";
     }
     case "doc.get":
-    case "page.embed":
       return typeof v.page === "string" && v.page !== "";
+    case "page.embed":
+      // NEVER A RESERVED SCREEN. `@agent` is the Agent screen's look, `@map`
+      // the rail's map, `@design` the design doc: each is a screen of the
+      // framework's, and a page that could draw one inside itself would hold a
+      // box the host treats as that screen's — the Agent screen's is fed the
+      // chats. `@` is outside a page segment's grammar, so no page is refused.
+      return typeof v.page === "string" && v.page !== "" && !v.page.startsWith("@");
     case "automation.list":
       return v.page === undefined || (typeof v.page === "string" && v.page !== "");
     case "run.start":

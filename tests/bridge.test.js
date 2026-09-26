@@ -1282,3 +1282,51 @@ test("the host decides: an id nothing holds is refused, not navigated to", async
   expect(res.error.code).toBe("not_found");
   expect(ui.went).toEqual([]);
 });
+
+/* ── the Agent screen's box: the eleventh contracts edit ───────────────────── */
+
+test("A BOX CAN NEVER DRAW A FRAMEWORK SCREEN INSIDE ITSELF — `@agent`, `@map`, `@design` are refused before a session is minted", async () => {
+  const dom = fakeDom();
+  const { makeFrameHost } = await import("../client/frame/frame.js");
+  const { ws, transport, calls } = doubles();
+  // The REAL bridge behind the frame host, so the refusal is the guard's own.
+  const host = makeFrameHost(makeBridge(ws, transport, uiSpy()), "http://h/v/x/assets/");
+  host.setShim("");
+  const frame = host.for("k", "<main></main>", CTX);
+  const hs = sayHello(dom, frame);
+  for (const page of ["@agent", "@map", "@design"]) {
+    const e = await embed(hs.guest, page, "e-" + page);
+    expect([page, e.res.ok, e.res.error?.code, e.runtime, e.guest]).toEqual([page, false, ERRORS.UNKNOWN_KIND, null, null]);
+  }
+  // Nothing reached the server on the way to being refused.
+  expect(calls.filter((c) => c.kind === "page.read")).toEqual([]);
+  // An ordinary page still embeds.
+  const ok = await embed(hs.guest, "notes", "e-notes");
+  expect(ok.res.ok).toBe(true);
+});
+
+test("THE AGENT SCREEN'S EVENTS ARE NEVER BROADCAST: one frame's own post reaches that box and no other", async () => {
+  const dom = fakeDom();
+  const { makeFrameHost } = await import("../client/frame/frame.js");
+  const host = makeFrameHost({ resolve: mock(async () => ({})), runtime: mock(async () => ({})) });
+  host.setShim("");
+  const look = host.for("agent", "<main id=\"g-agent\"></main>", { page: "@agent" });
+  const lookHs = sayHello(dom, look);
+  const page = host.for("page", "<main></main>", CTX);
+  const pageHs = sayHello(dom, page);
+  const heardLook = [];
+  const heardPage = [];
+  lookHs.guest.onmessage = (ev) => heardLook.push(ev.data.kind);
+  pageHs.guest.onmessage = (ev) => heardPage.push(ev.data.kind);
+
+  const state = { mode: "screen", chat: null, list: false, chats: [], updates: [], names: {}, input: { at: "center", height: 120 }, beside: null };
+  expect(() => host.broadcast({ kind: "look.state", state })).toThrow(/never broadcast/);
+  expect(() => host.broadcast({ kind: "look.patch", chat: null })).toThrow(/never broadcast/);
+  // A refresh of the look's page does not carry the chats either: it is a
+  // `refresh`, and `look.*` has no path but a frame's own post.
+  host.refresh({ page: "@agent" });
+  look.post({ kind: "look.state", state });
+  await settle();
+  expect(heardLook).toEqual(["refresh", "look.state"]);
+  expect(heardPage).toEqual([]);
+});

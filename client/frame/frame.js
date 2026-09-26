@@ -580,6 +580,13 @@ export function makeFrameHost(bridge, assets, faces) {
     },
 
     broadcast(ev) {
+      // THE AGENT SCREEN'S EVENTS ARE NEVER BROADCAST, and this is where that
+      // is enforced rather than remembered. `look.state` and `look.patch` carry
+      // the chats — every agent's words — and go through the Agent view's own
+      // `Frame.post`, to the one box it mounted, and nowhere else: never a
+      // broadcast, never a scan of sessions by page. A broadcast of one is a
+      // programming error, and it throws before any box hears it.
+      if (ev.kind.startsWith("look.")) throw new Error(`${ev.kind} is posted to the Agent screen's own frame, never broadcast`);
       // Only `edit` and `theme` are broadcast. `mounted` belongs to one box and
       // is not an announcement — the `ports` message is what says which page a
       // box is on, and it says it in the same breath as granting the channel
