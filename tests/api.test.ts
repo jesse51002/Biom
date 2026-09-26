@@ -331,6 +331,9 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     expect(await readFile(join(w.vault, "AGENTS.md"), "utf8")).toContain(".agents/skills/");
     expect(existsSync(join(w.vault, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     // A plain `.agents/skills/`, so the vault reads the same to Cursor and Codex.
+    // The seeder writes no `.claude` and no `CLAUDE.md`: those are LINKS to the
+    // one guide and the one set of skills, kept at the root on open by
+    // `keepHarness` — `tests/framework-harness.test.ts` — never a second copy.
     expect(existsSync(join(w.vault, ".claude"))).toBe(false);
     expect(existsSync(join(w.vault, "CLAUDE.md"))).toBe(false);
     expect(await readFile(join(w.vault, ".agents", "skills", "check.ts"), "utf8")).toContain("the checker");

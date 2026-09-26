@@ -180,19 +180,19 @@ export async function readSkills(files: Files): Promise<Skill[]> {
 
 /** EVERYTHING THE CHATS ARE HANDED, and they reach nothing else. */
 export interface ChatsDeps {
-  /** How to start an agent — track A2's `Agents.launch`. Null where it cannot
+  /** How to start an agent — the agents module's `Agents.launch`. Null where it cannot
    *  be started, which makes the chat's light red with a sentence. */
   launch: (key: AgentKey) => Promise<AgentLaunch | null>;
-  /** What this machine has now — A2's `Agents.list` — and its subscription,
+  /** What this machine has now — `Agents.list` — and its subscription,
    *  which is how a HELD first message goes out the moment an agent is
    *  Active, and how the probe session's commands fill the / menu before a
    *  chat has a session of its own. */
   agents: () => AgentInfo[];
   onAgents: (fn: (agents: AgentInfo[]) => void) => () => void;
   /** A session or a first message was refused with ACP's auth-required error:
-   *  A2 marks the agent Inactive with `signin`, and the pop-up offers it. */
+   *  the agents module marks it Inactive with `signin`, and Sign in is offered. */
   refused: (key: AgentKey) => void;
-  /** THE SIGN-IN METHOD AN AGENT WANTS IN EVERY PROCESS, or null — A2's
+  /** THE SIGN-IN METHOD AN AGENT WANTS IN EVERY PROCESS, or null —
    *  `Agents.signedInWith`. Grok Build, Cursor and Junie refuse a session in
    *  a process that has not called `authenticate`, even when the person is
    *  signed in; every other agent answers null here, because `authenticate`
@@ -216,13 +216,15 @@ export interface ChatsDeps {
    *  `chats/` under it. */
   logDir: string;
   /** Files over the vault's root for the agent's `fs/write_text_file` — the
-   *  atomic write, built WITHOUT the vault's baseline (`makeFiles(root)`) and
-   *  without the history's writer callback. */
+   *  atomic write, built WITHOUT the vault's baseline (`makeFiles(root)`), so
+   *  the watcher takes an agent's write for a change and the page redraws. The
+   *  history hears of it through `onEdit` and never through these. */
   files: Files;
   /** The workspace's skills, read fresh for each / menu. */
   skills: () => Promise<Skill[]>;
-  /** The screen a vault-relative path is shown at — the history track's pure
-   *  `placeOfPath`, closed over the page list — for a `changed` update. */
+  /** The screen a vault-relative path is shown at — the history's own
+   *  `placeOf`, the one path-to-place lookup — for a `changed` update, so a
+   *  turn's changes and the history's edits name a page the same way. */
   placeOf: (path: string) => Promise<Place | null>;
   /** A page's `uid` by its id, for `chat.new`'s page, kept as a place. */
   uidOf: (page: PageId) => Promise<string | null>;

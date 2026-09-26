@@ -156,8 +156,11 @@ test("the furniture still seeds, because none of it is content", async () => {
   // A PLAIN .agents/skills/, not .claude/skills/ — the vault has to read the same to
   // Cursor and Codex, and AGENTS.md is what points at it.
   expect(existsSync(join(root, ".claude"))).toBe(false);
-  // And no `CLAUDE.md` beside the guide. A vendor-named copy of the same words
-  // is the same favouritism one file up, and a second copy that drifts.
+  // And the seeder writes no `CLAUDE.md` beside the guide: a vendor-named COPY
+  // of the same words would be a second copy that drifts. What a harness that
+  // reads only its own names gets instead is a LINK to this one, kept on open
+  // by `keepHarness` in `server/workspace/framework.ts` and held by
+  // `tests/framework-harness.test.ts`.
   expect(existsSync(join(root, "CLAUDE.md"))).toBe(false);
   // THE SKILLS ARE THE FRAMEWORK'S, rewritten on every open rather than filled
   // once — `framework.ts` — and the checker travels the same way; skill/ stays

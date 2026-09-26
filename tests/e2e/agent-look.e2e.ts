@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // THE AGENT SCREEN'S LOOK, IN A REAL BOX, IN A REAL BROWSER.
 //
-// The host side of the Agent screen is another track's, so this does not go
-// through the app. It builds the box exactly as the app does — the real shim
+// The host side of the Agent screen is a module of its own with tests of its
+// own, so this does not go through the app. It builds the box exactly as the app does — the real shim
 // woven in by `weave`, the real runtime by `weaveRuntime`, the real plugin
 // bundle by `pluginBundle` over the framework's `guest/plugins/` — puts it in
 // a `sandbox="allow-scripts"` srcdoc frame at an opaque origin, and stands in

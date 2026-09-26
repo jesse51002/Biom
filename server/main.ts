@@ -2425,10 +2425,11 @@ let NEWER: string | null = null;
 async function serveStatic(pathname: string, grant?: string): Promise<Response> {
   const key = locate(pathname);
   const response = await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
-  // THE TERMINAL CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE —
-  // a cookie rather than a third meta tag, because a script on the page never
+  // THIS MACHINE'S CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE
+  // — a cookie rather than a third meta tag, because a script on the page never
   // needs to read it and an HttpOnly cookie is one no script can. See
-  // `terminalRefusal`.
+  // `LOCAL_COOKIE`: `terminalRefusal` spends it for the sign-in terminal, and
+  // `localRefusal` for the agent and chat kinds and the live stream.
   if (key === INDEX && grant !== undefined && response.status === 200) response.headers.append("set-cookie", grant);
   return response;
 }

@@ -10,7 +10,11 @@
 // plainly to be missing Node where there is none. OpenClaw is found by its
 // command and is only ever reached through a Gateway on THIS machine: its
 // bridge is started pointed at the local address, the check asks the local
-// address and nothing else, and **Start Gateway** is `start`.
+// address and nothing else, and **Start Gateway** is `start`. The first `list`
+// looks, and a `list` read once the last look is `TIMING.rediscover` old looks
+// again, probing only what it finds new — so an agent put on this machine while
+// Biom runs is found without a restart, and a list read often is not a probe
+// storm.
 //
 // ACTIVE MEANS THE SESSION OPENED, and nothing short of it: the agent started,
 // answered `initialize` and answered `session/new`. Anything less is Inactive
@@ -19,8 +23,11 @@
 // protocol the chats use, `server/platform/acp-wire.ts` — the same
 // `initialize`, the same `session/new`, the same pickers with the same option
 // ids, so a `chat.config` made before a chat has a session names an option the
-// chat's own session knows — and it NEVER CALLS `authenticate`: on an agent already
-// signed in that can sign it out, or open a browser for nothing. The probe
+// chat's own session knows — and it never calls `authenticate` unasked: on an
+// agent already signed in that can sign it out, or open a browser for nothing.
+// The one exception is `AUTH_EVERY_PROCESS` below — three agents unusable in a
+// process that has not called it — and those are sent the method that last
+// signed them in, on a look as on a chat. The probe
 // session's config options and commands are kept on the agent, so the start
 // screen's pickers and the / menu are full before a chat has a session; and
 // where the agent offers `session/delete`, the probe's own session is deleted

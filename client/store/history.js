@@ -68,8 +68,9 @@ import { isHistoryEntry } from "../transport/chat.js";
  *   the screen and have not been answered yet, oldest first.
  */
 
-/** HOW MANY ENTRIES A WINDOW KEEPS, and it is the server's own bound — B1's
- *  ring holds five thousand, so a window never holds more than there is. */
+/** HOW MANY ENTRIES A WINDOW KEEPS, and it is the server's own bound — the
+ *  history's ring (`LIMIT` in `server/domain/history.ts`) holds five thousand,
+ *  so a window never holds more than there is. */
 export const HISTORY_LIMIT = 5000;
 
 /**

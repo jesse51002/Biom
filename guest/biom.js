@@ -45,6 +45,8 @@
  * What it does beyond wrapping postMessage:
  *   · says when the PERSON touches the page — which way, throttled, and only
  *     for events the browser says a person made (`touches` below)
+ *   · folds the Agent screen's `look.state` and `look.patch` into one state and
+ *     hands it to `biom.onLook` — posted only to the box on `@agent`
  *   · correlates request ids and rejects on `ok: false` with the closed error
  *   · re-declares the palette, because custom properties do not cross a document
  *     boundary and `var(--ink)` is otherwise undefined in here
