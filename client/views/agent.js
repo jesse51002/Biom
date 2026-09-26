@@ -20,7 +20,7 @@
 // models**, the / menu, Stop while a turn runs, **Go to page** above it, and
 // the sign-in pop-ups. Only what the person types here reaches an agent; the
 // look can ask to open a chat, start a new thread, show the list or change
-// the panel's size, and nothing else (*Chat*, `screens`, `picker`, `slash`,
+// where the panel goes, and nothing else (*Chat*, `screens`, `picker`, `slash`,
 // `plugin`; *History and View Switcher*, `popups`).
 
 /** @import { FrameHost, UiStore } from "../../contracts/types.ts" */

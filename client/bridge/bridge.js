@@ -376,7 +376,7 @@ export function makeBridge(ws, transport, ui, vault = "") {
       /* ── the Agent screen's look: the eleventh contracts edit ─────────── */
 
       // THE LOOK MOVING THE SCREEN — a chat, a new thread, the list, the
-      // panel's size. Refused until the Agent screen is built: the kinds are
+      // panel going to the screen, beside the page or shut. Refused until the Agent screen is built: the kinds are
       // in the contract so the look can be written against them, and the host
       // side that answers them, for the look's own box and no other, is the
       // Agent screen's to add.

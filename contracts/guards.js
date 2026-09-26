@@ -112,7 +112,7 @@ const HOST_KINDS = new Set([
   // three-place rule: HostRequest, the bridge case, and this line.
   "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
   // THE AGENT SCREEN'S LOOK — the eleventh contracts edit, 2026-09-25. A chat,
-  // a new thread, the list of chats, the panel's size: the look may ask to be
+  // a new thread, the list of chats, where the panel goes: the look may ask to be
   // SHOWN something and may never SAY anything, so not one of these carries
   // text, and no `chat.*` or `agents.*` kind is ever on this list — a test
   // holds both. The bridge answers them for the look's own box and refuses
