@@ -499,6 +499,23 @@ asked for it — what it may SAY is `boundary-guide`'s and what it draws is
 `chat-guide`'s. `tests/agent-look.test.js` holds the mount and the look outside
 a browser, and `tests/e2e/agent-look.e2e.ts` inside one.
 
+**A look of a workspace's own must leave the host's regions free, because the
+state says where the input box is and not where a look's furniture goes.**
+Biom's input box is laid over the box on a STAGE that the default look's own
+furniture stays out of, and `LookState` carries no stage geometry, so a
+replacement look keeps the same two regions to itself: on the full screen,
+the left `LOOK_THREADS` (268 px) while the list of chats or a chat shows —
+where the default look draws the list — and in the panel, the top `LOOK_HEAD`
+(46 px), where it draws the panel's head. Both constants are in
+`client/views/agent.js`, and the stage is `.agentover` in `client/css/agent.css`.
+On the stage the input box is at most 720 px wide and centred, and
+`LookState.input` says where it sits: **`bottom`**, in a chat, where `height` is
+the pixels it covers from the box's bottom edge up to the top of the composer,
+so a look keeps its last line above that; **`center`**, on the start screen,
+where `height` is the composer's own height and it sits on the middle of the
+stage, so a look leaves that band free and draws above and below it. A patch
+carries `input` again whenever either moves.
+
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands
 was the whole promise; the cost, named at the time, was that a framework fix
