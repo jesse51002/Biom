@@ -1820,13 +1820,31 @@ export type ApiRequest =
  *  *Chat* spec.
  *
  *  NOTHING HERE MAY EVER REACH A BOX, and that is the one rule of this union.
- *  An agent is a program allowed everything on this machine — its tools, its
- *  shell, the person's login — so whatever can put words in front of one can
- *  do anything the person can. The input box is Biom's and lives in the host;
- *  these kinds are what it says, and `isChatRequest` narrows them at the
+ *  A chat's agent is a program allowed everything on this machine — its tools,
+ *  its shell, the person's login — so whatever can put words in front of one
+ *  can do anything the person can. The input box is Biom's and lives in the
+ *  host; these kinds are what it says, and `isChatRequest` narrows them at the
  *  server. `isHostRequest` and `isRuntimeRequest` refuse every one, and a test
  *  holds that for every kind in this union and for any kind whose name starts
- *  `chat.` or `agents.` that anybody adds later.
+ *  `chat.` or `agents.` that anybody adds later. (`run.start` is the existing
+ *  exception to *no box reaches an agent*, and it is a different thing: a page
+ *  may start an AUTOMATION, whose command and kickoff are files in the vault,
+ *  with inputs typed into a form — it cannot put its own words in front of a
+ *  chat's agent, which is what this union guards.)
+ *
+ *  AND NOTHING HERE ANSWERS ANYBODY BUT THIS MACHINE'S OWN WINDOW, IN EVERY
+ *  BUILD. The launch token guards the API route only in the built application;
+ *  a source run has none, the server listens on every interface, and in a
+ *  source run a box's `fetch` is made by the server itself — from a loopback
+ *  peer, with any Host and Origin the page likes. So every kind in this union,
+ *  and `window.report`, is answered only to a request carrying the capability
+ *  cookie the server minted for a loopback peer (`HttpOnly`, `SameSite=Strict`,
+ *  set on the document it composes) with a loopback Host on its own port:
+ *  `isLocalKind` in `guards.js` names them, `localRefusal` in `server/main.ts`
+ *  is the check, and a refusal is `identity` with a sentence naming no check.
+ *  The proxy drops any cookie a page hands it and every `set-cookie` it is
+ *  answered with, so no page can present it. The live stream, which carries
+ *  these chats, takes the token and the cookie too.
  *
  *  NO CALL WAITS ON AN AGENT. Starting one, probing it, installing it and
  *  signing it in can take a minute; a turn can take an hour. So each of these
@@ -1901,7 +1919,10 @@ export type ChatRequest = Envelope &
  *  outer-ring kinds, for the workspace's *History and View Switcher* spec.
  *  Outer ring because a page's own code never reads the context: the chat
  *  panel, the switcher and everything around them are the framework's, and
- *  the box is told only its own page. `isHistoryRequest` narrows them. */
+ *  the box is told only its own page. `isHistoryRequest` narrows them.
+ *  `window.report` answers only this machine's own window, as the chat kinds
+ *  do; `window.list` and `history.read` are reads a run may make and stay on
+ *  the launch token. */
 export type HistoryRequest = Envelope &
   (
     /** THIS WINDOW'S CONTEXT, reported whenever it changes, with the window

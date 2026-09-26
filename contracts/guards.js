@@ -156,6 +156,26 @@ const CHAT_KINDS = new Set([
 /** WHAT EACH WINDOW HAS OPEN, AND THE HISTORY — outer ring, the same edit. */
 const HISTORY_KINDS = new Set(["window.report", "window.list", "history.read"]);
 
+/** THE KINDS THAT ANSWER ONLY THIS MACHINE'S OWN WINDOW, in every build: every
+ *  agent and chat kind, and a window's report of what it has open. The server
+ *  answers them only to a request carrying the capability cookie it minted for
+ *  a loopback peer, with a loopback Host — `localRefusal` in `server/main.ts`.
+ *  An agent answered `allow_always` does whatever it is told, so saying one of
+ *  these is command execution, and the launch token alone — absent in every
+ *  source run — is not enough. `history.read` and `window.list` are not here:
+ *  they are reads a run may make, and they stay on the token. */
+const LOCAL_KINDS = new Set([...CHAT_KINDS, "window.report"]);
+
+/**
+ * Whether a kind answers only this machine's own window. A kind nobody has
+ * listed yet that starts `chat.` or `agents.` is local too, so a kind added
+ * without this list still cannot reach an agent past the gate.
+ * @param {unknown} kind
+ */
+export function isLocalKind(kind) {
+  return typeof kind === "string" && (LOCAL_KINDS.has(kind) || kind.startsWith("chat.") || kind.startsWith("agents."));
+}
+
 /** Every kind the two inner rings admit, as a list nobody can change — for
  *  the test that pins what a box may never say. */
 export const HOST_KIND_NAMES = Object.freeze([...HOST_KINDS]);
@@ -163,6 +183,7 @@ export const RUNTIME_KIND_NAMES = Object.freeze([...RUNTIME_KINDS]);
 /** And the eleventh edit's outer-ring kinds, for the same test's other half. */
 export const CHAT_KIND_NAMES = Object.freeze([...CHAT_KINDS]);
 export const HISTORY_KIND_NAMES = Object.freeze([...HISTORY_KINDS]);
+export const LOCAL_KIND_NAMES = Object.freeze([...LOCAL_KINDS]);
 
 /**
  * True when `v` is a well-formed request an artifact is allowed to make.

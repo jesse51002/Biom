@@ -37,9 +37,15 @@ import { EVENTS_ROUTE } from "../../contracts/wire.js";
  * @param {string} baseUrl "" when this tab has chosen no folder, in which case
  *   nothing is opened at all: there is no vault to watch and the unprefixed
  *   route has no stream.
+ * @param {string} [query] WHAT THE STREAM'S ADDRESS CARRIES, `?…` or "": the
+ *   launch token in the built application, because the stream carries the
+ *   chats and the history now and answers only this launch's window. Built by
+ *   `client/boot.js`, which holds the token and its parameter's name; this
+ *   module never learns either. The capability cookie needs nothing here: an
+ *   `EventSource` sends the same-origin cookie by itself.
  * @returns {Events}
  */
-export function makeEvents(baseUrl) {
+export function makeEvents(baseUrl, query = "") {
   /** @type {Set<() => void>} */
   const hears = new Set();
   /** A run started or ended: the stream's second named event, which is a
@@ -67,7 +73,7 @@ export function makeEvents(baseUrl) {
     if (source !== null || baseUrl === "") return;
     if (typeof EventSource !== "function") return;
     try {
-      source = new EventSource(baseUrl + EVENTS_ROUTE);
+      source = new EventSource(baseUrl + EVENTS_ROUTE + query);
     } catch {
       source = null;
       return;

@@ -85,7 +85,7 @@ test("loopback is the peer address, and a cookie is read by its exact name", () 
   expect(isLoopback("::ffff:127.0.0.1")).toBe(true);
   expect(isLoopback("10.0.0.1")).toBe(false);
   expect(isLoopback("")).toBe(false);
-  expect(terminalCookie(4401)).toBe("biom-terminal-4401");
+  expect(terminalCookie(4401)).toBe("biom-local-4401");
   expect(cookieValue("a=1; biom-terminal-4400=xyz; b=2", "biom-terminal-4400")).toBe("xyz");
   expect(cookieValue("biom-terminal-44000=no", "biom-terminal-4400")).toBeNull();
   expect(cookieValue(null, "x")).toBeNull();

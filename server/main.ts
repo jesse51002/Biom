@@ -82,6 +82,7 @@ import type { PageId } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import { isLocalKind } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -2182,21 +2183,23 @@ const mintToken = (): string => crypto.randomUUID().replaceAll("-", "");
 
 /** Does this request carry the token the server minted?
  *
- *  WHAT IT IS ASKED OF IS THE HALF WORTH WRITING DOWN, AND IT IS ASKED OF ONE
- *  ROUTE. `API_ROUTE`, because the box cannot carry a token on anything it
+ *  WHAT IT IS ASKED OF IS THE HALF WORTH WRITING DOWN, AND IT IS ASKED OF TWO
+ *  ROUTES. `API_ROUTE`, and since the eleventh contracts edit the live stream,
+ *  because the box cannot carry a token on anything it
  *  loads: the artifact frame has an opaque origin and pulls fonts, vendored
  *  scripts and the workspace's own plugins in by URL with no way to set a header
  *  or edit one. The framework's own read-only static roots therefore stay open,
  *  and they cost nothing to leave open — they are the published repository's
  *  files, and the chokepoint has always been about data rather than about code.
  *
- *  THE LIVE STREAM IS UNGUARDED TOO, and it is the cheapest of the three to
- *  say out loud: `/v/<vault>/events` carries no payload at all — the event says
- *  *something under this vault changed* and nothing else, and a reader has to
- *  come back through `API_ROUTE` to learn what. What it leaks is that a folder
- *  is being written to. It could carry the token, because nothing inside a box
- *  resolves its url relatively; it does not yet because the route itself only
- *  reaches `contracts/` at the barrier, and one change at a time.
+ *  THE LIVE STREAM TAKES IT NOW, and this machine's capability beside it. It
+ *  used to be unguarded on the argument that `/v/<vault>/events` carried no
+ *  payload — *something under this vault changed*, and a reader had to come
+ *  back through `API_ROUTE` to learn what. Since the eleventh contracts edit it
+ *  carries the chats and the history — an agent's words and diffs, what the
+ *  person has open — so it is guarded like the route that answers them. The
+ *  token can ride it because nothing inside a box resolves its url: the client
+ *  builds it, as it builds the API route's.
  *
  *  THAT ARGUMENT DOES NOT COVER `/v/<vault>/asset/` AND `/v/<vault>/plugin/`,
  *  and saying so is the honest half. Those two serve the PERSON'S OWN FOLDER,
@@ -2224,7 +2227,57 @@ export function tokenOk(expected: string | null, url: URL): boolean {
   return url.searchParams.get(TOKEN_PARAM) === expected;
 }
 
-/* ── the terminal, and who may open one ─────────────────────────────────── */
+/* ── this machine's own window, and the terminal ──────────────────────────── */
+
+/** THE CAPABILITY THAT SAYS *THIS MACHINE'S OWN WINDOW*, and three things spend
+ *  it: the terminal, the agent and chat kinds on the API route, and the live
+ *  stream. It was the terminal's alone until the eleventh contracts edit, when
+ *  talking to an agent became as much command execution as a shell is — an
+ *  agent answered `allow_always` does whatever it is told — and so it
+ *  generalised rather than being minted twice.
+ *
+ *  ONE COOKIE, minted once per launch in every build, set `HttpOnly` and
+ *  `SameSite=Strict` on the document this server composes and ONLY for a
+ *  loopback peer. What it stops that the headers cannot: in a source run a page
+ *  in the box can make the server itself fetch anything through the `fetch`
+ *  proxy in `server/api/routes.ts`, with any Host and any Origin it likes and
+ *  from a loopback peer — but it can never PRESENT this cookie. It cannot read
+ *  it (HttpOnly, and the proxy drops `set-cookie` on the way back), its own
+ *  requests are cross-site so the browser never sends it (Strict), and the
+ *  proxy drops any `cookie` header a page hands it. A machine on the network is
+ *  refused by the peer address before any of that. */
+export const LOCAL_COOKIE = "biom-local";
+
+/** Named per port, because a cookie ignores the port and two servers on one
+ *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
+ *  other's. */
+export const localCookie = (port: number): string => `${LOCAL_COOKIE}-${port}`;
+
+/** WHETHER A REQUEST IS THIS MACHINE'S OWN WINDOW, or the sentence saying why
+ *  not — for the log and a test, and never for the caller, who is told only
+ *  that it was refused. A loopback peer, a Host that is a loopback name on this
+ *  server's port (which defeats a DNS-rebinding page resolving its own name to
+ *  127.0.0.1), and the capability cookie. No Origin check: the one forger this
+ *  has to stop — the page proxy — sets any Origin it likes, and an
+ *  `EventSource` sends none. */
+export function localRefusal(
+  asked: { address: string | null; host: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if (!isLoopback(asked.address)) return "offered only to this machine";
+  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "this machine's capability is missing";
+  return null;
+}
+
+/** A Host header naming a loopback name on this server's own port. */
+function loopbackHost(host: string | null, port: number): boolean {
+  const h = host ?? "";
+  const cut = h.lastIndexOf(":");
+  const name = cut < 0 ? h : h.slice(0, cut);
+  const at = cut < 0 ? "" : h.slice(cut + 1);
+  return LOOPBACK_NAMES.has(name.toLowerCase()) && at === String(port);
+}
 
 /** THE TERMINAL IS LOCAL COMMAND EXECUTION, AND IT IS GUARDED LIKE IT. The API
  *  route above is open in a source run because what it reaches is a workspace;
@@ -2263,12 +2316,11 @@ export function tokenOk(expected: string | null, url: URL): boolean {
  *
  *  Pure, and exported: the refusal is a sentence for the log and a test, and the
  *  socket itself is never told which check failed. */
-export const TERMINAL_COOKIE = "biom-terminal";
+export const TERMINAL_COOKIE = LOCAL_COOKIE;
 
-/** Named per port, because a cookie ignores the port and two servers on one
- *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
- *  other's. */
-export const terminalCookie = (port: number): string => `${TERMINAL_COOKIE}-${port}`;
+/** The terminal's name for `localCookie`, kept for its importers while the
+ *  terminal is cut down to the sign-in pop-up. */
+export const terminalCookie = localCookie;
 
 const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -2297,10 +2349,7 @@ export function terminalRefusal(
   if (!asked.tokenOk) return "this launch's token is missing";
   if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
   const host = asked.host ?? "";
-  const cut = host.lastIndexOf(":");
-  const name = cut < 0 ? host : host.slice(0, cut);
-  const port = cut < 0 ? "" : host.slice(cut + 1);
-  if (!LOOPBACK_NAMES.has(name.toLowerCase()) || port !== String(expected.port)) return "the Host is not this server on this machine";
+  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
   if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
   if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
   if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
@@ -2551,9 +2600,10 @@ if (import.meta.main) {
   // a step in it.
   const TOKEN = STANDALONE ? mintToken() : null;
 
-  // THE TERMINAL'S CAPABILITY, minted in EVERY build — unlike the token above —
-  // because the terminal is guarded in every build. See `terminalRefusal`.
-  const TERMINAL_CAP = mintToken();
+  // THIS MACHINE'S OWN WINDOW, minted in EVERY build — unlike the token above —
+  // because the terminal, the agent and chat kinds and the live stream are
+  // guarded in every build. See `localRefusal`.
+  const LOCAL_CAP = mintToken();
   // Every workspace's terminal sessions. Constructed here like everything else,
   // handed the one capability it spawns with and the environment it scrubs.
   const terminals = makeTerminals({ spawn: spawnPty, env: process.env });
@@ -2579,10 +2629,20 @@ if (import.meta.main) {
     idleTimeout: IDLE,
     async fetch(request, server) {
       const url = new URL(request.url);
-      /** The terminal capability, for a document served to this machine only. */
+      /** This machine's capability, for a document served to this machine only. */
       const grant = isLoopback(server.requestIP(request)?.address)
-        ? `${terminalCookie(server.port)}=${TERMINAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
+        ? `${localCookie(server.port)}=${LOCAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
         : undefined;
+      /** Whether this request is this machine's own window — asked lazily,
+       *  because only three routes spend it. */
+      const local = (): string | null => localRefusal(
+        {
+          address: server.requestIP(request)?.address ?? null,
+          host: request.headers.get("host"),
+          cookie: cookieValue(request.headers.get("cookie"), localCookie(server.port)),
+        },
+        { port: server.port, capability: LOCAL_CAP },
+      );
       // WHICH FOLDER, read off the front of the path. `null` means the request
       // named none, which is legal: the picker has to be reachable before
       // anything has been chosen, and `vault.browse`, `vault.open` and
@@ -2608,7 +2668,18 @@ if (import.meta.main) {
         // wrong with it. `deps` no longer rejects — it answers a set that
         // refuses with the mount's own sentence and still answers the kinds that
         // are about vaults — so there is nothing left to catch here.
-        return await route(request, await host.deps(named === null ? undefined : named.path));
+        //
+        // THE AGENT AND CHAT KINDS, AND A WINDOW'S REPORT, ANSWER ONLY THIS
+        // MACHINE'S OWN WINDOW, in every build: `isLocalKind` names them and
+        // `localRefusal` is the whole of the check. The token above is a source
+        // run's nothing, and an agent answered `allow_always` is command
+        // execution. The reason goes to the log; the caller is told `identity`.
+        return await route(request, await host.deps(named === null ? undefined : named.path), (kind) => {
+          if (!isLocalKind(kind)) return null;
+          const why = local();
+          if (why !== null) console.warn(`${kind} refused   →  ${why}`);
+          return why;
+        });
       }
 
       // THE TERMINAL, and nothing about it is reachable without every check in
@@ -2623,9 +2694,9 @@ if (import.meta.main) {
             address: server.requestIP(request)?.address ?? null,
             host: request.headers.get("host"),
             origin: request.headers.get("origin"),
-            cookie: cookieValue(request.headers.get("cookie"), terminalCookie(server.port)),
+            cookie: cookieValue(request.headers.get("cookie"), localCookie(server.port)),
           },
-          { port: server.port, capability: TERMINAL_CAP },
+          { port: server.port, capability: LOCAL_CAP },
         );
         if (refused !== null) {
           console.warn(`terminal refused   →  ${refused}`);
@@ -2657,6 +2728,18 @@ if (import.meta.main) {
         // vault — that is the whole point of the prefix — so this is a 404
         // rather than a stream that never fires.
         if (named === null) return new Response("This request names no workspace", { status: 404 });
+        // IT CARRIES THE CHATS AND THE HISTORY NOW — an agent's words, its
+        // diffs, what the person has open — so it answers only this launch's
+        // window: the token where the build has one, and this machine's
+        // capability in every build. An `EventSource` sends the same-origin
+        // cookie by itself and its url is built by the client, not resolved
+        // against a box's base, so the token rides it as a query.
+        if (!tokenOk(TOKEN, url)) return new Response("Not authorised", { status: 401 });
+        const why = local();
+        if (why !== null) {
+          console.warn(`events refused   →  ${why}`);
+          return new Response("Forbidden", { status: 403 });
+        }
         return events(host, named.path);
       }
 

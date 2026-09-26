@@ -79,7 +79,7 @@ test.if(unix)("the composed document hands this machine the capability, HttpOnly
   const res = await fetch(`${base}/`);
   const set = res.headers.get("set-cookie") ?? "";
   await res.text();
-  expect(set).toContain(`biom-terminal-${port}=`);
+  expect(set).toContain(`biom-local-${port}=`);
   expect(set).toContain("HttpOnly");
   expect(set).toContain("SameSite=Strict");
   // A static file carries nothing.

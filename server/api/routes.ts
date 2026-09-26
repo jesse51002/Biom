@@ -916,10 +916,19 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
     return err(id, "bad_request", "only http and https can be reached");
   }
 
+  // NO COOKIE LEAVES THROUGH HERE EITHER. A page choosing its own headers may
+  // set Host and Origin to anything — that is why neither is what this
+  // server's own local kinds trust — but it must never be able to present a
+  // cookie, least of all this server's capability to itself. Dropped whatever
+  // its case.
+  const sent = init?.headers === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(init.headers).filter(([k]) => k.toLowerCase() !== "cookie"));
+
   try {
     const res = await fetch(target, {
       method: init?.method ?? "GET",
-      headers: init?.headers,
+      headers: sent,
       body: init?.body,
       redirect: "follow",
       signal: AbortSignal.timeout(20000),
@@ -943,7 +952,20 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
  * never seen a Request, which is what makes fetch → postMessage → an in-process
  * call a replacement of this function alone.
  */
-export async function route(request: Request, deps: Deps): Promise<Response> {
+/**
+ * One HTTP request in, one response out.
+ *
+ * `gate` is the composition root's answer to *may this request say this kind* —
+ * a sentence refusing it, or null — asked once the body is read and before
+ * anything is answered. It exists for the kinds that answer only this
+ * machine's own window (`isLocalKind` in `contracts/guards.js`): the facts it
+ * needs — the peer address, the Host, the capability cookie — are the
+ * server's, and this layer never sees a socket. A refusal is `identity`, and
+ * its sentence names no check: telling a caller which one failed is telling it
+ * which to forge next. Absent, nothing is gated — every test of `handle` and
+ * every caller that predates it.
+ */
+export async function route(request: Request, deps: Deps, gate?: (kind: string) => string | null): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Use POST", { status: 405, headers: { allow: "POST" } });
   }
@@ -973,6 +995,18 @@ export async function route(request: Request, deps: Deps): Promise<Response> {
     body = await request.json();
   } catch {
     return json({ id: "", g: PROTOCOL, ok: false, error: fail("bad_request", "the body is not json") as HostError });
+  }
+
+  if (gate !== undefined && typeof body === "object" && body !== null) {
+    const { id, kind } = body as { id?: unknown; kind?: unknown };
+    if (typeof kind === "string" && gate(kind) !== null) {
+      return json({
+        id: typeof id === "string" ? id : "",
+        g: PROTOCOL,
+        ok: false,
+        error: fail("identity", "this is answered only to this machine's own window") as HostError,
+      });
+    }
   }
 
   return json(await handle(body as ApiRequest, deps));

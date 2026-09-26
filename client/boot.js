@@ -204,7 +204,9 @@ const transport = makeHttp(base, token);
 // this one: the vault is settled above before a single module is constructed,
 // so opening another folder is a navigation and a fresh document with a stream
 // of its own. With no folder chosen the base is "" and nothing is opened.
-const events = makeEvents(base);
+// The stream carries the chats and the history, so in the built application
+// it carries the launch token too, as the API route's address does.
+const events = makeEvents(base, token === null ? "" : `?${TOKEN_PARAM}=${encodeURIComponent(token)}`);
 const ws = makeWorkspace(transport);
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
