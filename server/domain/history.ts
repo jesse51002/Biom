@@ -145,6 +145,10 @@ export interface History {
    *  a burst already recorded, the same agent write reported twice, or a write
    *  naming nothing in the vault. */
   edit(write: EditReport): Promise<HistoryEntry | null>;
+  /** The place a vault-relative path is shown at, exactly as an edit of it
+   *  would record it now — the address table, and a page's `uid` looked up —
+   *  for a reader that has to agree with the history: a turn's `changed`. */
+  placeOf(path: string): Promise<Place | null>;
   /** The entries after `since` (a `seq`, exclusive), or every one still held. */
   read(since?: number): HistoryRead;
   /** Every window with a stream open that has said what it has open, the most
@@ -404,6 +408,11 @@ export function makeHistory(deps: HistoryDeps): History {
         const [entry] = append([{ kind: "edit", seq: 0, at, place: p, path, writer, via, snapshot: null }]);
         return entry ?? null;
       });
+    },
+
+    placeOf(path) {
+      const rel = normalPath(path);
+      return rel === null ? Promise.resolve(null) : placeFor(addressOfPath(rel));
     },
 
     read(since) {

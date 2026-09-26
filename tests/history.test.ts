@@ -586,6 +586,18 @@ test("placeOfPath is the table with the page named by its uid, and no uid is no 
   expect(placeOfPath("theme.json", uidOf)).toBeNull();
 });
 
+test("the history's placeOf is the place an edit of that path would record", async () => {
+  const w = world();
+  const path = "pages/home/children/Specs/INSTRUCTIONS.md";
+  const e = await w.history.edit({ path, via: "fs", writer: agent() });
+  expect(await w.history.placeOf(path)).toEqual(e?.place ?? null);
+  expect(await w.history.placeOf("design/x.html")).toEqual({ view: "design", id: "" });
+  expect(await w.history.placeOf("pages/home/children/Nobody/content.yaml")).toBeNull();
+  expect(await w.history.placeOf("../outside")).toBeNull();
+  // Asking appends nothing.
+  expect(w.history.read().head).toBe(1);
+});
+
 test("normalPath: forward-slashed and inside the vault, or null", () => {
   const rows: [string, string | null][] = [
     ["pages/home/content.yaml", "pages/home/content.yaml"],
