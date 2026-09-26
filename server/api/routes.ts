@@ -28,10 +28,14 @@ import type { Presets } from "../../contracts/types.ts";
 import type { Runs } from "../../contracts/types.ts";
 import type { Tables } from "../../contracts/types.ts";
 import type { Vault } from "../../contracts/types.ts";
+import type { Writer } from "../../contracts/types.ts";
 import type { ThemeStore } from "../workspace/presets.ts";
 import type { Mirror } from "../domain/mirror.ts";
 import type { Sharer } from "../domain/share.ts";
+import type { EditReport, History } from "../domain/history.ts";
 import { follow } from "../domain/mirror.ts";
+import { PAGE_DOC, pageDir } from "../domain/pages.ts";
+import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
 
 /** THE MIRROR NEVER FAILS A WRITE, AND NEVER FAILS A REDRAW. It is derived: the
  *  page is already saved when this runs, and the next draw of that page rewrites
@@ -47,6 +51,8 @@ export const mirrored = (what: Promise<unknown>): Promise<void> =>
   what.then(() => {}, (e: unknown) => { console.warn("the markdown mirror", e); });
 import { PROTOCOL } from "../../contracts/wire.js";
 import { fail } from "../../contracts/wire.js";
+import { DESIGN_PAGE } from "../../contracts/wire.js";
+import { isWindowId } from "../../contracts/guards.js";
 
 // Undo is deliberately absent from this file. The vault is a git repo and the
 // server commits ahead of every write, but that belongs to the layer that knows
@@ -114,6 +120,11 @@ export interface Deps {
    *  the manifest form's picker. The root reads the environment; this layer
    *  never does, and no value ever reaches the wire. */
   envNames: () => string[];
+  /** THE HISTORY — what each window has open, what changed and who changed
+   *  it. Built against a vault like `pages`. Every write a WINDOW makes through
+   *  this route is one edit in it, stamped `you` by `app`: see `handle`.
+   *  Optional, and absent records nothing — every caller from before it. */
+  history?: History;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -179,8 +190,129 @@ function codeOf(e: unknown, fallback: HostErrorCode): HostErrorCode {
  * Resolve one ApiRequest. Never throws: every failure comes back as an
  * `ok: false` carrying a code from the closed enumeration, because a contract
  * whose error case is "it throws something" is not a contract.
+ *
+ * AND A WRITE A WINDOW MADE IS ONE EDIT IN THE HISTORY, recorded HERE and
+ * nowhere below. The envelope's `window` — the transport's to write, over
+ * whatever a request carried — is the one fact that says a person's window
+ * made it, and this is the one layer holding both that and what the request
+ * named: one request is one edit, however many files the domain touched to
+ * carry it out — a page moved is every file under it copied, and that is
+ * still one thing somebody did. So the writer is stamped here, on the way
+ * out, once the answer is `ok`, and never threaded through `Files`: the
+ * domain's interfaces are the frozen contract's, and a write counted file by
+ * file would be counted wrong. A request with no `window` — a test, a tool, a
+ * run's script over the API — is nobody's and records nothing. The history is
+ * awaited, so a window that has its answer has its edit in the history too; a
+ * history that fails is logged and never fails the write, which has already
+ * happened.
  */
 export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  const res = await answer(req, deps);
+  if (res.ok && deps.history !== undefined) await recorded(req, res.value, deps.history);
+  return res;
+}
+
+/** What `writeOf` answers: `EditReport` less who wrote it and how. */
+export type Written = Omit<EditReport, "via" | "writer">;
+
+/**
+ * WHAT A WRITE CHANGED, as the history is told it: the file the request
+ * wrote, vault-relative — the format's vocabulary rather than the
+ * filesystem's — or, for a table's schema or rows, no file and the table's
+ * place. The page itself — made, moved, renamed, removed — is its directory.
+ * A keystroke's save is a `burst`, which the history coalesces into one edit
+ * per bout of typing: a slot, a variable, a cell, and the editors' quiet
+ * saves. Nothing else is, so a page made and then removed is two edits.
+ * Read off the request and, where the request cannot say, off the answer: the
+ * id a made, moved or renamed page has now, the folder a new automation was
+ * given. The screen each path is shown on is the history's address table,
+ * not this.
+ *
+ * Null for every kind that is not a write, and for the ones that are nobody's
+ * change or cannot be named:
+ *   - `page.projection` and `vault.commit` are the framework writing for
+ *     itself — the markdown mirror, the editors' one commit;
+ *   - `sql` is a query nothing here reads for what it writes, and a write Biom
+ *     cannot name is left out rather than guessed at;
+ *   - `run.start` and `run.kill`: a run writes its own files, and runs wait for
+ *     the door;
+ *   - `theme.set`: no screen shows the theme and none writes it, and naming it
+ *     would take a file name this layer has never been handed.
+ * Exported so its table is tested on its own.
+ */
+export function writeOf(req: ApiRequest, value: unknown): Written | null {
+  const page = (id: PageId, file?: string, burst = false): Written =>
+    ({ path: file === undefined ? pageDir(id) : `${pageDir(id)}/${file}`, ...(burst ? { burst } : {}) });
+  const table = (name: string, burst = false): Written => ({ path: null, place: { view: "table", id: name }, ...(burst ? { burst } : {}) });
+  switch (req.kind) {
+    case "section.write":
+    case "variables.patch":
+      return page(req.page, PAGE_DOC, true);
+    case "section.order":
+    case "section.remove":
+    case "doc.writeRaw":
+      return page(req.page, PAGE_DOC);
+    case "page.writeFile":
+      return page(req.page, req.file, req.quiet === true);
+    case "page.remove":
+      return page(req.page);
+    case "page.create":
+      return typeof value === "object" && value !== null && typeof (value as PageRef).id === "string" ? page((value as PageRef).id) : null;
+    case "page.move":
+    case "page.rename":
+      return typeof value === "string" ? page(value) : null;
+    case "design.patch":
+      return page(DESIGN_PAGE, PAGE_DOC);
+    case "design.writeFile":
+      return page(DESIGN_PAGE, req.file);
+    case "automation.set":
+      return page(req.page, `${AUTOMATIONS_DIR}/${req.automation}/${MANIFEST}`, req.quiet === true);
+    case "automation.create": {
+      const folder = typeof value === "object" && value !== null ? (value as { folder?: unknown }).folder : undefined;
+      return typeof folder === "string" ? page(req.page, `${AUTOMATIONS_DIR}/${folder}`) : null;
+    }
+    case "vault.writeFile":
+      return { path: req.file, ...(req.quiet === true ? { burst: true } : {}) };
+    case "row.update":
+      return table(req.name, true);
+    case "row.insert":
+    case "row.remove":
+    case "table.remove":
+    case "table.setParent":
+    case "table.importCsv":
+      return table(req.name);
+    case "table.create":
+    case "table.alter":
+      // The name the table has NOW: an alter may rename it.
+      return table(req.schema.name);
+    default:
+      return null;
+  }
+}
+
+/** One edit for one write, stamped with the window that made it. */
+async function recorded(req: ApiRequest, value: unknown, history: History): Promise<void> {
+  // Checked by `answer` already: absent, or a window id.
+  const window = (req as Envelope).window;
+  if (window === undefined) return;
+  let write: Written | null;
+  try {
+    write = writeOf(req, value);
+  } catch (e) {
+    console.warn("the history could not name a write", String(req.kind), e);
+    return;
+  }
+  if (write === null) return;
+  const writer: Writer = { kind: "you", window };
+  try {
+    await history.edit({ ...write, via: "app", writer });
+  } catch (e) {
+    console.warn("the history", e);
+  }
+}
+
+/** The answer itself: the envelope, then one case per kind. */
+async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   // The envelope is checked at runtime even though the parameter is typed: this
   // is where JSON off the wire arrives, and a type is not a parse. `null` and a
   // bare string are both valid JSON and both arrive here.
@@ -190,6 +322,10 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
   if (id === "") return err("", "bad_request", "the envelope carries no correlation id");
   if (env.g !== PROTOCOL) return err(id, "bad_request", "unknown protocol major");
   if (typeof env.kind !== "string") return err(id, "bad_request", "the envelope names no kind");
+  // WHICH WINDOW ASKED. Absent is every caller from before it, and a write
+  // nobody in a window made; malformed is refused, as every guard refuses it,
+  // because this is the field the history stamps a person's writes with.
+  if (env.window !== undefined && !isWindowId(env.window)) return err(id, "bad_request", "the envelope names a window that is not one");
 
   try {
     switch (req.kind) {
