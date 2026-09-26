@@ -1123,6 +1123,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       cwd: path,
       now: Date.now,
       processes: PROCESS,
+      // SIGN-IN IS THE PERSON'S, NOT THIS FOLDER'S: a sign-in that worked here
+      // lifts the refusal every other open workspace heard, and looks again
+      // there. That look is never reported back, so it cannot echo.
+      onSignedIn: (key, method) => {
+        for (const m of settledMounts) {
+          if (m.path === path) continue;
+          try {
+            m.agents.signedInElsewhere(key, method);
+          } catch (e) {
+            console.warn("a sign-in could not be told to another workspace", e instanceof Error ? e.name : typeof e);
+          }
+        }
+      },
     });
     const jevStatus = makeJevStatus({
       jev,

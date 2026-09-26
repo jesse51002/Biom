@@ -111,6 +111,13 @@ export interface AgentsDeps {
   /** What runs `npm`, `uv` and `bzip2` for an install, and OpenClaw's
    *  Gateway — the one runner the composition root already holds. */
   processes: ProcessRunner;
+  /** A SIGN-IN SUCCEEDED HERE: an agent-type sign-in, or the look after a
+   *  sign-in pop-up's command, opened a session. Sign-in is the person's and
+   *  not a workspace's, so the composition root tells every other workspace's
+   *  agents (`signedInElsewhere`). `method` is what an agent that wants
+   *  `authenticate` in every process was signed in with, else null. Never
+   *  said for a look `signedInElsewhere` asked for, so the news cannot echo. */
+  onSignedIn?: (key: AgentKey, method: string | null) => void;
   /** Absent: this process's. A test names another machine. */
   platform?: string;
   arch?: string;
@@ -218,6 +225,12 @@ export interface Agents {
    *  (`AUTH_EVERY_PROCESS`: Grok Build, Cursor, Junie) — null for every other
    *  agent, and for one not yet signed in. */
   signedInWith(key: AgentKey): string | null;
+  /** THE PERSON SIGNED THIS AGENT IN THROUGH ANOTHER WORKSPACE: the refusal
+   *  this workspace heard is lifted and, unless the agent is already Active
+   *  here, it is looked at again. `method` is the one an agent that wants
+   *  `authenticate` in every process was signed in with. A look this asks
+   *  for is never reported as a sign-in of its own. */
+  signedInElsewhere(key: AgentKey, method?: string | null): void;
   /** Hear the whole list whenever any of it changes. Answers the unsubscribe. */
   on(fn: (agents: AgentInfo[]) => void): () => void;
   /** Settles when nothing is in flight: no finding, probe, install or
@@ -830,6 +843,16 @@ export function makeAgents(deps: AgentsDeps): Agents {
       if (auth !== null) slot.signedInWith = auth;
     }
     emit();
+    // A SIGN-IN THAT WORKED is news for every other workspace open: the person
+    // is signed in, not this folder. Only a sign-in's own look says so — never
+    // a look another workspace's news asked for, which is how it stops.
+    if (verdict.state === "active" && afterSignIn && slot.info.state === "active") {
+      try {
+        deps.onSignedIn?.(slot.key, everyProcess(slot));
+      } catch (e) {
+        console.warn("agents: a sign-in listener threw", e instanceof Error ? e.name : typeof e);
+      }
+    }
   }
 
   /* ── the registry ─────────────────────────────────────────────────── */
@@ -1558,6 +1581,20 @@ export function makeAgents(deps: AgentsDeps): Agents {
     signedInWith(key) {
       const slot = slots.get(key);
       return slot === undefined ? null : everyProcess(slot);
+    },
+
+    signedInElsewhere(key, method = null) {
+      if (closed || typeof key !== "string") return;
+      const slot = slots.get(key);
+      // Not found here yet: the first look will find it signed in.
+      if (slot === undefined) return;
+      slot.refusedSignIn = false;
+      if (typeof method === "string" && method !== "" && AUTH_EVERY_PROCESS.has(key)) slot.signedInWith = method;
+      // Already Active here, or being installed — whose landing looks anyway.
+      if (slot.installing || slot.info.state === "active") return;
+      set(slot, "checking", null);
+      emit();
+      queueProbe(slot);
     },
 
     on(fn) {

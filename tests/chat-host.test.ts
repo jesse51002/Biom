@@ -21,6 +21,7 @@ import { test, expect, afterAll } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { makeHost } from "../server/main.ts";
 import type { Host } from "../server/main.ts";
@@ -258,6 +259,55 @@ test.if(unix)("A PER-PROCESS SIGN-IN, ASSEMBLED: signed in once as Cursor, a cha
     const auths = heard.filter((h) => h.method === "authenticate");
     expect(auths.length).toBeGreaterThanOrEqual(2);
     expect(auths.every((h) => h.params?.methodId === "invented-login")).toBe(true);
+  } finally {
+    host.close();
+    for (const pid of pidsIn(log)) if (alive(pid)) process.kill(pid, "SIGKILL");
+  }
+}, 60000);
+
+test.if(unix)("SIGN-IN IS PER PERSON: signed in through one workspace, the agent is Active in every other one open — and the news does not echo back", async () => {
+  // A sign-in the fake believes in: a file its sign-in command makes, and a
+  // session refused without it. Both invented.
+  const bin = scratch("person-bin");
+  const where = scratch("person-state");
+  const signedIn = join(where, "signed-in");
+  const log = join(where, "fake.log");
+  installFakeAgent(bin, {
+    scenario: {
+      log,
+      authMethods: [{ id: "invented-login", name: "Invented login", _meta: { "terminal-auth": { command: "/bin/sh", args: ["-c", `touch '${signedIn}'`] } } }],
+      session: { refuseUnless: signedIn },
+    },
+  });
+  const { host, vault } = await stand(bin);
+  // A second workspace, open in the same server.
+  const other = join(scratch("person-other"), "vault");
+  mkdirSync(other, { recursive: true });
+  const state = async (at: string): Promise<AgentInfo | undefined> =>
+    (value(await call(host, at, { kind: "agents.list" })) as AgentInfo[]).find((a) => a.key === "claude-acp");
+  try {
+    // Refused in both, and sticky in both.
+    for (const at of [vault, other]) expect(await until(async () => (await state(at))?.reason === "signin", 20000)).toBe(true);
+
+    // Signed in through the first: its pop-up's ticket, redeemed and run as
+    // the terminal would, and the command's end reported.
+    const agents = (await host.deps(vault)).agents!;
+    const signIn = value(await call(host, vault, { kind: "agents.signIn", agent: "claude-acp", method: "invented-login" })) as { kind: string; ticket: string };
+    expect(signIn.kind).toBe("terminal");
+    const launch = agents.redeem(signIn.ticket)!;
+    expect(spawnSync(launch.command, launch.args, { env: launch.env }).status).toBe(0);
+    agents.signedIn(signIn.ticket);
+
+    expect(await until(async () => (await state(vault))?.state === "active", 20000)).toBe(true);
+    // AND IN THE OTHER WORKSPACE, whose refusal was sticky and which nobody
+    // signed in through.
+    expect(await until(async () => (await state(other))?.state === "active", 20000)).toBe(true);
+
+    // No echo: once both are Active, nothing looks again.
+    await Bun.sleep(300);
+    const settledCount = pidsIn(log).length;
+    await Bun.sleep(1500);
+    expect(pidsIn(log).length).toBe(settledCount);
   } finally {
     host.close();
     for (const pid of pidsIn(log)) if (alive(pid)) process.kill(pid, "SIGKILL");

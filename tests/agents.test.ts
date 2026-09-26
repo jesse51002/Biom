@@ -179,6 +179,8 @@ function machine(opts: {
   home?: string;
   onStart?: (cmd: string[]) => void;
   timing?: AgentsDeps["timing"];
+  onSignedIn?: AgentsDeps["onSignedIn"];
+  now?: () => number;
 }): Machine {
   const { connect, calls } = agentsOnFake(opts.script ?? (() => healthy()));
   const fetched: string[] = [];
@@ -208,8 +210,9 @@ function machine(opts: {
     }) as typeof fetch,
     home,
     cwd: "/invented/vault",
-    now: () => Date.now(),
+    now: opts.now ?? (() => Date.now()),
     processes,
+    onSignedIn: opts.onSignedIn,
     timing: { initialize: 300, session: 300, commands: 50, gatewayPoll: 5, gatewayWait: 500, ...opts.timing },
   });
   const heard: AgentInfo[][] = [];
@@ -804,4 +807,65 @@ test("AN AGENT THAT WANTS AUTHENTICATE IN EVERY PROCESS keeps the method that si
   m.agents.probe("cursor");
   await m.agents.settled();
   expect(byKey(m.agents.list(), "cursor")?.reason).toBe("signin");
+});
+
+test("A SIGN-IN IS ANNOUNCED ONCE, and a look another workspace's news asked for lifts the refusal here without announcing anything back", async () => {
+  // Two workspaces' agents over one machine: a sign-in in the first is heard,
+  // told to the second, and the second's look is not heard again.
+  const g = gated();
+  const said: { from: string; key: string; method: string | null }[] = [];
+  const a = machine({ bins: { gemini: "/invented/bin/gemini" }, script: () => g.script, onSignedIn: (key, method) => void said.push({ from: "a", key, method }) });
+  const b = machine({ bins: { gemini: "/invented/bin/gemini" }, script: () => g.script, onSignedIn: (key, method) => void said.push({ from: "b", key, method }) });
+  for (const m of [a, b]) {
+    m.agents.list();
+    await m.agents.settled();
+    expect(byKey(m.agents.list(), "gemini")?.reason).toBe("signin");
+  }
+  expect(await a.agents.signIn("gemini", "browser")).toEqual({ kind: "agent" });
+  await a.agents.settled();
+  expect(said).toEqual([{ from: "a", key: "gemini", method: null }]);
+
+  // The root's fan-out, by hand: the second workspace hears it.
+  b.agents.signedInElsewhere("gemini", null);
+  await b.agents.settled();
+  expect(byKey(b.agents.list(), "gemini")?.state).toBe("active");
+  // And said nothing back: no echo.
+  expect(said).toEqual([{ from: "a", key: "gemini", method: null }]);
+
+  // Already Active, the news asks for no look at all.
+  const looks = b.calls.length;
+  b.agents.signedInElsewhere("gemini", null);
+  await b.agents.settled();
+  expect(b.calls.length).toBe(looks);
+  // An agent this workspace never found is nothing to do.
+  b.agents.signedInElsewhere("opencode", null);
+  await b.agents.settled();
+  expect(byKey(b.agents.list(), "opencode")).toBeUndefined();
+});
+
+test("a per-process sign-in told to another workspace carries its method there, so that workspace's chats can authenticate", async () => {
+  let authed = new WeakSet<object>();
+  const perProcess = (): Script => {
+    const me = {};
+    return {
+      initialize: () => ({ protocolVersion: 1, authMethods: [{ id: "cursor_login", name: "Log in" }] }),
+      authenticate: () => {
+        authed.add(me);
+        return {};
+      },
+      "session/new": () => {
+        if (!authed.has(me)) throw acpError(-32000, "Authentication required");
+        return { sessionId: "s-c" };
+      },
+    };
+  };
+  const b = machine({ bins: { "cursor-agent": "/invented/bin/cursor-agent" }, script: () => perProcess() });
+  b.agents.list();
+  await b.agents.settled();
+  expect(byKey(b.agents.list(), "cursor")?.reason).toBe("signin");
+  b.agents.signedInElsewhere("cursor", "cursor_login");
+  await b.agents.settled();
+  expect(byKey(b.agents.list(), "cursor")?.state).toBe("active");
+  expect(b.agents.signedInWith("cursor")).toBe("cursor_login");
+  authed = new WeakSet();
 });
