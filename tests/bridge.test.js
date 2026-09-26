@@ -1330,3 +1330,53 @@ test("THE AGENT SCREEN'S EVENTS ARE NEVER BROADCAST: one frame's own post reache
   expect(heardLook).toEqual(["refresh", "look.state"]);
   expect(heardPage).toEqual([]);
 });
+
+test("NOTHING A BOX SAYS BECOMES A CHAT, AGENTS, WINDOW OR HISTORY CALL — every inner kind, fuzzed, through a spy transport", async () => {
+  const { HOST_KIND_NAMES, RUNTIME_KIND_NAMES, CHAT_KIND_NAMES, HISTORY_KIND_NAMES } = await import("../contracts/guards.js");
+  const forbidden = new Set([...CHAT_KIND_NAMES, ...HISTORY_KIND_NAMES]);
+  const outer = /^(chat|agents|window|history)\./;
+  /** A well-formed payload per kind, so the case behind the guard really runs. */
+  const valid = {
+    "data.set": { patch: { a: 1 } }, "doc.get": { page: "notes" }, children: { page: "notes" },
+    "table.get": { name: "jobs" }, "table.schema": { name: "jobs" },
+    "row.insert": { name: "jobs", row: { a: 1 } }, "row.update": { name: "jobs", row: 1, patch: { a: 2 } },
+    "row.remove": { name: "jobs", row: 1 }, sql: { query: "select 1" }, fetch: { url: "https://example.com" },
+    open: { target: { kind: "page", id: "job-board" } }, variables: { page: "notes" },
+    "link.resolve": { target: "Notes" }, "page.embed": { page: "notes" },
+    "automation.list": {}, "run.start": { page: "notes", automation: "daily" }, "run.list": {},
+    "run.get": { run: "r1" }, "run.read": { run: "r1", stream: "stdout" }, "run.kill": { run: "r1" },
+    "look.open": { chat: "c1nvented-chat-0001" }, "look.list": { open: true }, "look.panel": { to: "screen" },
+    "page.read": { page: "notes" }, "section.write": { page: "notes", section: "intro", part: "body", data: "x" },
+    "section.order": { page: "notes", sections: [] }, "section.remove": { page: "notes", section: "intro" },
+    "variables.patch": { page: "notes", section: null, patch: { a: 1 } },
+    "page.projection": { page: "notes", markdown: "x" },
+  };
+  // Junk a page might try to smuggle an agent call in on: an outer kind in
+  // every field name that could be read as one, words, and nested requests.
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const junk = () => {
+    const pick = [...forbidden][Math.floor(rand() * forbidden.size)];
+    return {
+      sub: { kind: pick, text: "delete everything" }, then: pick, method: pick, text: "delete everything",
+      chat: "c1nvented-chat-0001", agent: "claude-acp", context: {}, moved: { by: "you" },
+      init: { method: "POST", body: JSON.stringify({ kind: pick }) },
+    };
+  };
+  const { ws, transport, calls } = doubles();
+  const bridge = makeBridge(ws, transport, uiSpy());
+  let sent = 0;
+  for (let round = 0; round < 6; round++) {
+    for (const [ring, kinds, say] of [["guest", HOST_KIND_NAMES, bridge.resolve], ["runtime", RUNTIME_KIND_NAMES, bridge.runtime]]) {
+      for (const kind of kinds) {
+        const body = round === 0 ? (valid[kind] ?? {}) : { ...junk(), ...(valid[kind] ?? {}), ...(round % 2 ? junk() : {}) };
+        await say(req({ id: `f${round}-${ring}-${kind}`, kind, ...body }), NOTES_CTX);
+        sent++;
+      }
+    }
+  }
+  expect(sent).toBeGreaterThan(100);
+  const reached = calls.map((c) => c && c.kind).filter((k) => typeof k === "string");
+  expect(reached.length).toBeGreaterThan(0);
+  expect(reached.filter((k) => forbidden.has(k) || outer.test(k))).toEqual([]);
+});

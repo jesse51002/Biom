@@ -148,7 +148,7 @@ const RUNTIME_KINDS = new Set([
  *  the host's input box, pickers and pop-ups say. Never on either list above,
  *  and never a box's to say: an agent does whatever it is told. */
 const CHAT_KINDS = new Set([
-  "agents.list", "agents.probe", "agents.registry", "agents.install", "agents.signIn",
+  "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
   "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
   "chat.switchAgent", "chat.close", "chat.commands",
 ]);
@@ -281,7 +281,7 @@ function isWindowReport(v) {
  */
 function isMove(v) {
   if (!isObj(v)) return false;
-  if (v.by === "you") return true;
+  if (v.by === "you" || v.by === "claim") return true;
   return v.by === "switcher" && isOpaqueId(v.agent) && isOpaqueId(v.chat);
 }
 
@@ -296,6 +296,18 @@ const isWords = (v) => typeof v === "string" && v.trim() !== "";
 
 /** An offset into a stream: a whole number, zero or more. @param {unknown} v */
 const isSeq = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
+/** The envelope's own keys, which every request may carry. */
+const ENVELOPE = new Set(["id", "g", "kind", "window"]);
+
+/**
+ * STRICT: `v` carries its envelope and these keys and nothing else. For the
+ * look's kinds, which may never carry words: a field this does not name is a
+ * field somebody meant to smuggle something in.
+ * @param {Record<string, unknown>} v
+ * @param {string[]} keys
+ */
+const only = (v, keys) => Object.keys(v).every((k) => ENVELOPE.has(k) || keys.includes(k));
 
 /** The shared body. One envelope check and one payload switch for both rings,
  *  because a second copy is a second thing to forget to update — which is the
@@ -403,16 +415,20 @@ function wellFormed(v, allowed) {
       return typeof v.page === "string" && v.page !== "" &&
         (v.section === null || (typeof v.section === "string" && v.section !== "")) &&
         isVarPatch(v.patch);
-    /* ── the look (inner ring): ids and booleans, never words ─────────── */
+    /* ── the look (inner ring): ids and words from a closed list, never
+       free text — and STRICT, so no field rides along ──────────────────── */
     case "look.open":
-      return isOpaqueId(v.chat);
+      return only(v, ["chat"]) && isOpaqueId(v.chat);
+    case "look.new":
+      return only(v, []);
     case "look.list":
-      return typeof v.open === "boolean";
+      return only(v, ["open"]) && typeof v.open === "boolean";
     case "look.panel":
-      return typeof v.expand === "boolean";
+      return only(v, ["to"]) && (v.to === "screen" || v.to === "beside" || v.to === "closed");
 
     /* ── the agents and the chats (outer ring) ─────────────────────────── */
     case "agents.probe":
+    case "agents.start":
     case "agents.install":
       return isAgentKey(v.agent);
     case "agents.signIn":
@@ -420,7 +436,8 @@ function wellFormed(v, allowed) {
     case "chat.new":
       // A first message is optional — the start screen may make a chat before
       // anything is typed — and has something in it where it is there.
-      return isAgentKey(v.agent) &&
+      // No agent named is a first message held for whichever becomes Active.
+      return (v.agent === undefined || isAgentKey(v.agent)) &&
         (v.text === undefined || isWords(v.text)) &&
         (v.page === undefined || (typeof v.page === "string" && v.page !== "")) &&
         (v.config === undefined || (isObj(v.config) && Object.values(v.config).every(isConfigValue)));
@@ -447,7 +464,7 @@ function wellFormed(v, allowed) {
       return v.since === undefined || isSeq(v.since);
 
     default:
-      // data.get, doc.list, table.list, theme.get, look.new, agents.list,
+      // data.get, doc.list, table.list, theme.get, agents.list,
       // agents.registry, chat.list, window.list — no parameters to check.
       return true;
   }

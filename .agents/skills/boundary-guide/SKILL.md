@@ -276,14 +276,20 @@ keeps the record.
 eleventh contracts edit that may never move.** The Agent screen's look — the
 start screen, a chat, the list of chats — is a plugin a workspace can replace,
 drawn in a box on `@agent`, and what it may ask is four inner-ring kinds:
-`look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` expand
-or collapse — ids and booleans, never a word, and pages through `open` as
-before. The input box is Biom's, in the host, over the box; everything it says
+`look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
+screen, beside the page or closed — ids and words from a closed list, STRICTLY
+guarded so no field rides along, and pages through `open` as before. The input box is Biom's, in the host, over the box; everything it says
 — `chat.*` and `agents.*` — is outer ring, narrowed at the server by
 `isChatRequest`, and `tests/chat-guards.test.ts` pins that neither inner guard
-admits any of them or any kind that could carry text to an agent. An agent is a
-program allowed everything on this machine, so a box that could put words in
-front of one could do anything the person can. `window.*` and `history.*` are
+admits any of them or any kind that could carry text to an agent, and a bridge
+test fuzzes every inner kind through a spy transport and finds no such call. A
+chat's agent is a program allowed everything on this machine, so a box that
+could put words in front of one could do anything the person can. `run.start`
+is the one inner kind that starts an agent at all — an automation, from files
+in the vault and a form's inputs — and it is not that. Every `chat.*` and
+`agents.*` kind, and `window.report`, is also answered only to this machine's
+own window, in every build: the capability cookie, a loopback peer and a
+loopback Host (`localRefusal` in `server/main.ts`). `window.*` and `history.*` are
 outer ring too, under `isHistoryRequest`: a page's own code never reads what
 the window has open.
 

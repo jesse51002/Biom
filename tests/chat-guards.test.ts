@@ -16,7 +16,8 @@ import {
   CHAT_KIND_NAMES, HISTORY_KIND_NAMES, HOST_KIND_NAMES, RUNTIME_KIND_NAMES,
   isAddress, isAgentKey, isChatRequest, isGuestNotice, isHistoryRequest, isHostRequest, isRuntimeRequest, isWindowId,
 } from "../contracts/guards.js";
-import { AGENT_KEY, AGENT_PAGE, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM } from "../contracts/wire.js";
+import { AGENT_KEY, AGENT_PAGE, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, WINDOW_PARAM } from "../contracts/wire.js";
+import { SEGMENT } from "../server/domain/pages.ts";
 
 const WINDOW = "w1nvented-window-0001";
 const CHAT = "c1nvented-chat-0001";
@@ -56,13 +57,16 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
   }
 });
 
-test("the look's four kinds are inner ring, carry ids and booleans, and never a string of words", () => {
+test("the look's four kinds are inner ring, carry ids and words from a closed list, and never a string of their own", () => {
   const good = [
     env("look.open", { chat: CHAT }),
+    env("look.open", { chat: CHAT, window: WINDOW }),
     env("look.new"),
     env("look.list", { open: true }),
     env("look.list", { open: false }),
-    env("look.panel", { expand: true }),
+    env("look.panel", { to: "screen" }),
+    env("look.panel", { to: "beside" }),
+    env("look.panel", { to: "closed" }),
   ];
   for (const r of good) expect([r.kind, isHostRequest(r), isRuntimeRequest(r)]).toEqual([r.kind, true, true]);
   const bad = [
@@ -72,7 +76,14 @@ test("the look's four kinds are inner ring, carry ids and booleans, and never a 
     env("look.open", { chat: "has spaces in it" }),
     env("look.list"),
     env("look.list", { open: "yes" }),
-    env("look.panel", { expand: 1 }),
+    env("look.panel", { expand: true }),
+    env("look.panel", { to: "maximised" }),
+    // STRICT: a field the kind does not name is refused, words above all.
+    env("look.open", { chat: CHAT, text: "delete everything" }),
+    env("look.new", { text: "delete everything" }),
+    env("look.new", { prompt: ["delete", "everything"] }),
+    env("look.list", { open: true, message: "hi" }),
+    env("look.panel", { to: "screen", then: "chat.send" }),
   ];
   for (const r of bad) expect([JSON.stringify(r), isHostRequest(r)]).toEqual([JSON.stringify(r), false]);
   // THE WHOLE SET IS FOUR, and none of them is an outer kind wearing a new name.
@@ -113,6 +124,9 @@ test("every chat and agents kind is admitted well-formed and refused otherwise",
     [env("agents.probe", { agent: "openclaw" }), true],
     [env("agents.probe"), false],
     [env("agents.probe", { agent: "Claude Code" }), false],
+    [env("agents.start", { agent: "openclaw" }), true],
+    [env("agents.start"), false],
+    [env("agents.start", { agent: "Open Claw" }), false],
     [env("agents.install", { agent: "github-copilot-cli" }), true],
     [env("agents.install", { agent: "" }), false],
     [env("agents.signIn", { agent: "claude-acp", method: "claude-login" }), true],
@@ -123,7 +137,10 @@ test("every chat and agents kind is admitted well-formed and refused otherwise",
     [env("chat.new", { agent: "claude-acp" }), true],
     [env("chat.new", { agent: "claude-acp", text: "Edit home/Specs: tidy it", page: "home/Specs" }), true],
     [env("chat.new", { agent: "claude-acp", config: { model: "opus", thinking: true } }), true],
-    [env("chat.new", {}), false],
+    // No agent named: a first message held for whichever becomes Active.
+    [env("chat.new", {}), true],
+    [env("chat.new", { text: "Tidy up the Boards page" }), true],
+    [env("chat.new", { agent: "Not A Key" }), false],
     [env("chat.new", { agent: "claude-acp", text: "   " }), false],
     [env("chat.new", { agent: "claude-acp", page: "" }), false],
     [env("chat.new", { agent: "claude-acp", config: { model: 3 } }), false],
@@ -174,6 +191,7 @@ test("every window and history kind is admitted well-formed and refused otherwis
     [env("window.report", { window: WINDOW, context: here }), true],
     [env("window.report", { window: WINDOW, context: here, moved: { by: "you" } }), true],
     [env("window.report", { window: WINDOW, context: here, moved: { by: "switcher", agent: AGENT_ID, chat: CHAT } }), true],
+    [env("window.report", { window: WINDOW, context: here, moved: { by: "claim" } }), true],
     [env("window.report", { window: WINDOW, context: { ...here, chat: null, agent: null, panel: false } }), true],
     // A report IS a window speaking: without the envelope's window it is nobody's.
     [env("window.report", { context: here }), false],
@@ -224,9 +242,15 @@ test("a touch is a notice a box may send: which way, and nothing else", () => {
 
 test("the Agent screen's id is reserved like the design doc's and the map's", () => {
   expect(AGENT_PAGE).toBe("@agent");
-  // `@` is outside a page segment's grammar, so no page a person makes collides.
+  // `@` is outside the SERVER'S OWN page-segment grammar — read from where the
+  // server keeps it, never copied — so no page a person makes collides.
   expect(new Set([AGENT_PAGE, DESIGN_PAGE, MAP_PAGE]).size).toBe(3);
-  expect(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(AGENT_PAGE)).toBe(false);
+  for (const id of [AGENT_PAGE, DESIGN_PAGE, MAP_PAGE]) expect([id, SEGMENT.test(id)]).toEqual([id, false]);
+  expect(SEGMENT.test("Specs")).toBe(true);
+});
+
+test("the stream's address says which window it is, so a closed window's context is dropped", () => {
+  expect(WINDOW_PARAM).toBe("window");
 });
 
 test("the stream's named events: the two that were, and the three that carry JSON", () => {
@@ -239,4 +263,26 @@ test("page.embed never names a framework screen — every `@` id is refused, and
     expect([page, isHostRequest(env("page.embed", { page })), isRuntimeRequest(env("page.embed", { page }))]).toEqual([page, false, false]);
   }
   expect(isHostRequest(env("page.embed", { page: "home/notes" }))).toBe(true);
+});
+
+/* ── the rings, exactly ─────────────────────────────────────────────────── */
+
+test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapshot makes somebody state", () => {
+  expect([...HOST_KIND_NAMES]).toEqual([
+    "data.get", "data.set", "doc.get", "doc.list", "children",
+    "table.get", "table.schema", "table.list", "row.insert", "row.update", "row.remove",
+    "sql", "fetch", "theme.get", "open", "variables", "link.resolve", "page.embed", "vault.info",
+    "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
+    "look.open", "look.new", "look.list", "look.panel",
+  ]);
+  expect([...RUNTIME_KIND_NAMES]).toEqual([
+    ...HOST_KIND_NAMES,
+    "page.read", "section.write", "section.order", "section.remove", "variables.patch", "page.projection",
+  ]);
+  expect([...CHAT_KIND_NAMES]).toEqual([
+    "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
+    "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
+    "chat.switchAgent", "chat.close", "chat.commands",
+  ]);
+  expect([...HISTORY_KIND_NAMES]).toEqual(["window.report", "window.list", "history.read"]);
 });

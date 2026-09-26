@@ -44,8 +44,10 @@ export function makeUi(initial) {
   // EVERY ROUTE IN HERE IS AN ADDRESS, NORMALISED — a page's own screen only
   // where there is a page. A route handed in before the screen joined it reads
   // as the page itself, and one that already was normal is the same object, so
-  // normalising on every write never turns a no-op into a repaint.
-  state = { ...state, route: normalAddress(state.route) };
+  // normalising on every write never turns a no-op into a repaint. And a route
+  // on the Agent screen names the window's chat: a reload at `#/agent/<chat>`
+  // comes back with that chat open, not with the route and the chat apart.
+  state = withRoute(state, state.route);
 
   /**
    * The one write path. It emits only when something actually differs, which is
@@ -77,8 +79,7 @@ export function makeUi(initial) {
 
     set(patch) {
       const next = { ...state, ...patch };
-      if (patch.route) next.route = normalAddress(patch.route);
-      apply(next);
+      apply(patch.route ? withRoute(next, patch.route) : next);
     },
 
     go(view, id, screen) {
@@ -90,12 +91,22 @@ export function makeUi(initial) {
       // THE AGENT SCREEN NAMES ITS CHAT, and the window remembers it: going
       // there sets `chat` to the address's id, or null for the start screen,
       // so the rail's Agent comes back to whichever was last open.
-      apply({
-        ...state,
-        route: address(view, id, screen),
-        ...(view === "agent" ? { chat: id === "" ? null : id } : {}),
-        inserting: null,
-      });
+      apply({ ...withRoute(state, address(view, id, screen)), inserting: null });
     },
   };
+}
+
+/**
+ * A state with this route in it, normalised, and — on the Agent screen — the
+ * chat the route names as the window's open chat, or null for the start
+ * screen. Anywhere else the chat the window last had open stays.
+ * @param {UiState} state
+ * @param {{ view: UiState["route"]["view"], id: string, screen?: UiState["route"]["screen"] }} route
+ * @returns {UiState}
+ */
+function withRoute(state, route) {
+  const next = normalAddress(route);
+  if (next.view !== "agent") return next === state.route ? state : { ...state, route: next };
+  const chat = next.id === "" ? null : next.id;
+  return next === state.route && chat === state.chat ? state : { ...state, route: next, chat };
 }

@@ -1158,6 +1158,23 @@ test("a no-op route write does not repaint, and the context's fields start close
   expect(n).toBe(0);
 });
 
+test("A RELOAD AT `#/agent/<chat>` COMES BACK WITH THAT CHAT OPEN, and a route written by set does the same", async () => {
+  const { parseAddress } = await import("../contracts/address.js");
+  const ui = makeUi({ route: parseAddress("#/agent/chat-0001-invented") });
+  expect(ui.get().route).toEqual({ view: "agent", id: "chat-0001-invented", screen: "page" });
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // The start screen after a reload is no chat.
+  expect(makeUi({ route: parseAddress("#/agent") }).get().chat).toBe(null);
+  // A route set whole — the bar, Back — keeps the two together too.
+  ui.set({ route: { view: "agent", id: "chat-0002-invented", screen: "page" } });
+  expect(ui.get().chat).toBe("chat-0002-invented");
+  // Anywhere else, the chat the window last had open stays.
+  ui.set({ route: { view: "page", id: "home", screen: "page" } });
+  expect(ui.get().chat).toBe("chat-0002-invented");
+  // A reload on a page keeps whatever chat boot handed it.
+  expect(makeUi({ route: parseAddress("#/page/home"), chat: "chat-0003-invented" }).get().chat).toBe("chat-0003-invented");
+});
+
 test("the Agent screen names its chat, and the window remembers it", () => {
   const ui = makeUi();
   ui.go("agent", "chat-0001-invented");

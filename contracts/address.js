@@ -37,6 +37,12 @@ const VIEWS = {
  *  @type {ReadonlySet<ViewName>} */
 export const VIEW_NAMES = new Set(/** @type {ViewName[]} */ (Object.keys(VIEWS)));
 
+/** THE VIEWS AN ADDRESS NAMES SOMETHING IN: a page, a table, a chat. Every
+ *  other view is one screen with nothing in it to name, so an id there is a
+ *  stray and is dropped — `#/design/x` is Design.
+ *  @type {ReadonlySet<ViewName>} */
+const ID_VIEWS = new Set(/** @type {ViewName[]} */ (["page", "table", "agent"]));
+
 /** @type {{ readonly [K in PageScreen]: true }} */
 const SCREENS = { page: true, instructions: true, automation: true };
 
@@ -62,16 +68,17 @@ const NOWHERE = Object.freeze(/** @type {Address} */ ({ view: "page", id: "", sc
 
 /**
  * An address, normalised: `screen` is a page's own screen only where there is
- * a page — every other view, and a page with no id, is `page`. Every address
- * anything builds goes through here, so two spellings of one place compare
- * equal.
+ * a page — every other view, and a page with no id, is `page` — and an id only
+ * where the view names something. Every address anything builds goes through
+ * here, so two spellings of one place compare equal.
  * @param {ViewName} view
  * @param {string} [id]
  * @param {PageScreen} [screen]
  * @returns {Address}
  */
 export function address(view, id = "", screen = "page") {
-  return { view, id, screen: view === "page" && id !== "" && PAGE_SCREENS.has(screen) ? screen : "page" };
+  const named = ID_VIEWS.has(view) ? id : "";
+  return { view, id: named, screen: view === "page" && named !== "" && PAGE_SCREENS.has(screen) ? screen : "page" };
 }
 
 /**
@@ -83,7 +90,7 @@ export function address(view, id = "", screen = "page") {
  */
 export function normalAddress(a) {
   const want = address(a.view, a.id, a.screen);
-  return a.screen === want.screen ? /** @type {Address} */ (a) : want;
+  return a.screen === want.screen && a.id === want.id ? /** @type {Address} */ (a) : want;
 }
 
 /**

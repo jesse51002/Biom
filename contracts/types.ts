@@ -847,22 +847,28 @@ export type Place =
 
 /** WHO MADE A CHANGE, OR MOVED THE SCREEN.
  *
- *  `you` is the person, in the window that did it. `agent` is an agent Biom
- *  started for a chat, by its id, with the chat and the harness it is — the
- *  harness is what a person reads, the id is what the switcher follows. `run`
- *  is RESERVED: a run writes its files directly and is not in the history
- *  until the door is built, and nothing produces one yet. */
+ *  `you` is the person, in the window that did it — and a page's own code in
+ *  that window's box, which writes as the window it is drawn in. `agent` is an
+ *  agent Biom started for a chat, by its id, with the chat, the harness it is
+ *  and the turn it was on — the harness is what a person reads, the id is what
+ *  the switcher follows, and the turn is what *what this turn changed* groups
+ *  by. `run` is RESERVED, named by the `session` its page mints: a run writes
+ *  its files directly and is not in the history until the door is built, and
+ *  nothing produces one yet. */
 export type Writer =
   | { kind: "you"; window: WindowId }
-  | { kind: "agent"; agent: AgentId; chat: ChatId; harness: string }
-  | { kind: "run"; run: string };
+  | { kind: "agent"; agent: AgentId; chat: ChatId; harness: string; turn: number }
+  | { kind: "run"; session: string };
 
 /** HOW BIOM SAW A WRITE. `fs` is an ACP `fs/write_text_file` Biom carried out
  *  itself; `tool` a completed edit, delete or move tool call, by the paths in
  *  its diff and its locations; `shell` a plain shell write read from an
  *  executed command's line — `sed -i`, `>`, `>>`, `tee`, `mv`, `cp`, `rm`,
- *  `touch` — and nothing it could not read confidently; `app` the person's
- *  own write through the app. A write Biom cannot name is not an edit. */
+ *  `touch` — and nothing it could not read confidently; `app` a write through
+ *  the app from a window, the person's own or their page's code. A write Biom
+ *  cannot name is not an edit, and neither is what the framework writes for
+ *  itself: `page.projection` (the markdown mirror) and `vault.commit` record
+ *  nothing. */
 export type EditVia = "fs" | "tool" | "shell" | "app";
 
 /** ONE LINE OF THE HISTORY: what was opened, what changed, what was on screen.
@@ -877,8 +883,10 @@ export type EditVia = "fs" | "tool" | "shell" | "app";
  *  the switcher bringing a page up for an agent, under that agent. Both belong
  *  to the window they happened in. An `edit` belongs to the workspace,
  *  whichever window is open: `path` is the file, vault-relative and forward-
- *  slashed; `place` the screen that shows it, as the address table maps it,
- *  or null where no screen does.
+ *  slashed, or null for a write that is no file — a table's schema or its
+ *  rows, which live in `workspace.db` and whose place is the table; `place` is
+ *  the screen that shows it, as the address table maps it, or null where no
+ *  screen does.
  *
  *  `snapshot` IS A PLACE KEPT FOR AN ID, null until snapshots exist: the door
  *  will stamp the snapshot taken before the write, so a change is found and
@@ -887,7 +895,7 @@ export type EditVia = "fs" | "tool" | "shell" | "app";
 export type HistoryEntry =
   | { kind: "open"; seq: number; at: number; window: WindowId; place: Place; writer: Writer }
   | { kind: "view"; seq: number; at: number; window: WindowId; place: Place; writer: Writer }
-  | { kind: "edit"; seq: number; at: number; place: Place | null; path: string; writer: Writer; via: EditVia; snapshot: string | null };
+  | { kind: "edit"; seq: number; at: number; place: Place | null; path: string | null; writer: Writer; via: EditVia; snapshot: string | null };
 
 /** What `history.read` answers: the entries after `since`, and `head`, the
  *  last `seq` the server has written — so a reader knows it has caught up even
@@ -911,14 +919,26 @@ export interface WindowContext {
   at: number;
 }
 
-/** A context as a window reports it: the window is the envelope's, and the
- *  time is the server's. */
+/** A context as a window reports it: the window is the envelope's, the time
+ *  is the server's, and `agent` is derived by the server from `chat` — the
+ *  value a window sends there is ignored, so a window cannot name an agent it
+ *  does not have open. */
 export type WindowReport = Omit<WindowContext, "window" | "at">;
 
 /** WHO MOVED THE SCREEN, said alongside a report that moved it. Only the
- *  person and the switcher ever move it — no agent, run or page does. */
+ *  person and the switcher ever move it — no agent, run or page does.
+ *
+ *  `claim` is the screen becoming the person's WITHOUT moving (*History and
+ *  View Switcher*, `yours`): they touched it, or kept it on screen five minutes
+ *  with the window in front. It appends a `view` by the person and no `open`,
+ *  so the history says the screen is theirs from then on.
+ *
+ *  When the switcher follows an edit off the FULL Agent screen, the page comes
+ *  up with the chat in the panel beside it — never a bare page with the chat
+ *  gone — and the report that says so carries `panel: true`. */
 export type Move =
   | { by: "you" }
+  | { by: "claim" }
   | { by: "switcher"; agent: AgentId; chat: ChatId };
 
 /** WHY AN AGENT IS INACTIVE. An agent is Active or Inactive and nothing else,
@@ -933,12 +953,14 @@ export type AgentReason = "checking" | "installing" | "signin" | "gateway" | "fa
 /** One of the ways an agent offers to sign in, as `initialize` listed it.
  *  `terminal` runs in the pop-up terminal; `agent` is `authenticate`, which
  *  the agent carries out; `env_var` is a key the person sets in their own
- *  environment, which Biom names and never holds. */
+ *  environment, which Biom names and never holds. `vars` are those variables'
+ *  NAMES, for an `env_var` method — never a value — and empty otherwise. */
 export interface AuthMethodInfo {
   id: string;
   name: string;
   description: string | null;
   type: "agent" | "terminal" | "env_var";
+  vars: string[];
 }
 
 /** ONE AGENT ON THIS MACHINE. `source` is where Biom found it: a command of
@@ -1012,7 +1034,9 @@ export type ConfigCategory = "model" | "mode" | "thought_level" | "other";
 
 /** One choice of a select option, with the group the agent put it in — a
  *  list longer than five shows five and **More models**, grouped the way the
- *  agent groups them. */
+ *  agent groups them. `group` is the group's DISPLAY name, or null where the
+ *  agent groups nothing; `choices` keep the agent's own order, and every
+ *  group's choices are contiguous in it. */
 export interface ConfigChoice {
   value: string;
   name: string;
@@ -1046,11 +1070,13 @@ export interface SlashCommand {
   skill: string | null;
 }
 
-/** A CHAT'S LIGHT: amber and pulsing while it works, green for ten minutes
- *  after it finishes, red when it stopped on an error, none after that. The
- *  server keeps it and says when it changes, so every window shows the same
- *  light. There is no waiting: ACP has no state for an agent waiting on the
- *  person, so neither does the light. */
+/** A CHAT'S LIGHT: `working`, amber and pulsing while a turn runs; `done`,
+ *  green for ten minutes after a turn ends on `end_turn`; `error`, red when it
+ *  stopped on anything red, and it STAYS red until the chat's next turn starts
+ *  (the owner's decision of 2026-09-26, as the mockup has it); `none`
+ *  otherwise. The server keeps it and says when it changes, so every window
+ *  shows the same light. There is no waiting: ACP has no state for an agent
+ *  waiting on the person, so neither does the light. */
 export type ChatLight = "working" | "done" | "error" | "none";
 
 /** Where a chat's latest message is. `held`: waiting for an agent to become
@@ -1087,21 +1113,43 @@ export interface ToolDiff {
   new: string;
 }
 
+/** A place a tool call names, as the line shows it: a path — vault-relative
+ *  where it is inside the vault — and the line, where the agent gave one. */
+export interface ToolLocation {
+  path: string;
+  line: number | null;
+}
+
 /** ONE ACTION LINE, WHOLE. ACP sends a tool call and then updates carrying
  *  only what changed; the server merges them and relays the line's whole
  *  current state each time, so the look replaces a line by `id` and never
- *  merges. `paths` are the locations it names — vault-relative where they are
- *  inside the vault — and `output` its text, bounded. None of it moves the
- *  screen: a completed edit is recorded in the history, and moving is the
- *  switcher's. */
+ *  merges — and the log Biom keeps MAY COMPACT a line's superseded states to
+ *  its last, since each carries the whole. `output` is its text and `diffs`
+ *  its changes, each bounded, and `truncated` says something was cut. None of
+ *  it moves the screen: a completed edit is recorded in the history, and
+ *  moving is the switcher's. */
 export interface ToolLine {
   id: string;
   title: string;
   kind: ToolKind;
   status: ToolStatus;
-  paths: string[];
+  locations: ToolLocation[];
   diffs: ToolDiff[];
   output: string;
+  truncated: boolean;
+}
+
+/** ONE FILE A TURN CHANGED, as the chat says at the turn's end: its path,
+ *  vault-relative; the screen that shows it, or null; what happened to it; and
+ *  lines added and removed where the diff says. Kept in the chat's own log, so
+ *  *the pages the turn changed* reads the same after the history — which lives
+ *  in memory — is gone. */
+export interface ChangedFile {
+  path: string;
+  place: Place | null;
+  op: "created" | "edited" | "deleted" | "moved";
+  added?: number;
+  removed?: number;
 }
 
 /** One entry of an agent's plan, which ACP streams and nothing draws yet. */
@@ -1112,26 +1160,28 @@ export interface PlanEntry {
 }
 
 /** ONE CHAT, AS THE LIST AND EVERY SCREEN SHOWS IT. `agent` and `harness` are
- *  the agent the chat is with now; `agentId` the one running for it, or null
- *  when none is. `page` is the page it was started beside by **Edit**. `turn`
- *  counts the person's messages. `stop` and `reason` are the last turn's end
- *  and, where it was red, what happened in words. `options` are the running
- *  session's config options — the pickers — as last reported. `face` is the
- *  emoji Jev picked once for the name. Times are the server's, in ms. */
+ *  the agent the chat is with now — both null while a first message is held
+ *  with no agent picked, until one is Active; `agentId` the one running for
+ *  it, or null when none is. `page` is the page it was started beside by
+ *  **Edit**, as a place — by `uid`, so a page renamed since still resolves.
+ *  `turn` counts the person's messages. `stop` and `reason` are the last
+ *  turn's end and, where it was red, what happened in words. `face` is the
+ *  emoji Jev picked once for the name. The config options are NOT here: they
+ *  ride the stream's `config` update, sent when they change. Times are the
+ *  server's, in ms. */
 export interface ChatSummary {
   id: ChatId;
   name: string;
   face: Face | null;
-  agent: AgentKey;
-  harness: string;
+  agent: AgentKey | null;
+  harness: string | null;
   agentId: AgentId | null;
-  page: PageId | null;
+  page: Place | null;
   phase: TurnPhase;
   turn: number;
   light: ChatLight;
   stop: TurnEnd | null;
   reason: string | null;
-  options: ConfigOption[];
   created: number;
   updated: number;
 }
@@ -1147,9 +1197,14 @@ export interface ChatSummary {
  *  and its end with the stop reason. `face` is Jev's status for this turn's
  *  message, flipping as it changes and the last one staying; `name` is the
  *  chat named, with its emoji once Jev has picked one. `agent` is an agent
- *  starting in the chat — a new id on every switch. `config`, `commands`,
- *  `usage` and `plan` are what the agent last said of each. `error` is a
- *  sentence of Biom's own; an agent's stderr is never relayed raw. */
+ *  starting in the chat — a new id on every switch. `changed` is the files the
+ *  turn changed, said once at its end and kept. `config` is the session's
+ *  config options, sent whenever they change — the pickers read the last one.
+ *  `commands` is the / menu MERGED: the agent's own commands and every
+ *  workspace skill it did not list. `usage` and `plan` are what the agent last
+ *  said of each. `error` is a sentence of Biom's own; an agent's stderr is
+ *  never relayed raw. A `tool` update carries the line whole, so the kept log
+ *  may drop a line's superseded updates for its last. */
 export type ChatUpdate = { seq: number; at: number; turn: number } & (
   | { kind: "prompt"; text: string }
   | { kind: "reply"; text: string }
@@ -1159,6 +1214,7 @@ export type ChatUpdate = { seq: number; at: number; turn: number } & (
   | { kind: "face"; face: Face }
   | { kind: "name"; name: string; face: Face | null }
   | { kind: "agent"; agentId: AgentId; agent: AgentKey; harness: string }
+  | { kind: "changed"; edits: ChangedFile[] }
   | { kind: "config"; options: ConfigOption[] }
   | { kind: "commands"; commands: SlashCommand[] }
   | { kind: "usage"; used: number; size: number; cost: { amount: number; currency: string } | null }
@@ -1180,30 +1236,38 @@ export interface ChatPush {
   updates: ChatUpdate[];
 }
 
-/** THE PAGES A TURN CHANGED: the edits the history holds by the chat's agent
- *  since the person's message that started the turn, named for the look. */
-export interface TurnPages {
-  turn: number;
-  pages: { id: PageId; name: string }[];
+/** A page as the look names it: where it is now, and what it is called. */
+export interface PageName {
+  id: PageId;
+  name: string;
+}
+
+/** Where Biom's own input box sits over the look's box — centred on the start
+ *  screen, at the foot in a chat — and how tall it is, so a look someone else
+ *  wrote leaves it room. */
+export interface LookInput {
+  at: "center" | "bottom";
+  height: number;
 }
 
 /** EVERYTHING THE AGENT SCREEN'S LOOK DRAWS, handed to it whole as
  *  `look.state`. `mode` is where it is drawn — the Agent screen, or the panel
  *  beside a page. `chat` is the open chat or null for the start screen, and
- *  `updates` its stream so far; `list` whether the list of chats is open and
- *  `chats` that list. `input` is where Biom's own input box sits over the box
- *  — centred on the start screen, at the foot in a chat — and how tall it is,
- *  so a look someone else wrote leaves it room. `beside` is the page the
- *  panel sits beside, or the one the Agent screen would minimise to. */
+ *  `updates` its stream so far — the pages a turn changed are its `changed`
+ *  updates. `list` is whether the list of chats is open and `chats` that list.
+ *  `names` is every page the look's places name, by `uid`, as it is now called
+ *  and where it now is: the look cannot resolve a `uid` itself, and a page it
+ *  names it opens through `open`. `beside` is the page the panel sits beside,
+ *  or the one the Agent screen would minimise to. */
 export interface LookState {
   mode: "screen" | "panel";
   chat: ChatId | null;
   list: boolean;
   chats: ChatSummary[];
   updates: ChatUpdate[];
-  changed: TurnPages[];
-  input: { at: "center" | "bottom"; height: number };
-  beside: { id: PageId; name: string } | null;
+  names: Record<string, PageName>;
+  input: LookInput;
+  beside: PageName | null;
 }
 
 /** THE NAMED EVENTS ON A WORKSPACE'S ONE STREAM, `GET /v/<vault>/events`, and
@@ -1240,8 +1304,10 @@ export interface Envelope {
    *  claim is overwritten with the truth rather than refused, and the bridge
    *  rebuilds every request it forwards field by field, so a box's own
    *  `window` never reaches the transport at all. It is not a capability: it
-   *  names who typed, and the window a box is drawn in is the window that
-   *  typed.
+   *  names the window whose screen or box made the write. That is not always a
+   *  person typing — a page's own code may write with nobody at the keys — and
+   *  it is still recorded as that window's, `you` by `app`, because the history
+   *  names who a write came from and never guesses what they meant by it.
    *
    *  OPTIONAL, which is what keeps every caller that predates it valid: a
    *  request with none is a write nobody in a window made — a test, a tool —
@@ -1395,14 +1461,20 @@ export type HostRequest = Envelope &
      *  chats — is a plugin a workspace can replace, drawn in a box on
      *  `AGENT_PAGE`, so what it may ask for is decided here and nowhere else.
      *
-     *  IT MAY ASK TO BE SHOWN SOMETHING. IT MAY NEVER SAY ANYTHING TO AN
-     *  AGENT. Every one of these names a chat, a list or a size and carries no
-     *  text: the input box is Biom's, in the host, outside the box, so only the
-     *  person's typing reaches an agent that is allowed everything — and there
-     *  is no kind in any ring a box can speak by which a prompt, a command or a
-     *  word could reach one. `chat.*` and `agents.*` are the outer ring's alone
-     *  and a test pins that none of them, and no kind carrying text, is ever
-     *  admitted by `isHostRequest` or `isRuntimeRequest`.
+     *  IT MAY ASK TO BE SHOWN SOMETHING. IT MAY NEVER SAY ANYTHING TO A
+     *  CHAT'S AGENT. Every one of these names a chat, a list or a place and
+     *  carries no text — the guard is STRICT, and a field it does not name is
+     *  refused: the input box is Biom's, in the host, outside the box, so only
+     *  the person's typing reaches a chat's agent, which is allowed everything.
+     *  `chat.*` and `agents.*` are the outer ring's alone, and a test pins that
+     *  none of them is ever admitted by `isHostRequest` or `isRuntimeRequest`.
+     *  (`run.start` is the one inner kind that starts an agent at all, and it is
+     *  a different thing: an automation, whose command and kickoff are files in
+     *  the vault, started with a form's inputs — never a page's words put in
+     *  front of a chat's agent.)
+     *
+     *  THE PANEL'S HEAD IS THE LOOK'S: its history dropdown, expand and close
+     *  are drawn in the box and said with `look.list` and `look.panel`.
      *
      *  THEY ARE REQUESTS AND NOT GUARANTEES, like `open`: the host decides, and
      *  answers a box that is not the look's with a refusal, because one box is
@@ -1416,9 +1488,10 @@ export type HostRequest = Envelope &
     /** Show or hide the list of chats — beside the chat on the Agent screen,
      *  a dropdown in the panel. */
     | { kind: "look.list"; open: boolean }
-    /** The panel maximised to the Agent screen (`true`), or the Agent screen
-     *  minimised back beside the last page the history shows (`false`). */
-    | { kind: "look.panel"; expand: boolean }
+    /** Where the chat goes: `screen`, the panel maximised to the whole Agent
+     *  screen; `beside`, the Agent screen minimised to the panel beside the last
+     *  page the history shows; `closed`, the panel shut. */
+    | { kind: "look.panel"; to: "screen" | "beside" | "closed" }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -1519,10 +1592,12 @@ export type HostEvent =
   /** WHAT MOVED SINCE, BATCHED. The host coalesces the stream — a reply
    *  arrives a few characters at a time — into one patch per frame at most.
    *  `updates` are the open chat's and append to what the look holds, and
-   *  only when `chat` is the chat it holds; `chats` and `changed` replace
-   *  their lists whole, because a light or a name moving on a chat in the
-   *  background is a new list rather than a diff anybody should apply. */
-  | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; changed?: TurnPages[] };
+   *  only when `chat` is the chat it holds; `chats` and `names` replace what
+   *  the look holds whole, because a light or a name moving on a chat in the
+   *  background is a new list rather than a diff anybody should apply; `input`
+   *  and `beside` replace theirs when the input box moves or grows and when the
+   *  page the panel sits beside changes. */
+  | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; names?: Record<string, PageName>; input?: LookInput; beside?: PageName | null };
 
 /** guest → host, unprompted. A null-origin frame's DOM cannot be read by the
  *  host, so everything the host needs to know arrives here.
@@ -1865,6 +1940,10 @@ export type ChatRequest = Envelope &
     /** THE ACP REGISTRY, read from the network: every agent any ACP client can
      *  install, with what this machine lacks to run each. */
     | { kind: "agents.registry" }
+    /** **START GATEWAY**: the one button an inactive OpenClaw carries. Starts
+     *  its Gateway on this machine — never another's — and answers the agent
+     *  as `checking`; the probe after it says whether it is Active. */
+    | { kind: "agents.start"; agent: AgentKey }
     /** PUT ONE ON THIS MACHINE, into Biom's own folder, at the registry's
      *  pinned version. Answers the agent as `installing`; the stream says when
      *  it is done and whether it is Active. */
@@ -1876,13 +1955,18 @@ export type ChatRequest = Envelope &
      *  Asked for only when an agent refused a session or a message, because
      *  `authenticate` on an agent already signed in can sign it out. */
     | { kind: "agents.signIn"; agent: AgentKey; method: string }
-    /** A NEW CHAT with this agent, and optionally its first message and the
-     *  page it was started beside — **Edit** types the page's location into
-     *  the input and names the page here. `config` is what the start screen's
-     *  pickers were set to, by option id, applied before the first message.
-     *  A first message with no agent ready is HELD, and goes out the moment
-     *  the agent is Active. */
-    | { kind: "chat.new"; agent: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue> }
+    /** A NEW CHAT, and optionally its first message and the page it was
+     *  started beside — **Edit** types the page's location into the input and
+     *  names the page here, which the server keeps by its `uid`. `config` is
+     *  what the start screen's pickers were set to, by option id, applied
+     *  before the first message.
+     *
+     *  A FIRST MESSAGE WITH NO AGENT READY IS HELD (*Chat*, `picker`), and
+     *  goes out the moment an agent is Active. `agent` names the one the
+     *  person picked; with none Active and none picked it is left out, the
+     *  chat's `agent` and `harness` are null while it is held, and the first
+     *  agent to become Active takes it. */
+    | { kind: "chat.new"; agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue> }
     /** Every chat in this workspace, newest first — the history of chats. */
     | { kind: "chat.list" }
     /** ONE CHAT AS BIOM KEPT IT: the update stream as it arrived, from `since`
@@ -1900,10 +1984,12 @@ export type ChatRequest = Envelope &
     /** SET ONE OF THE AGENT'S SESSION CONFIG OPTIONS — the model, mode and
      *  effort pickers — by the option's own id, because a category is not
      *  unique and `other` is a category. Mid-turn it applies from the next
-     *  message, which is all the protocol promises. */
+     *  message, which is all the protocol promises; with no agent running it is
+     *  kept and applied when one starts. */
     | { kind: "chat.config"; chat: ChatId; option: string; value: ConfigValue }
     /** ANOTHER AGENT IN THIS CHAT. A new agent is a new id, and its new
-     *  session is handed the chat so far. */
+     *  session is handed the chat so far. On a HELD chat nothing has started,
+     *  so it re-targets the held message and mints no id. */
     | { kind: "chat.switchAgent"; chat: ChatId; agent: AgentKey }
     /** END THE CHAT'S AGENT PROCESS. The chat and its log stay, and sending
      *  to it again starts an agent, resuming where the agent can. */
@@ -1931,8 +2017,11 @@ export type HistoryRequest = Envelope &
      *  which appends an open and a view; or the switcher following an agent,
      *  which appends a view under that agent. A report without it — the panel
      *  shut, another chat in it — changes the context and appends nothing.
-     *  Answers the entries it appended, so the window need not wait for the
-     *  stream to know them. */
+     *  `claim` says the screen became the person's without an open — touched,
+     *  or kept on screen five minutes — and appends a view by the person. The
+     *  context's `agent` is the server's to derive from its `chat`: whatever
+     *  the window sent there is ignored. Answers the entries it appended, so
+     *  the window need not wait for the stream to know them. */
     | { kind: "window.report"; context: WindowReport; moved?: Move }
     /** EVERY WINDOW'S CONTEXT on this workspace, so an agent or a run can ask
      *  what the person has open and which chat is on screen without guessing. */

@@ -109,6 +109,14 @@ export const STREAM = Object.freeze({
   AGENTS: "agents",
 });
 
+/** WHICH WINDOW A STREAM IS, on its address: `…/events?window=<id>`. A
+ *  window's context is kept while its stream is open and DROPPED WHEN IT
+ *  CLOSES, so the contexts `window.list` answers are the windows still there
+ *  rather than every window since the server started. An address and not a
+ *  message, for the reason the token is: the stream has no envelope. The
+ *  server's half is the route's (C0), the client's is `events.js`'s (B2). */
+export const WINDOW_PARAM = "window";
+
 /** THE GRAMMAR OF AN ID NOBODY TYPES: a window's, a chat's, a running agent's,
  *  a sign-in ticket's. Eight to sixty-four letters, digits, dashes and
  *  underscores — a uuid is one, and so is what a window mints where

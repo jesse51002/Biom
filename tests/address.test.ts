@@ -141,3 +141,38 @@ test("the history names a page by its uid, and a place comes back to wherever th
   expect(samePlace({ view: "agent", id: "x" }, { view: "agent", id: "x" })).toBe(true);
   expect(samePlace({ view: "agent", id: "x" }, { view: "table", id: "x" })).toBe(false);
 });
+
+test("A GENERATED ROUND-TRIP: any id, of any characters, in any view that names one, comes back as it went", () => {
+  // Deterministic, so a failure names a seed that reproduces it. The alphabet
+  // is what trips a url: separators, escapes, reserved characters, spaces,
+  // other scripts, and the screen words themselves.
+  const alphabet = [..."aZ09-_ /%#?&=+.@~:;,'!*()[]", "é", "☕", "中", "instructions", "automation", "page", "%2F", "%"];
+  let seed = 20260926;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const word = () => Array.from({ length: 1 + Math.floor(rand() * 6) }, () => alphabet[Math.floor(rand() * alphabet.length)]).join("");
+  let n = 0;
+  for (let i = 0; i < 2000; i++) {
+    const view = (["page", "table", "agent"] as const)[Math.floor(rand() * 3)]!;
+    const id = Array.from({ length: 1 + Math.floor(rand() * 4) }, word).join("/");
+    const screen = ([...PAGE_SCREENS] as ("page" | "instructions" | "automation")[])[Math.floor(rand() * 3)]!;
+    const a = address(view, id, screen);
+    const back = parseAddress(formatAddress(a));
+    if (JSON.stringify(back) !== JSON.stringify(a)) throw new Error(`seed ${i}: ${JSON.stringify(a)} came back as ${JSON.stringify(back)}`);
+    n++;
+  }
+  expect(n).toBe(2000);
+});
+
+test("a stray id on a view that names nothing is dropped", () => {
+  expect(address("design", "foo")).toEqual({ view: "design", id: "", screen: "page" });
+  expect(address("runs", "x", "automation")).toEqual({ view: "runs", id: "", screen: "page" });
+  expect(parseAddress("#/design/foo")).toEqual(address("design"));
+  expect(parseAddress("#/map/anything/at/all")).toEqual(address("map"));
+  // The views that name something keep it.
+  expect(address("table", "jobs").id).toBe("jobs");
+  expect(address("agent", "chat-0001").id).toBe("chat-0001");
+  // And a route written with a stray id is normalised to a new object.
+  const stray = { view: "design" as const, id: "foo", screen: "page" as const };
+  expect(normalAddress(stray)).toEqual(address("design"));
+  expect(normalAddress(stray)).not.toBe(stray);
+});
