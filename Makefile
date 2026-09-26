@@ -195,7 +195,10 @@ test: install
 # screen, a rail row that was in the source and not in the build.
 #
 # TWO LAYERS AND ONE COMMAND. `server.e2e.ts` runs `server/main.ts` the way `dev`
-# does and drives it in a headless Chromium; `app.e2e.ts` starts the PACKAGED
+# does and drives it in a headless Chromium, and the files beside it walk the
+# rest of that layer — the chats over HTTP with a scripted agent, the Agent
+# screen's look in a real box, its host side on a screen, a server started
+# against a folder gone wrong; `app.e2e.ts` starts the PACKAGED
 # application and asks the window it opened. The second SKIPS, with a named
 # reason, where there is no bundle or no screen — build one with `make app`, and
 # on Linux it takes a display of its own through `xvfb-run` where there is one.
@@ -203,7 +206,7 @@ test: install
 # NAMED EXPLICITLY, WITH A `./` IN FRONT, and both halves are load-bearing. The
 # files end in `.e2e.ts` rather than `.test.ts` so `bun test`'s own discovery —
 # `.test.`, `_test_`, `.spec.`, `_spec_` and nothing else — walks straight past
-# this directory and `make test` stays the eleven-second gate it is. And bun
+# this directory and `make test` stays the quick gate it is. And bun
 # reads a BARE path as a filter against that same glob, which matches nothing at
 # all; a path with a `./` in front is a file to run.
 #
@@ -215,7 +218,7 @@ test: install
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/chat-server.e2e.ts ./tests/e2e/agent-look.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
+	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/chat-server.e2e.ts ./tests/e2e/agent-look.e2e.ts ./tests/e2e/agent-screen.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #
