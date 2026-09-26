@@ -187,6 +187,7 @@
     if (m.kind === "theme") applyTheme(m.theme);
     else if (m.kind === "refresh") void onRefresh(m.change || {});
     else if (m.kind === "place" && typeof m.top === "number") place(m.top);
+    else if (m.kind === "look.state" || m.kind === "look.patch") hearLook(m);
   }
 
   /** Something this page draws from moved underneath it — a section added or
@@ -320,6 +321,126 @@
    * box that measured itself would put the scroller back outside and take every
    * one of those away. `GuestNotice` has no `size` and this file must never
    * post one.                                                                 */
+
+  /* ── the Agent screen's look: `look.state` and `look.patch` ────────────────
+   * THE HOST FEEDS THE CHATS INTO ONE BOX — the Agent screen's, on `@agent` —
+   * and into no other, because `look.*` is posted to that box's own frame and
+   * never broadcast. The box cannot fetch, so everything the look draws arrives
+   * here: `look.state` whole, and `look.patch` for what moved since.
+   *
+   * THIS FOLDS THE PATCHES IN, by the contract's rule, so a look is handed the
+   * state as it now stands and never has to know the rule: a patch's `updates`
+   * append ONLY when its `chat` is the chat held — a patch for the chat that was
+   * open before a `look.state` switched it is stale and its updates are dropped
+   * — and `chats`, `names`, `input` and `beside` replace what is held. An
+   * update whose `seq` is already held is dropped, so a patch that overlaps the
+   * state it follows cannot say a word twice; a TOOL LINE is whole and is
+   * replaced where it first stood, by its id, and only by a later `seq`, so a
+   * command's output updated five hundred times is one line held and not five
+   * hundred.
+   *
+   * `biom.onLook(fn)` calls `fn(state, patch)`: `patch` is null when the state
+   * was handed whole — a `look.state`, or a late subscriber catching up — and
+   * otherwise the patch that just moved it, its `updates` narrowed to the ones
+   * that were folded in, so a look that draws incrementally draws exactly what
+   * the state gained. It is the one hook, and nothing here draws, sends or
+   * keeps anything else. */
+
+  /** @type {any} the LookState as it now stands, or null before the first */
+  let look = null;
+  /** The highest `seq` held, and where each tool line stands in `look.updates`. */
+  let lookSeq = 0;
+  /** @type {Map<string, number>} */
+  let lookTools = new Map();
+  /** @type {((state: any, patch: any) => void)[]} */
+  const lookListeners = [];
+
+  /** @param {any} u @returns {string | null} a tool update's line id */
+  const toolIdOf = (u) => (u && u.kind === "tool" && u.tool && typeof u.tool.id === "string" ? u.tool.id : null);
+
+  /** A state handed whole: its tool lines are compacted to one each, at the
+   *  place the line first stood and in its latest state, and the index rebuilt.
+   *  @param {any} state */
+  function holdLook(state) {
+    const updates = Array.isArray(state.updates) ? state.updates : [];
+    /** @type {any[]} */
+    const kept = [];
+    lookTools = new Map();
+    lookSeq = 0;
+    for (const u of updates) {
+      if (!u || typeof u !== "object" || typeof u.seq !== "number") continue;
+      if (u.seq > lookSeq) lookSeq = u.seq;
+      const id = toolIdOf(u);
+      const at = id === null ? undefined : lookTools.get(id);
+      if (id !== null && at !== undefined) {
+        if (kept[at].seq < u.seq) kept[at] = u;
+        continue;
+      }
+      if (id !== null) lookTools.set(id, kept.length);
+      kept.push(u);
+    }
+    look = Object.assign({}, state, { updates: kept });
+  }
+
+  /** One update of a patch, folded in; false when it was already held.
+   *  `before` is the highest `seq` held when the patch began: a kept log
+   *  compacts a tool line to its LAST state where it FIRST stood, so a state's
+   *  seqs are not in order, and every update the server emits after it is
+   *  numbered above all of them — so "new" is "above what was held", measured
+   *  once per patch and never as a running maximum.
+   *  @param {any} u @param {number} before @returns {boolean} */
+  function foldLook(u, before) {
+    if (!u || typeof u !== "object" || typeof u.seq !== "number") return false;
+    const id = toolIdOf(u);
+    if (id !== null) {
+      const at = lookTools.get(id);
+      if (at !== undefined) {
+        if (look.updates[at].seq >= u.seq) return false;
+        look.updates[at] = u;
+      } else {
+        lookTools.set(id, look.updates.length);
+        look.updates.push(u);
+      }
+    } else {
+      if (u.seq <= before) return false;
+      look.updates.push(u);
+    }
+    if (u.seq > lookSeq) lookSeq = u.seq;
+    return true;
+  }
+
+  /** @param {any} m a `look.state` or a `look.patch`, as the host posted it */
+  function hearLook(m) {
+    /** @type {any} */
+    let patch = null;
+    if (m.kind === "look.state") {
+      if (!m.state || typeof m.state !== "object") return;
+      holdLook(m.state);
+    } else {
+      // A patch with no state to apply to is a patch for a look that has not
+      // been told what it holds; the next `look.state` says it whole.
+      if (!look) return;
+      patch = { chat: m.chat === undefined ? null : m.chat, updates: /** @type {any[]} */ ([]) };
+      if (Array.isArray(m.updates) && m.chat !== null && m.chat === look.chat) {
+        const before = lookSeq;
+        for (const u of m.updates) if (foldLook(u, before)) patch.updates.push(u);
+      }
+      if (Array.isArray(m.chats)) look.chats = patch.chats = m.chats;
+      if (m.names && typeof m.names === "object") look.names = patch.names = m.names;
+      if (m.input && typeof m.input === "object") look.input = patch.input = m.input;
+      if (m.beside !== undefined) look.beside = patch.beside = m.beside;
+    }
+    for (const fn of lookListeners.slice()) {
+      try { fn(look, patch); } catch (e) { report(e); }
+    }
+  }
+
+  /** @param {(state: any, patch: any) => void} fn */
+  function onLook(fn) {
+    lookListeners.push(fn);
+    if (look) { try { fn(look, null); } catch (e) { report(e); } }
+    return () => { const i = lookListeners.indexOf(fn); if (i >= 0) lookListeners.splice(i, 1); };
+  }
 
   /* ── teardown ──────────────────────────────────────────────────────────── */
 
@@ -664,6 +785,12 @@
       refreshListeners.push(fn);
       return () => { const i = refreshListeners.indexOf(fn); if (i >= 0) refreshListeners.splice(i, 1); };
     },
+
+    /** THE AGENT SCREEN'S LOOK hears what it draws here: `fn(state, patch)`,
+     *  the LookState as it now stands and the patch that moved it, or null
+     *  when it was handed whole. Only the box on `@agent` is ever posted one;
+     *  anywhere else this never fires. See "the Agent screen's look" above. */
+    onLook: onLook,
 
     /** @param {(theme: any) => void} fn */
     onTheme(fn) {
