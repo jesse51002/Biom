@@ -95,7 +95,7 @@
 
 import { randomBytes, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
 import type {
@@ -314,8 +314,11 @@ interface Chat {
   session: { agent: AgentKey; id: string } | null;
   /** The session now open is new and knows nothing of the chat so far. */
   handoff: boolean;
-  /** The message waiting to go out, from `send` until `session/prompt`. */
-  held: { text: string; tries: number } | null;
+  /** The message waiting to go out, from `send` until `session/prompt`.
+   *  `signin`: its agent refused for want of a sign-in, and it goes out only
+   *  once that agent has been seen Inactive (`off`) and then Active again —
+   *  never on the list it was refused against. */
+  held: { text: string; tries: number; signin: boolean; off: boolean } | null;
   /** Bumped by Stop, a switch and close, so a start in flight can tell it was
    *  overtaken. */
   gen: number;
@@ -341,7 +344,14 @@ interface Chat {
   greenTimer: ReturnType<typeof setTimeout> | null;
   tools: Map<string, ToolRecord>;
   turnState: TurnState | null;
+  /** The chat's own order for its bookkeeping: edits, then the turn's end. */
   queue: Promise<void>;
+  /** Config changes, one after another. Apart from `queue`, because each
+   *  waits on the agent and bookkeeping never should. */
+  configQueue: Promise<void>;
+  /** The last agent this chat ended, still going: a new start waits for it,
+   *  so two processes never hold one session. */
+  ending: Promise<unknown> | null;
   log: LogWriter;
 }
 
@@ -481,7 +491,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     pendingConfig: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
-    tools: new Map(), turnState: null, queue: Promise.resolve(),
+    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null,
     log: makeLog(join(logDir, `${id}.jsonl`), torn, say),
   });
 
@@ -514,9 +524,11 @@ export function makeChats(deps: ChatsDeps): Chats {
     }
   };
 
-  /** The summary changed: say so with the next push. */
-  const touch = (c: Chat): void => {
-    c.updated = now();
+  /** The summary changed: say so with the next push. `bump` is whether it
+   *  was something happening in the chat, which moves it up the list; a light
+   *  going out, or a chat read back at start, is not. */
+  const touch = (c: Chat, bump = true): void => {
+    if (bump) c.updated = now();
     c.dirty = true;
     schedule(c);
   };
@@ -665,7 +677,7 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.endedAt = now();
         emit(c, { kind: "turn", phase: "idle", stop: c.stop, reason: c.reason });
       }
-      touch(c);
+      touch(c, false);
     }
   })();
 
@@ -818,9 +830,10 @@ export function makeChats(deps: ChatsDeps): Chats {
     c.options = read.options;
   };
 
-  /** Apply every value kept for the next message to an open session. */
-  const applyConfig = (c: Chat, live: Live): Promise<void> =>
-    enqueue(c, async () => {
+  /** Apply every value kept for the next message to an open session, on the
+   *  chat's config chain. */
+  const applyConfig = (c: Chat, live: Live): Promise<void> => {
+    const run = c.configQueue.then(async () => {
       if (c.pendingConfig.size === 0) return;
       for (const [option, value] of [...c.pendingConfig]) {
         if (live.gone || !live.conn || live.sessionId === null) return;
@@ -841,7 +854,10 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
       c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
       emitConfig(c);
-    });
+    }).catch((e: unknown) => say(`chats: ${c.id}: applying config failed: ${said(e)}`));
+    c.configQueue = run;
+    return run;
+  };
 
   /* ── the turn ────────────────────────────────────────────────────── */
 
@@ -930,7 +946,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       if (stop === "end_turn") {
         c.greenTimer = setTimeout(() => {
           c.greenTimer = null;
-          touch(c);
+          touch(c, false);
         }, GREEN_MS);
         (c.greenTimer as { unref?: () => void }).unref?.();
       }
@@ -965,7 +981,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     emit(c, { kind: "prompt", text });
     if (c.name === "") rename(c, nameFrom(text, NAME_MAX));
     signal({ kind: "start", chat: c.id, turn: c.turn, text });
-    c.held = { text, tries: 0 };
+    c.held = { text, tries: 0, signin: false, off: false };
     if (c.agent === null && adoptIfAny(c)) {
       emitConfig(c);
       void emitCommands(c);
@@ -976,16 +992,26 @@ export function makeChats(deps: ChatsDeps): Chats {
 
   /** THE HELD MESSAGE GOES OUT: to the open session, or through a start. */
   const go = (c: Chat): void => {
+    // A server on its way down starts nothing: `endAll` is ending this turn.
+    if (stopping) return;
     const live = c.live;
     const gen = c.gen;
+    const turn = c.turn;
+    const send = (l: Live) =>
+      prompt(c, l, gen).catch((e: unknown) => {
+        // Nothing here should throw; if something does, the turn still ends.
+        say(`chats: ${c.id}: sending a message failed: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
+        c.held = null;
+        void finishTurn(c, turn, "crashed", "Biom could not send the message");
+      });
     if (live && live.opened && !live.gone) {
       setPhase(c, "running");
-      void prompt(c, live, gen);
+      void send(live);
       return;
     }
     setPhase(c, "starting");
     void start(c).then((l) => {
-      if (l && c.gen === gen && c.held) void prompt(c, l, gen);
+      if (l && c.gen === gen && c.held) void send(l);
     });
   };
 
@@ -1067,7 +1093,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     } catch (e) {
       if (c.turn !== turn || c.phase === "idle") return;
       if (isAuthRequired(e)) {
-        c.held = { text: held.text, tries: held.tries };
+        c.held = { ...held };
         refusedSignIn(c, live);
         return;
       }
@@ -1091,9 +1117,11 @@ export function makeChats(deps: ChatsDeps): Chats {
     }
     if (c.live === live) {
       c.live = null;
-      touch(c);
+      touch(c, false);
     }
-    return live.conn ? live.conn.close() : Promise.resolve(null);
+    const ending = live.conn ? live.conn.close() : Promise.resolve(null);
+    c.ending = ending;
+    return ending;
   };
 
   /** A start that failed: the message it was for ends red, with a sentence. */
@@ -1108,21 +1136,26 @@ export function makeChats(deps: ChatsDeps): Chats {
   /** The agent refused for want of a sign-in: the agents module is told, the
    *  process goes, and the message waits for the agent to be Active again. */
   const refusedSignIn = (c: Chat, live: Live): void => {
+    void endLive(c, live);
+    if (c.held) {
+      c.held.tries += 1;
+      if (c.held.tries > AUTH_RETRIES) {
+        c.held = null;
+        void finishTurn(c, c.turn, "crashed", `${live.harness} still asks to be signed in`);
+      } else {
+        c.held.signin = true;
+        c.held.off = false;
+        setPhase(c, "held");
+        emit(c, { kind: "error", message: `${live.harness} needs you to sign in. Your message will go out once it is signed in.` });
+      }
+    }
+    // Held first: a list the agents module sends back at once is judged
+    // against the held chat.
     try {
       deps.refused(live.key);
     } catch (e) {
       say(`chats: refused() threw: ${said(e)}`);
     }
-    void endLive(c, live);
-    if (!c.held) return;
-    c.held.tries += 1;
-    if (c.held.tries > AUTH_RETRIES) {
-      c.held = null;
-      void finishTurn(c, c.turn, "crashed", `${live.harness} still asks to be signed in`);
-      return;
-    }
-    setPhase(c, "held");
-    emit(c, { kind: "error", message: `${live.harness} needs you to sign in. Your message will go out once it is signed in.` });
   };
 
   /** START THE CHAT'S AGENT, or join the start already under way. Answers the
@@ -1131,7 +1164,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     const existing = c.live;
     if (existing && !existing.gone) return existing.ready.then((ok) => (ok && !existing.gone ? existing : null));
     const key = c.agent;
-    if (key === null) return Promise.resolve(null);
+    if (key === null || stopping) return Promise.resolve(null);
     const live: Live = {
       agentId: randomUUID(), key, harness: harnessOf(key), conn: null, sessionId: null, ready: Promise.resolve(false),
       opened: false, gone: false, ending: false, replaying: false, early: [], rawConfig: null, rawModes: null, legacyMode: null,
@@ -1161,6 +1194,14 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (!launch) {
       failStart(c, live, `${live.harness} could not be started on this machine`);
       return false;
+    }
+    // The agent this chat last ended may still hold its session; its end is
+    // bounded by the connection's own TERM–KILL ladder.
+    const before = c.ending;
+    if (before) {
+      await before;
+      if (c.ending === before) c.ending = null;
+      if (live.gone) return false;
     }
     const conn = deps.connect(launch, root);
     live.conn = conn;
@@ -1264,7 +1305,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
       if (c.live === live) {
         c.live = null;
-        touch(c);
+        touch(c, false);
       }
       if (!crashed) return;
       const how = exit.signal ? `was ended by ${exit.signal}` : `exited with code ${exit.code}`;
@@ -1441,10 +1482,29 @@ export function makeChats(deps: ChatsDeps): Chats {
     throw outside();
   };
 
+  /** The size of a file inside the vault, asked before it is read into
+   *  memory; null where there is no file. Refused where the path leads out. */
+  const sizeOf = async (rel: string): Promise<number | null> => {
+    let real: string;
+    try {
+      real = await realpath(resolve(root, rel));
+    } catch {
+      return null;
+    }
+    if (!within(realRoot ?? root, real)) throw outside();
+    try {
+      const st = await stat(real);
+      return st.isFile() ? st.size : null;
+    } catch {
+      return null;
+    }
+  };
+
   const readText = async (live: Live, params: unknown): Promise<unknown> => {
     if (live.gone) throw stopped();
     const p = isObj(params) ? params : {};
     const rel = confined(p.path);
+    if (((await sizeOf(rel)) ?? 0) > FILE_MAX) throw new AcpRpcError(INVALID_PARAMS, "that file is too large to read through Biom");
     let text: string | null;
     try {
       text = await deps.files.read(rel);
@@ -1453,7 +1513,6 @@ export function makeChats(deps: ChatsDeps): Chats {
       throw new AcpRpcError(RESOURCE_NOT_FOUND, "that file could not be read");
     }
     if (text === null) throw new AcpRpcError(RESOURCE_NOT_FOUND, "there is no such file in this workspace");
-    if (text.length > FILE_MAX) throw new AcpRpcError(INVALID_PARAMS, "that file is too large to read through Biom");
     const line = typeof p.line === "number" && Number.isInteger(p.line) && p.line > 0 ? p.line : null;
     const limit = typeof p.limit === "number" && Number.isInteger(p.limit) && p.limit >= 0 ? p.limit : null;
     if (line === null && limit === null) return { content: text };
@@ -1468,13 +1527,18 @@ export function makeChats(deps: ChatsDeps): Chats {
     const rel = confined(p.path);
     if (typeof p.content !== "string") throw new AcpRpcError(INVALID_PARAMS, "the content is a string");
     if (p.content.length > FILE_MAX) throw new AcpRpcError(INVALID_PARAMS, "that is too large to write through Biom");
-    if (NOT_WRITABLE.has(rel.split(/[\\/]/)[0] as string)) throw new AcpRpcError(INVALID_PARAMS, "that folder is the framework's, and Biom does not write in it for an agent");
-    let old: string | null;
-    try {
-      old = await deps.files.read(rel);
-    } catch (e) {
-      if (e instanceof Error && e.name === "PathError") throw outside();
-      old = null;
+    if (NOT_WRITABLE.has((rel.split(/[\\/]/)[0] as string).toLowerCase())) throw new AcpRpcError(INVALID_PARAMS, "that folder is the framework's, and Biom does not write in it for an agent");
+    // What was there, for what the write changed: read only where it is small
+    // enough to hold, and otherwise known only to have been there.
+    const size = await sizeOf(rel);
+    let old: string | null = null;
+    if (size !== null && size <= FILE_MAX) {
+      try {
+        old = await deps.files.read(rel);
+      } catch (e) {
+        if (e instanceof Error && e.name === "PathError") throw outside();
+        old = null;
+      }
     }
     const ts = c.turnState;
     if (ts && !ts.committed) {
@@ -1492,7 +1556,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       if (e instanceof Error && e.name === "PathError") throw outside();
       throw new AcpRpcError(INTERNAL_ERROR, "the file could not be written");
     }
-    record(c, live, { kind: "fs", path: rel, old, text: p.content }, null);
+    record(c, live, { kind: "fs", path: rel, old, text: p.content, existed: size !== null }, null);
     return {};
   };
 
@@ -1511,7 +1575,14 @@ export function makeChats(deps: ChatsDeps): Chats {
           emitConfig(c);
           void emitCommands(c);
         }
-        if (c.agent !== null && list.some((a) => a.key === c.agent && a.state === "active")) go(c);
+        const a = c.agent === null ? undefined : list.find((x) => x.key === c.agent);
+        if (!a) continue;
+        if (a.state !== "active") {
+          c.held.off = true;
+          continue;
+        }
+        if (c.held.signin && !c.held.off) continue;
+        go(c);
         continue;
       }
       if (c.updates === null) continue;
@@ -1591,7 +1662,9 @@ export function makeChats(deps: ChatsDeps): Chats {
     async cancel(id) {
       const c = await must(id);
       const turn = c.turn;
-      if (c.phase === "held" || c.phase === "starting") {
+      if (c.phase !== "idle" && c.held) {
+        // Not yet handed to the agent: withdrawn, and a start under way for it
+        // is ended with it.
         const live = c.live;
         c.held = null;
         c.gen++;
@@ -1630,8 +1703,10 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
       emitConfig(c);
       const live = c.live;
-      // Mid-turn it waits for the next message; with no agent, for its start.
-      if (live && live.opened && !live.gone && c.phase === "idle") await applyConfig(c, live);
+      // Mid-turn it waits for the next message; with no agent, for its start;
+      // and no call waits on an agent — the answer arrives as a `config`
+      // update.
+      if (live && live.opened && !live.gone && c.phase === "idle") void applyConfig(c, live);
       touch(c);
       return summary(c);
     },
@@ -1653,6 +1728,10 @@ export function makeChats(deps: ChatsDeps): Chats {
       target(c, key);
       emitConfig(c);
       await emitCommands(c);
+      if (c.held) {
+        c.held.signin = false;
+        c.held.off = false;
+      }
       if (c.phase === "held" && c.held && isActive(key)) go(c);
       return summary(c);
     },
@@ -1666,7 +1745,8 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.gen++;
         await finishTurn(c, c.turn, "cancelled", null);
       }
-      if (c.live) await endLive(c, c.live);
+      // The process ends in the background; a new start waits for it.
+      if (c.live) void endLive(c, c.live);
       return summary(c);
     },
 

@@ -233,6 +233,8 @@ only("the agent's files are confined to the vault: .., a symlink out, .git refus
   writeFileSync(join(outside, "secret.txt"), "not yours\n");
   const root = realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   symlinkSync(outside, join(root, "link"));
+  // Past what Biom reads into memory for an agent — sparse, so it costs no disk.
+  spawnSync("truncate", ["-s", String(33 * 1024 * 1024), join(root, "big.bin")]);
   const w = world({
     root,
     scenarios: {
@@ -242,6 +244,9 @@ only("the agent's files are confined to the vault: .., a symlink out, .git refus
           { write: { path: "../escape.txt", content: "x" } },
           { write: { path: "link/planted.txt", content: "x" } },
           { write: { path: ".git/config", content: "x" } },
+          { write: { path: ".BIOM/chats/x.jsonl", content: "x" } },
+          { read: { path: "big.bin" } },
+          { write: { path: "big.bin", content: "small now\n" } },
           { write: { path: "/etc/biom-should-not-exist", content: "x" } },
           { read: { path: "notes/a.md" } },
           { read: { path: "link/secret.txt" } },
@@ -263,13 +268,24 @@ only("the agent's files are confined to the vault: .., a symlink out, .git refus
   const heard = w.heard();
   const writes = heard.filter((h) => h.fake === "write").map((h) => h.answer as { result?: unknown; error?: { code: number } });
   expect(writes[0]?.result).toEqual({});
-  for (const r of writes.slice(1)) expect(r.error?.code).toBe(-32602);
+  // .., a symlink out, .git, .biom by another case: refused; big.bin: written; /etc: refused.
+  for (const r of writes.slice(1, 5)) expect(r.error?.code).toBe(-32602);
+  expect(writes[5]?.result).toEqual({});
+  expect(writes[6]?.error?.code).toBe(-32602);
   const reads = heard.filter((h) => h.fake === "read").map((h) => h.answer as { result?: { content: string }; error?: { code: number } });
-  expect(reads[0]?.result).toEqual({ content: "hello\n" });
-  expect(reads[1]?.error?.code).toBe(-32602);
+  expect(reads[0]?.error?.code).toBe(-32602);
+  expect(reads[1]?.result).toEqual({ content: "hello\n" });
   expect(reads[2]?.error?.code).toBe(-32602);
-  expect(reads[3]?.error?.code).toBe(-32002);
-  expect(w.edits.map((e) => [e.path, e.via])).toEqual([["notes/a.md", "fs"]]);
+  expect(reads[3]?.error?.code).toBe(-32602);
+  expect(reads[4]?.error?.code).toBe(-32002);
+  expect(readFileSync(join(root, "big.bin"), "utf8")).toBe("small now\n");
+  expect(w.edits.map((e) => [e.path, e.via])).toEqual([["notes/a.md", "fs"], ["big.bin", "fs"]]);
+  const changed = (await w.chats.read(s.id)).updates.find((u) => u.kind === "changed") as { edits: unknown[] };
+  // Too large to have been read, so edited with no count.
+  expect(changed.edits).toEqual([
+    { path: "notes/a.md", place: null, op: "created", added: 1, removed: 0 },
+    { path: "big.bin", place: null, op: "edited" },
+  ]);
 });
 
 only("every write is reported once — fs and the tool call that made it are one edit — and the turn keeps what it changed", async () => {
@@ -376,6 +392,31 @@ only("a switch is refused while a turn runs", async () => {
   await settled(w.chats, s.id, 1);
 });
 
+only("Stop while the agent is still starting withdraws the message and ends the start", async () => {
+  const w = world({ scenarios: { fake: { initialize: { delayMs: 3000 } } } });
+  const s = await w.chats.create({ agent: "fake", text: "never mind" });
+  await until("the agent to start", 10_000, () => w.heard().some((h) => h.fake === "started"));
+  const pid = (w.heard().find((h) => h.fake === "started") as { pid: number }).pid;
+  const t0 = Date.now();
+  await w.chats.cancel(s.id);
+  const done = summaryOf(w.chats, s.id);
+  expect([done.phase, done.stop, done.light, done.agentId]).toEqual(["idle", "cancelled", "none", null]);
+  expect(Date.now() - t0).toBeLessThan(1000);
+  await until("the start to be ended", 5000, () => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  expect(w.heard().some((h) => h.method === "session/prompt")).toBe(false);
+  // And the next message starts afresh.
+  w.scenarios.fake = {};
+  await w.chats.send(s.id, "now then");
+  expect((await settled(w.chats, s.id, 2)).stop).toBe("end_turn");
+});
+
 only("a first message with no agent is held, and goes out the moment one is Active", async () => {
   const w = world({ agents: [info("fake", "Fake Agent", { state: "inactive", reason: "checking" })] });
   const s = await w.chats.create({ text: "anyone there?" });
@@ -417,6 +458,14 @@ only("an agent that refuses for want of a sign-in: told to the agents module, th
   expect(summaryOf(w.chats, s.id).agentId).toBeNull();
   const { updates } = await w.chats.read(s.id);
   expect(updates.some((u) => u.kind === "error" && u.message.includes("sign in"))).toBe(true);
+  // The list it was refused against goes out again: that is no sign-in, and
+  // nothing is retried.
+  w.setAgents([info("fake", "Fake Agent")]);
+  await wait(300);
+  expect(summaryOf(w.chats, s.id).phase).toBe("held");
+  expect(w.heard().filter((h) => h.method === "initialize").length).toBe(1);
+  // Inactive with `signin`, then Active after the person signed in.
+  w.setAgents([info("fake", "Fake Agent", { state: "inactive", reason: "signin" })]);
   writeFileSync(marker, "yes\n");
   w.setAgents([info("fake", "Fake Agent")]);
   const done = await settled(w.chats, s.id, 1);
@@ -431,6 +480,7 @@ only("a refusal of the message itself is held the same way", async () => {
   expect(w.refused).toEqual(["fake"]);
   // A new process, and it signs nobody out: the second prompt is answered.
   w.scenarios.fake = {};
+  w.setAgents([info("fake", "Fake Agent", { state: "inactive", reason: "signin" })]);
   w.setAgents([info("fake", "Fake Agent")]);
   const done = await settled(w.chats, s.id, 1);
   expect(done.stop).toBe("end_turn");
@@ -599,9 +649,10 @@ only("config: a value picked before the agent starts is shown at once and applie
   ({ updates } = await w.chats.read(s.id));
   const last = updates.filter((u): u is ChatUpdate & { kind: "config" } => u.kind === "config").pop();
   expect(last?.options[0]?.value).toBe("m2");
-  // Picked while idle with the agent running, it is applied at once.
+  // Picked while idle with the agent running, it is applied at once — and the
+  // call does not wait for the agent to answer.
   await w.chats.config(s.id, "model", "m1");
-  expect(w.heard().filter((h) => h.method === "session/set_config_option").length).toBe(2);
+  await until("the second change to reach the agent", 5000, () => w.heard().filter((h) => h.method === "session/set_config_option").length === 2);
 });
 
 only("the / menu: the probe's commands, then the session's, and every workspace skill the agent did not list; a skill it did not list goes out as a pointer", async () => {

@@ -482,6 +482,7 @@ export function spawnAgent(launch: AgentLaunch, cwd: string): AcpProcess {
 
   let startError: string | undefined;
   let exitInfo: AcpExit | null = null;
+  let exitedAt = 0;
   let stdoutEnded = false;
   let settle!: (v: AcpExit & { error?: string }) => void;
   const exited = new Promise<AcpExit & { error?: string }>((r) => (settle = r));
@@ -499,8 +500,25 @@ export function spawnAgent(launch: AgentLaunch, cwd: string): AcpProcess {
     stdoutEnded = true;
     finish();
   });
-  child.on("exit", (code: number | null, signal: string | null) => {
-    exitInfo = { code, signal };
+  child.on("exit", (code: number | null, sig: string | null) => {
+    exitInfo = { code, signal: sig };
+    exitedAt = Date.now();
+    // WHAT IT LEFT IN ITS GROUP GOES WITH IT. An agent that exits on its own —
+    // done, or crashed — leaves the tools it started in its group as orphans,
+    // and none of them outlives the agent it ran for. The group keeps its id
+    // while anything is in it, so the signal reaches only what it left.
+    if (!WINDOWS && pid !== null) {
+      const group = (s: NodeJS.Signals) => {
+        try {
+          process.kill(-pid, s);
+        } catch {
+          /* nothing left in it */
+        }
+      };
+      group("SIGTERM");
+      const later = setTimeout(() => group("SIGKILL"), 1000);
+      (later as { unref?: () => void }).unref?.();
+    }
     if (stdoutEnded) finish();
     // Something the agent started may still hold its stdout; whatever the
     // agent itself wrote has arrived by now or never will.
@@ -533,6 +551,9 @@ export function spawnAgent(launch: AgentLaunch, cwd: string): AcpProcess {
   };
   const signal = (sig: NodeJS.Signals): void => {
     if (pid === null) return;
+    // Long after it went, its numbers may be somebody else's: what it left
+    // was ended when it exited.
+    if (exitInfo !== null && Date.now() - exitedAt > 2000) return;
     if (WINDOWS) {
       try {
         spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true });

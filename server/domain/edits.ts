@@ -60,7 +60,8 @@ export function vaultPath(p: string, roots: VaultRoots): string | null {
   }
   if (rel === null || rel === "") return null;
   const fwd = sep === "/" ? rel : rel.split(sep).join("/");
-  const top = fwd.split("/")[0] as string;
+  // Lower-cased: on a filesystem that ignores case, `.GIT` is `.git`.
+  const top = (fwd.split("/")[0] as string).toLowerCase();
   if (NOT_EDITS.includes(top)) return null;
   return fwd;
 }
@@ -78,8 +79,9 @@ export interface Edit {
 /** What an edit is read from. */
 export type EditEvent =
   /** An `fs/write_text_file` Biom performed: the file before (`old`, null for
-   *  a file that was not there) and after. */
-  | { kind: "fs"; path: string; old: string | null; text: string }
+   *  a file that was not there — or, with `existed`, one too large to have
+   *  been read) and after. */
+  | { kind: "fs"; path: string; old: string | null; text: string; existed?: boolean }
   /** A tool call's merged state, as it stands. */
   | { kind: "tool"; tool: ToolState };
 
@@ -94,6 +96,7 @@ export function editsOf(event: EditEvent, roots: VaultRoots): Edit[] {
   if (event.kind === "fs") {
     const path = vaultPath(event.path, roots);
     if (path === null) return [];
+    if (event.old === null && event.existed) return [{ path, via: "fs", op: "edited" }];
     const { added, removed } = lineDelta(event.old, event.text);
     return [{ path, via: "fs", op: event.old === null ? "created" : "edited", added, removed }];
   }

@@ -65,6 +65,9 @@ export type Step =
    *  started detached, for the test that no process survives. Its pid is
    *  logged. */
   | { spawnSleeper: number }
+  /** A `sleep` started in the agent's own group, as a tool it ran would be.
+   *  Its pid is logged. */
+  | { spawnChild: number }
   /** The stop reason; `end_turn` where no step names one. */
   | { stop: string };
 
@@ -240,6 +243,9 @@ function run(scenario: Scenario): void {
       } else if ("spawnSleeper" in step) {
         const child = spawn("sleep", [String(step.spawnSleeper)], { detached: true, stdio: "ignore" });
         log({ fake: "sleeper", pid: child.pid });
+      } else if ("spawnChild" in step) {
+        const child = spawn("sleep", [String(step.spawnChild)], { stdio: "ignore" });
+        log({ fake: "child", pid: child.pid });
       } else if ("stop" in step) stop = step.stop;
     }
     reply(id, { stopReason: cancelled ? "cancelled" : stop });

@@ -314,6 +314,19 @@ only("a real agent that crashes mid-turn rejects the turn with the closed error 
   expect(await conn.closed).toEqual({ code: 3, signal: null });
 });
 
+only("an agent that exits on its own takes what it left in its group with it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "biom-acp-"));
+  const log = join(dir, "heard.jsonl");
+  const conn = connectAcp(launchOf({ log, turns: [[{ spawnChild: 60 }, { sleep: 50 }, { crash: 5 }]] }), dir);
+  await conn.request("initialize", initializeParams(), { timeoutMs: 10_000 });
+  const s = (await conn.request("session/new", { cwd: dir, mcpServers: [] }, { timeoutMs: 10_000 })) as { sessionId: string };
+  await conn.request("session/prompt", { sessionId: s.sessionId, prompt: [{ type: "text", text: "go" }] }).catch(() => null);
+  expect(await conn.closed).toEqual({ code: 5, signal: null });
+  const heard = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+  const child = (heard.find((h) => h.fake === "child") as { pid: number }).pid;
+  await until("the orphan to be gone", 5000, () => !alive(child));
+});
+
 only("kill() ends a real agent at once, with nothing awaited", async () => {
   const dir = mkdtempSync(join(tmpdir(), "biom-acp-"));
   const conn = connectAcp(launchOf({}), dir);
