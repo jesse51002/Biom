@@ -326,6 +326,8 @@ const MANIFEST = "installed.json";
 const REGISTRY_CACHE = "registry.json";
 const MAX_REGISTRY = 4 * 1024 * 1024;
 const MAX_DOWNLOAD = 2 * 1024 * 1024 * 1024;
+/** A staged install older than this was left by a server that stopped. */
+const STALE_PART = 60 * 60 * 1000;
 /** A decompressed tar: what the archive may unpack to, plus its headers. */
 const MAX_TAR = MAX_TOTAL + 512 * 1024 * 1024;
 
@@ -1192,8 +1194,16 @@ export function makeAgents(deps: AgentsDeps): Agents {
       if (!inside(folder)) throw new Said("It cannot be installed under that name.");
       // Private: what npm, uv or a Gateway print into their logs is the person's.
       mkdirSync(folder, { recursive: true, mode: 0o700 });
-      // What a server that stopped in the middle of an install left behind.
-      for (const name of readdirSync(folder)) if (name.startsWith(".part-")) rmSync(join(folder, name), { recursive: true, force: true });
+      // What a server that stopped in the middle of an install left behind —
+      // old enough that it is not another workspace's install in flight.
+      for (const name of readdirSync(folder)) {
+        if (!name.startsWith(".part-")) continue;
+        try {
+          if (lstatSync(join(folder, name)).mtimeMs < Date.now() - STALE_PART) rmSync(join(folder, name), { recursive: true, force: true });
+        } catch {
+          // Gone already.
+        }
+      }
       const rec = plan.via === "binary"
         ? await installBinary(entry, plan.target, env)
         : await installPackage(entry, plan.via, plan.dist, env);
@@ -1206,7 +1216,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       // Only this module's own sentences are shown; anything else is a fault
       // of the machine's — a disk, a permission — said without its detail and
       // logged with it, since it names no secret of the person's.
-      const own = e instanceof Said || e instanceof ArchiveError || typeof (e as { code?: unknown }).code === "string";
+      const own = e instanceof Said || e instanceof ArchiveError || (e as { code?: unknown }).code === "fetch_failed";
       if (!own) console.warn(`agents: installing ${slot.key} failed:`, e instanceof Error ? e.message : String(e));
       set(slot, "failed", own ? sentence((e as Error).message) : "It could not be installed.");
       emit();

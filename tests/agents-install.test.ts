@@ -604,6 +604,23 @@ test("the registry: read once in its lifetime, a stale copy when offline, a refu
   await expect(makeAgents(nothing.deps).registry()).rejects.toThrow("could not be reached");
 });
 
+test("a machine's own fault — a folder that cannot be made — is said without its detail", async () => {
+  const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const url = "https://dl.invented.example/f.tar.gz";
+  const blocked = join(fresh(), "not-a-folder");
+  writeFileSync(blocked, "a file where Biom's folder would go\n");
+  const r = rig({ entries: [binaryEntry("f", url, sha(body))], files: { [url]: body }, home: blocked });
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const a = await installed(r, "f");
+    expect(a.reason).toBe("failed");
+    expect(a.message).toBe("It could not be installed.");
+  } finally {
+    console.warn = warn;
+  }
+});
+
 test("installing refuses a name that is not an agent's, and the install's secrets stay out of what the client sees", async () => {
   const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
   const url = "https://dl.invented.example/s.tar.gz";
