@@ -11,7 +11,9 @@
 // and an echo — which is what an end-to-end run wants of it. A message may
 // also steer it: a line `!write <path> <text>` writes a file through
 // `fs/write_text_file`, `!sh <command>` reports an `execute` tool call that ran
-// it, `!sleep <ms>` waits, and `!crash` exits in the middle of the turn.
+// it, `!edit <path> <from>=><to>` rewrites a file itself and reports it as an
+// `edit` tool call carrying the diff (a `\n` in `<to>` is a new line),
+// `!sleep <ms>` waits, and `!crash` exits in the middle of the turn.
 //
 // WHAT IT HEARD is appended, one JSON message per line, to the scenario's `log`
 // where it names one — which is how a test asserts the permission it was
@@ -44,6 +46,11 @@ export type Step =
    *  runs it with `sh -c` in the agent's folder first, as a real agent's own
    *  shell would. */
   | { exec: string; run?: boolean; cwd?: string }
+  /** An `edit` tool call over a file the agent rewrites ITSELF, as a real
+   *  agent's own edit tool does rather than through `fs/write_text_file`: the
+   *  call pending with its diff and its location, the write, then the call
+   *  completed with the same diff. `from` is replaced once by `to`. */
+  | { editFile: { path: string; from: string; to: string } }
   | { commands: unknown[] }
   | { config: unknown[] }
   | { mode: string }
@@ -187,6 +194,14 @@ function run(scenario: Scenario): void {
         const sp = rest.indexOf(" ");
         const path = sp < 0 ? rest : rest.slice(0, sp);
         steps.push({ write: { path, content: sp < 0 ? "" : rest.slice(sp + 1) } });
+      } else if (word === "edit") {
+        const sp = rest.indexOf(" ");
+        const path = sp < 0 ? rest : rest.slice(0, sp);
+        const spec = sp < 0 ? "" : rest.slice(sp + 1);
+        const arrow = spec.indexOf("=>");
+        const from = arrow < 0 ? spec : spec.slice(0, arrow);
+        const to = (arrow < 0 ? "" : spec.slice(arrow + 2)).replace(/\\n/g, "\n");
+        steps.push({ editFile: { path, from, to } });
       } else if (word === "sh") steps.push({ exec: rest, run: true });
       else if (word === "sleep") steps.push({ sleep: Number(rest) || 0 });
       else if (word === "crash") steps.push({ crash: 3 });
@@ -233,6 +248,15 @@ function run(scenario: Scenario): void {
         update(sessionId, { sessionUpdate: "tool_call", toolCallId: tid, title: step.exec, kind: "execute", status: "pending", rawInput: { command: step.exec, ...(step.cwd ? { cwd: step.cwd } : {}) } });
         if (step.run) spawnSync("sh", ["-c", step.exec], { cwd });
         update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: tid, status: "completed", content: [{ type: "content", content: { type: "text", text: "(ran)" } }] });
+      } else if ("editFile" in step) {
+        const tid = `edit-${prompts}-${++tools}`;
+        const p = resolve(cwd, step.editFile.path);
+        const old = existsSync(p) ? readFileSync(p, "utf8") : null;
+        const next = old === null ? step.editFile.to : old.replace(step.editFile.from, step.editFile.to);
+        const diff = [{ type: "diff", path: p, oldText: old, newText: next }];
+        update(sessionId, { sessionUpdate: "tool_call", toolCallId: tid, title: `Edit ${step.editFile.path}`, kind: "edit", status: "pending", locations: [{ path: p }], content: diff });
+        writeFileSync(p, next);
+        update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: tid, status: "completed", content: diff });
       } else if ("commands" in step) update(sessionId, { sessionUpdate: "available_commands_update", availableCommands: step.commands });
       else if ("config" in step) update(sessionId, { sessionUpdate: "config_option_update", configOptions: step.config });
       else if ("mode" in step) update(sessionId, { sessionUpdate: "current_mode_update", currentModeId: step.mode });
