@@ -294,8 +294,15 @@ start screen, a chat, the list of chats — is a plugin a workspace can replace,
 drawn in a box on `@agent`, and what it may ask is four inner-ring kinds:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed — ids and words from a closed list, STRICTLY
-guarded so no field rides along — and a page a turn changed through `open`,
-which is honoured only just after the person's click, as every box's is. The
+guarded so no field rides along — and a page a turn changed through `open`.
+**Each of the five is honoured only just after a touch from that same box**,
+as every box's `open` is (§3): the four `look.*` kinds move what is on screen
+or redraw the look whole, so a look on a loop can do none of them. The bridge
+answers the four only for a box on `@agent`, and only through the answer the
+Agent screen registered (`answerLook`), which refuses every box but the one it
+mounted — it knows that box by the identity of the context it mounted it
+with, which only the frame host holds, so even a page routed to `@agent` in a
+box of its own is refused. The
 input box is Biom's, in the host, over the box; everything it says
 — `chat.*` and `agents.*` — is outer ring, narrowed at the server by
 `isChatRequest`, and `tests/chat-guards.test.ts` pins that neither inner guard
@@ -580,8 +587,11 @@ locally.
 - **The chokepoint, DOM-free:** `client/bridge/bridge.js` —
   `makeBridge(ws, transport, ui, vault, clock)` returning `PageBridge`
   (`resolve` for `HostRequest`, `runtime` for `RuntimeRequest`, `touched` for
-  the frame host), `OPEN_AFTER_TOUCH` / `OPEN_GRACE` and the `open` case that
-  reads them (§3), `route` / `routeRuntime`,
+  the frame host, `answerLook` for the composition root to register the Agent
+  screen's answer), `OPEN_AFTER_TOUCH` / `OPEN_GRACE` and the `open` case that
+  reads them (§3), the `look.*` case — `@agent` only, through the registered
+  answer, touch-gated — and the `LookRequest` / `LookAnswer` typedefs,
+  `route` / `routeRuntime`,
   `guarded` (the per-ring in-flight cap and the failure flattening), `codeOf`,
   `SAYS`, `proseOf`, `scopeOfSection`, `forward`. Layer 10; never sees an iframe.
 - **The guest half:** `guest/biom.js` — the shim, the bootstrap and
