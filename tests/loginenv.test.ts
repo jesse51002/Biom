@@ -16,7 +16,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { makeLoginEnv, mergePath, parseEnvBlock, readLoginEnv, whichIn } from "../server/platform/loginenv.ts";
+import { executable, makeLoginEnv, mergePath, parseEnvBlock, readLoginEnv, whichIn } from "../server/platform/loginenv.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "biom-loginenv-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -30,7 +30,9 @@ function shell(name: string, body: string): string {
   return path;
 }
 
-const base = { PATH: "/usr/bin:/bin", HOME: dir, SECRET_TOKEN: "s3cr3t-value", BIOM_SHELL: "1", VAULT: "/somewhere" };
+// What the composition root hands: the terminal's environment, `scrubEnv`'s —
+// which has already dropped `VAULT` — with a stray marker to prove none leaks.
+const base = { PATH: "/usr/bin:/bin", HOME: dir, SECRET_TOKEN: "s3cr3t-value", BIOM_SHELL: "1" };
 
 test("a profile that prints junk, NULs included, is read between the markers", async () => {
   const sh = shell("noisy", [
@@ -49,7 +51,6 @@ test("a profile that prints junk, NULs included, is read between the markers", a
   expect(r.env.SECRET_TOKEN).toBe("s3cr3t-value");
   // The server's own plumbing is not.
   expect(r.env.BIOM_SHELL).toBeUndefined();
-  expect(r.env.VAULT).toBeUndefined();
   // Nor the capturing shell's own folder and level.
   expect(r.env.PWD).toBeUndefined();
   expect(r.env.SHLVL).toBeUndefined();
@@ -114,10 +115,16 @@ test("a missing shell, and Windows, answer the server's environment with a reaso
   const missing = await readLoginEnv({ shell: join(dir, "no-such-shell"), base, cwd: dir });
   expect(missing.from).toBe("server");
   expect(missing.reason).toContain("no login shell");
-  const win = await readLoginEnv({ base, platform: "win32" });
+  const none = await readLoginEnv({ shell: null, base, cwd: dir });
+  expect(none.reason).toContain("no login shell");
+  const win = await readLoginEnv({ shell: "/bin/sh", base, platform: "win32" });
   expect(win.from).toBe("server");
   expect(win.reason).toContain("Windows");
-  for (const r of [missing, win]) expect(r.reason).not.toContain("s3cr3t");
+  for (const r of [missing, none, win]) {
+    expect(r.reason).not.toContain("s3cr3t");
+    expect(r.env.SECRET_TOKEN).toBe("s3cr3t-value");
+    expect(r.env.BIOM_SHELL).toBeUndefined();
+  }
 });
 
 test("the pure halves", () => {
@@ -132,4 +139,6 @@ test("the pure halves", () => {
   expect(whichIn("sh", { PATH: "/bin:/usr/bin" })).not.toBeNull();
   expect(whichIn("../sh", { PATH: "/bin" })).toBeNull();
   expect(whichIn("definitely-not-a-command-here", { PATH: "/bin" })).toBeNull();
+  expect(executable("/bin/sh")).toBe(true);
+  expect(executable(dir)).toBe(false);
 });

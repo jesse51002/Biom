@@ -4,14 +4,15 @@
 // An agent finds its own tools and its own login in the environment the
 // person's shell gives it — `PATH` above all, and a key in the environment
 // where that is how the agent signs in. A desktop launcher hands the server
-// none of that, so the server asks the person's own login shell for it: the
-// shell `findShell` in `pty.ts` picks for the terminal, started interactive
-// and as a login shell — `-i -l -c`, because a `PATH` built in `.zshrc` is only
-// read by an interactive one — printing its environment NUL-separated, bounded
-// in time, with no terminal and no input. It starts from exactly the
-// environment the terminal hands its shell, `scrubEnv`, so what comes back is
-// what the terminal's shell had, and what every agent a chat starts is
-// started with.
+// none of that, so the server asks the person's own login shell for it,
+// started interactive and as a login shell — `-i -l -c`, because a `PATH` built
+// in `.zshrc` is only read by an interactive one — printing its environment
+// NUL-separated, bounded in time, with no terminal and no input. WHICH shell,
+// and the environment it starts from, are the composition root's answers:
+// `findShell` and `scrubEnv` in `pty.ts`, the terminal's own, which this file
+// shares a layer with and so is handed rather than importing. What comes back
+// is what the terminal's shell had, and what every agent a chat starts, and
+// the sign-in pop-up, are started with.
 //
 // A NOISY RC FILE IS NORMAL, so what the shell prints is read between two
 // random markers and nothing outside them: a `.bash_profile` that echoes a
@@ -39,8 +40,6 @@ import { randomBytes } from "node:crypto";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 
-import { findShell, scrubEnv } from "./pty.ts";
-
 /** How long the login shell may take. Ten seconds is what editors that do
  *  the same thing allow; a profile slower than that is a profile the person
  *  already waits on in every terminal they open, and the fallback is the
@@ -63,12 +62,13 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SHELL_OWN = new Set(["_", "SHLVL", "PWD", "OLDPWD"]);
 
 export interface LoginEnvOptions {
-  /** The shell to ask, absolute. Absent: `findShell` over the base
-   *  environment, as the terminal picks one. */
-  shell?: string;
+  /** The shell to ask, absolute — `findShell`'s answer in `pty.ts`, asked by
+   *  the composition root — or null where there is none. */
+  shell: string | null;
+  /** What the shell starts from, and what a failure answers: the environment
+   *  the terminal hands a command, `scrubEnv(process.env)`. */
+  base: Record<string, string>;
   timeoutMs?: number;
-  /** The server's own environment. Absent: `process.env`. */
-  base?: Record<string, string | undefined>;
   /** Absent: `process.platform`. */
   platform?: string;
   /** Where the shell runs. Absent: the home folder, so nothing keyed on a
@@ -94,7 +94,9 @@ export interface LoginEnv {
   reason(): string | null;
 }
 
-const usable = (path: string): boolean => {
+/** Is `path` a file this process may execute — what `findShell` asks of a
+ *  candidate, for the composition root to hand it. */
+export const executable = (path: string): boolean => {
   try {
     if (!statSync(path).isFile()) return false;
     accessSync(path, constants.X_OK);
@@ -138,15 +140,16 @@ export function mergePath(login: string | undefined, server: string | undefined,
 
 /** Ask the login shell once, with no cache. Never rejects: every failure is
  *  the server's own environment and a reason. */
-export async function readLoginEnv(opts: LoginEnvOptions = {}): Promise<LoginEnvRead> {
-  const base = opts.base ?? process.env;
+export async function readLoginEnv(opts: LoginEnvOptions): Promise<LoginEnvRead> {
   const platform = opts.platform ?? process.platform;
-  const own = scrubEnv(base);
-  const fallback = (reason: string): LoginEnvRead => ({ env: own, from: "server", reason: `${reason}, so agents get the server's own environment` });
+  // The server's own markers never reach an agent, whatever the caller handed.
+  const own: Record<string, string> = {};
+  for (const [name, value] of Object.entries(opts.base)) if (!name.startsWith("BIOM_")) own[name] = value;
+  const fallback = (reason: string): LoginEnvRead => ({ env: { ...own }, from: "server", reason: `${reason}, so agents get the server's own environment` });
 
   if (platform === "win32") return fallback("Windows has no login shell to ask");
-  const shell = opts.shell ?? findShell(base, platform, usable)?.path ?? null;
-  if (shell === null || !usable(shell)) return fallback("no login shell could be found");
+  const shell = opts.shell;
+  if (shell === null || !executable(shell)) return fallback("no login shell could be found");
 
   const tag = randomBytes(16).toString("hex");
   const start = `__BIOM_LOGIN_START_${tag}__`;
@@ -232,7 +235,7 @@ export async function readLoginEnv(opts: LoginEnvOptions = {}): Promise<LoginEnv
 
 /** THE ONE READING PER SERVER. Constructed once by the composition root; the
  *  shell is asked on the first `read`, never at construction. */
-export function makeLoginEnv(opts: LoginEnvOptions = {}): LoginEnv {
+export function makeLoginEnv(opts: LoginEnvOptions): LoginEnv {
   let reading: Promise<LoginEnvRead> | null = null;
   let why: string | null = null;
   return {
