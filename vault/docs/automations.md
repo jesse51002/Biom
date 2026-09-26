@@ -110,8 +110,9 @@ environment, the names it asked for, and the floor every process needs (`PATH`,
 tables through the API at `BIOM_API`, never by opening `workspace.db`.
 
 **`.biom/` is the framework's folder inside your workspace and it ignores
-itself**: the registry `runs.db` and every run directory are this machine's, and
-never in git.
+itself**: the registry `runs.db`, every run directory, and each chat's own record
+of what was said in it (`chats/<id>.jsonl`, one record per line) are this
+machine's, and never in git.
 
 ## What a row says
 

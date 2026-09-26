@@ -68,7 +68,10 @@ cold.**
 **The workspace is a git repository, and the server commits before every write it
 makes.** So every version is kept and undo exists without an undo mechanism having
 been built — which is also what makes the change somebody asked for a readable
-diff.
+diff. For an agent in a chat it is once per turn, before the first file the server
+writes for it in that turn, so what the workspace held before the agent began
+writing is kept; what an agent writes with its own tools, the server does not see
+coming and commits nothing before.
 
 **Nobody using this has to touch git**, and that is the point rather than an
 omission: reverting is a sentence you hand the agent, like everything else here.

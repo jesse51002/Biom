@@ -138,6 +138,16 @@ look, because the document asked for it. And the board is an ordinary plugin,
 so a section may place it where it likes with `<div data-g-plugin="biom-holds">`
 and the page's rung empties `foot`.
 
+**The Agent screen is the same arrangement, and its whole look is one variable.**
+`biom-agent` draws one node and mounts the plugin its `look` variable names —
+the framework's `biom-agent-look` unless you say otherwise. A look of your own is
+`look: my-look` in `plugins/biom-agent/extensions.yaml` and a plugin of yours
+called `my-look`; it hears the chats through `biom.onLook(fn)`, as the state
+stands and what just moved, and may ask the host to open a chat, start a new one,
+show the list or move the panel — never to say anything to an agent. The box
+where you type to an agent is the workspace's own and no look draws it. There is
+no page under the Agent screen, so the workspace's rung is the only one.
+
 **The order to try things in**: change a variable where the plugin declares
 one; name a plugin of your own in a variable where the plugin reads one; write a
 plugin of your own under a bare name where you want the whole thing. The first

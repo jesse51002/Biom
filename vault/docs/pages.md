@@ -78,6 +78,7 @@ its contents written down here; these are the ones with a reason worth knowing.
 | | |
 |---|---|
 | `AGENTS.md` | what an agent pointed at this folder reads first |
+| `CLAUDE.md`, `.claude/skills`, `.gemini/settings.json` | the names some agents read instead: links to `AGENTS.md` and `.agents/skills/`, and a setting naming `AGENTS.md`. Made only where nothing stands, so a file of yours under one of those names is left alone |
 | `docs/` | these files |
 | `.agents/skills/` | one directory per subject: how to write well in this format, and the checker that reports it |
 | `design/` | this workspace's own brand, voice, patterns and density. **It is a page** — a directory with a `content.yaml`, drawn by the same runtime — kept out of `pages/` so it never appears in the tree |
