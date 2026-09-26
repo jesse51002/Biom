@@ -12,9 +12,13 @@
 // any of it is dropped, not repaired.
 //
 // WHICH WAY AN AGENT IS INSTALLED is the plan: a binary built for this machine
-// whose checksum the registry lists, else `npx`, else `uvx`. A binary with no
-// checksum is never a plan — Biom will not run a download it cannot check —
-// and an agent with nothing else says so rather than installing unchecked.
+// whose checksum the registry lists, else `npx`, else `uvx` — each checked by
+// something — and last a binary the registry lists NO checksum for, which is
+// installed on first use: the registry is still the trust root that names its
+// url, the download must be https all the way, and the SHA-256 of what came
+// is recorded, so a later install of that same version whose bytes differ is
+// refused (`server/workspace/agents.ts` keeps the record). A download url that
+// is not https is kept here so the refusal can say so, and never fetched.
 
 import type { AgentKey } from "../../contracts/types.ts";
 import { AGENT_KEY } from "../../contracts/wire.js";
@@ -97,12 +101,29 @@ function envOf(v: unknown): Record<string, string> | null {
 }
 
 function httpsUrl(v: unknown): string | null {
+  const s = webUrl(v);
+  return s !== null && isHttps(s) ? s : null;
+}
+
+/** An http or https url, or null: a download's, which is refused later, in
+ *  words, if it is not https. */
+function webUrl(v: unknown): string | null {
   const s = text(v, 2048);
   if (s === null) return null;
   try {
-    return new URL(s).protocol === "https:" ? s : null;
+    const p = new URL(s).protocol;
+    return p === "https:" || p === "http:" ? s : null;
   } catch {
     return null;
+  }
+}
+
+/** Is `url` https? */
+export function isHttps(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
@@ -159,7 +180,7 @@ function binaryOf(v: unknown): Record<string, BinaryTarget> {
   if (!isObj(v)) return out;
   for (const [platform, t] of Object.entries(v)) {
     if (!/^[a-z0-9]+-[a-z0-9_]+$/.test(platform) || !isObj(t)) continue;
-    const archive = httpsUrl(t.archive);
+    const archive = webUrl(t.archive);
     const kind = archive === null ? null : archiveKind(archive);
     const rawCmd = text(t.cmd, 1024);
     const cmd = rawCmd === null ? null : safeRelPath(rawCmd);
@@ -208,22 +229,20 @@ export function platformKey(platform: string, arch: string): string | null {
 }
 
 /** Every way this entry could be installed here, best first, before asking
- *  whether this machine has Node or uv. */
+ *  whether this machine has Node or uv: what something checks — the
+ *  registry's checksum, npm's, uv's — before the binary checked on first use. */
 export function installPlans(entry: RegistryEntry, platform: string | null): InstallPlan[] {
   const plans: InstallPlan[] = [];
   const target = platform === null ? undefined : entry.binary[platform];
   if (target !== undefined && target.sha256 !== null) plans.push({ via: "binary", target });
   if (entry.npx !== null) plans.push({ via: "npx", dist: entry.npx });
   if (entry.uvx !== null) plans.push({ via: "uvx", dist: entry.uvx });
+  if (target !== undefined && target.sha256 === null) plans.push({ via: "binary", target });
   return plans;
 }
 
 /** Why an entry with no plan cannot be installed here, in a sentence. */
-export function noPlanReason(entry: RegistryEntry, platform: string | null): string {
-  const target = platform === null ? undefined : entry.binary[platform];
-  if (target !== undefined && target.sha256 === null) {
-    return `the ACP Registry lists no checksum for ${entry.name}'s download, so Biom will not install it`;
-  }
+export function noPlanReason(entry: RegistryEntry): string {
   return `the ACP Registry has no build of ${entry.name} for this machine`;
 }
 

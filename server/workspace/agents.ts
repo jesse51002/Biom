@@ -39,9 +39,15 @@
 // cached with a lifetime in memory and in Biom's own folder, and installs into
 // that folder — under the per-user data directory, never a vault — at the
 // registry's pinned version: `npm install --prefix`, `uv tool install` into
-// directories of its own, or a binary for this platform whose SHA-256 must
-// match the registry's before a byte of it is unpacked
-// (`server/domain/agents-archive.ts` judges the archive; this file writes it).
+// directories of its own, or a binary for this platform fetched over https at
+// every hop, whose SHA-256 must match the registry's before a byte of it is
+// unpacked (`server/domain/agents-archive.ts` judges the archive; this file
+// writes it). WHERE THE REGISTRY LISTS NO CHECKSUM the download is trusted on
+// first use: the registry is still what names the url, the SHA-256 of what
+// came is recorded in `installed.json` by version and said in the agent's
+// install log, and a later download of that same version with other bytes is
+// refused — so a changed file for a pinned version is never run. A new version
+// is a new first use, and a checksum the registry does list always decides.
 //
 // NOTHING WAITS. A probe, an install, a sign-in and a Gateway start each answer
 // the agent as it stands and say the verdict to every subscriber when it
@@ -60,7 +66,7 @@
 // `claude-agent-acp`. No environment variable changes how anything here loads.
 
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -75,7 +81,7 @@ import { ArchiveError, MAX_TOTAL, judge, tarEntries, zipData, zipEntries } from 
 import type { Entry } from "../domain/agents-archive.ts";
 import { KNOWN_AGENTS, knownAgent } from "../domain/agents-known.ts";
 import type { Gateway, KnownAgent } from "../domain/agents-known.ts";
-import { REGISTRY_URL, VERSION, installPlans, noPlanReason, parseRegistry, platformKey, safeRelPath, uvSpec } from "../domain/agents-registry.ts";
+import { REGISTRY_URL, VERSION, installPlans, isHttps, noPlanReason, parseRegistry, platformKey, safeRelPath, uvSpec } from "../domain/agents-registry.ts";
 import type { InstallPlan, PackageDist, RegistryEntry } from "../domain/agents-registry.ts";
 
 /** EVERYTHING THE AGENTS ARE HANDED. The probe speaks ACP through `connect`,
@@ -320,12 +326,17 @@ interface Installed {
   node: boolean;
   args: string[];
   env: Record<string, string>;
+  /** Version → SHA-256 of every binary download installed for this agent:
+   *  the record a download the registry lists no checksum for is held to. */
+  downloads?: Record<string, string>;
 }
 
 const MANIFEST = "installed.json";
 const REGISTRY_CACHE = "registry.json";
 const MAX_REGISTRY = 4 * 1024 * 1024;
 const MAX_DOWNLOAD = 2 * 1024 * 1024 * 1024;
+/** Redirects a download may take: a release host and its storage are two. */
+const MAX_REDIRECTS = 10;
 /** A staged install older than this was left by a server that stopped. */
 const STALE_PART = 60 * 60 * 1000;
 /** A decompressed tar: what the archive may unpack to, plus its headers. */
@@ -391,6 +402,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
   function slotFor(key: AgentKey, source: "path" | "installed"): Slot {
     const had = slots.get(key);
     if (had !== undefined) return had;
+    // The copy of the registry kept on disk, never the network: an agent the
+    // table does not name is called what the registry calls it.
+    loadCache();
     const known = knownAgent(key);
     const entry = registryEntry(key);
     const slot: Slot = {
@@ -420,6 +434,19 @@ export function makeAgents(deps: AgentsDeps): Agents {
     };
     slots.set(key, slot);
     return slot;
+  }
+
+  /** The registry's picture for an agent, and its name and line where the
+   *  known-agents table has none of its own. Answers whether anything moved. */
+  function describe(slot: Slot, entry: RegistryEntry): boolean {
+    const known = knownAgent(slot.key);
+    const name = known?.name ?? entry.name;
+    const line = known?.line ?? entry.line;
+    if (slot.info.icon === entry.icon && slot.info.name === name && slot.info.line === line) return false;
+    slot.info.icon = entry.icon;
+    slot.info.name = name;
+    slot.info.line = line;
+    return true;
   }
 
   function set(slot: Slot, reason: AgentReason | null, message: string | null): void {
@@ -817,14 +844,11 @@ export function makeAgents(deps: AgentsDeps): Agents {
       } catch {
         // A cache that cannot be written is a fetch next time.
       }
-      // Pictures and names the list did not have before.
+      // Pictures, names and lines the list did not have before.
       let changed = false;
       for (const slot of slots.values()) {
         const entry = entries.find((e) => e.key === slot.key);
-        if (entry !== undefined && slot.info.icon !== entry.icon) {
-          slot.info.icon = entry.icon;
-          changed = true;
-        }
+        if (entry !== undefined) changed = describe(slot, entry) || changed;
       }
       if (changed) emit();
       return entries;
@@ -844,6 +868,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
     if (plan.via === "uvx") {
       return (await deps.which("uv", env)) === null ? "It installs with uvx, which needs uv, and this machine has none." : null;
     }
+    if (!isHttps(plan.target.archive)) return "Its download is not https, so Biom will not fetch it.";
     if (plan.target.kind === "tar.bz2" && (await deps.which("bzip2", env)) === null) {
       return "Its download is a .tar.bz2, and this machine has no bzip2 to unpack it.";
     }
@@ -888,14 +913,34 @@ export function makeAgents(deps: AgentsDeps): Agents {
     }
   }
 
-  /** Download `url` to `to`, hashing as it arrives. Answers the SHA-256. */
+  /** Download `url` to `to`, hashing as it arrives. Answers the SHA-256.
+   *  HTTPS ALL THE WAY: redirects are followed here rather than by `fetch`,
+   *  so every hop is seen, and a url or a hop that is not https is refused
+   *  before anything is asked of it. */
   async function download(url: string, to: string): Promise<string> {
     const ctrl = new AbortController();
     let idle = setTimeout(() => ctrl.abort(), t.downloadIdle);
     const whole = setTimeout(() => ctrl.abort(), t.download);
     const fd = openSync(to, "wx", 0o600);
     try {
-      const res = await deps.fetch(url, { signal: ctrl.signal, redirect: "follow" });
+      let at = url;
+      let res: Response | null = null;
+      for (let hop = 0; res === null; hop++) {
+        if (!isHttps(at)) throw new Said("The download left https, so nothing was installed.");
+        if (hop > MAX_REDIRECTS) throw new Said("The download was redirected too many times, so nothing was installed.");
+        const answer = await deps.fetch(at, { signal: ctrl.signal, redirect: "manual" });
+        const next = answer.status >= 300 && answer.status < 400 ? answer.headers.get("location") : null;
+        if (next === null) {
+          res = answer;
+          break;
+        }
+        await answer.body?.cancel().catch(() => null);
+        try {
+          at = new URL(next, at).toString();
+        } catch {
+          throw new Said("The download was redirected somewhere that is not an address, so nothing was installed.");
+        }
+      }
       if (!res.ok || res.body === null) throw new Said(`The download failed (HTTP ${res.status}), so nothing was installed.`);
       const said = Number(res.headers.get("content-length") ?? "0");
       if (said > MAX_DOWNLOAD) throw new Said("The download is larger than an agent's release would be, so nothing was installed.");
@@ -1054,10 +1099,39 @@ export function makeAgents(deps: AgentsDeps): Agents {
     return { file, node };
   }
 
+  /** Every download recorded for this agent, by version — read from the
+   *  record discovery reads, and nothing believed that is not a version and a
+   *  SHA-256. */
+  function downloadsOf(key: AgentKey): Record<string, string> {
+    const out: Record<string, string> = {};
+    try {
+      const raw = JSON.parse(readFileSync(join(folderOf(key), MANIFEST), "utf8")) as { downloads?: unknown };
+      if (typeof raw.downloads === "object" && raw.downloads !== null) {
+        for (const [v, sum] of Object.entries(raw.downloads as Record<string, unknown>)) {
+          if (VERSION.test(v) && typeof sum === "string" && /^[0-9a-f]{64}$/.test(sum)) out[v] = sum;
+        }
+      }
+    } catch {
+      // No record, or none this build can read: every version is a first use.
+    }
+    return out;
+  }
+
+  /** One line in the agent's install log: the record a person can read. */
+  function note(key: AgentKey, line: string): void {
+    try {
+      appendFileSync(join(folderOf(key), "install.log"), `${new Date(deps.now()).toISOString()} ${line}\n`, { mode: 0o600 });
+    } catch {
+      // The log is the record, not the gate: the recorded hash is in the manifest.
+    }
+  }
+
+  /** Write the record discovery reads, keeping every download recorded before. */
   function writeManifest(rec: Installed): void {
     const at = join(folderOf(rec.key), MANIFEST);
+    const full: Installed = { ...rec, downloads: { ...downloadsOf(rec.key), ...rec.downloads } };
     const tmp = `${at}.${randomBytes(6).toString("hex")}.tmp`;
-    writeFileSync(tmp, JSON.stringify(rec, null, 2) + "\n");
+    writeFileSync(tmp, JSON.stringify(full, null, 2) + "\n", { mode: 0o600 });
     renameSync(tmp, at);
   }
 
@@ -1072,8 +1146,17 @@ export function makeAgents(deps: AgentsDeps): Agents {
     try {
       const archive = join(stage, "download");
       const sum = await download(target.archive, archive);
-      if (target.sha256 === null || sum !== target.sha256) {
-        throw new Said("The download did not match the checksum the ACP Registry lists for it, so nothing was installed.");
+      // THE REGISTRY'S CHECKSUM, where it lists one, is the only one that
+      // counts; where it lists none, the first download of a version is
+      // recorded and every later one of that version must be the same bytes.
+      if (target.sha256 !== null) {
+        if (sum !== target.sha256) {
+          throw new Said("The download did not match the checksum the ACP Registry lists for it, so nothing was installed.");
+        }
+      }
+      const recorded = target.sha256 === null ? downloadsOf(entry.key)[entry.version] : undefined;
+      if (recorded !== undefined && recorded !== sum) {
+        throw new Said(`The download for ${entry.name} ${entry.version} is not the file Biom installed for that version before, so nothing was installed.`);
       }
       const root = join(stage, "root");
       mkdirSync(root);
@@ -1117,7 +1200,13 @@ export function makeAgents(deps: AgentsDeps): Agents {
       chmodSync(cmd, (statSync(cmd).mode & 0o777) | 0o755);
       rmSync(final, { recursive: true, force: true });
       renameSync(root, final);
-      return { key: entry.key, version: entry.version, via: "binary", file: `${entry.version}/${target.cmd}`, node: false, args: target.args, env: target.env };
+      // Said once it is installed, so the log never records a file that was not.
+      if (target.sha256 === null) {
+        note(entry.key, recorded === undefined
+          ? `${entry.version}: the registry lists no checksum for this download; recorded ${sum} on first install`
+          : `${entry.version}: the registry lists no checksum for this download; it matches ${sum}, recorded on first install`);
+      }
+      return { key: entry.key, version: entry.version, via: "binary", file: `${entry.version}/${target.cmd}`, node: false, args: target.args, env: target.env, downloads: { [entry.version]: sum } };
     } finally {
       rmSync(stage, { recursive: true, force: true });
     }
@@ -1174,8 +1263,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
       const entries = await readRegistry();
       const entry = entries.find((e) => e.key === slot.key);
       if (entry === undefined) throw new Said("The ACP Registry does not list it.");
+      describe(slot, entry);
       const plans = installPlans(entry, plat);
-      if (plans.length === 0) throw new Said(sentence(noPlanReason(entry, plat)));
+      if (plans.length === 0) throw new Said(sentence(noPlanReason(entry)));
       const env = await deps.env();
       let plan: InstallPlan | null = null;
       let need: string | null = null;
@@ -1326,7 +1416,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
         const plans = installPlans(e, plat);
         let needs: string | null = null;
         if (plans.length === 0) {
-          needs = sentence(noPlanReason(e, plat));
+          needs = sentence(noPlanReason(e));
         } else {
           let first: string | null = null;
           let any = false;

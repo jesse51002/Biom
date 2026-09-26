@@ -10,7 +10,10 @@
 // What is held: a download whose SHA-256 is not the registry's is refused and
 // leaves nothing; each distribution kind installs into Biom's own folder at the
 // pinned version, writes the record discovery reads, and is then probed Active;
-// a binary the registry lists no checksum for is never installed; npx without
+// a binary the registry lists no checksum for is installed on first use —
+// https all the way, its SHA-256 recorded, and a later download of that same
+// version with other bytes refused — while a checksum the registry does list
+// still decides; npx without
 // Node and uvx without uv are said plainly; the registry is read once within
 // its lifetime, a stale copy stands in when the network will not answer, and
 // nothing at all is a refusal in words. And an archive is judged before a byte
@@ -246,7 +249,7 @@ function registryDoc(extra: Record<string, unknown>[] = []): Record<string, unkn
   return { version: "1.0.0", agents: extra, extensions: [] };
 }
 
-test("the registry is read as untrusted: a bad id, a url spec, an unpinned spec, a climbing cmd and a plain-http download are dropped", () => {
+test("the registry is read as untrusted: a bad id, a url spec, an unpinned spec and a climbing cmd are dropped, and a plain-http download is kept only to be refused", () => {
   const entries = parseRegistry(registryDoc([
     { id: "good", name: "Good", version: "1.0.0", description: "Invented", distribution: { npx: { package: "good-agent@1.0.0" } } },
     { id: "../bad", name: "Bad", version: "1.0.0", distribution: { npx: { package: "x@1.0.0" } } },
@@ -265,7 +268,7 @@ test("the registry is read as untrusted: a bad id, a url spec, an unpinned spec,
     expect(byId[k]?.uvx).toBeNull();
   }
   expect(byId.climb?.binary).toEqual({});
-  expect(byId.plain?.binary).toEqual({});
+  expect(byId.plain?.binary[PLATFORM]?.archive).toBe("http://example.invalid/a.tar.gz");
   expect(() => parseRegistry({ nope: true })).toThrow();
 });
 
@@ -290,6 +293,8 @@ function rig(opts: {
   registryDown?: boolean;
   now?: () => number;
   home?: string;
+  /** Answers by url ahead of `files` — a redirect, say. */
+  routes?: Record<string, () => Response>;
 }): Rig {
   const ran: Rig["ran"] = [];
   const fetched: string[] = [];
@@ -340,6 +345,8 @@ function rig(opts: {
         if (opts.registryDown) throw new TypeError("offline");
         return new Response(JSON.stringify(doc));
       }
+      const route = opts.routes?.[url];
+      if (route !== undefined) return route();
       const body = opts.files?.[url];
       if (body === undefined) return new Response("missing", { status: 404 });
       return new Response(body);
@@ -389,12 +396,127 @@ test("a download whose SHA-256 is not the registry's is refused, and nothing is 
   expect(r.probes).toEqual([]);
 });
 
-test("a binary the registry lists no checksum for is never installed", async () => {
-  const r = rig({ entries: [binaryEntry("unchecked", "https://dl.invented.example/u.tar.gz", null)] });
-  const a = await installed(r, "unchecked");
+test("a binary the registry lists no checksum for installs on first use, and its SHA-256 is recorded and logged", async () => {
+  const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const url = "https://dl.invented.example/tofu.tar.gz";
+  const r = rig({ entries: [binaryEntry("tofu", url, null)], files: { [url]: body } });
+  const a = await installed(r, "tofu");
+  expect(a.state).toBe("active");
+  // Nothing alarming is said on the screen: the log is the record.
+  expect(a.message).toBeNull();
+  expect(a.line).toBe("An invented agent");
+  const record = JSON.parse(readFileSync(join(r.home, "tofu", "installed.json"), "utf8"));
+  expect(record.downloads).toEqual({ "2.0.0": sha(body) });
+  expect(readFileSync(join(r.home, "tofu", "install.log"), "utf8")).toContain(
+    `2.0.0: the registry lists no checksum for this download; recorded ${sha(body)} on first install`,
+  );
+  expect(statSync(join(r.home, "tofu", "installed.json")).mode & 0o077).toBe(0);
+  // A later server finds it, called what the registry it kept calls it — no network asked.
+  const later = rig({ entries: [], home: r.home, registryDown: true });
+  const agents = makeAgents(later.deps);
+  agents.list();
+  await agents.settled();
+  const found = agents.list().find((x) => x.key === "tofu");
+  expect(found?.name).toBe("Invented tofu");
+  expect(found?.line).toBe("An invented agent");
+  expect(found?.state).toBe("active");
+  expect(later.fetched).toEqual([]);
+});
+
+/** A later server, whose registry has changed: the copy the last one kept is
+ *  within its lifetime, so it is dropped to make this one read the new one. */
+const laterRegistry = (home: string): void => rmSync(join(home, "registry.json"), { force: true });
+
+test("a same-version reinstall whose bytes differ from the first is refused and the installed one stands; a new version is a new first use", async () => {
+  const home = fresh();
+  const url = "https://dl.invented.example/pinned.tar.gz";
+  const first = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const changed = gzipSync(tar([{ name: "agent", data: bytes("#!/bin/sh\necho changed\n"), mode: 0o755 }]));
+  await installed(rig({ entries: [binaryEntry("pinned", url, null)], files: { [url]: first }, home }), "pinned");
+
+  // The same bytes again: fine, and said so in the log.
+  const again = await installed(rig({ entries: [binaryEntry("pinned", url, null)], files: { [url]: first }, home }), "pinned");
+  expect(again.state).toBe("active");
+  expect(readFileSync(join(home, "pinned", "install.log"), "utf8")).toContain(`it matches ${sha(first)}, recorded on first install`);
+
+  // Other bytes under the same version: refused, and what was installed is untouched.
+  laterRegistry(home);
+  const swapped = rig({ entries: [binaryEntry("pinned", url, null)], files: { [url]: changed }, home });
+  const b = await installed(swapped, "pinned");
+  expect(b.reason).toBe("failed");
+  expect(b.message).toBe("The download for Invented pinned 2.0.0 is not the file Biom installed for that version before, so nothing was installed.");
+  expect(readFileSync(join(home, "pinned", "2.0.0", "agent"), "utf8")).toBe("#!/bin/sh\necho invented\n");
+  expect(swapped.probes).toEqual([]);
+
+  // A new version is a new first use.
+  laterRegistry(home);
+  const next = { ...binaryEntry("pinned", url, null), version: "2.1.0" };
+  const c = await installed(rig({ entries: [next], files: { [url]: changed }, home }), "pinned");
+  expect(c.state).toBe("active");
+  expect(JSON.parse(readFileSync(join(home, "pinned", "installed.json"), "utf8")).downloads).toEqual({ "2.0.0": sha(first), "2.1.0": sha(changed) });
+});
+
+test("a checksum the registry lists still decides: a mismatch is refused whatever was recorded, and a match wins over the record", async () => {
+  const home = fresh();
+  const url = "https://dl.invented.example/listed.tar.gz";
+  const first = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const changed = gzipSync(tar([{ name: "agent", data: bytes("#!/bin/sh\necho changed\n"), mode: 0o755 }]));
+  await installed(rig({ entries: [binaryEntry("listed", url, null)], files: { [url]: first }, home }), "listed");
+  // The registry now lists a checksum, and the download matches the RECORD but not it.
+  laterRegistry(home);
+  const refused = await installed(rig({ entries: [binaryEntry("listed", url, sha(changed))], files: { [url]: first }, home }), "listed");
+  expect(refused.message).toContain("did not match the checksum the ACP Registry lists");
+  // It matches the registry and not the record: the registry wins, and the record follows it.
+  laterRegistry(home);
+  const taken = await installed(rig({ entries: [binaryEntry("listed", url, sha(changed))], files: { [url]: changed }, home }), "listed");
+  expect(taken.state).toBe("active");
+  expect(JSON.parse(readFileSync(join(home, "listed", "installed.json"), "utf8")).downloads).toEqual({ "2.0.0": sha(changed) });
+});
+
+test("a download is https all the way: an http url, or a redirect to http, is refused before it is fetched; an https redirect is followed", async () => {
+  const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const plain = rig({ entries: [binaryEntry("plainhttp", "http://dl.invented.example/p.tar.gz", null)], files: { "http://dl.invented.example/p.tar.gz": body } });
+  const a = await installed(plain, "plainhttp");
   expect(a.reason).toBe("failed");
-  expect(a.message).toContain("no checksum");
-  expect(r.fetched).toEqual([REGISTRY_URL]);
+  expect(a.message).toBe("Its download is not https, so Biom will not fetch it.");
+  expect(plain.fetched.some((u) => u.startsWith("http:"))).toBe(false);
+
+  const url = "https://dl.invented.example/r.tar.gz";
+  const downgraded = rig({
+    entries: [binaryEntry("downgrade", url, null)],
+    routes: { [url]: () => new Response(null, { status: 302, headers: { location: "http://mirror.invented.example/r.tar.gz" } }) },
+    files: { "http://mirror.invented.example/r.tar.gz": body },
+  });
+  const b = await installed(downgraded, "downgrade");
+  expect(b.reason).toBe("failed");
+  expect(b.message).toBe("The download left https, so nothing was installed.");
+  expect(downgraded.fetched).not.toContain("http://mirror.invented.example/r.tar.gz");
+  expect(existsSync(join(downgraded.home, "downgrade", "installed.json"))).toBe(false);
+
+  // Even with a registry checksum, the chain must stay https.
+  const listed = rig({
+    entries: [binaryEntry("downgrade2", url, sha(body))],
+    routes: { [url]: () => new Response(null, { status: 301, headers: { location: "http://mirror.invented.example/r.tar.gz" } }) },
+    files: { "http://mirror.invented.example/r.tar.gz": body },
+  });
+  expect((await installed(listed, "downgrade2")).message).toBe("The download left https, so nothing was installed.");
+
+  // https to https, the second hop relative, is followed.
+  const hopped = rig({
+    entries: [binaryEntry("hopped", url, null)],
+    routes: {
+      [url]: () => new Response(null, { status: 302, headers: { location: "https://objects.invented.example/store/r" } }),
+      "https://objects.invented.example/store/r": () => new Response(null, { status: 307, headers: { location: "/store/r.tar.gz?sig=invented" } }),
+    },
+    files: { "https://objects.invented.example/store/r.tar.gz?sig=invented": body },
+  });
+  const c = await installed(hopped, "hopped");
+  expect(c.state).toBe("active");
+  expect(hopped.fetched.filter((u) => u !== REGISTRY_URL)).toEqual([url, "https://objects.invented.example/store/r", "https://objects.invented.example/store/r.tar.gz?sig=invented"]);
+
+  // A redirect that never ends is refused.
+  const loop = rig({ entries: [binaryEntry("loop", url, null)], routes: { [url]: () => new Response(null, { status: 302, headers: { location: url } }) } });
+  expect((await installed(loop, "loop")).message).toBe("The download was redirected too many times, so nothing was installed.");
 });
 
 test("a .tar.gz installs into Biom's own folder at the pinned version, and is probed Active from there", async () => {
@@ -419,7 +541,7 @@ test("a .tar.gz installs into Biom's own folder at the pinned version, and is pr
   expect(readlinkSync(join(dir, "pkg", "agent"))).toBe("bin/agent");
   expect(statSync(join(dir, "pkg", "bin", "agent")).mode & 0o111).not.toBe(0);
   expect(JSON.parse(readFileSync(join(r.home, "good", "installed.json"), "utf8"))).toEqual({
-    key: "good", version: "2.0.0", via: "binary", file: "2.0.0/pkg/agent", node: false, args: ["acp"], env: {},
+    key: "good", version: "2.0.0", via: "binary", file: "2.0.0/pkg/agent", node: false, args: ["acp"], env: {}, downloads: { "2.0.0": sha(body) },
   });
   expect(r.probes[0]?.command).toBe(join(dir, "pkg", "agent"));
   expect(r.probes[0]?.args).toEqual(["acp"]);
@@ -580,6 +702,7 @@ test("the registry: read once in its lifetime, a stale copy when offline, a refu
   const entries = [
     { id: "opencode", name: "OpenCode", version: "1.18.32", description: "The open source coding agent", icon: "https://cdn.invented.example/opencode.svg", distribution: { npx: { package: "opencode-ai@1.18.32" } } },
     binaryEntry("nochecksum", "https://dl.invented.example/n.tar.gz", null),
+    binaryEntry("httponly", "http://dl.invented.example/h.tar.gz", "a".repeat(64)),
   ];
   const r = rig({ entries, now: () => now, home, bins: { node: "/n", npm: "/m", opencode: "/invented/bin/opencode" } });
   const agents = makeAgents(r.deps);
@@ -587,8 +710,11 @@ test("the registry: read once in its lifetime, a stale copy when offline, a refu
   expect(first.find((x) => x.key === "opencode")).toEqual({
     key: "opencode", name: "OpenCode", line: "The open source coding agent", version: "1.18.32", icon: "https://cdn.invented.example/opencode.svg", via: "npx", here: true, needs: null,
   });
-  expect(first.find((x) => x.key === "nochecksum")?.needs).toContain("no checksum");
+  // No registry checksum is no longer a reason it cannot be installed: it is checked on first use.
+  expect(first.find((x) => x.key === "nochecksum")?.needs).toBeNull();
+  expect(first.find((x) => x.key === "nochecksum")?.via).toBe("binary");
   expect(first.find((x) => x.key === "nochecksum")?.here).toBe(false);
+  expect(first.find((x) => x.key === "httponly")?.needs).toBe("Its download is not https, so Biom will not fetch it.");
   await agents.registry();
   expect(r.fetched.filter((u) => u === REGISTRY_URL).length).toBe(1);
   await agents.settled();
@@ -598,7 +724,7 @@ test("the registry: read once in its lifetime, a stale copy when offline, a refu
   // A later server, offline, past the lifetime: the copy on disk stands in.
   now += 7 * 60 * 60 * 1000;
   const offline = rig({ entries, now: () => now, home, registryDown: true });
-  expect((await makeAgents(offline.deps).registry()).length).toBe(2);
+  expect((await makeAgents(offline.deps).registry()).length).toBe(3);
   // Offline with nothing on disk is a refusal in words.
   const nothing = rig({ entries, registryDown: true });
   await expect(makeAgents(nothing.deps).registry()).rejects.toThrow("could not be reached");
