@@ -231,6 +231,12 @@ walk("the root page draws its seeded copy, and the rail has a Dashboard row", as
   // again in the packaged application, which is where it went missing.
   expect(await page.locator("button.dashboardlink").count()).toBe(1);
   expect(await page.locator("button.dashboardlink").innerText()).toContain("Dashboard");
+
+  // AND NO AGENT TERMINAL. The bar's button and the dock it opened went with
+  // the Chat spec, which leaves a terminal only for signing an agent in — a
+  // pop-up no bar control opens — so neither is on the screen of a workspace.
+  expect(await page.locator("div.rail span.tools").innerText()).not.toContain("Agent Terminal");
+  expect(await page.locator("section.dock, div.work").count()).toBe(0);
 });
 
 walk("every ask carries its module and a prompt that really copies", async () => {

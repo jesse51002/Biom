@@ -31,7 +31,6 @@ import { makePageView } from "../client/views/page.js";
 import { closeHref, hrefFor, makeVaultView } from "../client/views/vault.js";
 import { UNTITLED } from "../client/shell/dialog.js";
 import { makeUi } from "../client/store/ui.js";
-import { makeTerminals } from "../client/store/terminals.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── a recording element factory, shaped like client/platform/dom.js ──── */
@@ -57,7 +56,7 @@ function element(tag) {
   const el = Object.assign(new El(), {
     tagName: String(tag).toUpperCase(),
     attrs: {},
-    // `setProperty` is what the dock writes its size with; a plain key is what
+    // `setProperty` is what the rack writes its width with; a plain key is what
     // the tree writes its depth with, so both spellings land in the one map.
     style: { setProperty(/** @type {string} */ k, /** @type {string} */ v) { this[k] = v; } },
     dataset: {},
@@ -571,9 +570,8 @@ test("the bar holds Reload, and Share and the page's two screens on a page, in b
   // THE BAR IS A BREADCRUMB AND THE FEW REAL ACTIONS. Reload is the one action
   // every route adds; Share joins it on a page, because a page is the thing a
   // share captures and the design doc is not shared, and the page's two
-  // screens — Instructions and Automations — come after it. Agent Terminal
-  // joins them when this window has a workspace to run one in (the
-  // rightmost-action test below covers that). There is no menu, no Config, no
+  // screens — Instructions and Automations — come after it, and nothing
+  // follows them (*the shell draws no terminal*, below). There is no menu, no Config, no
   // History and no Modify page: the owner decided (2026-09-17) that the three
   // go rather than hide, so this is asserted in the development build as well
   // as the built one — and Share and the two screens are in both builds too,
@@ -2231,33 +2229,30 @@ test("a page's bar carries Instructions and Automations, each taking the canvas 
   }
 });
 
-test("Agent Terminal is the rightmost action on a page's bar, after Instructions and Automations, in both builds", async () => {
-  // A REAL TERMINAL STORE over a link that never opens, and a view that is a
-  // box the dock can hold: what the bar reads is `store.get()`, `store.live()`
-  // and `toggle()`, and what the dock wants is `view.el`. The owner asked
-  // (2026-09-17) for the toggle to stay the rightmost button once the page's
-  // two screens joined the bar.
-  const link = { connect() {}, close() {}, send: () => false, state: () => "idle", on: () => () => {} };
-  const store = makeTerminals({ link });
-  const view = { el: element("div"), focus() {}, sync() {}, hidden() {}, hint: () => null, schedule() {}, style() {} };
+test("the shell draws no terminal: no Agent Terminal on the bar, no dock, and the bed is the app's own row, in both builds", async () => {
+  // THE AGENT TERMINAL WENT with the Chat spec: an agent is spoken to on the
+  // Agent screen, and the one terminal left is the sign-in pop-up, which no
+  // bar control opens. What went with it is asserted gone rather than merely
+  // not drawn — the button, the dock beside the workspace, and the `.work`
+  // wrapper that held the two — because a leftover of any of them is a
+  // control that opens nothing.
   for (const production of [false, true]) {
     const ws = fakeWs(DOC);
     const ui = makeUi({ route: { view: "page", id: DOC.id } });
     const { views } = fakeViews();
-    const shell = makeShell({ h, fill, ws, ui, frameHost: fakeFrameHost(), views, production, terminal: { store, view } });
+    const shell = makeShell({ h, fill, ws, ui, frameHost: fakeFrameHost(), views, production });
     ws.on(() => shell.repaint());
     ui.on(() => shell.repaint());
     const root = element("div");
     shell.mount(root);
     await tick();
-    const rail = root.children[0].children[0];
+    const app = root.children[0];
+    const rail = app.children[0];
     const tools = findAll(rail, (el) => has(el, "tool")).map(flat);
-    const at = (text) => tools.indexOf(text);
-    expect(at("Instructions")).toBeGreaterThan(-1);
-    expect(at("Automations")).toBe(at("Instructions") + 1);
-    expect(at("Agent Terminal")).toBe(at("Automations") + 1);
-    // Nothing after it, in either build: there is no menu any more.
-    expect(tools.slice(at("Agent Terminal") + 1)).toEqual([]);
+    expect(tools.at(-1)).toBe("Automations");
+    expect(flat(app)).not.toContain("Agent Terminal");
+    expect(findAll(app, (el) => has(el, "dock") || has(el, "work") || has(el, "termtoggle"))).toEqual([]);
+    expect(has(app.children[1], "bed")).toBe(true);
   }
 });
 
