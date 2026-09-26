@@ -136,7 +136,16 @@ export function makeAgentInput(deps) {
       label, icon("chev"));
     return { cat, el, label };
   });
-  const send = h("button.send", { type: "button", "aria-label": "Send", onclick: () => press() }, icon("up"));
+  /** WHAT THE BUTTON SAID WHEN IT WAS PRESSED. A turn can end between the
+   *  press and the click, and the button under the pointer turns from Stop to
+   *  Send: a press that began on Stop must stop, never send the draft beside it.
+   *  @type {{ was: "stop" | "send", at: number } | null} */
+  let pressedAs = null;
+  const send = h("button.send", {
+    type: "button", "aria-label": "Send",
+    onpointerdown: () => { pressedAs = { was: now().busy ? "stop" : "send", at: Date.now() }; },
+    onclick: () => press(),
+  }, icon("up"));
   const cbar = h("div.cbar", agentChip, sep, ...chipsFor.map((c) => c.el), send);
   const composer = h("div.composer", slash, text, cbar);
   const followName = h("b");
@@ -282,9 +291,11 @@ export function makeAgentInput(deps) {
   /* ── sending, and Stop ─────────────────────────────────────────────── */
 
   function press() {
-    const n = now();
-    if (n.busy) void stop();
-    else void submit();
+    const intent = pressedAs !== null && Date.now() - pressedAs.at < 2000 ? pressedAs.was : null;
+    pressedAs = null;
+    const busy = now().busy;
+    if (intent === "stop" || (intent === null && busy)) { void stop(); return; }
+    if (!busy) void submit();
   }
 
   async function submit() {
@@ -324,7 +335,7 @@ export function makeAgentInput(deps) {
 
   async function stop() {
     const n = now();
-    if (n.chat === null || stopping) return;
+    if (n.chat === null || !n.busy || stopping) return;
     stopping = true;
     paint();
     try {

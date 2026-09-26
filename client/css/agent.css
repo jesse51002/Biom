@@ -31,9 +31,10 @@
 .bed[data-agent="panel"] > .agentslot{width:var(--agent-w, 460px); border-left:1px solid var(--stock-edge)}
 .app.bare .agentslot{display:none}
 
-.agentslot{position:relative; min-width:0; min-height:0; background:var(--stock); overflow:hidden}
+/* Nothing clipped at the slot: the panel's grip reaches past its left edge. */
+.agentslot{position:relative; min-width:0; min-height:0; background:var(--stock)}
 
-.agentbox{position:absolute; inset:0}
+.agentbox{position:absolute; inset:0; overflow:hidden}
 .agentbox iframe{display:block; width:100%; height:100%; border:0; background:var(--stock); color-scheme:normal}
 .agentsay{
   position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); width:min(34rem, calc(100% - 3rem));

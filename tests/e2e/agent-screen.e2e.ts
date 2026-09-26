@@ -383,6 +383,18 @@ walk("7. the panel maximises and minimises with the same box, never reloaded, an
   });
   expect(await page.evaluate(() => (window as unknown as { __hellos: number }).__hellos)).toBe(hellos);
   expect(await page.evaluate(() => (window as unknown as { __box: Element | null }).__box === document.querySelector("div.agentbox iframe"))).toBe(true);
+  // THE PANEL'S WIDTH is pulled from its left edge, across the page's own box
+  // without the box taking the pointer, and kept for this browser.
+  const edge = await page.evaluate(() => document.querySelector("div.agentslot")!.getBoundingClientRect().x);
+  const wide = await page.evaluate(() => document.querySelector("div.agentslot")!.getBoundingClientRect().width);
+  await page.mouse.move(edge - 2, 400);
+  await page.mouse.down();
+  for (let x = edge - 2; x >= edge - 162; x -= 20) await page.mouse.move(x, 400);
+  await page.mouse.up();
+  const pulled = await page.evaluate(() => document.querySelector("div.agentslot")!.getBoundingClientRect().width);
+  expect(Math.round(pulled - wide)).toBe(160);
+  expect(await page.evaluate(() => localStorage.getItem("biom:agentPanel"))).toBe(String(Math.round(pulled)));
+  expect(await page.evaluate(() => (window as unknown as { __box: Element | null }).__box === document.querySelector("div.agentbox iframe"))).toBe(true);
   // Close from the panel's own head.
   await (await lookFrame()).getByRole("button", { name: "Close the chat" }).click();
   await until("the panel shut", 10000, async () => (await page.locator("div.bed").getAttribute("data-agent")) === "none");
