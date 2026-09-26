@@ -33,6 +33,8 @@ import type { ThemeStore } from "../workspace/presets.ts";
 import type { Mirror } from "../domain/mirror.ts";
 import type { Sharer } from "../domain/share.ts";
 import type { EditReport, History } from "../domain/history.ts";
+import type { Agents } from "../workspace/agents.ts";
+import type { Chats } from "../workspace/chats.ts";
 import { follow } from "../domain/mirror.ts";
 import { PAGE_DOC, pageDir } from "../domain/pages.ts";
 import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
@@ -52,7 +54,7 @@ export const mirrored = (what: Promise<unknown>): Promise<void> =>
 import { PROTOCOL } from "../../contracts/wire.js";
 import { fail } from "../../contracts/wire.js";
 import { DESIGN_PAGE } from "../../contracts/wire.js";
-import { isWindowId } from "../../contracts/guards.js";
+import { isChatRequest, isHistoryRequest, isWindowId } from "../../contracts/guards.js";
 
 // Undo is deliberately absent from this file. The vault is a git repo and the
 // server commits ahead of every write, but that belongs to the layer that knows
@@ -125,6 +127,15 @@ export interface Deps {
    *  this route is one edit in it, stamped `you` by `app`: see `handle`.
    *  Optional, and absent records nothing — every caller from before it. */
   history?: History;
+  /** WHAT AGENTS THIS MACHINE HAS, as this workspace sees them — found,
+   *  probed, installed and signed in. Built against a vault, because a probe
+   *  runs in its folder. Optional, and absent answers every `agents.*` kind
+   *  `unsupported`: every caller from before the chats. */
+  agents?: Agents;
+  /** THE CHATS: one agent process per chat, and Biom's own copy of each
+   *  stream. Built against a vault like `pages`. Optional for the reason
+   *  `agents` is. */
+  chats?: Chats;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -966,6 +977,37 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
         await deps.runs.commit(req.message);
         return ok(id, null);
 
+      /* ── the agents and the chats: this machine's own window only ────── */
+      //
+      // Only this machine's own window reaches these: the composition root's
+      // `gate` on `route` refused everything else before the body was answered.
+      // Each is narrowed by the contract's own guard before a field is read,
+      // because this is where words reach a program allowed everything on this
+      // machine. NOTHING WAITS ON AN AGENT: each answers the state as it now
+      // stands, and a probe's verdict, an install, a reply and a light arrive
+      // on the stream.
+      case "agents.list":
+      case "agents.probe":
+      case "agents.start":
+      case "agents.registry":
+      case "agents.install":
+      case "agents.signIn":
+      case "chat.new":
+      case "chat.list":
+      case "chat.read":
+      case "chat.send":
+      case "chat.cancel":
+      case "chat.config":
+      case "chat.switchAgent":
+      case "chat.close":
+      case "chat.commands":
+        return await chatAnswer(id, req, deps);
+
+      /* ── what each window has open, and the history ─────────────────── */
+      case "window.report":
+      case "window.list":
+      case "history.read":
+        return await historyAnswer(id, req, deps);
     }
   } catch (e) {
     // A thrown error carrying one of the closed codes is a REFUSAL the domain
@@ -992,6 +1034,113 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   //
   // Otherwise: unreachable through the type and reachable off the wire, which is
   // the whole reason the enumeration has this member.
+  return err(id, "unknown_kind", "not a request this host answers");
+}
+
+/** What a refusal from the agents or the chats says when it brought no
+ *  sentence of its own. Theirs are written for a person and name an agent or
+ *  a chat, never a path, a command or a value — so where one is given it is
+ *  said as it is, the way `vault.open` passes its domain's. */
+const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
+  not_found: "there is no such chat or agent",
+  bad_request: "that is not something an agent or a chat can be asked",
+  limit: "one message at a time: this chat's turn is still going",
+  unsupported: "that cannot be done now",
+  fetch_failed: "the ACP Registry could not be reached",
+};
+
+/** Answer one agent or chat kind. The guard first — every field read below is
+ *  one it has checked — then the one module call the kind is. A throw carrying
+ *  one of the closed codes is a refusal the module chose to make, said in its
+ *  own sentence; anything else is the host failing, and is logged. */
+async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  if (!isChatRequest(req)) return err(id, "bad_request", CHAT_SENTENCES.bad_request as string);
+  const agents = deps.agents;
+  const chats = deps.chats;
+  if (agents === undefined || chats === undefined) return refused(id, "agents or chats");
+  try {
+    switch (req.kind) {
+      case "agents.list":
+        return ok(id, agents.list());
+      case "agents.probe":
+        return ok(id, agents.probe(req.agent));
+      case "agents.start":
+        return ok(id, agents.start(req.agent));
+      case "agents.registry":
+        return ok(id, await agents.registry());
+      case "agents.install":
+        return ok(id, agents.install(req.agent));
+      case "agents.signIn":
+        return ok(id, await agents.signIn(req.agent, req.method));
+      case "chat.new": {
+        // Field by field, so nothing the guard did not name rides along.
+        const init: Parameters<Chats["create"]>[0] = {};
+        if (req.agent !== undefined) init.agent = req.agent;
+        if (req.text !== undefined) init.text = req.text;
+        if (req.page !== undefined) init.page = req.page;
+        if (req.config !== undefined) init.config = { ...req.config };
+        return ok(id, await chats.create(init));
+      }
+      case "chat.list":
+        // Whole once every kept log is scanned, which the root awaits at
+        // mount; awaited again here so a caller can never see half a list.
+        await chats.loaded;
+        return ok(id, chats.list());
+      case "chat.read":
+        return ok(id, await chats.read(req.chat, req.since));
+      case "chat.send":
+        return ok(id, await chats.send(req.chat, req.text));
+      case "chat.cancel":
+        return ok(id, await chats.cancel(req.chat));
+      case "chat.config":
+        return ok(id, await chats.config(req.chat, req.option, req.value));
+      case "chat.switchAgent":
+        return ok(id, await chats.switchAgent(req.chat, req.agent));
+      case "chat.close":
+        return ok(id, await chats.close(req.chat));
+      case "chat.commands": {
+        const q: { chat?: string; agent?: string } = {};
+        if (req.chat !== undefined) q.chat = req.chat;
+        if (req.agent !== undefined) q.agent = req.agent;
+        return ok(id, await chats.commands(q));
+      }
+    }
+  } catch (e) {
+    const code = codeOf(e, "internal");
+    if (code === "internal") {
+      // The kind and the error's NAME, never its message: an agent's own
+      // words can be anywhere in one.
+      console.error(`${req.kind} failed`, e instanceof Error ? e.name : typeof e);
+      return err(id, "internal", "the host could not answer that");
+    }
+    const said = e instanceof Error ? e.message.replace(/\s+/g, " ").trim() : "";
+    return err(id, code, said !== "" ? said : CHAT_SENTENCES[code] ?? "that could not be done");
+  }
+  return err(id, "unknown_kind", "not a request this host answers");
+}
+
+/** Answer a window's report, every window's context, or the history. The
+ *  report names its window by the envelope — the guard refuses one that does
+ *  not — and the context's `agent` is the history's to derive from its chat,
+ *  whatever the window sent there. With no history, the two reads answer
+ *  empty, and a report is refused: it has nowhere to go. */
+async function historyAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  if (!isHistoryRequest(req)) {
+    return err(id, "bad_request", (req as { kind: string }).kind === "window.report"
+      ? "a report names its window and what that window has open"
+      : "that is not a read of the history");
+  }
+  switch (req.kind) {
+    case "window.report": {
+      const history = deps.history;
+      if (history === undefined) return refused(id, "a history");
+      return ok(id, await history.report(req.window as string, req.context, req.moved));
+    }
+    case "window.list":
+      return ok(id, deps.history?.windows() ?? []);
+    case "history.read":
+      return ok(id, deps.history?.read(req.since) ?? { entries: [], head: 0 });
+  }
   return err(id, "unknown_kind", "not a request this host answers");
 }
 
