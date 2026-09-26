@@ -48,13 +48,14 @@
 // been dragged. That is what keeps a drag from repainting the workspace and a
 // repaint from arguing with a drag.
 
-/** @import { FrameHost, Page, PageId, TableView,
+/** @import { Address, FrameHost, Page, PageId, PageScreen, TableView,
  *            UiState, UiStore, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
 /** @import { TerminalStore } from "../store/terminals.js" */
 /** @import { TerminalView } from "../views/terminal.js" */
 
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
+import { VIEW_NAMES, formatAddress, parseAddress, sameAddress } from "../../contracts/address.js";
 import { remember } from "../platform/dom.js";
 import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
@@ -131,9 +132,12 @@ import { makeDock } from "./dock.js";
  *  Exported for the test that holds it and the rail in agreement: a view is
  *  reachable by typing and reachable by clicking, and the two lists are in
  *  different halves of this file. A test that hand-copied either would be a
- *  third list.
+ *  third list. IT IS `VIEW_NAMES` NOW, from `contracts/address.js`, typed
+ *  there so it cannot differ from `ViewName`: the switcher and the history
+ *  route to the same addresses the shell does, and one vocabulary is read by
+ *  all three.
  *  @type {ReadonlySet<string>} */
-export const VIEWS = new Set(["page", "table", "vault", "design", "map", "runs", "instructions"]);
+export const VIEWS = VIEW_NAMES;
 
 /** THE WINDOW'S OWN BAR, AND WHETHER THERE IS A WINDOW TO PUT ONE ON.
  *
@@ -312,7 +316,7 @@ export function makeShell(deps) {
         // `pages` is here because a page draws its children, and a child renamed
         // or removed elsewhere changes what this page says without touching the
         // page object itself.
-        return ["page", r.id, u.pageView, w.page, u.inserting, w.pages, missing.has(r.id)];
+        return ["page", r.id, r.screen, w.page, u.inserting, w.pages, missing.has(r.id)];
       case "table":
         return ["table", r.id, w.table, w.pages];
       case "design":
@@ -375,7 +379,7 @@ export function makeShell(deps) {
           : h("code", "make dev"));
     }
 
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
 
     switch (route.view) {
@@ -386,7 +390,7 @@ export function makeShell(deps) {
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
         // THE THREE SCREENS OF A PAGE, in every build: the box, its
         // INSTRUCTIONS.md in one editor, and its automations.
-        switch (pageView) {
+        switch (route.screen) {
           case "instructions": return views.instructions.page(page);
           case "automation": return views.automation(page);
           default: return views.page(page);
@@ -448,11 +452,11 @@ export function makeShell(deps) {
    *  paragraph — `guest/sections/default.html` — which is what lets the section
    *  beside it be full-bleed. */
   function faceOf() {
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     if (route.view === "vault") return "vault";
     if (troubled) return "none";
     if (route.view !== "page") return route.view;
-    if (pageView !== "page") return pageView;
+    if (route.screen !== "page") return route.screen;
     // Only once the page is actually on screen. Before it is, the canvas is
     // holding a sentence — "Opening…", or the one about a page that is not there
     // — and a sentence wants the padding a box does not.
@@ -540,7 +544,7 @@ export function makeShell(deps) {
   }
 
   function railParts() {
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
     const page = openPage();
 
@@ -605,7 +609,9 @@ export function makeShell(deps) {
       // and they go BEFORE the terminal's toggle: that one is the rightmost
       // action on every page.
       /** @param {"instructions" | "automation"} which @param {string} text */
-      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: pageView === which ? "page" : which }), pageView === which);
+      // A SCREEN OF THE PAGE IS AN ADDRESS OF ITS OWN, so pressing one writes
+      // the route and the url with it: a reload lands on it and Back leaves it.
+      const screenTool = (which, text) => tool(text, () => ui.set({ route: { ...route, screen: route.screen === which ? "page" : which } }), route.screen === which);
       tools.push(screenTool("instructions", "Instructions"));
       tools.push(screenTool("automation", "Automations"));
     }
@@ -1381,8 +1387,7 @@ export function makeShell(deps) {
         // history the browser moved and never for a route this shell set.
         window.addEventListener("hashchange", () => {
           const route = parseHash(window.location.hash);
-          const now = ui.get().route;
-          if (route.view !== now.view || route.id !== now.id) ui.go(route.view, route.id);
+          if (!sameAddress(route, ui.get().route)) ui.go(route.view, route.id, route.screen);
         });
       }
 
@@ -1432,29 +1437,18 @@ export function makeShell(deps) {
  * unknown view falls back rather than routing to nothing. It is the same
  * vocabulary in every build: a screen the rail offers is a screen a hash may
  * name, and there is no screen the rail does not offer.
+ *
+ * `parseAddress` in `contracts/address.js`, under the name this file and its
+ * test have always called it: the switcher and the history spell an address
+ * the same way, so the spelling moved down to where all three can read it.
  * @param {string} hash
- * @returns {{ view: ViewName, id: string }}
+ * @returns {Address}
  */
-export function parseHash(hash) {
-  const raw = String(hash || "").replace(/^#\/?/, "");
-  const cut = raw.indexOf("/");
-  const view = cut < 0 ? raw : raw.slice(0, cut);
-  let id = cut < 0 ? "" : raw.slice(cut + 1);
-  try {
-    id = decodeURIComponent(id);
-  } catch {
-    id = "";
-  }
-  // The fallback carries no id on purpose: an unknown view landing on a page
-  // view with an id taken from its route would open whatever page happened to
-  // share the name. Boot fills an empty page route with the first page in the
-  // workspace.
-  return VIEWS.has(view) ? { view: /** @type {ViewName} */ (view), id } : { view: "page", id: "" };
-}
+export const parseHash = (hash) => parseAddress(hash);
 
-/** @param {{ view: ViewName, id: string }} route @returns {string} */
-export const hashOf = (route) =>
-  "#/" + route.view + (route.id ? "/" + encodeURIComponent(route.id) : "");
+/** The url fragment for a route — `formatAddress`, for the same reason.
+ *  @param {{ view: ViewName, id: string, screen?: PageScreen }} route @returns {string} */
+export const hashOf = (route) => formatAddress(route);
 
 /** @param {unknown} err */
 const message = (err) =>

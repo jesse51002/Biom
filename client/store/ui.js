@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// State that is never persisted: the route, the inserter, the dialog, and
-// which folders are open in the tree.
+// State that is never persisted: the route, the inserter, the dialog, which
+// folders are open in the tree — and, since the eleventh contracts edit, the
+// rest of the window's CONTEXT: whether the chat panel is open, which chat is
+// in it and whether the list of chats is showing. The context of the *History
+// and View Switcher* spec is this store with those fields added, not a second
+// copy of it.
 //
 // It is a separate store from the workspace and the reason is structural rather
 // than tidy: ephemeral UI state and a cached replica of server state have
@@ -15,6 +19,7 @@
 /** @import { UiState, UiStore } from "../../contracts/types.ts" */
 
 import { emitter } from "../../contracts/emitter.js";
+import { address, normalAddress } from "../../contracts/address.js";
 
 /**
  * @param {Partial<UiState>} [initial] the route boot resolved from the URL
@@ -25,8 +30,10 @@ export function makeUi(initial) {
 
   /** @type {UiState} */
   let state = {
-    route: { view: "page", id: "" },
-    pageView: "page",
+    route: address("page"),
+    panel: false,
+    chat: null,
+    chatList: false,
     inserting: null,
     dialog: false,
     dialogParent: null,
@@ -34,6 +41,11 @@ export function makeUi(initial) {
     treeOrder: "asc",
     ...initial,
   };
+  // EVERY ROUTE IN HERE IS AN ADDRESS, NORMALISED — a page's own screen only
+  // where there is a page. A route handed in before the screen joined it reads
+  // as the page itself, and one that already was normal is the same object, so
+  // normalising on every write never turns a no-op into a repaint.
+  state = { ...state, route: normalAddress(state.route) };
 
   /**
    * The one write path. It emits only when something actually differs, which is
@@ -64,18 +76,24 @@ export function makeUi(initial) {
     },
 
     set(patch) {
-      apply({ ...state, ...patch });
+      const next = { ...state, ...patch };
+      if (patch.route) next.route = normalAddress(patch.route);
+      apply(next);
     },
 
-    go(view, id) {
-      // Lifted from the mock: opening something closes the inserter and drops
-      // back to the page's own face rather than one of its screens. `route`
-      // is a fresh object, so a navigation always repaints — a view may want to
+    go(view, id, screen) {
+      // Lifted from the mock: opening something closes the inserter and lands
+      // on the page's own face unless a screen of it was named. `route` is a
+      // fresh object, so a navigation always repaints — a view may want to
       // scroll to the top even when it lands where it already was.
+      //
+      // THE AGENT SCREEN NAMES ITS CHAT, and the window remembers it: going
+      // there sets `chat` to the address's id, or null for the start screen,
+      // so the rail's Agent comes back to whichever was last open.
       apply({
         ...state,
-        route: { view, id },
-        pageView: "page",
+        route: address(view, id, screen),
+        ...(view === "agent" ? { chat: id === "" ? null : id } : {}),
         inserting: null,
       });
     },

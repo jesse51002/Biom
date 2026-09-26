@@ -175,6 +175,17 @@ rail would land where the reader last left it, and it does not. A `position` is
 recorded and never dispatched to the shell, so a scroll never repaints the
 strip; it is still not a height, and `GuestNotice` still has no `size`.
 
+**A touch is the other thing a box says about the person, and it says only
+which way.** `{ kind: "touch", g, what }` — `click`, `key`, `select` or
+`scroll` — on the ordinary port, throttled in the box to one of each a second,
+and never for a scroll the box made itself putting the reader back. The
+switcher of the workspace's *History and View Switcher* spec needs it — a
+screen becomes the person's when they touch it, and a touch in the last two
+minutes keeps an agent from taking the screen — and the host can no more see a
+click inside the box than a height. It carries no coordinates, no key and no
+text: a keystroke's identity crossing the wall would be a keylogger. It joined
+with the eleventh contracts edit.
+
 A `hello` from a box that already holds ports **revokes them and takes new
 ones**. That is not politeness: assigning `srcdoc` while the previous realm is
 still loading means the old realm's `hello` can arrive *after* the rebuild, take
@@ -210,7 +221,7 @@ entry narrows with its own guard. A branch there that read `msg.kind` and decide
 would be a second copy of the judgement, and two copies of a judgement are two
 things to get out of step.
 
-**Both ports hear every `HostEvent`.** `edit`, `theme`, `refresh` and `place` go to both.
+**Both ports hear every `HostEvent`.** `edit`, `theme`, `refresh` and `place` go to both, and so do `look.state` and `look.patch` — which are POSTED to the one box on `@agent` and never broadcast.
 A host event is an announcement, not a capability: **the asymmetry is entirely in
 what may be SENT.** Inventing a second asymmetry in what may be HEARD would only
 give one side a stale picture.
@@ -260,6 +271,28 @@ wrapper is `biom.vault()`, and the bridge answers it out of the store the
 workspace's own screens read — so a page and the panel beside it cannot disagree
 about where the workspace is. It was the third contracts edit; `AGENTS.md`
 keeps the record.
+
+**NOTHING A BOX CAN SAY REACHES AN AGENT, and that is the one line of the
+eleventh contracts edit that may never move.** The Agent screen's look — the
+start screen, a chat, the list of chats — is a plugin a workspace can replace,
+drawn in a box on `@agent`, and what it may ask is four inner-ring kinds:
+`look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` expand
+or collapse — ids and booleans, never a word, and pages through `open` as
+before. The input box is Biom's, in the host, over the box; everything it says
+— `chat.*` and `agents.*` — is outer ring, narrowed at the server by
+`isChatRequest`, and `tests/chat-guards.test.ts` pins that neither inner guard
+admits any of them or any kind that could carry text to an agent. An agent is a
+program allowed everything on this machine, so a box that could put words in
+front of one could do anything the person can. `window.*` and `history.*` are
+outer ring too, under `isHistoryRequest`: a page's own code never reads what
+the window has open.
+
+**The window a request came from rides the envelope, and the transport writes
+it.** `Envelope.window` is optional — every caller before it is unchanged —
+and `client/transport/http.js` writes this window's id over whatever a request
+carried, which is the rule `run.start`'s `by` already follows; the bridge
+rebuilds every request it forwards field by field, so a box's own never gets
+that far. It names who typed, for the history, and it is not a capability.
 
 **The framework grants unrestricted data access.** `table.get`, `row.insert`, `sql`
 and `fetch` all resolve for real, against any table, with no scoping. The inner
@@ -511,9 +544,13 @@ locally.
   constants are a deliberate duplicate of `contracts/wire.js` and its field names
   are hand-copies of `contracts/types.ts` — see §7.
 - **The narrowing predicates:** `contracts/guards.js` — `isHostRequest` /
-  `isRuntimeRequest` over `HOST_KINDS` / `RUNTIME_KINDS`, the shared `wellFormed`
-  envelope-and-payload check, `isGuestNotice`, `isVarPatch`, `isRowInput`,
-  `isVarValue`. Layer 0; imports only `wire.js` constants.
+  `isRuntimeRequest` over `HOST_KINDS` / `RUNTIME_KINDS`, the outer ring's
+  `isChatRequest` / `isHistoryRequest` over `CHAT_KINDS` / `HISTORY_KINDS`, the
+  shared `wellFormed` envelope-and-payload check (the envelope's `window`
+  included), `isGuestNotice`, `isAddress`, `isOpaqueId`, `isAgentKey`,
+  `isVarPatch`, `isRowInput`, `isVarValue`, and the frozen kind lists the
+  no-prompt test reads. Layer 0; imports only `wire.js` constants and
+  `address.js`'s vocabulary.
 - **The unions and the notices:** `contracts/types.ts` — `HostRequest`,
   `RuntimeRequest`, `ApiRequest`, `HostEvent`, `GuestNotice`, `HostError` /
   `HostErrorCode`, `Envelope`, `Protocol`, `BridgeContext`, `Frame`, `FrameHost`,

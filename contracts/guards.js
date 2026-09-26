@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Hand-written narrowing predicates. Layer 0: imports only wire.js constants.
 //
-// Only three things cross a trust boundary in the framework, and these guard
-// exactly those. Nothing else is validated, because nothing else crosses one —
-// a validation library here would be larger than the thing it validated and
-// would imply the rest of the codebase is checked, which it is not.
+// Only a few things cross a trust boundary in the framework, and these guard
+// exactly those: what a box may ask, what a box may say unprompted, and — since
+// the eleventh contracts edit — what may be said to an agent or about a window,
+// because an agent is a program allowed everything on this machine. Nothing
+// else is validated, because nothing else crosses one — a validation library
+// here would be larger than the thing it validated and would imply the rest of
+// the codebase is checked, which it is not.
 
-/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice } from "./types.ts" */
+/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue } from "./types.ts" */
 
-import { PROTOCOL } from "./wire.js";
+import { AGENT_KEY, OPAQUE_ID, PROTOCOL } from "./wire.js";
+import { PAGE_SCREENS, VIEW_NAMES } from "./address.js";
 
 /**
  * @param {unknown} v
@@ -107,6 +111,13 @@ const HOST_KINDS = new Set([
   // filter when the sync engine has one, and nothing filters today. Same
   // three-place rule: HostRequest, the bridge case, and this line.
   "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
+  // THE AGENT SCREEN'S LOOK — the eleventh contracts edit, 2026-09-25. A chat,
+  // a new thread, the list of chats, the panel's size: the look may ask to be
+  // SHOWN something and may never SAY anything, so not one of these carries
+  // text, and no `chat.*` or `agents.*` kind is ever on this list — a test
+  // holds both. The bridge answers them for the look's own box and refuses
+  // every other. Same three-place rule as every line above it.
+  "look.open", "look.new", "look.list", "look.panel",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -132,6 +143,26 @@ const RUNTIME_KINDS = new Set([
   "variables.patch",
   "page.projection",
 ]);
+
+/** THE AGENTS AND THE CHATS — outer ring, and the eleventh edit. Everything
+ *  the host's input box, pickers and pop-ups say. Never on either list above,
+ *  and never a box's to say: an agent does whatever it is told. */
+const CHAT_KINDS = new Set([
+  "agents.list", "agents.probe", "agents.registry", "agents.install", "agents.signIn",
+  "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
+  "chat.switchAgent", "chat.close", "chat.commands",
+]);
+
+/** WHAT EACH WINDOW HAS OPEN, AND THE HISTORY — outer ring, the same edit. */
+const HISTORY_KINDS = new Set(["window.report", "window.list", "history.read"]);
+
+/** Every kind the two inner rings admit, as a list nobody can change — for
+ *  the test that pins what a box may never say. */
+export const HOST_KIND_NAMES = Object.freeze([...HOST_KINDS]);
+export const RUNTIME_KIND_NAMES = Object.freeze([...RUNTIME_KINDS]);
+/** And the eleventh edit's outer-ring kinds, for the same test's other half. */
+export const CHAT_KIND_NAMES = Object.freeze([...CHAT_KINDS]);
+export const HISTORY_KIND_NAMES = Object.freeze([...HISTORY_KINDS]);
 
 /**
  * True when `v` is a well-formed request an artifact is allowed to make.
@@ -160,6 +191,91 @@ export function isRuntimeRequest(v) {
   return wellFormed(v, RUNTIME_KINDS);
 }
 
+/**
+ * True when `v` is a well-formed request to an agent or about one — the only
+ * way anything reaches an agent, and it is the host's input box that says it.
+ * The server narrows with this before it answers any of them.
+ * @param {unknown} v
+ * @returns {v is ChatRequest}
+ */
+export function isChatRequest(v) {
+  return wellFormed(v, CHAT_KINDS);
+}
+
+/**
+ * True when `v` is a well-formed report of a window's context, or a read of
+ * the history or of every window's context.
+ * @param {unknown} v
+ * @returns {v is HistoryRequest}
+ */
+export function isHistoryRequest(v) {
+  return wellFormed(v, HISTORY_KINDS);
+}
+
+/**
+ * An id nobody typed: a window's, a chat's, a running agent's, a ticket's.
+ * @param {unknown} v
+ * @returns {v is string}
+ */
+export const isOpaqueId = (v) => typeof v === "string" && OPAQUE_ID.test(v);
+
+/** A window's id is one of those; named for what the envelope carries. */
+export const isWindowId = isOpaqueId;
+
+/**
+ * An agent's key: the registry's id, or Biom's own word for one it lacks.
+ * @param {unknown} v
+ * @returns {v is string}
+ */
+export const isAgentKey = (v) => typeof v === "string" && AGENT_KEY.test(v);
+
+/**
+ * An address as a window reports it: a view the vocabulary holds, an id, and
+ * a page screen. Whether it is NORMAL is the receiver's to settle — the
+ * server runs it through `address()` — because refusing a report over a
+ * spelling it can correct would lose the window's place for nothing.
+ * @param {unknown} v
+ * @returns {v is Address}
+ */
+export function isAddress(v) {
+  return isObj(v) &&
+    typeof v.view === "string" && VIEW_NAMES.has(/** @type {Address["view"]} */ (v.view)) &&
+    typeof v.id === "string" &&
+    typeof v.screen === "string" && PAGE_SCREENS.has(/** @type {Address["screen"]} */ (v.screen));
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is WindowReport}
+ */
+function isWindowReport(v) {
+  return isObj(v) && isAddress(v.address) && typeof v.panel === "boolean" &&
+    (v.chat === null || isOpaqueId(v.chat)) &&
+    (v.agent === null || isOpaqueId(v.agent));
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is Move}
+ */
+function isMove(v) {
+  if (!isObj(v)) return false;
+  if (v.by === "you") return true;
+  return v.by === "switcher" && isOpaqueId(v.agent) && isOpaqueId(v.chat);
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is ConfigValue}
+ */
+const isConfigValue = (v) => typeof v === "string" || typeof v === "boolean";
+
+/** Words to an agent: a string with something in it. @param {unknown} v */
+const isWords = (v) => typeof v === "string" && v.trim() !== "";
+
+/** An offset into a stream: a whole number, zero or more. @param {unknown} v */
+const isSeq = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
 /** The shared body. One envelope check and one payload switch for both rings,
  *  because a second copy is a second thing to forget to update — which is the
  *  exact failure the comment on HOST_KINDS is about.
@@ -171,6 +287,10 @@ function wellFormed(v, allowed) {
   if (typeof id !== "string" || id === "") return false;
   if (g !== PROTOCOL) return false;
   if (typeof kind !== "string" || !allowed.has(kind)) return false;
+  // WHICH WINDOW ASKED — the transport's to write, over whatever was there.
+  // Absent is every caller from before it; malformed is refused, because a type
+  // is not a parse and this one names who typed.
+  if (v.window !== undefined && !isOpaqueId(v.window)) return false;
 
   switch (kind) {
     case "data.set":
@@ -256,8 +376,52 @@ function wellFormed(v, allowed) {
       return typeof v.page === "string" && v.page !== "" &&
         (v.section === null || (typeof v.section === "string" && v.section !== "")) &&
         isVarPatch(v.patch);
+    /* ── the look (inner ring): ids and booleans, never words ─────────── */
+    case "look.open":
+      return isOpaqueId(v.chat);
+    case "look.list":
+      return typeof v.open === "boolean";
+    case "look.panel":
+      return typeof v.expand === "boolean";
+
+    /* ── the agents and the chats (outer ring) ─────────────────────────── */
+    case "agents.probe":
+    case "agents.install":
+      return isAgentKey(v.agent);
+    case "agents.signIn":
+      return isAgentKey(v.agent) && typeof v.method === "string" && v.method !== "" && v.method.length <= 256;
+    case "chat.new":
+      // A first message is optional — the start screen may make a chat before
+      // anything is typed — and has something in it where it is there.
+      return isAgentKey(v.agent) &&
+        (v.text === undefined || isWords(v.text)) &&
+        (v.page === undefined || (typeof v.page === "string" && v.page !== "")) &&
+        (v.config === undefined || (isObj(v.config) && Object.values(v.config).every(isConfigValue)));
+    case "chat.read":
+      return isOpaqueId(v.chat) && (v.since === undefined || isSeq(v.since));
+    case "chat.send":
+      return isOpaqueId(v.chat) && isWords(v.text);
+    case "chat.cancel":
+    case "chat.close":
+      return isOpaqueId(v.chat);
+    case "chat.config":
+      return isOpaqueId(v.chat) && typeof v.option === "string" && v.option !== "" && isConfigValue(v.value);
+    case "chat.switchAgent":
+      return isOpaqueId(v.chat) && isAgentKey(v.agent);
+    case "chat.commands":
+      return (v.chat === undefined || isOpaqueId(v.chat)) && (v.agent === undefined || isAgentKey(v.agent));
+
+    /* ── the context and the history (outer ring) ──────────────────────── */
+    case "window.report":
+      // A report IS a window speaking, so the envelope has to say which one.
+      return v.window !== undefined && isWindowReport(v.context) &&
+        (v.moved === undefined || isMove(v.moved));
+    case "history.read":
+      return v.since === undefined || isSeq(v.since);
+
     default:
-      // data.get, doc.list, table.list, theme.get — no parameters to check.
+      // data.get, doc.list, table.list, theme.get, look.new, agents.list,
+      // agents.registry, chat.list, window.list — no parameters to check.
       return true;
   }
 }
@@ -286,6 +450,10 @@ export function isGuestNotice(v) {
       // A finite number at or above zero; the clamp to the new run is the
       // box's, because only the box can measure it.
       return Number.isInteger(v.g) && typeof v.top === "number" && Number.isFinite(v.top) && v.top >= 0;
+    case "touch":
+      // The person touched the page — which way, and nothing else: no place,
+      // no key, no text. The eleventh edit, for the switcher.
+      return Number.isInteger(v.g) && (v.what === "click" || v.what === "key" || v.what === "select" || v.what === "scroll");
     default:
       return false;
   }

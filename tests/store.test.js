@@ -1121,14 +1121,51 @@ test("go resets the inserter", () => {
 
   ui.go("page", "notes");
   expect(ui.get()).toMatchObject({ inserting: null });
-  expect(ui.get().route).toEqual({ view: "page", id: "notes" });
+  expect(ui.get().route).toEqual({ view: "page", id: "notes", screen: "page" });
 
   ui.go("table", "jobs");
   expect(n).toBe(3);                            // set, two gos
 });
 
 test("the ui store takes a route from boot", () => {
+  // A route written before the screen joined the address reads as the page's
+  // own face — the store normalises every route it is handed.
   const ui = makeUi({ route: { view: "table", id: "jobs" } });
-  expect(ui.get().route).toEqual({ view: "table", id: "jobs" });
+  expect(ui.get().route).toEqual({ view: "table", id: "jobs", screen: "page" });
   expect(ui.get().inserting).toBe(null);
+});
+
+test("a page's own screen is part of its address, and going somewhere else drops it", () => {
+  // THE ELEVENTH CONTRACTS EDIT folded `pageView` into the route as `screen`,
+  // so a reload and Back land on a page's Instructions or Automations.
+  const ui = makeUi();
+  ui.go("page", "home/notes", "automation");
+  expect(ui.get().route).toEqual({ view: "page", id: "home/notes", screen: "automation" });
+  expect("pageView" in ui.get()).toBe(false);
+  // A screen means nothing off a page, and nothing on a page with no id.
+  ui.go("table", "jobs", "instructions");
+  expect(ui.get().route.screen).toBe("page");
+  ui.go("page", "", "instructions");
+  expect(ui.get().route.screen).toBe("page");
+});
+
+test("a no-op route write does not repaint, and the context's fields start closed", () => {
+  const ui = makeUi({ route: { view: "page", id: "notes", screen: "page" } });
+  expect(ui.get()).toMatchObject({ panel: false, chat: null, chatList: false });
+  let n = 0;
+  ui.on(() => { n++; });
+  ui.set({ route: ui.get().route });
+  expect(n).toBe(0);
+});
+
+test("the Agent screen names its chat, and the window remembers it", () => {
+  const ui = makeUi();
+  ui.go("agent", "chat-0001-invented");
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // Leaving for a page keeps the chat — the rail's Agent comes back to it.
+  ui.go("page", "home");
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // The start screen is no chat.
+  ui.go("agent", "");
+  expect(ui.get().chat).toBe(null);
 });

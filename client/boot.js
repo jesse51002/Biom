@@ -209,7 +209,7 @@ const ws = makeWorkspace(transport);
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
 const ui = makeUi({
-  route: vault === null ? { view: "vault", id: "" } : parseHash(location.hash),
+  route: vault === null ? { view: "vault", id: "", screen: "page" } : parseHash(location.hash),
   // The one piece of view state that outlives the tab, read here because the
   // store does no I/O. Anything other than "desc" is ascending, so a corrupted
   // value reads as the default rather than as a third state.

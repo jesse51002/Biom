@@ -369,6 +369,19 @@ export function makeBridge(ws, transport, ui, vault = "") {
       // it is overwritten on `run.start`.
       case "run.kill":
         return forward(req.id, { kind: "run.kill", run: req.run });
+
+      /* ── the Agent screen's look: the eleventh contracts edit ─────────── */
+
+      // THE LOOK MOVING THE SCREEN — a chat, a new thread, the list, the
+      // panel's size. Refused until the Agent screen is built: the kinds are
+      // in the contract so the look can be written against them, and the host
+      // side that answers them, for the look's own box and no other, is the
+      // Agent screen's to add.
+      case "look.open":
+      case "look.new":
+      case "look.list":
+      case "look.panel":
+        return no(req.id, "unsupported", "the Agent screen is not in this build yet");
     }
   }
 

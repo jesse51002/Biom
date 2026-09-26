@@ -450,21 +450,22 @@ afterAll(() => { delete globalThis.document; delete globalThis.window; });
 /* ── the URL ───────────────────────────────────────────────────────────── */
 
 test("a hash names a route, and an unknown one does not route to nothing", () => {
-  expect(parseHash("#/page/job-board")).toEqual({ view: "page", id: "job-board" });
-  expect(parseHash("#/design")).toEqual({ view: "design", id: "" });
+  expect(parseHash("#/page/job-board")).toEqual({ view: "page", id: "job-board", screen: "page" });
+  expect(parseHash("#/design")).toEqual({ view: "design", id: "", screen: "page" });
   // A view the vocabulary no longer holds is nonsense like any other, rather
   // than a route to a screen that is not there.
-  expect(parseHash("#/market")).toEqual({ view: "page", id: "" });
-  expect(parseHash("#/page/a%20b")).toEqual({ view: "page", id: "a b" });
-  expect(parseHash("")).toEqual({ view: "page", id: "" });
-  expect(parseHash("#/nonsense/x")).toEqual({ view: "page", id: "" });
+  expect(parseHash("#/market")).toEqual({ view: "page", id: "", screen: "page" });
+  expect(parseHash("#/theme")).toEqual({ view: "page", id: "", screen: "page" });
+  expect(parseHash("#/page/a%20b")).toEqual({ view: "page", id: "a b", screen: "page" });
+  expect(parseHash("")).toEqual({ view: "page", id: "", screen: "page" });
+  expect(parseHash("#/nonsense/x")).toEqual({ view: "page", id: "", screen: "page" });
   // A malformed escape is user input reaching the router, not a crash.
-  expect(parseHash("#/page/%E0%A4%A")).toEqual({ view: "page", id: "" });
+  expect(parseHash("#/page/%E0%A4%A")).toEqual({ view: "page", id: "", screen: "page" });
 });
 
 test("a route round-trips through its hash", () => {
-  for (const route of [{ view: "page", id: "job board" }, { view: "design", id: "" },
-    { view: "vault", id: "" }]) {
+  for (const route of [{ view: "page", id: "job board", screen: "page" }, { view: "design", id: "", screen: "page" },
+    { view: "vault", id: "", screen: "page" }, { view: "page", id: "home/job board", screen: "instructions" }]) {
     expect(parseHash(hashOf(route))).toEqual(route);
   }
 });
@@ -484,9 +485,10 @@ test("the canvas holds the view the route names", async () => {
   await tick();
   expect(g.plate.firstChild.className).toBe("designdoc");
 
-  // A hash that names the retired Theme screen is not a route any more: the
-  // contract still spells the name, the shell no longer draws anything for it.
-  g.ui.go("theme", "");
+  // A hash that names the retired Theme screen is not a route any more, and
+  // since the eleventh contracts edit the contract no longer spells the name
+  // either; a caller that says it anyway gets the shell's hold, not a screen.
+  g.ui.go(/** @type {any} */ ("theme"), "");
   await tick();
   expect(g.plate.firstChild.className).toBe("hold");
 
@@ -978,7 +980,7 @@ test("Page makes one immediately and opens it", async () => {
   expect(find(g.root, (el) => el.className === "dialog")).toBeNull();
   // Whatever id the server minted, the dialog lands you on it — it does not
   // guess one from the name, which is why `createPage` hands back a PageRef.
-  expect(g.ui.get().route).toEqual({ view: "page", id: "scratch" });
+  expect(g.ui.get().route).toEqual({ view: "page", id: "scratch", screen: "page" });
 });
 
 test("a name typed in New is the page's name, and Enter makes exactly one", async () => {
@@ -996,7 +998,7 @@ test("a name typed in New is the page's name, and Enter makes exactly one", asyn
   await tick();
 
   expect(g.ws.calls.filter((c) => c.startsWith("createPage:"))).toEqual(["createPage:Q3 review:undefined"]);
-  expect(g.ui.get().route).toEqual({ view: "page", id: "scratch" });
+  expect(g.ui.get().route).toEqual({ view: "page", id: "scratch", screen: "page" });
 });
 
 test("New names the page it is making inside by its name, not its id", async () => {
@@ -1020,7 +1022,7 @@ test("Table makes one and lands you on it", async () => {
   // A table is a child in the tree exactly as a page is, so the plus that
   // offered only pages was offering half the answer.
   expect(g.ws.calls).toContain("createTable:table");
-  expect(g.ui.get().route).toEqual({ view: "table", id: "table" });
+  expect(g.ui.get().route).toEqual({ view: "table", id: "table", screen: "page" });
 });
 
 /* ── the rail: ONE tree, and every ordering is some page's order ───────── */
@@ -1356,7 +1358,7 @@ test("Design is a route like any other, and the rail names the folder it is", as
     .fire("click", { preventDefault() {} });
   await tick();
 
-  expect(g.ui.get().route).toEqual({ view: "design", id: "" });
+  expect(g.ui.get().route).toEqual({ view: "design", id: "", screen: "page" });
   expect(g.plate.firstChild.className).toBe("designdoc");
   expect(g.drawn.design).toBe(1);
   // It is a doc, so it takes a doc's measure rather than the canvas.
@@ -1493,7 +1495,7 @@ test("a workspace that will not open lands ON the picker, with one sentence sayi
   // workspace that broke but a workspace that is not there.
   const g = harness();
   g.shell.trouble(Object.assign(new Error("there is no folder there"), { code: "not_found" }), true);
-  expect(g.ui.get().route).toEqual({ view: "vault", id: "" });
+  expect(g.ui.get().route).toEqual({ view: "vault", id: "", screen: "page" });
   const screen = g.plate.firstChild;
   expect(screen.className).toBe("vaulttrouble");
   expect(flat(screen)).toContain("there is no folder there");
@@ -1834,7 +1836,7 @@ test("a folder that will not open says so and leaves you where you were", async 
   // Still here, and nowhere was gone to. A refusal that navigated anyway would
   // load a tab onto a folder the server has just said it cannot open.
   expect(g.went).toEqual([]);
-  expect(g.ui.get().route).toEqual({ view: "vault", id: "" });
+  expect(g.ui.get().route).toEqual({ view: "vault", id: "", screen: "page" });
 });
 
 /* ── making one ────────────────────────────────────────────────────────── */
@@ -2136,7 +2138,7 @@ test("the Map is a route like Design, and it takes the canvas whole", async () =
     .fire("click", { preventDefault() {} });
   await tick();
 
-  expect(g.ui.get().route).toEqual({ view: "map", id: "" });
+  expect(g.ui.get().route).toEqual({ view: "map", id: "", screen: "page" });
   expect(g.plate.firstChild.className).toBe("sky");
   expect(g.drawn.map).toBe(1);
   // It is a box like a page, so it fills the canvas rather than taking a measure.
@@ -2178,7 +2180,7 @@ test("the Map row and its route are in every build", async () => {
   }
   // ONE VOCABULARY. `parseHash` takes the hash and nothing else, so there is no
   // second argument for a build to pass and no second set for it to read.
-  expect(parseHash("#/map")).toEqual({ view: "map", id: "" });
+  expect(parseHash("#/map")).toEqual({ view: "map", id: "", screen: "page" });
   expect(parseHash.length).toBe(1);
   for (const view of VIEWS) expect(parseHash("#/" + view).view).toBe(view);
 });
@@ -2214,16 +2216,16 @@ test("a page's bar carries Instructions and Automations, each taking the canvas 
     expect(toolNamed("Automations")).toBeTruthy();
     toolNamed("Instructions").fire("click");
     await tick();
-    expect(w.ui.get().pageView).toBe("instructions");
+    expect(w.ui.get().route.screen).toBe("instructions");
     expect(w.plate.firstChild.className).toBe("pageins");
     expect(w.plate.attrs["data-face"]).toBe("instructions");
     toolNamed("Instructions").fire("click");
     await tick();
-    expect(w.ui.get().pageView).toBe("page");
+    expect(w.ui.get().route.screen).toBe("page");
     expect(w.plate.firstChild.className).toBe("pagebody");
     toolNamed("Automations").fire("click");
     await tick();
-    expect(w.ui.get().pageView).toBe("automation");
+    expect(w.ui.get().route.screen).toBe("automation");
     expect(w.plate.firstChild.className).toBe("autoscreen");
     expect(w.plate.attrs["data-face"]).toBe("automation");
   }
@@ -2319,7 +2321,7 @@ test("the failure screen names no repository in production, and offers the one a
   expect(choose).toBeTruthy();
   choose.fire("click");
   await tick();
-  expect(built.ui.get().route).toEqual({ view: "vault", id: "" });
+  expect(built.ui.get().route).toEqual({ view: "vault", id: "", screen: "page" });
   // The picker, still carrying the reason it was arrived at.
   expect(built.plate.firstChild.className).toBe("vaulttrouble");
   expect(find(built.plate.firstChild, (el) => has(el, "vaultpick"))).toBeTruthy();

@@ -93,6 +93,34 @@ export const SHIM_ROUTE = "/biom.js";
  *  disk — so the route is the whole of what the two sides have to agree on. */
 export const EVENTS_ROUTE = "/events";
 
+/** THE NAMED EVENTS ON THAT STREAM, spelled once for both tiers. `change` and
+ *  `run` carry a bare `1` and mean *reread*, as they always have; `history`,
+ *  `chat` and `agents` joined with the eleventh contracts edit and carry JSON
+ *  — the entries appended, one chat's push, the whole list of this machine's
+ *  agents — because none of that is on disk to be reread. `StreamEvent` in
+ *  `types.ts` says what each carries. NAMED, never the default `message`:
+ *  the server's keep-alive comments are not events, and a named event is the
+ *  only thing that means something happened. */
+export const STREAM = Object.freeze({
+  CHANGE: "change",
+  RUN: "run",
+  HISTORY: "history",
+  CHAT: "chat",
+  AGENTS: "agents",
+});
+
+/** THE GRAMMAR OF AN ID NOBODY TYPES: a window's, a chat's, a running agent's,
+ *  a sign-in ticket's. Eight to sixty-four letters, digits, dashes and
+ *  underscores — a uuid is one, and so is what a window mints where
+ *  `crypto.randomUUID` is not offered. Checked at the guards, because every
+ *  one of these arrives off the wire and names something the server holds. */
+export const OPAQUE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** THE GRAMMAR OF AN AGENT'S KEY: the ACP Registry's ids — `claude-acp`,
+ *  `github-copilot-cli` — and Biom's own for an agent the registry does not
+ *  list, `openclaw`. Lowercase, because the registry's are. */
+export const AGENT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
 /* ── which vault a request is for ───────────────────────────────────────── */
 
 /** WHICH FOLDER, and it is an ADDRESS rather than a message — which is the whole
@@ -211,6 +239,17 @@ export const DESIGN_PAGE = "@design";
  *  page a person creates can collide with it. A page that wants a map of its
  *  own says `plugin: biom-mindmap` and is an ordinary page. */
 export const MAP_PAGE = "@map";
+
+/** THE AGENT SCREEN'S ID, for the same reason and by the same mechanism, and
+ *  the eleventh contracts edit. The start screen, a chat and the list of
+ *  chats are drawn by a plugin a workspace can replace — the framework's
+ *  `biom-agent`, whose `look` variable names the plugin that draws them, and
+ *  a vault names its own in a rung — so the Agent screen needs a mount the
+ *  runtime can `page.read`: this id answers a bare plugin page with no
+ *  directory behind it, as `@map` does. Only the INPUT BOX is not the
+ *  look's: it is Biom's, in the host, over the box, so only the person's
+ *  typing ever reaches an agent. */
+export const AGENT_PAGE = "@agent";
 
 /** AN ID FOLDED FOR COMPARISON, and the only place case is ever ignored.
  *
