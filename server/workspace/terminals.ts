@@ -30,7 +30,9 @@
 // There is no session to come back to. The socket IS the run's lifetime: the
 // command exiting says `exited` and closes the socket, and the socket closing
 // first — the pop-up's Close, a reload, the window gone — ends the command's
-// whole process tree the way `server/platform/pty.ts` ends one. So there is no
+// whole process tree the way `server/platform/pty.ts` ends one. A command that
+// exits BY ITSELF is not chased: what it deliberately left running, like the
+// browser a sign-in opened, is the person's and no longer its. So there is no
 // replay, no orphan grace and nothing a second window could attach to. A
 // socket that names no ticket within `LIMITS.wait` is closed. The server's own
 // exit takes every tree still running, synchronously, in `killAll`.

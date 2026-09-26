@@ -74,7 +74,9 @@ There is no session to come back to: no ids, no replay, no orphan grace, nothing
 a second window could attach to.
 
 - **The command exiting** says `exited` with its code or signal and closes the
-  socket, 150 ms later so the last output arrives first.
+  socket, 150 ms later so the last output arrives first. A command that exits
+  by itself is not chased: what it deliberately left running — the browser a
+  sign-in opened — is the person's.
 - **The socket closing first** — the pop-up's Close, a reload, the window gone —
   ends the command's whole tree: the process table is walked for descendants
   (a job in a process group of its own included), then HUP → TERM → KILL with a
@@ -146,8 +148,9 @@ signal.
 - **Close** closes the socket, which ends the command. A click on the scrim does
   nothing: a stray click must not end a sign-in half done.
 - **Every key pressed inside stays inside**, so the shell's own Escape never
-  fires behind it. Escape in the emulator is the program's; once nothing runs,
-  Escape closes the pop-up.
+  fires behind it, and the caret moves into the emulator at once. Escape in the
+  emulator is the program's; once nothing runs, Escape closes the pop-up and
+  Tab stays on Close.
 - **One at a time per window.** A second `open` while one is up is refused.
 
 ## 7. Keys

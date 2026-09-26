@@ -154,13 +154,18 @@ export function makeSignInTerminal(deps) {
       // EVERY KEY PRESSED IN HERE IS THE POP-UP'S. Escape in the emulator is the
       // program's — a sign-in cancels on it — and a dialog of the shell's
       // closing behind this one instead would be the host stealing it. Once
-      // nothing is running, Escape closes the pop-up.
+      // nothing is running, Escape closes the pop-up, and Tab stays on Close
+      // rather than wandering into the workspace behind a modal dialog.
       const root = h("div.signterm", {
         onkeydown: (/** @type {KeyboardEvent} */ e) => {
           e.stopPropagation();
-          if (e.key === "Escape" && phase === "over") {
+          if (phase !== "over") return;
+          if (e.key === "Escape") {
             e.preventDefault();
             finish();
+          } else if (e.key === "Tab") {
+            e.preventDefault();
+            closer.focus();
           }
         },
       }, dialog);
@@ -194,6 +199,9 @@ export function makeSignInTerminal(deps) {
       /** The size the command was last told. */
       let told = usable(fit.proposeDimensions()) ?? { cols: 80, rows: 24 };
       if (told.cols !== term.cols || told.rows !== term.rows) term.resize(told.cols, told.rows);
+      // The caret moves in at once, so nothing typed while the command starts
+      // lands on the workspace behind; typing is off until it runs.
+      term.focus();
 
       /** Fit the emulator to its box, once the box has settled, and tell the
        *  command when the size changed. */
@@ -262,14 +270,24 @@ export function makeSignInTerminal(deps) {
         closer.focus();
       };
 
-      /** @type {TerminalSocket} */
-      const socket = connect((m) => {
+      /** @param {SocketMessage} m */
+      const hear = (m) => {
         if (done) return;
         if (m.kind === "open") socket.send({ op: "create", ticket, cols: told.cols, rows: told.rows });
         else if (m.kind === "bytes") term.write(m.data);
         else if (m.kind === "event") heard(m.event);
         else if (m.kind === "closed") over();
-      });
+      };
+      /** @type {TerminalSocket} */
+      let socket;
+      try {
+        socket = connect(hear);
+      } catch {
+        // A socket that could not even be made is a sign-in that never ran,
+        // said on the pop-up like any other.
+        socket = { send: () => false, close: () => {}, state: () => "closed" };
+        queueMicrotask(() => hear({ kind: "closed" }));
+      }
 
       term.onData((/** @type {string} */ data) => {
         if (phase === "running") socket.send({ op: "input", data });

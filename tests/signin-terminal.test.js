@@ -157,13 +157,15 @@ test("it sends the ticket and the size it fitted, and nothing that names a comma
   s.opens();
   expect(s.sent).toEqual([{ op: "create", ticket: "ticket-one", cols: 90, rows: 20 }]);
   expect(w.term().cols).toBe(90);
-  // The emulator starts with typing off, and nothing typed goes before the command runs.
+  // The caret is in the emulator from the start, with typing off, and nothing
+  // typed goes before the command runs.
+  expect(w.term().focused).toBe(1);
   expect(w.term().options.disableStdin).toBe(true);
   w.term().type("early");
   expect(s.sent).toHaveLength(1);
   s.says({ ev: "started" });
   expect(w.term().options.disableStdin).toBe(false);
-  expect(w.term().focused).toBeGreaterThan(0);
+  expect(w.term().focused).toBe(2);
   w.term().type("code-123\r");
   expect(s.sent.at(-1)).toEqual({ op: "input", data: "code-123\r" });
   s.prints("Paste code here > ");
@@ -203,6 +205,9 @@ test("A FAILED SIGN-IN STAYS with its reason until Close, and answers its code",
   // Typing is off, and the Close control has the caret.
   expect(w.term().options.disableStdin).toBe(true);
   expect(find(root, "signclose").focused).toBe(1);
+  // Tab stays on Close once nothing runs, rather than leaving a modal dialog.
+  find(root, "signclose").fire("keydown", { key: "Tab" });
+  expect(find(root, "signclose").focused).toBe(2);
   find(root, "signclose").fire("click");
   await tick();
   expect(result).toEqual({ exitCode: 1 });
@@ -279,6 +284,20 @@ test("a connection that never opens says so, and nothing is sent", async () => {
   expect(w.sockets[0].sent).toEqual([]);
   find(w.body.children[0], "signclose").fire("click");
   expect(await done).toEqual({ exitCode: null });
+});
+
+test("a socket that cannot be made says so on the pop-up, and leaves the window free for the next", async () => {
+  const body = new El("body");
+  const pop = makeSignInTerminal({ h, connect: () => { throw new Error("no socket"); }, Terminal, FitAddon, body });
+  const done = pop.open({ ticket: "ticket-one", title: "Sign in" });
+  await tick();
+  expect(find(body.children[0], "signsaid").textContent).toBe("The sign-in closed before it finished.");
+  find(body.children[0], "signclose").fire("click");
+  expect(await done).toEqual({ exitCode: null });
+  const again = pop.open({ ticket: "ticket-two", title: "Sign in" });
+  await tick();
+  find(body.children[0], "signclose").fire("click");
+  expect(await again).toEqual({ exitCode: null });
 });
 
 test("exitText says how a command ended in words", () => {
