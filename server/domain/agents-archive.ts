@@ -22,6 +22,8 @@
 // expands forever is refused from its table of contents rather than when the
 // disk is full.
 
+import { crc32, inflateRawSync } from "node:zlib";
+
 import { safeRelPath } from "./agents-registry.ts";
 
 /** A refusal whose message is a sentence a person can read. */
@@ -143,8 +145,10 @@ export function tarEntries(read: Read, size: number): Entry[] {
       off = skip(length);
       continue;
     }
-    const ustar = cstr(h, 257, 6).startsWith("ustar");
-    const prefix = ustar ? cstr(h, 345, 155) : "";
+    // POSIX ustar's magic is `ustar\0`, and only it has a name prefix: GNU's
+    // is `ustar ` and keeps times where the prefix would be.
+    const posix = cstr(h, 257, 6) === "ustar";
+    const prefix = posix ? cstr(h, 345, 155) : "";
     const plain = cstr(h, 0, 100);
     const name = pax.path ?? longName ?? (prefix !== "" ? `${prefix}/${plain}` : plain);
     const link = pax.linkpath ?? longLink ?? cstr(h, 157, 100);
@@ -201,9 +205,9 @@ const u64 = (b: Uint8Array, at: number): number => {
 
 const damaged = (): ArchiveError => new ArchiveError("the archive is not a zip archive, or it is damaged");
 
-/** EVERY ENTRY OF A ZIP, from its central directory. Zip64 is read; an
- *  encrypted entry, or one stored in any way but plain or deflated, refuses
- *  the archive. */
+/** EVERY ENTRY OF A ZIP, from its central directory, a link's target read
+ *  from its bytes as a zip keeps it. Zip64 is read; an encrypted entry, or
+ *  one stored in any way but plain or deflated, refuses the archive. */
 export function zipEntries(read: Read, size: number): Entry[] {
   if (size < 22) throw damaged();
   const tailLen = Math.min(size, 22 + 65535);
@@ -290,7 +294,7 @@ export function zipEntries(read: Read, size: number): Entry[] {
       throw new ArchiveError("the archive holds an entry with no name, so nothing was unpacked");
     }
     if (local + 30 > size || local + compressed > size) throw damaged();
-    out.push({
+    const entry: Entry = {
       path,
       type,
       mode: unix & 0o777,
@@ -300,9 +304,29 @@ export function zipEntries(read: Read, size: number): Entry[] {
       method: method === 8 ? 8 : 0,
       compressed: type === "dir" ? 0 : compressed,
       crc,
-    });
+    };
+    if (type === "symlink") entry.target = decoder.decode(zipData(read, size, entry, 4096));
+    out.push(entry);
+    if (out.length > MAX_ENTRIES) throw new ArchiveError("the archive holds more entries than an agent's release would, so nothing was unpacked");
   }
   return out;
+}
+
+/** A zip entry's bytes, inflated where they were deflated and held to the
+ *  length and checksum the directory gives — never more than `max`. */
+export function zipData(read: Read, size: number, entry: Entry, max: number): Uint8Array {
+  if (entry.size > max) throw new ArchiveError("the archive holds an entry too large to unpack, so nothing was unpacked");
+  const stored = read(zipDataOffset(read, size, entry), entry.compressed ?? 0);
+  let bytes: Uint8Array;
+  try {
+    bytes = entry.method === 8 ? inflateRawSync(stored, { maxOutputLength: Math.max(1, entry.size) }) : stored;
+  } catch {
+    throw new ArchiveError("the archive is damaged: an entry will not inflate, so nothing was unpacked");
+  }
+  if (bytes.length !== entry.size || crc32(bytes) >>> 0 !== entry.crc) {
+    throw new ArchiveError("the archive is damaged: an entry does not match its checksum, so nothing was unpacked");
+  }
+  return bytes;
 }
 
 /** Where a zip entry's bytes start: past its LOCAL header, whose extra field

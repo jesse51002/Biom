@@ -373,6 +373,30 @@ test("a Gateway that does not come up is said so", async () => {
   expect(a.message).toContain("did not start");
 });
 
+test("a probe deletes the session it opened where the agent offers that, so looking leaves no empty chat behind", async () => {
+  const deleted: unknown[] = [];
+  const tidy = machine({
+    bins: { opencode: "/invented/bin/opencode", gemini: "/invented/bin/gemini" },
+    script: (launch) => launch.command.endsWith("opencode")
+      ? {
+        ...healthy(),
+        initialize: () => ({ protocolVersion: 1, agentCapabilities: { sessionCapabilities: { delete: {} } } }),
+        "session/delete": (p) => {
+          deleted.push(p);
+          return {};
+        },
+      }
+      : healthy(),
+  });
+  tidy.agents.list();
+  await tidy.agents.settled();
+  expect(deleted).toEqual([{ sessionId: "s-1" }]);
+  const gemini = tidy.calls.find((c) => c.launch.command.endsWith("gemini")) as Call;
+  expect(gemini.methods).not.toContain("session/delete");
+  for (const c of tidy.calls) expect(c.closed).toBe(true);
+  expect(tidy.agents.list().every((a) => a.state === "active")).toBe(true);
+});
+
 /* ── Inactive, and why ────────────────────────────────────────────────── */
 
 test("a refused session is Inactive with every way to sign in listed, and the probe never sent authenticate", async () => {
@@ -630,6 +654,17 @@ test("a redeemed ticket's end past its bound re-probes nothing", async () => {
   await agents.settled();
   expect(calls.length).toBe(before);
   expect(agents.list()[0]?.reason).toBe("signin");
+});
+
+test("a refusal before any probe listed the ways to sign in looks, and stays refused", async () => {
+  const m = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [] }) }) });
+  m.agents.list();
+  await m.agents.settled();
+  const probes = m.calls.length;
+  m.agents.refused("opencode"); // it listed no methods: look again for them
+  await m.agents.settled();
+  expect(m.calls.length).toBe(probes + 1);
+  expect(byKey(m.agents.list(), "opencode")?.reason).toBe("signin");
 });
 
 test("a key that is no agent, or no agent here, is refused in words", async () => {

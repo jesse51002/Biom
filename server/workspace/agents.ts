@@ -19,7 +19,9 @@
 // (`initializeParams`), and NEVER CALLS `authenticate`: on an agent already
 // signed in that can sign it out, or open a browser for nothing. The probe
 // session's config options and commands are kept on the agent, so the start
-// screen's pickers and the / menu are full before a chat has a session.
+// screen's pickers and the / menu are full before a chat has a session; and
+// where the agent offers `session/delete`, the probe's own session is deleted
+// once read, so looking leaves no empty chat in the person's own history.
 //
 // SIGN-IN IS ASKED FOR ONLY WHEN IT IS NEEDED: when a probe's session, or a
 // chat's session or message, was refused as *authentication required* — the
@@ -62,14 +64,14 @@ import { chmodSync, closeSync, constants as fsConstants, copyFileSync, createRea
 import { dirname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createGunzip, inflateRawSync } from "node:zlib";
+import { createGunzip } from "node:zlib";
 
 import type { AgentInfo, AgentKey, AgentLaunch, AgentReason, ConfigOption, ProcessRunner, RegistryAgent, SignIn, SlashCommand } from "../../contracts/types.ts";
 import { AGENT_KEY, OPAQUE_ID } from "../../contracts/wire.js";
 import type { AcpConnection } from "../platform/acp.ts";
 import { AUTH_REQUIRED, authInfo, initializeParams, readAgentVersion, readAuthMethods, readCommands, readConfigOptions, readSessionId, terminalCommand } from "../domain/agents-acp.ts";
 import type { AuthMethod } from "../domain/agents-acp.ts";
-import { ArchiveError, MAX_TOTAL, judge, tarEntries, zipDataOffset, zipEntries } from "../domain/agents-archive.ts";
+import { ArchiveError, MAX_TOTAL, judge, tarEntries, zipData, zipEntries } from "../domain/agents-archive.ts";
 import type { Entry } from "../domain/agents-archive.ts";
 import { KNOWN_AGENTS, knownAgent } from "../domain/agents-known.ts";
 import type { Gateway, KnownAgent } from "../domain/agents-known.ts";
@@ -111,6 +113,8 @@ export interface AgentsDeps {
 export interface AgentsTiming {
   /** `initialize`, for an agent that starts at once. */
   initialize: number;
+  /** Deleting a probe's session, where the agent offers that. */
+  tidy: number;
   /** `initialize` for one `npx` fetches first — an adapter that is not yet in
    *  npm's cache downloads before it can answer. */
   initializeFetching: number;
@@ -140,6 +144,7 @@ export interface AgentsTiming {
 
 export const TIMING: AgentsTiming = {
   initialize: 30_000,
+  tidy: 2_000,
   initializeFetching: 180_000,
   session: 60_000,
   commands: 2_000,
@@ -156,8 +161,8 @@ export const TIMING: AgentsTiming = {
   signInRun: 60 * 60 * 1000,
 };
 
-/** What `redeem` answers: the command, and whose sign-in it is — so the
- *  terminal can re-probe that agent when the command exits. */
+/** What `redeem` answers: the command the sign-in pop-up runs, and whose
+ *  sign-in it is. */
 export type SignInLaunch = AgentLaunch & { agent: AgentKey };
 
 export interface Agents {
@@ -238,7 +243,7 @@ type Verdict =
   | { state: "inactive"; reason: "signin" | "failed"; message: string; version: string | null; methods: AuthMethod[] };
 
 /** A refusal the route answers with its own sentence. */
-function refusal(code: "bad_request" | "not_found" | "limit" | "fetch_failed", message: string): Error {
+function refusal(code: "bad_request" | "not_found" | "fetch_failed", message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
@@ -290,10 +295,19 @@ async function eachChunk(body: ReadableStream<Uint8Array>, fn: (chunk: Uint8Arra
     if (!finished) reader.cancel().catch(() => null);
   }
 }
+
 const seconds = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.max(1, Math.round(ms / 1000))} s`);
 
 const SIGN_IN = "It needs you to sign in.";
 const GATEWAY_DOWN = "OpenClaw's Gateway is not running on this machine.";
+
+/** Does `initialize` offer `session/delete`? */
+function offersDelete(init: unknown): boolean {
+  const caps = typeof init === "object" && init !== null ? (init as { agentCapabilities?: unknown }).agentCapabilities : null;
+  const sessions = typeof caps === "object" && caps !== null ? (caps as { sessionCapabilities?: unknown }).sessionCapabilities : null;
+  const del = typeof sessions === "object" && sessions !== null ? (sessions as { delete?: unknown }).delete : null;
+  return typeof del === "object" && del !== null;
+}
 
 /** The installed-agent record Biom writes beside what it installed. */
 interface Installed {
@@ -615,19 +629,25 @@ export function makeAgents(deps: AgentsDeps): Agents {
     let methods: AuthMethod[] = [];
     let version: string | null = null;
     let stage = "initialize";
+    // A session this probe opened, to delete where the agent offers that —
+    // so looking does not leave an empty chat in the person's own history.
+    let opened: string | null = null;
+    let deletable = false;
     try {
       const init = await bounded(conn.request("initialize", initializeParams(deps.version), { timeoutMs: fetching ? t.initializeFetching : t.initialize }), fetching ? t.initializeFetching : t.initialize, "initialize");
       methods = readAuthMethods(init);
       version = readAgentVersion(init);
+      deletable = offersDelete(init);
       if (auth !== null) {
         stage = "authenticate";
         await bounded(conn.request("authenticate", { methodId: auth }, { timeoutMs: t.authenticate }), t.authenticate, "authenticate");
       }
       stage = "session/new";
-      const opened = await bounded(conn.request("session/new", { cwd: deps.cwd, mcpServers: [] }, { timeoutMs: t.session }), t.session, "session/new");
-      const id = readSessionId(opened);
+      const answer = await bounded(conn.request("session/new", { cwd: deps.cwd, mcpServers: [] }, { timeoutMs: t.session }), t.session, "session/new");
+      const id = readSessionId(answer);
       if (id === null) return { state: "inactive", reason: "failed", message: "It answered without opening a session.", version, methods };
-      const options = readConfigOptions(opened);
+      opened = id;
+      const options = readConfigOptions(answer);
       if (!commandsBySession.has(id)) {
         await Promise.race([
           new Promise<void>((r) => {
@@ -656,12 +676,20 @@ export function makeAgents(deps: AgentsDeps): Agents {
       return { state: "inactive", reason: "failed", message: failureOf(e, stage, exited, fetching), version, methods };
     } finally {
       off();
-      live.delete(conn);
-      try {
-        track(conn.close().catch(() => null));
-      } catch {
-        // Already gone.
-      }
+      const id = opened;
+      const tidy = deletable && id !== null;
+      // After the verdict, not before it: the list waits on nothing here.
+      track((async () => {
+        if (tidy && !closed) {
+          await bounded(conn.request("session/delete", { sessionId: id }, { timeoutMs: t.tidy }), t.tidy, "session/delete").catch(() => null);
+        }
+        live.delete(conn);
+        try {
+          await conn.close();
+        } catch {
+          // Already gone.
+        }
+      })());
     }
   }
 
@@ -782,7 +810,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       const entries = parseRegistry(doc);
       cache = { at: deps.now(), entries };
       try {
-        mkdirSync(home, { recursive: true });
+        mkdirSync(home, { recursive: true, mode: 0o700 });
         writeFileSync(join(home, REGISTRY_CACHE), JSON.stringify({ at: cache.at, doc }));
       } catch {
         // A cache that cannot be written is a fetch next time.
@@ -930,27 +958,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
         if (got < length) throw new ArchiveError("the archive ends in the middle of an entry, so nothing was unpacked");
         return buf;
       };
-      /** A zip entry's bytes, inflated and checked against its checksum. */
-      const zipBytes = (e: Entry, max: number): Uint8Array => {
-        if (e.size > max) throw new ArchiveError("the archive holds an entry too large to unpack, so nothing was unpacked");
-        const stored = read(zipDataOffset(read, size, e), e.compressed ?? 0);
-        let bytes: Uint8Array;
-        try {
-          bytes = e.method === 8 ? inflateRawSync(stored, { maxOutputLength: Math.max(1, e.size) }) : stored;
-        } catch {
-          throw new ArchiveError("the archive is damaged: an entry will not inflate, so nothing was unpacked");
-        }
-        if (bytes.length !== e.size || (Bun.hash.crc32(bytes) >>> 0) !== e.crc) {
-          throw new ArchiveError("the archive is damaged: an entry does not match its checksum, so nothing was unpacked");
-        }
-        return bytes;
-      };
-      // A zip keeps a link's target as the entry's bytes, so it is read
-      // before the list is judged.
-      const listed = kind === "tar"
-        ? tarEntries(read, size)
-        : zipEntries(read, size).map((e) => (e.type === "symlink" ? { ...e, target: new TextDecoder().decode(zipBytes(e, 4096)) } : e));
-      const entries: Entry[] = judge(listed);
+      const entries: Entry[] = judge(kind === "tar" ? tarEntries(read, size) : zipEntries(read, size));
       const dirs = new Set<string>();
       const parent = (p: string): string => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
       for (const e of entries) {
@@ -963,7 +971,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
         const out = openSync(join(root, e.path), fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, mode);
         try {
           if (kind === "zip") {
-            const bytes = zipBytes(e, 2 * 1024 * 1024 * 1024);
+            const bytes = zipData(read, size, e, 2 * 1024 * 1024 * 1024);
             let at = 0;
             while (at < bytes.length) at += writeSync(out, bytes, at, bytes.length - at);
           } else {
@@ -1156,6 +1164,10 @@ export function makeAgents(deps: AgentsDeps): Agents {
   }
 
   async function runInstall(slot: Slot): Promise<void> {
+    // A probe that ran ahead of this in the queue may have said something
+    // else since `install` answered.
+    set(slot, "installing", "Installing from the ACP Registry.");
+    emit();
     try {
       const entries = await readRegistry();
       const entry = entries.find((e) => e.key === slot.key);
@@ -1178,7 +1190,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
       emit();
       const folder = folderOf(slot.key);
       if (!inside(folder)) throw new Said("It cannot be installed under that name.");
-      mkdirSync(folder, { recursive: true });
+      // Private: what npm, uv or a Gateway print into their logs is the person's.
+      mkdirSync(folder, { recursive: true, mode: 0o700 });
       // What a server that stopped in the middle of an install left behind.
       for (const name of readdirSync(folder)) if (name.startsWith(".part-")) rmSync(join(folder, name), { recursive: true, force: true });
       const rec = plan.via === "binary"
@@ -1244,6 +1257,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
         if (knownAgent(key) === null && readInstalled(key) === null) throw refusal("not_found", "No agent by that name is on this machine.");
         slot = slotFor(key, "path");
       }
+      // An install probes what it installed when it lands.
+      if (slot.installing) return structuredClone(slot.info);
       set(slot, "checking", null);
       emit();
       queueProbe(slot);
@@ -1266,7 +1281,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
             return;
           }
           const folder = folderOf(key);
-          mkdirSync(folder, { recursive: true });
+          mkdirSync(folder, { recursive: true, mode: 0o700 });
           const log = join(folder, "gateway.log");
           // The Gateway is the person's service and outlives this server: the
           // runner starts it in a group of its own and lets it go.
@@ -1316,7 +1331,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
           needs = any ? null : first;
         }
         const via = plans[0]?.via ?? (e.npx !== null ? "npx" : e.uvx !== null ? "uvx" : "binary");
-        out.push({ key: e.key, name: e.name, line: e.line, version: e.version, icon: e.icon, via, here: slots.has(e.key), needs });
+        out.push({ key: e.key, name: e.name, line: e.line, version: e.version, icon: e.icon, via, here: (slots.get(e.key)?.found ?? null) !== null, needs });
       }
       return out;
     },
@@ -1400,6 +1415,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
       slot.trust = false;
       set(slot, "signin", SIGN_IN);
       emit();
+      // Refused before any probe listed its ways to sign in: look, so the
+      // pop-up has them. The refusal stands whatever the look says.
+      if (slot.methods.length === 0) queueProbe(slot);
     },
 
     signedInWith(key) {

@@ -413,6 +413,8 @@ test("a .tar.gz installs into Biom's own folder at the pinned version, and is pr
   expect(a.source).toBe("installed");
   expect(a.version).toBe("9.9.9");
   const dir = join(r.home, "good", "2.0.0");
+  // The agent's folder is private: its install and Gateway logs are the person's.
+  expect(statSync(join(r.home, "good")).mode & 0o777).toBe(0o700);
   expect(readFileSync(join(dir, "pkg", "lib", "data.txt"), "utf8")).toBe("invented");
   expect(readlinkSync(join(dir, "pkg", "agent"))).toBe("bin/agent");
   expect(statSync(join(dir, "pkg", "bin", "agent")).mode & 0o111).not.toBe(0);
@@ -558,7 +560,11 @@ test("npx without Node and uvx without uv are said plainly, and a failed npm lea
   expect(bare.ran).toEqual([]);
 
   const agents = makeAgents(bare.deps);
+  agents.install("jsonly");
+  await agents.settled();
   const list: RegistryAgent[] = await agents.registry();
+  // A failed install is not this machine having it: Install is still offered.
+  expect(list.find((x) => x.key === "jsonly")?.here).toBe(false);
   expect(list.find((x) => x.key === "jsonly")?.needs).toContain("Node.js");
   expect(list.find((x) => x.key === "pyonly")?.needs).toContain("uv");
 
@@ -582,6 +588,7 @@ test("the registry: read once in its lifetime, a stale copy when offline, a refu
     key: "opencode", name: "OpenCode", line: "The open source coding agent", version: "1.18.32", icon: "https://cdn.invented.example/opencode.svg", via: "npx", here: true, needs: null,
   });
   expect(first.find((x) => x.key === "nochecksum")?.needs).toContain("no checksum");
+  expect(first.find((x) => x.key === "nochecksum")?.here).toBe(false);
   await agents.registry();
   expect(r.fetched.filter((u) => u === REGISTRY_URL).length).toBe(1);
   await agents.settled();
