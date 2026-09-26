@@ -1407,7 +1407,12 @@ export function makeChats(deps: ChatsDeps): Chats {
       apply(c, live, n.update);
     });
     void conn.closed.then((exit) => {
-      const crashed = live.opened && !live.ending;
+      // It went on its own — Biom ended nothing — whether or not its session
+      // had opened. Before it had, this is a failed start, and it is said
+      // HERE: `open()` may hear the request it was waiting on rejected only
+      // after this has run, find the agent gone and say nothing, so a start
+      // left to it could stay `starting` for ever.
+      const crashed = !live.ending;
       live.gone = true;
       if (live.cancelTimer) {
         clearTimeout(live.cancelTimer);
@@ -1422,7 +1427,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       say(`chats: ${c.id}: ${live.harness} ${how}; the last of its stderr:\n${conn.stderr().slice(-1000)}`);
       if (c.phase === "running" || c.phase === "starting") {
         c.held = null;
-        void finishTurn(c, c.turn, "crashed", `${live.harness} stopped in the middle of the turn`);
+        void finishTurn(c, c.turn, "crashed", live.opened ? `${live.harness} stopped in the middle of the turn` : `${live.harness} stopped before it was ready`);
       }
     });
   };

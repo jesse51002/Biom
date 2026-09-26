@@ -515,6 +515,37 @@ only("a crash mid-turn is red with a sentence, stays red until the next turn sta
   expect(ok.agentId).not.toBe(first.agentId);
 });
 
+only("AN AGENT THAT GOES WHILE ITS SESSION OPENS ends the turn red with a sentence, however late its output ends, and the next message starts it again", async () => {
+  // It exits on `session/new` while a child of its group still holds its
+  // stdout, so the exit is seen before the output's end — the order in which
+  // a start was once left `starting` for ever.
+  const w = world({ scenarios: { fake: { session: { exitOn: ["session/new"] } } } });
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  const dead = await settled(w.chats, s.id, 1);
+  expect([dead.stop, dead.light, dead.agentId]).toEqual(["crashed", "error", null]);
+  expect(dead.reason).toBe("Fake Agent stopped before it was ready");
+  expect(w.heard().some((h) => h.method === "session/prompt")).toBe(false);
+  w.scenarios.fake = {};
+  await w.chats.send(s.id, "again");
+  const ok = await settled(w.chats, s.id, 2);
+  expect(ok.stop).toBe("end_turn");
+  expect(prompts(w.heard()).at(-1)?.endsWith("again")).toBe(true);
+});
+
+only("an agent that goes while its session is RESUMED ends the turn red the same way", async () => {
+  const resume = { sessionCapabilities: { resume: {} } };
+  const w = world({ scenarios: { fake: { agentCapabilities: resume } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.close(s.id);
+  w.scenarios.fake = { agentCapabilities: resume, session: { exitOn: ["session/resume"] } };
+  await w.chats.send(s.id, "second");
+  const dead = await settled(w.chats, s.id, 2);
+  expect([dead.stop, dead.light]).toEqual(["crashed", "error"]);
+  expect(dead.reason).toBe("Fake Agent stopped before it was ready");
+  expect(w.heard().filter((h) => h.method === "session/resume").length).toBe(1);
+});
+
 only("green lasts ten minutes and then there is no light", async () => {
   const w = world();
   const s = await w.chats.create({ agent: "fake", text: "hi" });

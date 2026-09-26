@@ -93,6 +93,11 @@ export interface Scenario {
     commands?: unknown[];
     /** What `session/load` replays before it answers. */
     replay?: { user: string; agent: string }[];
+    /** Exit with code 1 instead of answering these — `session/new`,
+     *  `session/resume`, `session/load` — leaving a child in its group that
+     *  holds its stdout a moment longer, as a wrapper's child or a tool it
+     *  started would: so its exit is seen no later than its output's end. */
+    exitOn?: string[];
   };
   /** Refuse `session/prompt` with auth-required on this many first prompts. */
   refusePrompts?: number;
@@ -154,6 +159,14 @@ function run(scenario: Scenario): void {
       waiting.set(id, res);
       out({ jsonrpc: "2.0", id, method, params });
     });
+  };
+
+  /** Exit in the middle of opening a session, where the scenario says to. */
+  const dies = (method: string): boolean => {
+    if (!(scenario.session?.exitOn ?? []).includes(method)) return false;
+    spawn("sleep", ["30"], { stdio: ["ignore", "inherit", "ignore"] });
+    setTimeout(() => process.exit(1), 50);
+    return true;
   };
 
   const opened = (sessionId: string) => {
@@ -297,6 +310,7 @@ function run(scenario: Scenario): void {
       }
       case "session/new": {
         const s = scenario.session ?? {};
+        if (dies(method)) return;
         if (s.refuse || needsAuth() || (s.refuseUnless && !existsSync(s.refuseUnless))) {
           fail(id, -32000, "Authentication required");
           return;
@@ -310,6 +324,7 @@ function run(scenario: Scenario): void {
       case "session/load":
       case "session/resume": {
         const s = scenario.session ?? {};
+        if (dies(method)) return;
         if (needsAuth()) {
           fail(id, -32000, "Authentication required");
           return;
