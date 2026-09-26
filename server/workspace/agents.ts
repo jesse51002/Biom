@@ -170,6 +170,17 @@ export const TIMING: AgentsTiming = {
   signInRun: 60 * 60 * 1000,
 };
 
+/** THE AGENTS THAT WANT `authenticate` IN EVERY PROCESS, even with the person
+ *  signed in: Grok Build needs `cached_token` before a session, Cursor's
+ *  session is unusable until `cursor_login`, and Junie's prompts fail until it
+ *  succeeds (the *Agent sign-in* research, with a source on each row). For
+ *  these, the method that last signed one in is `signedInWith`, and every
+ *  process — a probe's, a chat's — sends it before `session/new`. For EVERY
+ *  OTHER agent `signedInWith` is null and nothing sends `authenticate` unasked,
+ *  because on an agent already signed in it can sign the person out or open a
+ *  browser for nothing. By registry key. */
+export const AUTH_EVERY_PROCESS: ReadonlySet<AgentKey> = new Set(["cursor", "junie", "grok-build"]);
+
 /** What `redeem` answers: the command the sign-in pop-up runs, and whose
  *  sign-in it is. */
 export type SignInLaunch = AgentLaunch & { agent: AgentKey };
@@ -204,7 +215,8 @@ export interface Agents {
   refused(key: AgentKey): void;
   /** The sign-in method that last made this agent's session open, for an
    *  agent that wants `authenticate` in every process before `session/new`
-   *  (Grok Build, Cursor, Junie) — null where none was needed. */
+   *  (`AUTH_EVERY_PROCESS`: Grok Build, Cursor, Junie) — null for every other
+   *  agent, and for one not yet signed in. */
   signedInWith(key: AgentKey): string | null;
   /** Hear the whole list whenever any of it changes. Answers the unsubscribe. */
   on(fn: (agents: AgentInfo[]) => void): () => void;
@@ -461,6 +473,12 @@ export function makeAgents(deps: AgentsDeps): Agents {
       slot.info.options = [];
       slot.info.commands = [];
     }
+  }
+
+  /** The method an agent wants in every process, or null — see
+   *  `AUTH_EVERY_PROCESS`. */
+  function everyProcess(slot: Slot): string | null {
+    return AUTH_EVERY_PROCESS.has(slot.key) ? slot.signedInWith : null;
   }
 
   /** One job at a time per agent, in the order asked. */
@@ -800,7 +818,12 @@ export function makeAgents(deps: AgentsDeps): Agents {
     }
     const afterSignIn = auth !== null || slot.trust;
     slot.trust = false;
-    const verdict = await session(found.launch, found.fetching, auth);
+    // An agent that wants `authenticate` in every process is sent it on a
+    // look as well, with the method that last signed it in — or a look after
+    // a sign-in would find it refusing and put it back to Sign in. That is
+    // not a new sign-in, so it does not lift a refusal a chat heard.
+    const using = auth ?? everyProcess(slot);
+    const verdict = await session(found.launch, found.fetching, using);
     if (closed) return;
     apply(slot, verdict, afterSignIn);
     if (verdict.state === "active") {
@@ -1533,7 +1556,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
     },
 
     signedInWith(key) {
-      return slots.get(key)?.signedInWith ?? null;
+      const slot = slots.get(key);
+      return slot === undefined ? null : everyProcess(slot);
     },
 
     on(fn) {

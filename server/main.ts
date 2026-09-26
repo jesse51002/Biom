@@ -1140,6 +1140,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       agents: () => agents.list(),
       onAgents: (fn) => agents.on(fn),
       refused: (key) => agents.refused(key),
+      // Grok Build, Cursor and Junie: `authenticate` in every process, with
+      // the method that last signed each in. Null for every other agent.
+      signedInWith: (key) => agents.signedInWith(key),
       connect,
       root: path,
       logDir: join(path, BIOM_DIR),

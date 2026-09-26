@@ -89,6 +89,11 @@
 // messages, the replies and the actions' titles, the oldest dropped past a
 // bound.
 //
+// AN AGENT THAT WANTS `authenticate` IN EVERY PROCESS — Grok Build, Cursor,
+// Junie — is sent it, with the method that last signed it in, before its
+// session is opened or reopened; one whose method is refused is a sign-in
+// refusal like any other. No other agent is ever sent `authenticate` here.
+//
 // NO AGENT OUTLIVES ITS CHAT OR THE SERVER: `close` ends a chat's, `endAll`
 // every one with the TERM–grace–KILL ladder, and `killAll` KILLs them all at
 // once for the exit handler.
@@ -182,6 +187,14 @@ export interface ChatsDeps {
   /** A session or a first message was refused with ACP's auth-required error:
    *  A2 marks the agent Inactive with `signin`, and the pop-up offers it. */
   refused: (key: AgentKey) => void;
+  /** THE SIGN-IN METHOD AN AGENT WANTS IN EVERY PROCESS, or null — A2's
+   *  `Agents.signedInWith`. Grok Build, Cursor and Junie refuse a session in
+   *  a process that has not called `authenticate`, even when the person is
+   *  signed in; every other agent answers null here, because `authenticate`
+   *  on an agent already signed in can sign it out or open a browser for
+   *  nothing. Where it is not null, every process a chat starts calls
+   *  `authenticate` with it before opening a session. */
+  signedInWith: (key: AgentKey) => string | null;
   /** Open one ACP connection — `connectAcp` in `server/platform/acp.ts` in the
    *  running server, a scripted fake in a test. */
   connect: (launch: AgentLaunch, cwd: string) => AcpConnection;
@@ -496,6 +509,16 @@ export function makeChats(deps: ChatsDeps): Chats {
       return deps.agents();
     } catch {
       return [];
+    }
+  };
+  /** The method an agent wants `authenticate` with in every process, or
+   *  null — and null where the answer is not one. */
+  const methodFor = (key: AgentKey): string | null => {
+    try {
+      const m = typeof deps.signedInWith === "function" ? deps.signedInWith(key) : null;
+      return typeof m === "string" && m !== "" ? m : null;
+    } catch {
+      return null;
     }
   };
   const infoOf = (key: AgentKey | null): AgentInfo | null => (key === null ? null : agentList().find((a) => a.key === key) ?? null);
@@ -1261,6 +1284,22 @@ export function makeChats(deps: ChatsDeps): Chats {
       if (init.protocolVersion !== ACP_PROTOCOL_VERSION) {
         failStart(c, live, `${live.harness} speaks ACP version ${init.protocolVersion ?? "unknown"}, and Biom speaks ${ACP_PROTOCOL_VERSION}`);
         return false;
+      }
+      // SIGNED IN AGAIN, IN THIS PROCESS, where the agent wants that: the
+      // method that last signed it in, before any session is opened or
+      // reopened. A refusal of it is a sign-in refusal — the method that
+      // worked no longer does — and the message waits for the person.
+      const method = methodFor(live.key);
+      if (method !== null) {
+        try {
+          await conn.request("authenticate", { methodId: method }, { timeoutMs: START_MS });
+        } catch (e) {
+          if (live.gone) return false;
+          if (isClosed(e)) throw e;
+          refusedSignIn(c, live);
+          return false;
+        }
+        if (live.gone) return false;
       }
       await session(c, live, conn, init.resume, init.loadSession);
     } catch (e) {

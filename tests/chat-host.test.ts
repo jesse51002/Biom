@@ -229,3 +229,37 @@ setInterval(() => {}, 1 << 30);
     for (const pid of logged()) if (alive(pid)) process.kill(pid, "SIGKILL");
   }
 }, 60000);
+
+test.if(unix)("A PER-PROCESS SIGN-IN, ASSEMBLED: signed in once as Cursor, a chat's own process authenticates with the same method and its turn ends end_turn", async () => {
+  // The fake under Cursor's command name, refusing a session in any process
+  // that has not called `authenticate` — invented method.
+  const bin = scratch("cursor-bin");
+  const log = join(scratch("cursor-log"), "fake.log");
+  installFakeAgent(bin, {
+    name: "cursor-agent",
+    scenario: { log, authMethods: [{ id: "invented-login", name: "Invented login" }], session: { requireAuthenticate: true } },
+  });
+  const { host, vault } = await stand(bin);
+  try {
+    expect(await until(async () => {
+      const list = value(await call(host, vault, { kind: "agents.list" })) as AgentInfo[];
+      return list.some((a) => a.key === "cursor" && a.reason === "signin");
+    }, 20000)).toBe(true);
+    expect(value(await call(host, vault, { kind: "agents.signIn", agent: "cursor", method: "invented-login" }))).toEqual({ kind: "agent" });
+    expect(await until(async () => {
+      const list = value(await call(host, vault, { kind: "agents.list" })) as AgentInfo[];
+      return list.some((a) => a.key === "cursor" && a.state === "active");
+    }, 20000)).toBe(true);
+    const chat = value(await call(host, vault, { kind: "chat.new", agent: "cursor", text: "Are you signed in?" })) as ChatSummary;
+    const ended = await turnEnded(host, vault, chat.id);
+    expect(ended.stop).toBe("end_turn");
+    // Every process that opened a session called `authenticate` first.
+    const heard = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { method?: string; params?: { methodId?: string } });
+    const auths = heard.filter((h) => h.method === "authenticate");
+    expect(auths.length).toBeGreaterThanOrEqual(2);
+    expect(auths.every((h) => h.params?.methodId === "invented-login")).toBe(true);
+  } finally {
+    host.close();
+    for (const pid of pidsIn(log)) if (alive(pid)) process.kill(pid, "SIGKILL");
+  }
+}, 60000);

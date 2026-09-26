@@ -83,6 +83,10 @@ export interface Scenario {
     refuse?: boolean;
     /** Refuse unless this file exists — a sign-in done elsewhere. */
     refuseUnless?: string;
+    /** Refuse `session/new`, `session/load` and `session/resume` in any
+     *  process that has not called `authenticate` with one of `authMethods`
+     *  — as Grok Build, Cursor and Junie do even when signed in. */
+    requireAuthenticate?: boolean;
     configOptions?: unknown[];
     modes?: unknown;
     /** Sent as `available_commands_update` just after the session opens. */
@@ -131,6 +135,9 @@ function run(scenario: Scenario): void {
   let prompts = 0;
   let cancelled = false;
   let refusedPrompts = 0;
+  /** This process has called `authenticate` with a method it offers. */
+  let authenticated = false;
+  const needsAuth = (): boolean => scenario.session?.requireAuthenticate === true && !authenticated;
   const waiting = new Map<number, (msg: Json) => void>();
 
   const log = (msg: unknown) => {
@@ -278,9 +285,19 @@ function run(scenario: Scenario): void {
         });
         return;
       }
+      case "authenticate": {
+        const offered = (scenario.authMethods ?? []).map((m) => (m as Json).id);
+        if (!offered.includes(params.methodId)) {
+          fail(id, -32602, "the fake offers no sign-in by that name");
+          return;
+        }
+        authenticated = true;
+        reply(id, {});
+        return;
+      }
       case "session/new": {
         const s = scenario.session ?? {};
-        if (s.refuse || (s.refuseUnless && !existsSync(s.refuseUnless))) {
+        if (s.refuse || needsAuth() || (s.refuseUnless && !existsSync(s.refuseUnless))) {
           fail(id, -32000, "Authentication required");
           return;
         }
@@ -293,6 +310,10 @@ function run(scenario: Scenario): void {
       case "session/load":
       case "session/resume": {
         const s = scenario.session ?? {};
+        if (needsAuth()) {
+          fail(id, -32000, "Authentication required");
+          return;
+        }
         const sessionId = String(params.sessionId);
         cwdOf.set(sessionId, typeof params.cwd === "string" ? params.cwd : process.cwd());
         if (method === "session/load") {

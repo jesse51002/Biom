@@ -557,7 +557,10 @@ test("an agent-type sign-in runs authenticate, then believes the session it open
   const signing = m.calls.at(-1) as Call;
   expect(signing.methods).toEqual(["initialize", "authenticate", "session/new"]);
   expect(signing.params.authenticate).toEqual({ methodId: "browser" });
-  expect(m.agents.signedInWith("gemini")).toBe("browser");
+  // Gemini keeps its sign-in between processes, so nothing sends it
+  // `authenticate` unasked: only an agent that wants it in every process has
+  // a method here.
+  expect(m.agents.signedInWith("gemini")).toBeNull();
   // Now Active, it is not waiting to be signed in, and asking again is refused
   // rather than risking signing the person out.
   await expect(m.agents.signIn("gemini", "browser")).rejects.toThrow("not waiting to be signed in");
@@ -757,4 +760,48 @@ test("nothing the client is handed carries the login environment", async () => {
   const handed = JSON.stringify({ list: m.agents.list(), heard: m.heard, s });
   expect(handed).not.toContain(SECRET);
   expect(handed).not.toContain("/home/someone");
+});
+
+test("AN AGENT THAT WANTS AUTHENTICATE IN EVERY PROCESS keeps the method that signed it in, and a later look sends it too — without lifting a chat's refusal", async () => {
+  // Cursor refuses a session in any process that has not called
+  // `authenticate`, even signed in: every process has to, the probe's too.
+  let signedOnce = false;
+  const perProcess = (): Script => {
+    let here = false;
+    return {
+      initialize: () => ({ protocolVersion: 1, authMethods: [{ id: "cursor_login", name: "Log in" }] }),
+      authenticate: () => {
+        here = true;
+        signedOnce = true;
+        return {};
+      },
+      "session/new": () => {
+        if (!here) throw acpError(-32000, "Authentication required");
+        return { sessionId: "s-c" };
+      },
+    };
+  };
+  const m = machine({ bins: { "cursor-agent": "/invented/bin/cursor-agent" }, script: () => perProcess() });
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "cursor")?.reason).toBe("signin");
+  expect(m.agents.signedInWith("cursor")).toBeNull();
+  expect(await m.agents.signIn("cursor", "cursor_login")).toEqual({ kind: "agent" });
+  await m.agents.settled();
+  expect(signedOnce).toBe(true);
+  expect(byKey(m.agents.list(), "cursor")?.state).toBe("active");
+  expect(m.agents.signedInWith("cursor")).toBe("cursor_login");
+
+  // A look after it is a new process, and it signs in again before its session.
+  m.agents.probe("cursor");
+  await m.agents.settled();
+  expect(m.calls.at(-1)!.methods).toEqual(["initialize", "authenticate", "session/new"]);
+  expect(byKey(m.agents.list(), "cursor")?.state).toBe("active");
+
+  // A chat that was refused anyway stays refused through such a look.
+  m.agents.refused("cursor");
+  await m.agents.settled();
+  m.agents.probe("cursor");
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "cursor")?.reason).toBe("signin");
 });

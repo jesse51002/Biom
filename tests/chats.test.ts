@@ -54,7 +54,13 @@ afterEach(async () => {
 });
 
 /** A vault, a fake agent per key, and the chats over them. */
-function world(opts: { root?: string; agents?: AgentInfo[]; scenarios?: Record<string, Scenario> } = {}) {
+function world(opts: {
+  root?: string;
+  agents?: AgentInfo[];
+  scenarios?: Record<string, Scenario>;
+  /** The sign-in method an agent wants in every process, by key. */
+  signedInWith?: (key: string) => string | null;
+} = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
   const scenarios: Record<string, Scenario> = opts.scenarios ?? { fake: {} };
@@ -81,6 +87,7 @@ function world(opts: { root?: string; agents?: AgentInfo[]; scenarios?: Record<s
         return () => void hear.delete(fn);
       },
       refused: (key) => void refused.push(key),
+      signedInWith: opts.signedInWith ?? (() => null),
       connect: (launch, cwd) => connectAcp(launch, cwd, undefined, { log: () => {}, graceMs: 500 }),
       root,
       logDir: join(root, ".biom"),
@@ -803,4 +810,42 @@ only("a tool line updated many times is one line in memory, and the log is rewri
   const again = w.make();
   await again.loaded;
   expect((await again.read(s.id)).updates).toEqual(updates);
+});
+
+/* ── an agent that wants `authenticate` in every process (O14) ─────────── */
+
+only("AN AGENT THAT WANTS AUTHENTICATE IN EVERY PROCESS is authenticated before its session, with the method that signed it in, and its chat works", async () => {
+  // Grok Build, Cursor and Junie refuse a session in any process that has not
+  // called `authenticate`, even when the person is signed in. Invented method.
+  const w = world({
+    scenarios: { fake: { authMethods: [{ id: "invented-account", name: "Invented account" }], session: { requireAuthenticate: true } } },
+    signedInWith: (key) => (key === "fake" ? "invented-account" : null),
+  });
+  const made = await w.chats.create({ agent: "fake", text: "Are you there?" });
+  const done = await settled(w.chats, made.id, 1);
+  expect([done.stop, done.light]).toEqual(["end_turn", "done"]);
+  expect(replyOf((await w.chats.read(made.id)).updates, 1)).toContain("echo: Are you there?");
+  const methods = w.heard().map((h) => h.method).filter((m) => typeof m === "string");
+  expect(methods.slice(0, 3)).toEqual(["initialize", "authenticate", "session/new"]);
+  expect((w.heard().find((h) => h.method === "authenticate")!.params as { methodId: string }).methodId).toBe("invented-account");
+  expect(w.refused).toEqual([]);
+});
+
+only("an agent that needs no authenticate is never sent one: a chat does not risk signing the person out", async () => {
+  const w = world();
+  const made = await w.chats.create({ agent: "fake", text: "Hello." });
+  await settled(w.chats, made.id, 1);
+  expect(w.heard().some((h) => h.method === "authenticate")).toBe(false);
+});
+
+only("an authenticate the agent refuses is a sign-in refusal, and the message waits for the person to sign in", async () => {
+  const w = world({
+    scenarios: { fake: { authMethods: [{ id: "invented-account", name: "Invented account" }], session: { requireAuthenticate: true } } },
+    // A method the agent does not offer any more.
+    signedInWith: () => "a-method-it-dropped",
+  });
+  const made = await w.chats.create({ agent: "fake", text: "Hello." });
+  await until("the sign-in refusal", 15_000, () => w.refused.length > 0);
+  expect(w.refused).toEqual(["fake"]);
+  expect(summaryOf(w.chats, made.id).phase).toBe("held");
 });
