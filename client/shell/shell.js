@@ -1280,6 +1280,12 @@ export function makeShell(deps) {
   function syncHash() {
     if (typeof window === "undefined" || !window.location) return;
     const want = hashOf(ui.get().route);
+    // ONLY A ROUTE THAT MOVED IS WRITTEN. The browser moves the hash itself on
+    // Back and announces it a task later; a repaint landing in between — a
+    // stream event, a store write — would otherwise see the hash and the route
+    // differ and write the old route back over the person's Back.
+    if (want === written) return;
+    written = want;
     if (window.location.hash === want) return;
     const history = window.history;
     if (ui.cause().replace && history && typeof history.replaceState === "function") {
@@ -1288,6 +1294,9 @@ export function makeShell(deps) {
       window.location.hash = want;
     }
   }
+
+  /** The hash this shell last wrote, or took from the browser. @type {string | null} */
+  let written = null;
 
   return {
     /**
@@ -1397,7 +1406,17 @@ export function makeShell(deps) {
         // already holds, so the comparison makes that direction a no-op.
         window.addEventListener("hashchange", () => {
           const route = parseHash(window.location.hash);
-          if (!sameAddress(route, ui.get().route)) ui.open(route.view, route.id, route.screen);
+          if (sameAddress(route, ui.get().route)) return;
+          // The browser already holds this entry, so its spelling is put
+          // right IN it — a hash typed with its slashes left in is the same
+          // address — rather than pushed as a second entry after it.
+          const want = hashOf(route);
+          written = want;
+          const history = window.history;
+          if (window.location.hash !== want && history && typeof history.replaceState === "function") {
+            history.replaceState(history.state, "", want);
+          }
+          ui.open(route.view, route.id, route.screen);
         });
       }
 

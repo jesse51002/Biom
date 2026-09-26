@@ -2931,3 +2931,45 @@ test("the Go back to view names the person's work, keeps its button until the na
   back = null;
   expect(draw()).toBe(null);
 });
+
+test("NO HASH LOOP: a repaint between the browser's Back and its hashchange never writes the old route back, and a typed hash is put right in its own entry", async () => {
+  /** @type {Function | null} */
+  let onHash = null;
+  /** @type {string[]} */
+  const replaced = [];
+  /** @type {string[]} */
+  const assigned = [];
+  const g = harness(DOC, { view: "page", id: "notes" });
+  const location = {
+    _hash: "#/page/notes",
+    get hash() { return this._hash; },
+    set hash(v) { assigned.push(v); this._hash = v; },
+  };
+  globalThis.window = {
+    addEventListener(/** @type {string} */ name, /** @type {Function} */ fn) { if (name === "hashchange") onHash = fn; },
+    removeEventListener() {},
+    location,
+    history: { state: null, replaceState: (/** @type {any} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => { replaced.push(url); location._hash = url; } },
+  };
+  g.shell.mount(element("div"));
+  g.ui.open("page", "board");
+  expect(assigned).toEqual(["#/page/board"]);
+
+  // BACK: the browser moves the hash, and a store write repaints before the
+  // hashchange task runs.
+  location._hash = "#/page/notes";
+  g.ws.emit();
+  expect(assigned).toEqual(["#/page/board"]);
+  onHash?.();
+  expect(g.ui.get().route.id).toBe("notes");
+  expect(moverOf(g.ui)).toBe("you");
+  expect(assigned).toEqual(["#/page/board"]);
+
+  // A HASH TYPED WITH ITS SLASHES LEFT IN is the same address in another
+  // spelling: put right where it is, and no second entry pushed after it.
+  location._hash = "#/page/home/Notes";
+  onHash?.();
+  expect(g.ui.get().route.id).toBe("home/Notes");
+  expect(replaced).toEqual(["#/page/home%2FNotes"]);
+  expect(assigned).toEqual(["#/page/board"]);
+});

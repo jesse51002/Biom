@@ -57,7 +57,8 @@ import { isHistoryEntry } from "../transport/chat.js";
  * @property {() => readonly Received[]} get Every entry held, `seq` ascending.
  * @property {() => number} head The `seq` through which nothing is missing.
  * @property {(fn: (added: readonly Received[]) => void) => () => void} on
- *   Hear what was taken: the new entries, or after a catch-up every entry.
+ *   Hear what was taken, each entry once: a batch, a report's answer, or what
+ *   a catch-up read back. An empty batch says the reports in flight changed.
  * @property {(entries: readonly HistoryEntry[], live?: boolean) => void} take
  *   A batch off the stream (`live`), or entries read back.
  * @property {() => Promise<void>} catchUp Read the whole history again.
@@ -223,11 +224,14 @@ export function makeHistoryStore(deps) {
         held = [];
         seqs = new Set();
         head = got.head;
-        absorb(got.entries, false);
+        const readBack = absorb(got.entries, false);
         for (const r of kept) if (r.entry.seq > got.head) insert(r);
         head = got.head;
         settle();
-        tell(held.slice());
+        // WHAT THE READ BROUGHT, and not what the stream brought while it
+        // read: those were told when they came, live, and telling them again
+        // would have the switcher follow one write twice.
+        tell(readBack);
       } while (again);
     })().finally(() => { reading = null; });
     return reading;

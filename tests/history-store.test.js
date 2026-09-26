@@ -201,3 +201,16 @@ test("a window keeps no more than its limit, oldest out first", () => {
   expect(history.get().map((r) => r.entry.seq)).toEqual([3, 4, 5]);
   expect(history.head()).toBe(5);
 });
+
+test("a catch-up tells what it read back, and never again what the stream told while it read", async () => {
+  const transport = fakeTransport();
+  const history = makeHistoryStore({ transport, now: () => 0 });
+  /** @type {[number, boolean][][]} */
+  const heard = [];
+  history.on((added) => heard.push(added.map((r) => [r.entry.seq, r.live])));
+  const caught = history.catchUp();
+  history.take([edit(3)], true);
+  transport.calls[0]?.answer({ entries: [view(1), view(2)], head: 2 });
+  await caught;
+  expect(heard).toEqual([[[3, true]], [[1, false], [2, false]]]);
+});
