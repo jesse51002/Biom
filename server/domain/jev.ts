@@ -293,6 +293,7 @@ export function makeJev(deps: JevDeps): Jev {
   const attemptMs = deps.attemptMs ?? ATTEMPT_MS;
   const url = usableEndpoint(deps.endpoint);
   let saidEndpoint = false;
+  let saidKey = false;
   /** The key the API refused, held so the same key is not sent again. It is
    *  compared and never printed. */
   let refusedKey: string | null = null;
@@ -308,6 +309,16 @@ export function makeJev(deps: JevDeps): Jev {
     const raw = deps.key();
     const key = raw ? raw.trim() : "";
     if (!key) return { ok: false, off: true };
+    // A key is one word of printable ASCII. Anything else — a pasted newline,
+    // a space, a quote — is refused by the header before it is sent, and
+    // would be retried as an outage; it is Jev off, said once.
+    if (!/^[\x21-\x7e]+$/.test(key)) {
+      if (!saidKey) {
+        saidKey = true;
+        say(`jev: ${JEV_KEY_VAR} is not one word of printable characters, so Jev is off`, key);
+      }
+      return { ok: false, off: true };
+    }
     if (url === null) {
       if (!saidEndpoint) {
         saidEndpoint = true;
@@ -676,7 +687,7 @@ export function makeJevStatus(deps: JevStatusDeps): JevStatus {
         t.emoji = answer.emoji;
         put(moment.chat, moment.turn, answer);
       },
-      () => {},
+      (err) => log(`jev: an ask failed (${err instanceof Error ? err.name : "error"})`),
     );
   };
 
@@ -719,7 +730,7 @@ export function makeJevStatus(deps: JevStatusDeps): JevStatus {
         (face) => {
           if (face !== null && chats.get(chat) === rec) put(chat, null, face);
         },
-        () => {},
+        (err) => log(`jev: naming a chat failed (${err instanceof Error ? err.name : "error"})`),
       );
     },
     close,

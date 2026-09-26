@@ -154,6 +154,19 @@ test("NO KEY, NO CALL: Jev is off, and says so by answering null", async () => {
   }
 });
 
+test("a key that is not one word of printable characters is Jev off, said once, never sent", async () => {
+  for (const key of [`${KEY}\nX-Injected: 1`, "tsk INVENTED", "tsk-INVENTED-é"]) {
+    const net = fakeFetch(answer("weighing"));
+    const { jev, logs, waits } = jevWith(net.fetch, { key: () => key });
+    expect(await jev.classifyTurn("state")).toBeNull();
+    expect(await jev.nameFace("a name")).toBeNull();
+    expect(net.calls.length).toBe(0);
+    expect(waits).toEqual([]);
+    expect(logs.length).toBe(1);
+    expect(logs[0]).not.toContain(key.trim());
+  }
+});
+
 test("an empty state or name asks nothing", async () => {
   const net = fakeFetch(answer("weighing"));
   const { jev } = jevWith(net.fetch);
@@ -713,6 +726,23 @@ test("stop closes every chat", () => {
   status.stop();
   expect(clock.pending).toBe(0);
   expect(asks.every((a) => a.signal.aborted)).toBe(true);
+});
+
+test("an ask that rejects is said, by the error's name only", async () => {
+  const clock = fakeClock();
+  const logs: string[] = [];
+  const failing = {
+    classifyTurn: () => Promise.reject(new Error(`failed with ${KEY}`)),
+    nameFace: () => Promise.reject(new Error(`failed with ${KEY}`)),
+  };
+  const status = makeJevStatus({ jev: failing as never, clock, face: () => {}, log: (line) => logs.push(line) });
+  status.named("c1", "a name");
+  status.signal(start());
+  status.signal(thought("a"));
+  status.signal(end());
+  await flush();
+  expect(logs.length).toBe(2);
+  for (const line of logs) expect(line).not.toContain(KEY);
 });
 
 test("the name is asked once, whatever repeats it", async () => {
