@@ -55,8 +55,24 @@
 // what let a copy drift. Nothing serves the mirror, nothing resolves a page
 // against it, and a file edited there is gone on the next open. `docs/` is
 // not a watched directory, so writing it redraws nothing.
+//
+// THE HARNESSES' OWN NAMES FOR THE GUIDE AND THE SKILLS are kept at the root
+// too, because a chat's agent starts there (*Chat*, `skills`): `CLAUDE.md` a
+// link to `AGENTS.md` and `.claude/skills` a link to `.agents/skills` for Claude
+// Code, which reads only its own names, and `.gemini/settings.json` naming
+// `AGENTS.md` for Gemini CLI. Codex and OpenCode read `AGENTS.md` as it is.
+// UNLIKE EVERYTHING ABOVE, THESE ARE NEVER WRITTEN OVER: each is made only
+// where nothing stands, and a file, a folder or a link the person made under
+// one of those names — their own `CLAUDE.md`, their own `.claude/skills/` — is
+// left exactly where it is and reported, as is a `.claude` or `.gemini` that is
+// itself a link, which would carry the write out of the vault. What is made is
+// committed with the framework's other writes, the way `AGENTS.md` is.
+
+import { lstatSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import type { FileEntry, Files } from "../../contracts/types.ts";
+import type { RunFs } from "../platform/rundir.ts";
 
 /* ── the skills ─────────────────────────────────────────────────────────── */
 
@@ -281,4 +297,113 @@ async function ignoreMirror(vault: Files): Promise<void> {
   if (missing.length === 0) return;
   const joined = had === "" || had.endsWith("\n") ? had : had + "\n";
   await vault.write(".gitignore", `${joined}${missing.join("\n")}\n`);
+}
+
+/* ── the harnesses' names ───────────────────────────────────────────────── */
+
+/** Claude Code's name for the guide: a link to `AGENTS.md`. */
+export const CLAUDE_GUIDE = "CLAUDE.md";
+/** Claude Code's folder of skills: a link to `.agents/skills`. */
+export const CLAUDE_SKILLS = ".claude/skills";
+/** Gemini CLI's settings, naming the guide it reads. */
+export const GEMINI_SETTINGS = ".gemini/settings.json";
+export const GEMINI_SETTINGS_TEXT = JSON.stringify({ context: { fileName: [AGENTS] } }, null, 2) + "\n";
+
+/** What `keepHarness` did: made, left because it is the person's (or stands
+ *  under a folder that is a link), and could not make — each vault-relative. */
+export interface HarnessResult {
+  wrote: string[];
+  left: string[];
+  failed: string[];
+}
+
+type Stat = NonNullable<ReturnType<typeof lstatSync>> | null;
+const lstat = (abs: string): Stat => {
+  try {
+    return lstatSync(abs) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/** KEEP THE HARNESSES' NAMES AT THE VAULT'S ROOT: make each where nothing
+ *  stands, leave whatever does. Idempotent — a second call makes nothing —
+ *  and never throws. `fs` is the vault root's, and its `link` is the one
+ *  that makes a junction on Windows, where a link to a folder has to name it
+ *  absolutely; everywhere else a link names its target relatively, so the
+ *  vault can move and be cloned. */
+export function keepHarness(fs: RunFs, platform: string = process.platform): HarnessResult {
+  const root = resolve(fs.root);
+  const out: HarnessResult = { wrote: [], left: [], failed: [] };
+
+  /** Is every folder above `rel` a real folder, or not there yet? A link in
+   *  the way is the person's, and what it leads to is not the vault. */
+  const clear = (rel: string): boolean => {
+    const parts = rel.split("/").slice(0, -1);
+    let at = "";
+    for (const seg of parts) {
+      at = at === "" ? seg : `${at}/${seg}`;
+      const st = lstat(join(root, at));
+      if (st === null) return true;
+      if (st.isSymbolicLink() || !st.isDirectory()) {
+        out.left.push(at);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const link = (rel: string, relTarget: string): void => {
+    if (!clear(rel)) return;
+    const abs = join(root, rel);
+    const wanted = resolve(join(root, rel, ".."), relTarget);
+    const st = lstat(abs);
+    if (st !== null) {
+      if (st.isSymbolicLink()) {
+        let to: string | null = null;
+        try {
+          to = readlinkSync(abs);
+        } catch {
+          to = null;
+        }
+        // Ours, spelled either way: nothing to do.
+        if (to !== null && (to === relTarget || resolve(join(root, rel, ".."), to) === wanted)) return;
+      }
+      out.left.push(rel);
+      return;
+    }
+    try {
+      fs.link(platform === "win32" ? wanted : relTarget, abs);
+      out.wrote.push(rel);
+    } catch {
+      out.failed.push(rel);
+    }
+  };
+
+  link(CLAUDE_GUIDE, AGENTS);
+  link(CLAUDE_SKILLS, `../${SKILLS_DIR}`);
+
+  if (clear(GEMINI_SETTINGS)) {
+    const abs = join(root, GEMINI_SETTINGS);
+    const st = lstat(abs);
+    if (st === null) {
+      try {
+        fs.mkdir(join(root, ".gemini"));
+        // Exclusive: a file that appeared since the look above is not written over.
+        writeFileSync(abs, GEMINI_SETTINGS_TEXT, { flag: "wx" });
+        out.wrote.push(GEMINI_SETTINGS);
+      } catch {
+        out.failed.push(GEMINI_SETTINGS);
+      }
+    } else {
+      let same = false;
+      try {
+        same = st.isFile() && readFileSync(abs, "utf8") === GEMINI_SETTINGS_TEXT;
+      } catch {
+        same = false;
+      }
+      if (!same) out.left.push(GEMINI_SETTINGS);
+    }
+  }
+  return out;
 }
