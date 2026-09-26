@@ -14,6 +14,7 @@ import {
 } from "../server/platform/acp.ts";
 import type { AcpExit, AcpProcess } from "../server/platform/acp.ts";
 import { initializeParams } from "../server/platform/acp-wire.ts";
+import { installFakeAgent } from "./fake-acp-agent.ts";
 import type { Scenario } from "./fake-acp-agent.ts";
 
 const POSIX = process.platform !== "win32";
@@ -344,4 +345,16 @@ test("a command that is not there is a connection already closed, never a throw"
   const exit = await conn.closed;
   expect(exit.code).toBeNull();
   expect(lines.some((l) => l.includes("could not be started"))).toBe(true);
+});
+
+only("the fake installs onto a PATH under an agent's command name and answers there, scenario and all", async () => {
+  const bin = mkdtempSync(join(tmpdir(), "biom-bin-"));
+  const log = join(bin, "heard.jsonl");
+  const path = installFakeAgent(bin, { scenario: { log, agentInfo: { name: "installed-fake", version: "9.9.9" } } });
+  expect(path).toBe(join(bin, "claude-agent-acp"));
+  const conn = connectAcp({ command: "claude-agent-acp", args: [], env: { ...(process.env as Record<string, string>), PATH: `${bin}:${process.env.PATH ?? ""}` } }, bin);
+  const init = (await conn.request("initialize", initializeParams(), { timeoutMs: 10_000 })) as { agentInfo: { name: string } };
+  expect(init.agentInfo.name).toBe("installed-fake");
+  await conn.close();
+  expect(readFileSync(log, "utf8")).toContain('"method":"initialize"');
 });
