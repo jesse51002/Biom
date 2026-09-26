@@ -13,9 +13,12 @@
  * NO COLOUR IS WRITTEN HERE. The mockup's `:root` block of hex is not copied:
  * every colour is a token the shim re-declares in the box, or a `color-mix` of
  * two. The LED tokens are the Dot matrix palette's — `--led`, `--led-red`,
- * `--led-green`, `--dot-off` — and a palette without them falls back to the
- * nearest token every palette has, each fallback named once below as a `--l-`
- * property so it is one line to change. The type is the theme's three roles:
+ * `--led-green`, `--dot-off` — and the palette every workspace is seeded with
+ * carries them too, and the server fills them into a workspace's theme where
+ * its `theme.json` names none, so a verdict is red or green everywhere. The
+ * fallback to the nearest token every palette has is for a box handed a theme
+ * some other way, each named once below as a `--l-` property so it is one line
+ * to change. The type is the theme's three roles:
  * the mockup's system face is the sheet face here, because the box has no
  * face of that role and the sheet face is the one meant for reading.
  *

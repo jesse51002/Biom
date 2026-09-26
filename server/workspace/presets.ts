@@ -204,6 +204,9 @@ const BRAND: Palette = {
     // rather than assumed to be white: the darkest paper here, because both
     // fills are light. A palette with dark accents names its lightest instead.
     onSpot: "#16181B",
+    // The lamps — amber for what is lit, red and green only as a verdict. The
+    // client's copy says why each is the value it is.
+    led: "#FFB020", ledRed: "#FF4A3D", ledGreen: "#5BE37D", dotOff: "#23262B",
   },
   extra: [
     { name: "Warning", value: "#FF7A2F" },
