@@ -2701,6 +2701,21 @@ const IDLE = 255;
  *  redraw it asks for. */
 export const GATHER_MS = 30;
 
+/** THE MOST ONE STREAM WRITES BEFORE IT IS CLOSED: 32 MB since it opened.
+ *
+ *  Bun gives a streamed response NO BACKPRESSURE: a reader that has stopped
+ *  reading — a tab frozen, a window on a machine asleep — has everything
+ *  written to it buffered in this process without bound, and neither the
+ *  controller's `desiredSize` nor a direct stream's `flush` says so (measured
+ *  on Bun 1.3.13: 27 MB a second to a paused reader, and every write taken).
+ *  What this stream has written is the one thing it can count. So at this
+ *  bound it is closed: the client's `EventSource` reconnects, and rereads —
+ *  `history.read`, `chat.read`, `agents.list`, its context reported again —
+ *  which the stream's protocol requires after any reopen anyway. A live tab
+ *  pays a reconnect per 32 MB of chat, which is a great deal of chat; a dead
+ *  one costs the server at most this. */
+export const STREAM_MAX_BYTES = 32 * 1024 * 1024;
+
 /** One named event, as the stream writes it. JSON has no raw line break in
  *  it, so one `data:` line is the whole of the payload. */
 const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -2745,11 +2760,17 @@ export function gatherPush(had: ChatPush | undefined, push: ChatPush): ChatPush 
  *  when it goes, the gathered words with it, and one that arrives after is
  *  dropped at the door.
  *
+ *  AND NO STREAM WRITES MORE THAN `limit` — `STREAM_MAX_BYTES` — before it is
+ *  closed and the client reconnects, because a reader that stopped reading is
+ *  one this process cannot see.
+ *
  *  Exported for the tests that pin the cancel-before-the-watch-resolves
  *  ordering and the gathering. Nothing else calls it; the route in `fetch`
  *  does. */
-export function events(host: Host, path: string, window: WindowId | null = null): Response {
+export function events(host: Host, path: string, window: WindowId | null = null, limit: number = STREAM_MAX_BYTES): Response {
   const bytes = new TextEncoder();
+  /** What this stream has written since it opened, in bytes. */
+  let written = 0;
   let release: (() => void) | null = null;
   let beat: ReturnType<typeof setInterval> | null = null;
   let gather: ReturnType<typeof setTimeout> | null = null;
@@ -2778,12 +2799,25 @@ export function events(host: Host, path: string, window: WindowId | null = null)
     async start(controller: ReadableStreamDefaultController<Uint8Array>) {
       const send = (text: string): void => {
         if (shut) return;
+        const chunk = bytes.encode(text);
         try {
-          controller.enqueue(bytes.encode(text));
+          controller.enqueue(chunk);
         } catch {
           // The tab went away between the notification and the write. `cancel`
           // is what releases the watch; this is only the frame that missed.
           stop();
+          return;
+        }
+        written += chunk.byteLength;
+        // AT THE BOUND, CLOSED — after the write that crossed it, so every
+        // frame that went out is whole. See `STREAM_MAX_BYTES`.
+        if (written >= limit) {
+          stop();
+          try {
+            controller.close();
+          } catch {
+            /* the tab had already gone */
+          }
         }
       };
       /** Everything gathered, in one write. */

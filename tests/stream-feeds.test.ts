@@ -14,7 +14,7 @@
 
 import { test, expect } from "bun:test";
 
-import { GATHER_MS, events, gatherPush } from "../server/main.ts";
+import { GATHER_MS, STREAM_MAX_BYTES, events, gatherPush } from "../server/main.ts";
 import type { Host } from "../server/main.ts";
 import { STREAM } from "../contracts/wire.js";
 import type { AgentInfo, ChatPush, ChatSummary, ChatUpdate, HistoryEntry } from "../contracts/types.ts";
@@ -216,4 +216,53 @@ test("A TAB THAT GOES WHILE THE MODULES ARE BEING FETCHED leaves nothing subscri
   expect(f.unwatched()).toBe(1);
   expect([f.history.count(), f.chats.count(), f.agents.count()]).toEqual([0, 0, 0]);
   expect(f.attached).toEqual([]);
+});
+
+/* ── the bound on one stream (O18) ────────────────────────────────────── */
+
+test("A STREAM THAT HAS WRITTEN 32 MB IS CLOSED — every subscription let go, every frame whole — so a reader that stopped reading costs the server no more than that", async () => {
+  // Bun buffers a streamed response without bound for a reader that has
+  // stopped reading, and says nothing of it; the bound is on what this stream
+  // has written since it opened. The client reconnects and rereads.
+  expect(STREAM_MAX_BYTES).toBe(32 * 1024 * 1024);
+  const f = fakeHost();
+  const s = reading(events(f.host, "/vault", WINDOW).body!);
+  expect(await until(() => s.text().includes(": open"))).toBe(true);
+  const mb = "m".repeat(1024 * 1024);
+  let seq = 0;
+  for (let i = 0; i < 40 && !s.done(); i++) {
+    for (let j = 0; j < 4; j++) f.chats.say({ chat: summary(CHAT), updates: [reply(++seq, mb)] });
+    await Bun.sleep(GATHER_MS * 2);
+  }
+  expect(await until(() => s.done(), 5000)).toBe(true);
+  expect([f.history.count(), f.chats.count(), f.agents.count()]).toEqual([0, 0, 0]);
+  expect(f.detached).toEqual([WINDOW]);
+  // Past the bound by at most the one write that crossed it, and every frame
+  // that went out is whole.
+  const written = new TextEncoder().encode(s.text()).byteLength;
+  expect(written).toBeGreaterThanOrEqual(STREAM_MAX_BYTES);
+  expect(written).toBeLessThan(STREAM_MAX_BYTES + 8 * 1024 * 1024);
+  expect(s.frames().every((x) => x.event === STREAM.CHAT)).toBe(true);
+});
+
+test("a stream under its bound stays open, and one told a smaller bound closes at that one", async () => {
+  const f = fakeHost();
+  const s = reading(events(f.host, "/vault", WINDOW).body!);
+  expect(await until(() => s.text().includes(": open"))).toBe(true);
+  for (let i = 1; i <= 20; i++) f.chats.say({ chat: summary(CHAT), updates: [reply(i, "k".repeat(50_000))] });
+  await Bun.sleep(GATHER_MS * 4);
+  expect(s.frames().length).toBeGreaterThan(0);
+  expect(s.done()).toBe(false);
+  expect(f.chats.count()).toBe(1);
+  await s.cancel();
+
+  const g = fakeHost();
+  const small = reading(events(g.host, "/vault", null, 64 * 1024).body!);
+  expect(await until(() => small.text().includes(": open"))).toBe(true);
+  for (let i = 1; i <= 20 && !small.done(); i++) {
+    g.chats.say({ chat: summary(CHAT), updates: [reply(i, "k".repeat(10_000))] });
+    await Bun.sleep(GATHER_MS * 2);
+  }
+  expect(await until(() => small.done(), 3000)).toBe(true);
+  expect(g.chats.count()).toBe(0);
 });
