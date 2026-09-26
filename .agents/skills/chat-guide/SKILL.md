@@ -15,9 +15,13 @@ description: >-
   route, the live stream's `chat` and `agents` events and their bounds, the
   gate that answers them only to this machine's own window, and the split
   between the Agent screen's look in the box and the input box in the host.
-  Load this whenever you touch any of those files, the agent wiring in
-  `server/main.ts`, `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/`
-  or `tests/fake-acp-agent.ts`. Trigger on "ACP", "agent client protocol",
+  and the host side — the window's copy of the chats (`client/store/chats.js`),
+  the one box on the full screen and in the panel (`client/views/agent.js`),
+  Biom's own input box (`agent-input.js`) and More agents, More models and
+  sign-in (`agent-dialogs.js`). Load this whenever you touch any of those
+  files, the agent wiring in `server/main.ts` or `client/boot.js`,
+  `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/` or
+  `tests/fake-acp-agent.ts`. Trigger on "ACP", "agent client protocol",
   "chat", "agent", "probe", "sign in", "authenticate", "ticket", "registry",
   "install an agent", "checksum", "login env", "TYPESAFE_API_KEY", "Jev",
   "face", "held message", "Stop", "light", "kept log", "jsonl", "reap",
@@ -59,7 +63,10 @@ It owns the conversation. It does **not** own:
 | the route | `server/api/routes.ts` (4) | each `agents.*` and `chat.*` kind, narrowed by `isChatRequest`, one module call each |
 | the root | `server/main.ts` (5) | per server: the login environment, Jev, every connection, the idle timer; per folder: the agents, the chats, Jev's schedule; the gate, the stream, the exit |
 | the look | `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/` | the Agent screen as drawn in its box |
-| the host side | `client/store/chats.js`, `client/views/agent.js` | the input box, and everything that says `chat.*` or `agents.*` |
+| the window's copy | `client/store/chats.js` (9) | the list, the agents, the open chat's stream folded; every `chat.*` and `agents.*` the host says |
+| the Agent screen | `client/views/agent.js` (14) | the one box, on the full screen and in the panel; what the look is posted; the answer to the look |
+| the input box | `client/views/agent-input.js` (14) | the text area, the pickers, Send and Stop, the / menu, Go to page |
+| the pop-ups | `client/views/agent-dialogs.js` (14) | More agents, More models, sign-in, Start Gateway, Install |
 
 ACP's own messages are the server's and are in **no contract**: they live
 beside `acp.ts`, and what reaches a client is Biom's own `ChatSummary`,
@@ -395,13 +402,83 @@ a press, a diff and an output bounded where they are drawn.
 **What the look may say is five things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed — each strictly guarded, ids and words from
-a closed list — and `open` for a page a turn changed, which the bridge honours
-only just after the person's click. **The input box is Biom's, in the host,
-over the box**, so only what the person types there ever reaches an agent: the
-one line of the eleventh contracts edit that may never move, which
-`boundary-guide` states in full.
+a closed list — and `open` for a page a turn changed. **Every one is honoured
+only just after a touch from that same box**, as any box's `open` is: the four
+`look.*` kinds move what is on screen or redraw the look whole, so a look on a
+loop can do none of them. The bridge refuses the four `identity` unless the
+asking box is on `@agent` and the Agent screen has registered its answer
+(`answerLook`), and the answer refuses every box but the one it mounted, by the
+identity of that box's context. A page opened from the look comes up with the
+chat in the panel beside it. **The input box is Biom's, in the host, over the
+box**, so only what the person types there ever reaches an agent: the one line
+of the eleventh contracts edit that may never move, which `boundary-guide`
+states in full.
 
-## 12. What is deliberately not built
+## 12. The host side: one box, and Biom's input box over it
+
+**The window's copy of the chats, `client/store/chats.js`**, is the list of
+chats — a union, because a chat is never deleted — what agents this machine
+has, and **only the open chat's stream**, folded by the contract's rule and
+held small: a tool line replaced where it first stood, a reply or a thought
+arriving a few characters at a time held as one update per run, and a
+`config`, `commands`, `usage` or `plan` kept as the last of each. A chat in the
+background is its summary. **Nothing is replayed**, so `resync` runs on every
+open of the stream and reads the list, the agents and the open chat from the
+highest `seq` held, with what the stream brings meanwhile folded after it;
+`epoch` moves whenever a chat's stream is read from the start, which is how the
+view knows to hand the look that chat whole again. `lastSent(chat)` is when THIS
+window last sent in that chat, by its own clock — the switcher's `lastSent`.
+**Which chat a window has open is the ui store's `chat`**, kept with `panel` per
+folder for the session in `sessionStorage` by `client/boot.js`, and an address
+of `#/agent/<chat>` wins over it.
+
+**One box serves the full screen and the panel, and it is never moved**, because
+moving an iframe reloads it. `client/views/agent.js` builds ONE element, the
+slot, which the shell puts in the bed beside the canvas once; its three shapes —
+the whole screen on `#/agent`, the panel beside whatever else is on screen
+while `panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps
+running. The box is
+mounted under `LOOK_KEY`, `@agent:screen` — not `@agent` itself, so a page
+routed to `#/page/@agent` is a box of its own that is never fed — with ONE
+context object, whose identity is what `answer` checks. The look is posted
+`look.state` when its box says hello and whenever the shape moves — the mode,
+the list, the chat, the epoch — and `look.patch` for the rest, one a frame
+(a timer flushes a hidden window's), and a patch that would carry more than
+`PATCH_MAX` updates is posted as a state instead. It is handed `names`, the
+pages its places name; `input`, where the input box sits; and `beside`, the
+page the panel sits beside, or the last page this window's history shows,
+which is where the full screen minimises to. The look's document is read again
+when the workspace changes on disk, because a rung may have named another look.
+The panel's width is the grip's, kept per browser.
+
+**The input box is `client/views/agent-input.js`, host DOM over the look's box,
+and the one place a chat's agent is handed words**: the text area's own value,
+sent by Enter or Send as `chat.new` or `chat.send`. Under it the agent, model,
+mode and effort, each the agent's own list, five shown and the rest behind
+**More models**; Send is **Stop** while a turn runs; **Go to *page*** is drawn
+above it from the switcher's offer; the / menu lists the agent's commands and
+the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
+agent is not a touch. A first message with no agent ready is sent all the same
+and held by the server; More agents opens over it, saying so, when it was this
+window that sent it a moment ago.
+
+**More agents and More models are `client/views/agent-dialogs.js`**: this
+machine's agents then the registry's, filtered as the person types, each
+Inactive agent with its one button — **Sign in** or **Start Gateway** — and a
+registry agent with **Install**. Sign in runs the method the person picks: an
+agent's own, a terminal one in the sign-in pop-up from the ticket, and an
+`env_var` one named and never asked for. `client/css/agent.css` dresses all of
+it, on the palette's tokens and its four lamps.
+
+**The shell's half**: a window whose address names no screen opens on the Agent
+screen; the rail's **Agent** row, in Dashboard's old slot, counts the chats
+working and returns to the chat last open; **Home** is the page tree's own
+heading; **Edit**, amber on the page bar, opens the panel beside the page on a
+new thread with `Edit <page id>: ` typed in and the chat made for that page; the
+crumbs name the open chat with its lamp, and the strip counts the chats and the
+Active agents.
+
+## 13. What is deliberately not built
 
 - **The door**: no MCP server is handed to an agent; runs and agents outside
   Biom are not in the history; a write the watcher sees from no nameable writer
@@ -432,15 +509,22 @@ server/main.ts                  LOGIN, jev, connections, the reaper, build()'s w
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
 guest/plugins/biom-agent-look/  the default look: look.js (nodes), model.js (decisions), sheet.js
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
-client/store/chats.js           the host's chat store
-client/views/agent.js           the Agent screen and the panel, host side, and the input box
+client/store/chats.js           makeChatStore, fold, agentMode, showChat, freshThread, the pickers' rules
+client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer
+client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, NOT_TOUCH
+client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in
+client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
+client/bridge/bridge.js         answerLook, and the look.* case: @agent only, touch-gated
+client/boot.js                  the chat store, the Agent screen, the context kept per session, the cold start
 tests/fake-acp-agent.ts         a scripted ACP agent, a real process; installFakeAgent for a PATH
 tests/acp.test.ts  acp-wire.test.ts  agents-wire.test.ts  agents.test.ts  agents-install.test.ts
 tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.test.ts
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
+tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the view against a double
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser
+tests/e2e/agent-screen.e2e.ts   the host side on a screen, against the scripted agent
 ```
 
 ## This is a living document
