@@ -228,6 +228,22 @@ const bridge = makeBridge(ws, transport, ui, vault ?? "");
 const faces = faceCss(location.origin + "/fonts/");
 const frameHost = makeFrameHost(bridge, assets, faces);
 
+/* ── the sign-in terminal ────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE, because the command runs in a workspace's
+// folder and the start page has none. Nothing is opened here: a socket is
+// opened by `open`, for one ticket, and the pop-up is up exactly as long as it.
+// Built before the views because the Agent screen is what calls it, for an
+// agent whose sign-in method is a terminal; xterm's constructors are handed in
+// so no module below this one names the library.
+const signInTerminal = vault === null ? null : makeSignInTerminal({
+  h,
+  connect: (hear) => openTerminalSocket({ url: terminalUrl(location, base, token), hear }),
+  Terminal,
+  FitAddon,
+  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
+});
+
 // THERE IS NO REGISTRY HERE ANY MORE, and its absence is the change. The client
 // used to fill a render registry at this point, because the host drew the page
 // and had to be told how. The host does not draw a page now: `views.page` builds
@@ -261,22 +277,6 @@ const views = {
   instructions: makeInstructionsView({ h, ws, ui }),
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
 };
-
-/* ── the sign-in terminal ────────────────────────────────────────────────── */
-
-// ONLY IN A WINDOW WITH A WORKSPACE, because the command runs in a workspace's
-// folder and the start page has none. Nothing is opened here: a socket is
-// opened by `open`, for one ticket, and the pop-up is up exactly as long as it.
-// The Agent screen is what calls it, for an agent whose sign-in method is a
-// terminal; xterm's constructors are handed in so no module below this one
-// names the library.
-const signInTerminal = vault === null ? null : makeSignInTerminal({
-  h,
-  connect: (hear) => openTerminalSocket({ url: terminalUrl(location, base, token), hear }),
-  Terminal,
-  FitAddon,
-  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
-});
 
 const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events, newerVersion });
 
