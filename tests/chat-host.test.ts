@@ -156,7 +156,11 @@ test.if(unix)("A CHAT'S WRITE IS ONE HISTORY EDIT, stamped with its agent — an
     host.close();
   }
   const pids = pidsIn(log);
-  expect(await until(() => pids.every((p) => !alive(p)), 3000)).toBe(true);
+  const gone = await until(() => pids.every((p) => !alive(p)), 3000);
+  // A failing run leaves nothing either — ended now, while the pids are still
+  // the ones this test started.
+  for (const p of pids) if (alive(p)) process.kill(p, "SIGKILL");
+  expect(gone).toBe(true);
   expect(await until(() => host.agentProcesses() === 0, 3000)).toBe(true);
 }, 60000);
 
@@ -195,6 +199,7 @@ setInterval(() => {}, 1 << 30);
   appendFileSync(pidFile, "");
 
   const { host, vault } = await stand(bin);
+  const logged = (): number[] => readFileSync(pidFile, "utf8").split("\n").filter(Boolean).map(Number);
   try {
     await active(host, vault);
     const chat = value(await call(host, vault, { kind: "chat.new", agent: "claude-acp", text: "Say something." })) as ChatSummary;
@@ -219,5 +224,8 @@ setInterval(() => {}, 1 << 30);
     expect(await until(() => pids.every((p) => !alive(p)), 3000)).toBe(true);
   } finally {
     host.close();
+    // A FAILING RUN MUST NOT LEAVE THIS AGENT BEHIND: it ignores TERM by
+    // design, and nothing else would ever end it.
+    for (const pid of logged()) if (alive(pid)) process.kill(pid, "SIGKILL");
   }
 }, 60000);
