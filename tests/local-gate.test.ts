@@ -95,9 +95,15 @@ test("FORGED HOST AND ORIGIN WITH NO COOKIE are refused, for every agent and cha
 
 test("with the cookie, from this machine, the gate lets it through", async () => {
   for (const kind of LOCAL_KIND_NAMES) {
-    const env = await call({ kind }, { cookie });
+    // AN ENVELOPE THE ROUTE ITSELF REFUSES, so getting past the gate is all
+    // this asks: every one of these kinds is wired now, and `agents.list` or
+    // `agents.registry` answered for real would look for — and probe — the
+    // agents on this machine and reach the network. A `window` that is no
+    // window's id is refused `bad_request` by the envelope check, after the gate.
+    const env = await call({ kind, window: "!" }, { cookie });
     // Past the gate: whatever the route then says, it is not `identity`.
     expect([kind, refusedAsStranger(env)]).toEqual([kind, false]);
+    expect([kind, env.error?.code]).toEqual([kind, "bad_request"]);
   }
 });
 

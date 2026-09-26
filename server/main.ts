@@ -37,7 +37,7 @@ import {
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
 import { DOC_PLUGIN } from "../contracts/types.ts";
-import { SKILL_PREFIX, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
+import { SKILL_PREFIX, keepHarness, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
 import { makeProcessRunner } from "./platform/process.ts";
@@ -60,6 +60,7 @@ import {
   bootVault,
   browse,
   createVault,
+  dataHome,
   infoOf,
   makeVaultMemory,
   memoryFile,
@@ -68,7 +69,18 @@ import {
   seeded,
   usable,
 } from "./workspace/vault.ts";
-import { spawnPty } from "./platform/pty.ts";
+import { findShell, scrubEnv, spawnPty } from "./platform/pty.ts";
+import { executable, makeLoginEnv, whichIn } from "./platform/loginenv.ts";
+import { connectAcp } from "./platform/acp.ts";
+import type { AcpConnection } from "./platform/acp.ts";
+import { makeHistory } from "./domain/history.ts";
+import type { History } from "./domain/history.ts";
+import { JEV_ENDPOINT, JEV_KEY_VAR, SYSTEM_CLOCK, makeJev, makeJevStatus } from "./domain/jev.ts";
+import type { JevStatus } from "./domain/jev.ts";
+import { makeAgents } from "./workspace/agents.ts";
+import type { Agents } from "./workspace/agents.ts";
+import { makeChats, readSkills } from "./workspace/chats.ts";
+import type { Chats } from "./workspace/chats.ts";
 import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
 import type { Attachment } from "./workspace/terminals.ts";
 import type { Tickets } from "./workspace/terminals.ts";
@@ -82,8 +94,15 @@ import type { DirListing } from "../contracts/types.ts";
 import type { PageId } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
-import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
-import { isLocalKind } from "../contracts/guards.js";
+import type { AgentInfo } from "../contracts/types.ts";
+import type { AgentLaunch } from "../contracts/types.ts";
+import type { ChatId } from "../contracts/types.ts";
+import type { ChatPush } from "../contracts/types.ts";
+import type { ChatUpdate } from "../contracts/types.ts";
+import type { HistoryEntry } from "../contracts/types.ts";
+import type { WindowId } from "../contracts/types.ts";
+import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import { isLocalKind, isWindowId } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -203,6 +222,14 @@ const VERSION = (process.env.BIOM_VERSION ?? "").trim() || "development";
  *  is what the founders' machines and CI set so the count is strangers only. */
 const CHECK_UPDATES = PRODUCTION && (process.env.BIOM_NO_UPDATE_CHECK ?? "").trim() === "";
 const VERSION_URL = "https://biom.dev/version.json";
+
+/** WHERE JEV IS ASKED, and it is deployment configuration rather than the
+ *  person's: `BIOM_JEV_ENDPOINT` names another — Kev on this machine, or an
+ *  endpoint we host — and unset is TypeSafe's own. Read here, once, because no
+ *  module below may ask the environment a question. The KEY is not read here
+ *  and never from this process's environment: it is the person's, and it
+ *  comes out of their login shell (`makeHost`). */
+const JEV_AT = (process.env.BIOM_JEV_ENDPOINT ?? "").trim() || JEV_ENDPOINT;
 
 // THE INSTALL DIRECTORY, AND IT IS A PATH RATHER THAN A URL. `.pathname` off a
 // `file:` URL is percent-ENCODED, so an install under `/My Documents/` came out
@@ -412,6 +439,15 @@ export interface HostPaths {
    *  the map instead. Defaults to whatever this build embedded, which is nothing
    *  at all when it was run from source. */
   carried?: EmbeddedMap;
+  /** WHERE THE AGENTS BIOM INSTALLS ARE KEPT: `agents/` under the per-user
+   *  data directory, shared by every vault and never inside one. A test names
+   *  a folder of its own, so nothing it does reaches the person's. */
+  agentsHome?: string;
+  /** THE ENVIRONMENT EVERY AGENT IS STARTED WITH, and where Jev's key is
+   *  read: the person's login shell's, asked once per server and never at
+   *  construction. A test hands its own, so no login shell is asked and no
+   *  agent of the person's is found. */
+  agentEnv?: () => Promise<Record<string, string>>;
   /** WHICH BUILD THIS IS, as the only thing the API layer needs to know about
    *  it: production refuses kinds that every other build answers. Which ones is
    *  not stated here and must not be — `server/api/routes.ts` is where the
@@ -497,6 +533,17 @@ export interface Host {
   /** KILL EVERY RUN NOW, synchronously, for the process's `exit` handler —
    *  the one ending every route passes through, where nothing can be awaited. */
   killRuns(): void;
+  /** END EVERY AGENT, on the way out, where there is time: every chat's turn
+   *  ended `crashed` and its log flushed, every agent process TERM, a grace,
+   *  then KILL — in every mounted folder. */
+  endAgents(): Promise<void>;
+  /** KILL EVERY AGENT PROCESS NOW, synchronously, for the `exit` handler: a
+   *  chat's, a probe's, an install's, and one still ending from a switch or
+   *  a close. No child this server started for an agent outlives it. */
+  killAgents(): void;
+  /** Agent processes started and not yet gone, across every folder — for a
+   *  test, and for the log. */
+  agentProcesses(): number;
   /** Release every database handle. The server never calls it; a test that
    *  stood a host up does. */
   close(): void;
@@ -511,6 +558,14 @@ interface Mounted {
    *  vault. Closed with the first. */
   runsDb: Db;
   runs: Runs;
+  /** WHAT EACH WINDOW HAS OPEN AND WHAT CHANGED, in memory. */
+  history: History;
+  /** What agents this machine has, as this folder's probes see them. */
+  agents: Agents;
+  /** Every chat in this folder, and the agent process each has running. */
+  chats: Chats;
+  /** Jev's faces for this folder's chats. */
+  jev: JevStatus;
   /** THIS VAULT'S CONTENT BASELINE — what this process last wrote into, or last
    *  read out of, every file under it. It is how the watcher tells an agent's
    *  write from the app's own: `files.ts` keeps it current, and the settle below
@@ -622,6 +677,11 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   mirror: refuses(why, code),
   runs: refuses(why, code),
   share: refuses(why, code),
+  // The eleventh edit's three, so `agents.list` on a folder that will not
+  // open says why it will not, rather than that this build has no agents.
+  history: refuses<History>(why, code),
+  agents: refuses<Agents>(why, code),
+  chats: refuses<Chats>(why, code),
 });
 
 /** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
@@ -671,6 +731,54 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  directory, and which folder that directory is under is the registry's
    *  business. */
   const PROCESS = makeProcessRunner();
+
+  /* ── the agents' half, once per server ─────────────────────────────── */
+
+  /** THE PERSON'S LOGIN ENVIRONMENT, ONE READING PER SERVER: two workspaces
+   *  open at once are one person with one login. Built here and never read
+   *  here — the shell is asked the first time an agent is looked for or
+   *  started, not while the server is coming up. The shell and its starting
+   *  environment are the terminal's own answers, `findShell` and `scrubEnv`. */
+  const LOGIN = makeLoginEnv({ shell: findShell(process.env, osPlatform(), executable)?.path ?? null, base: scrubEnv(process.env) });
+  const readLogin = at.agentEnv ?? (() => LOGIN.read());
+  /** The reading, once it has landed — for Jev's key, which is asked for
+   *  synchronously and is simply absent (Jev off) until then. Held here and
+   *  never logged, sent or written anywhere. */
+  let login: Record<string, string> | null = null;
+  const loginEnv = async (): Promise<Record<string, string>> => {
+    const env = await readLogin();
+    login = env;
+    return env;
+  };
+  /** Biom's own folder of installed agents, shared by every vault. */
+  const agentsHome = at.agentsHome ?? join(dataHome(), "agents");
+  /** JEV, ONCE PER SERVER: one engine, one key, one pause after an outage,
+   *  shared by every folder's chats. The key is the login shell's
+   *  `TYPESAFE_API_KEY`, read on every ask, and with none Jev is off. */
+  const jev = makeJev({ fetch, key: () => login?.[JEV_KEY_VAR] ?? null, endpoint: JEV_AT, now: Date.now });
+  /** EVERY AGENT CONNECTION THIS SERVER HAS OPENED AND NOT YET SEEN CLOSE —
+   *  a chat's, a probe's, a sign-in's — across every folder, kept here rather
+   *  than asked of the modules that opened them. A chat's agent that is still
+   *  on its way out after a switch or a close is no longer that chat's, and
+   *  the chats' own `killAll` cannot reach it; this set can, so the exit
+   *  handler's KILL reaches every process an agent ever was. */
+  const connections = new Set<AcpConnection>();
+  const connect = (launch: AgentLaunch, cwd: string): AcpConnection => {
+    const conn = connectAcp(launch, cwd);
+    connections.add(conn);
+    void conn.closed.then(() => connections.delete(conn));
+    return conn;
+  };
+  const killConnections = (): void => {
+    for (const conn of [...connections]) {
+      try {
+        conn.kill();
+      } catch {
+        /* gone already */
+      }
+    }
+  };
+
   /** Where this server answers, once it does. Before `listen` is called — a
    *  host stood up by a test, or the moment between mount and serve — a run
    *  gets the development address, which is where a server run from source is. */
@@ -739,10 +847,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  from a stale seed and does not try. Each failure is a sentence in the log
    *  and never a mount that did not happen — a folder whose `docs/` cannot be
    *  written is still a workspace. */
-  async function afterMount(files: Files): Promise<void> {
+  async function afterMount(files: Files, root: string): Promise<void> {
     try {
-      if (await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed)) {
-        await files.commit(`The framework's guide, docs, skills and checker, as ${await frameworkVersion()} ships them`);
+      const wrote = await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed);
+      // THE HARNESSES' OWN NAMES FOR THE GUIDE AND THE SKILLS, after the guide
+      // and the skills they name: a chat's agent starts at this root and
+      // reads `CLAUDE.md` or `.gemini/settings.json`, never `AGENTS.md` by
+      // itself. Made where nothing stands and never written over, so what the
+      // person keeps under one of those names is theirs and is said here once.
+      const harness = keepHarness(makeRunFs(root));
+      for (const rel of harness.left) console.log(`harness            →  ${rel} is the workspace's own, and was left as it is`);
+      for (const rel of harness.failed) console.warn(`harness            →  ${rel} could not be made`);
+      if (wrote || harness.wrote.length > 0) {
+        await files.commit(`The framework's guide, docs, skills, checker and harness links, as ${await frameworkVersion()} ships them`);
       }
     } catch (e) {
       console.warn("the framework's skills could not be written into .agents/skills/", e);
@@ -968,6 +1085,90 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       console.warn("the markdown mirror could not be rebuilt", e);
     }
 
+    /* ── the history, the agents and the chats ──────────────────────── */
+
+    // A PAGE'S UID, READ OFF A `Files` WITH NO BASELINE. The vault's own would
+    // make every path it reads KNOWN, and the watcher would then take a page an
+    // agent has just made for one it already had — the rail would never learn
+    // it arrived. So the history's and the chats' one lookup reads the disk as
+    // a stranger would.
+    const plainDocs = makeDocs(makeFiles(path), yaml);
+    const uidOf = async (id: PageId): Promise<string | null> => {
+      try {
+        return (await plainDocs.read(id)).uid ?? null;
+      } catch {
+        return null;
+      }
+    };
+    // THE HISTORY NEEDS THE CHATS AND THE CHATS NEED THE HISTORY: the history
+    // derives a window's agent from its chat, and the chats report every
+    // write into the history. So the chats are bound late, and until they
+    // are, no chat is running an agent — which is true.
+    let chatsNow: Chats | null = null;
+    const history = makeHistory({
+      now: Date.now,
+      uidOf,
+      agentOfChat: (chat) => {
+        const agent = chatsNow?.agentOfChat(chat) ?? null;
+        const of = agent === null || chatsNow === null ? null : chatsNow.agentOf(agent);
+        return agent === null || of === null ? null : { agent, harness: of.harness, turn: of.turn };
+      },
+    });
+    const agents = makeAgents({
+      connect,
+      env: loginEnv,
+      which: async (command, env) => whichIn(command, env),
+      fetch,
+      home: agentsHome,
+      cwd: path,
+      now: Date.now,
+      processes: PROCESS,
+    });
+    const jevStatus = makeJevStatus({
+      jev,
+      clock: SYSTEM_CLOCK,
+      face: (chat, turn, face) => chatsNow?.face(chat, turn, face),
+    });
+    // AN AGENT'S WRITES GO THROUGH A `Files` OF THEIR OWN, built WITHOUT this
+    // vault's baseline: the watcher then takes an agent's write for what it is
+    // — a change this process did not make — and the page redraws. And the
+    // history hears of it through `onEdit` and NOTHING ELSE: never the API
+    // route's stamping, which is the person's.
+    const agentFiles = makeFiles(path);
+    const chats = makeChats({
+      launch: (key) => agents.launch(key),
+      agents: () => agents.list(),
+      onAgents: (fn) => agents.on(fn),
+      refused: (key) => agents.refused(key),
+      connect,
+      root: path,
+      logDir: join(path, BIOM_DIR),
+      files: agentFiles,
+      skills: () => readSkills(agentFiles),
+      placeOf: (p) => history.placeOf(p),
+      uidOf,
+      onEdit: (p, via, writer) => {
+        history.edit({ path: p, via, writer }).catch((e: unknown) => console.warn("the history", e));
+      },
+      onTurn: (signal) => jevStatus.signal(signal),
+      now: Date.now,
+    });
+    chatsNow = chats;
+    // A CHAT NAMED IS A CHAT JEV PICKS A FACE FOR, ONCE — after the login
+    // environment has landed, because that is where the key is and the one
+    // ask a name gets would otherwise be spent while Jev still looked off.
+    chats.on((push) => {
+      for (const u of push.updates) {
+        if (u.kind !== "name" || u.face !== null || u.name === "") continue;
+        const chat = push.chat.id;
+        const name = u.name;
+        const ask = (): void => jevStatus.named(chat, name);
+        loginEnv().then(ask, ask);
+      }
+    });
+    // Every kept log scanned before anybody lists the chats.
+    await chats.loaded;
+
     await memory.remember(path);
     // SHARE A PAGE. The capture opens THIS server's own address, which is not
     // known until `Bun.serve` has answered — so the origin is read late, off
@@ -1006,7 +1207,22 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       upload: makeBucket(shareEnv()),
     });
 
-    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs, share }, settled: Promise.resolve(), files };
+    // THE CHATS AS THE ROUTE SEES THEM: the same module, with a chat's close
+    // also letting go of Jev's schedule for it — its timers, and any ask in
+    // flight — because the route knows nothing of Jev and should not.
+    const routed: Chats = {
+      ...chats,
+      close: async (chat) => {
+        const now = await chats.close(chat);
+        jevStatus.close(chat);
+        return now;
+      },
+    };
+    return {
+      path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus,
+      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed },
+      settled: Promise.resolve(), files,
+    };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -1045,7 +1261,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
       // caller awaits resolves with the mount; the rewrite and the mirror start
       // from here and are reachable through `settled` for whoever has to wait.
-      m.settled = afterMount(m.files);
+      m.settled = afterMount(m.files, m.path);
       return m;
     });
     mounted.set(abs, started);
@@ -1497,19 +1713,74 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         }
       }
     },
+    async endAgents() {
+      const ends: Promise<unknown>[] = [];
+      for (const held of mounted.values()) {
+        ends.push(held.then(async (m) => {
+          m.jev.stop();
+          await m.chats.endAll();
+          m.agents.killAll();
+        }).catch(() => {
+          // A mount that failed started nothing.
+        }));
+      }
+      await Promise.allSettled(ends);
+    },
+    killAgents,
+    agentProcesses: () => connections.size,
     open: () => [...mounted.keys()],
     watch: subscribe,
     watching: () => [...live.entries()].map(([path, now]) => ({ path, handles: now.watcher.handles() })),
     close: () => {
+      // NO AGENT OUTLIVES ITS FOLDER'S CLOSING, which is the whole host's
+      // here: nothing is evicted while the server runs, so this and the exit
+      // are the two moments a folder stops being served.
+      killAgents();
       for (const now of live.values()) {
         if (now.timer !== null) clearTimeout(now.timer);
         now.watcher.close();
       }
       live.clear();
-      for (const held of mounted.values()) void held.then((m) => { m.db.close(); m.runsDb.close(); }).catch(() => {});
+      for (const held of mounted.values()) {
+        void held.then((m) => {
+          // One still mounting when this ran: what it started goes now.
+          stopAgents(m);
+          m.db.close();
+          m.runsDb.close();
+        }).catch(() => {});
+      }
       mounted.clear();
     },
   };
+
+  /** One folder's agents, stopped where they stand: Jev's timers, every
+   *  chat's agent and every probe and install, KILLed. */
+  function stopAgents(m: Mounted): void {
+    try {
+      m.jev.stop();
+    } catch {
+      /* nothing to stop */
+    }
+    try {
+      m.chats.killAll();
+    } catch {
+      /* nothing to kill */
+    }
+    try {
+      m.agents.killAll();
+    } catch {
+      /* nothing to kill */
+    }
+  }
+
+  /** EVERY AGENT PROCESS, KILLED NOW — synchronously, because the `exit`
+   *  handler runs no timer again. Each settled folder's own first, so their
+   *  bookkeeping knows; then every connection this server ever opened and has
+   *  not seen close, which is what reaches a process still on its way out. */
+  function killAgents(): void {
+    for (const held of settledMounts) stopAgents(held);
+    killConnections();
+  }
 
   /** Runs alive in every folder mounted so far. Only settled mounts are
    *  counted: one still mounting has started nothing. */
@@ -1629,6 +1900,9 @@ const TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
   ico: "image/x-icon",
+  // Jev's faces, `vendor/noto/*.webp`: served as what they are, so a face is
+  // drawn as a picture rather than refused as a download.
+  webp: "image/webp",
 };
 
 /** Resolve `rel` under `base`, or null if it escapes. No route may leave its
@@ -2232,10 +2506,6 @@ export function tokenOk(expected: string | null, url: URL): boolean {
 
 /* ── this machine's own window, and the terminal ──────────────────────────── */
 
-/** THE SIGN-IN STATE OF A VAULT WITH NO AGENTS: no ticket was ever minted, so
- *  none redeems, and nothing is looked at again. */
-const NO_SIGN_IN: Tickets = { redeem: () => null, ended: () => {} };
-
 /** THE CAPABILITY THAT SAYS *THIS MACHINE'S OWN WINDOW*, and three things spend
  *  it: the sign-in terminal, the agent and chat kinds on the API route, and the
  *  live stream. It was the terminal's alone until the eleventh contracts edit, when
@@ -2382,30 +2652,85 @@ export function cookieValue(header: string | null, name: string): string | null 
 const KEEPALIVE = 20000;
 const IDLE = 255;
 
+/** HOW LONG A STREAM GATHERS WHAT CARRIES WORDS before writing it, in ms:
+ *  about two frames. A streaming reply is a chunk every few milliseconds, the
+ *  history's edits come in bursts and a probe round moves the agents list a
+ *  dozen times in a second; gathered, each tab is written at most this often
+ *  however fast any of it arrives, and a chat's reply reads as one push per
+ *  frame rather than one per token. `change` and `run` are never held: they
+ *  carry nothing and say *reread*, and holding one would only delay the
+ *  redraw it asks for. */
+export const GATHER_MS = 30;
+
+/** One named event, as the stream writes it. JSON has no raw line break in
+ *  it, so one `data:` line is the whole of the payload. */
+const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+/** A chat's push gathered onto the one before it: the chat as it stands now,
+ *  and every update since, in order — a tool line's newer state taking the
+ *  place of its older one, as the chats module keeps its own. */
+export function gatherPush(had: ChatPush | undefined, push: ChatPush): ChatPush {
+  if (had === undefined) return { chat: push.chat, updates: [...push.updates] };
+  const updates: ChatUpdate[] = [...had.updates];
+  for (const u of push.updates) {
+    const at = u.kind === "tool" ? updates.findIndex((v) => v.kind === "tool" && v.tool.id === u.tool.id) : -1;
+    if (at >= 0) updates[at] = u;
+    else updates.push(u);
+  }
+  return { chat: push.chat, updates };
+}
+
 /** One tab's stream over one vault.
  *
- *  THE EVENT CARRIES NOTHING. It says *something under this vault changed*; the
- *  client answers by reading disk. A payload naming files would be a second,
- *  faster description of the workspace that can disagree with the first.
+ *  `change` AND `run` CARRY NOTHING. They say *something under this vault
+ *  changed* and *a run started or ended*; the client answers by reading disk
+ *  or the registry. A payload naming files would be a second, faster
+ *  description of the workspace that can disagree with the first.
+ *
+ *  THE OTHER THREE CARRY WHAT IS NOT ON DISK TO BE REREAD: `history`, the
+ *  entries just appended; `chat`, one chat as it now stands and what it
+ *  streamed since; `agents`, the whole list of what this machine has. Each is
+ *  gathered for `GATHER_MS` and written in one go, and each is only what
+ *  happened AFTER the stream opened: a reader catches up by `history.read`,
+ *  `chat.read` and `agents.list` — which is why a reconnect is itself a reason
+ *  to reread.
+ *
+ *  `window` IS WHICH WINDOW THIS STREAM IS (`?window=`). Its context is kept
+ *  while any stream of it is open and dropped when the last one closes, so
+ *  `window.list` answers the windows still there.
  *
  *  THERE IS NO REPLAY AND NO EVENT ID. `EventSource` reconnects on its own and
- *  the client treats the reconnect itself as a reason to reread — the current
- *  state of disk is the whole of the answer, and a log would be a second
- *  description of it again.
+ *  the client treats the reconnect itself as a reason to reread.
  *
- *  Exported for the test that pins the cancel-before-the-watch-resolves
- *  ordering below. Nothing else calls it; the route in `fetch` does. */
-export function events(host: Host, path: string): Response {
+ *  NOTHING IS WRITTEN AFTER THE STREAM HAS GONE: every subscription is let go
+ *  when it goes, the gathered words with it, and one that arrives after is
+ *  dropped at the door.
+ *
+ *  Exported for the tests that pin the cancel-before-the-watch-resolves
+ *  ordering and the gathering. Nothing else calls it; the route in `fetch`
+ *  does. */
+export function events(host: Host, path: string, window: WindowId | null = null): Response {
   const bytes = new TextEncoder();
-  /** @type {(() => void) | null} */
   let release: (() => void) | null = null;
   let beat: ReturnType<typeof setInterval> | null = null;
+  let gather: ReturnType<typeof setTimeout> | null = null;
   let shut = false;
+  // WHAT IS GATHERED FOR THE NEXT WRITE: the history's entries in the order
+  // they were appended, each chat's push merged by chat, and only the latest
+  // agents list — each carries the whole of it.
+  let entries: HistoryEntry[] = [];
+  const pushes = new Map<ChatId, ChatPush>();
+  let agents: AgentInfo[] | null = null;
 
   const stop = () => {
     shut = true;
     if (beat !== null) clearInterval(beat);
     beat = null;
+    if (gather !== null) clearTimeout(gather);
+    gather = null;
+    entries = [];
+    pushes.clear();
+    agents = null;
     if (release !== null) release();
     release = null;
   };
@@ -2422,6 +2747,23 @@ export function events(host: Host, path: string): Response {
           stop();
         }
       };
+      /** Everything gathered, in one write. */
+      const flush = (): void => {
+        gather = null;
+        if (shut) return;
+        let text = "";
+        if (entries.length > 0) text += frame(STREAM.HISTORY, entries);
+        for (const push of pushes.values()) text += frame(STREAM.CHAT, push);
+        if (agents !== null) text += frame(STREAM.AGENTS, agents);
+        entries = [];
+        pushes.clear();
+        agents = null;
+        if (text !== "") send(text);
+      };
+      const soon = (): void => {
+        if (!shut && gather === null) gather = setTimeout(flush, GATHER_MS);
+      };
+
       let got: () => void;
       try {
         got = await host.watch(path, () => send("event: change\ndata: 1\n\n"), () => send("event: run\ndata: 1\n\n"));
@@ -2449,7 +2791,61 @@ export function events(host: Host, path: string): Response {
         got();
         return;
       }
-      release = got;
+      // THE SAME ORDERING, ONCE MORE, for the folder's modules: asking for
+      // them is a second await, and the tab may go during it too.
+      let deps: Deps | null = null;
+      try {
+        deps = await host.deps(path);
+      } catch {
+        deps = null;
+      }
+      if (shut) {
+        got();
+        return;
+      }
+      const offs: (() => void)[] = [got];
+      release = () => {
+        for (const off of offs.splice(0).reverse()) {
+          try {
+            off();
+          } catch (e) {
+            console.warn("a live-stream subscription could not be let go", e);
+          }
+        }
+      };
+      // A folder that will not mount answers modules that refuse every call,
+      // and then this stream carries `change` and `run` alone.
+      try {
+        const history = deps?.history;
+        if (history !== undefined) {
+          offs.push(history.on((more) => {
+            if (shut) return;
+            for (const e of more) entries.push(e);
+            soon();
+          }));
+          // THIS WINDOW IS HERE while this stream is open — a count, so a
+          // second tab of the same window closing does not forget the first.
+          if (window !== null) offs.push(history.attach(window));
+        }
+        const chats = deps?.chats;
+        if (chats !== undefined) {
+          offs.push(chats.on((push) => {
+            if (shut) return;
+            pushes.set(push.chat.id, gatherPush(pushes.get(push.chat.id), push));
+            soon();
+          }));
+        }
+        const found = deps?.agents;
+        if (found !== undefined) {
+          offs.push(found.on((list) => {
+            if (shut) return;
+            agents = list;
+            soon();
+          }));
+        }
+      } catch {
+        /* a module that refuses has nothing to say on a stream */
+      }
       // A COMMENT, not an event. The browser reports the connection open on the
       // first byte, and a page must not redraw merely because it connected.
       send(": open\n\n");
@@ -2520,9 +2916,11 @@ function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
       ending = true;
       const alive = host.live();
       if (alive > 0) console.log(`ending ${alive} run${alive === 1 ? "" : "s"} before stopping`);
+      // The runs and the agents together: each has its own TERM–grace–KILL,
+      // and neither waits on the other.
       // The exit codes main's terminal handlers used to answer with, so a
       // signal still reads as the signal it was.
-      void host.endRuns().finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
+      void Promise.allSettled([host.endRuns(), host.endAgents()]).finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
     });
   }
 }
@@ -2543,11 +2941,9 @@ function exitWhenTheParentGoes(host: Host): void {
     // or never got one, and either way nothing of an automation is left
     // behind. Then the same abrupt ending `kill()` gives it, for the same
     // reason: there is nothing else to flush.
-    try {
-      await host.endRuns();
-    } catch {
-      /* nothing left to end, or nothing that can be */
-    }
+    // And every chat's agent beside them, each turn in flight ended `crashed`
+    // and its log flushed, so the next launch reads what happened.
+    await Promise.allSettled([host.endRuns(), host.endAgents()]);
     process.exit(0);
   })();
 }
@@ -2624,7 +3020,11 @@ if (import.meta.main) {
   // there is time — a signal, the parent's pipe closing — `endRunsOn` and
   // `exitWhenTheParentGoes` below end them gracefully first, TERM then KILL,
   // and this handler finds nothing left to do.
-  process.on("exit", () => { terminals.killAll(); host.killRuns(); });
+  // AND EVERY AGENT: a chat's, a probe's, an install's, and one still on its
+  // way out after a switch — each a process group of its own, which a signal
+  // to this process reaches none of. `endAgents` below ends them gracefully
+  // where there is time; this is the KILL for whatever that did not reach.
+  process.on("exit", () => { terminals.killAll(); host.killRuns(); host.killAgents(); });
 
   const server = Bun.serve({
     port: PORT,
@@ -2678,12 +3078,18 @@ if (import.meta.main) {
         // `localRefusal` is the whole of the check. The token above is a source
         // run's nothing, and an agent answered `allow_always` is command
         // execution. The reason goes to the log; the caller is told `identity`.
+        //
+        // AND A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD REPORT FOR IT:
+        // `own` is the same check without a kind, and a request that fails it
+        // has its envelope's `window` dropped, so nothing holding the launch
+        // token — a run's script, which can read every window's id off
+        // `window.list` — can put its writes in the history as the person's.
         return await route(request, await host.deps(named === null ? undefined : named.path), (kind) => {
           if (!isLocalKind(kind)) return null;
           const why = local();
           if (why !== null) console.warn(`${kind} refused   →  ${why}`);
           return why;
-        });
+        }, () => local() === null);
       }
 
       // THE SIGN-IN TERMINAL, and nothing about it is reachable without every
@@ -2710,17 +3116,22 @@ if (import.meta.main) {
         // THE FOLDER A SIGN-IN RUNS IN IS THE MOUNT'S OWN PATH, resolved here and
         // never defaulted: a workspace that will not open is a refusal, not a
         // command in the home directory.
+        let deps: Deps;
         let cwd: string;
         try {
-          cwd = (await (await host.deps(named.path)).vault.info()).path;
+          deps = await host.deps(named.path);
+          cwd = (await deps.vault.info()).path;
         } catch {
           return new Response("That workspace is not open", { status: 404 });
         }
         // WHICH COMMAND MAY RUN is that vault's sign-in state and nothing the
         // socket says: its agents mint a ticket when they answer a terminal
-        // sign-in, and redeem it once. No vault has agents in this build yet,
-        // so there is no ticket to redeem and every one is refused.
-        const tickets: Tickets = NO_SIGN_IN;
+        // sign-in and redeem it once, and the command's end is a look at the
+        // agent again. THAT VAULT'S agents, so a ticket minted in one folder
+        // can never run in another.
+        const agents = deps.agents;
+        if (agents === undefined) return new Response("That workspace is not open", { status: 404 });
+        const tickets: Tickets = { redeem: (t) => agents.redeem(t), ended: (t) => agents.signedIn(t) };
         if (server.upgrade(request, { data: { cwd, tickets, attachment: null } })) return undefined;
         return new Response("Expected a WebSocket", { status: 400 });
       }
@@ -2750,7 +3161,11 @@ if (import.meta.main) {
           console.warn(`events refused   →  ${why}`);
           return new Response("Forbidden", { status: 403 });
         }
-        return events(host, named.path);
+        // WHICH WINDOW THIS STREAM IS, when the client said: its context is
+        // kept while the stream is open and dropped when it closes. Anything
+        // that is not a window's id is no window, and the stream is still one.
+        const w = url.searchParams.get(WINDOW_PARAM);
+        return events(host, named.path, isWindowId(w) ? w : null);
       }
 
       if (named !== null) {

@@ -29,7 +29,7 @@
 // a question, and nothing that could read a page is ever constructed over it.
 
 import { test, expect } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -101,7 +101,10 @@ async function snapshot(dir: string, rel = ""): Promise<Record<string, string>> 
   for (const entry of await readdir(join(dir, rel), { withFileTypes: true })) {
     if (entry.name === ".git" || entry.name.startsWith("workspace.db")) continue;
     const here = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory()) Object.assign(out, await snapshot(dir, here));
+    // A LINK IS WHAT IT NAMES, not what it leads to: the harnesses' names at a
+    // vault's root — `CLAUDE.md`, `.claude/skills` — are links into the vault.
+    if (entry.isSymbolicLink()) out[here] = `-> ${await readlink(join(dir, here))}`;
+    else if (entry.isDirectory()) Object.assign(out, await snapshot(dir, here));
     else out[here] = await readFile(join(dir, here), "utf8");
   }
   return out;
