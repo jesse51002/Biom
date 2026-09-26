@@ -1,4 +1,46 @@
-/* The terminal's dress. The dock it used to dress is gone: an agent is spoken to
-   on the Agent screen now, and a terminal is left only as the sign-in pop-up.
+/* The sign-in terminal: a dialog over the workspace holding one emulator, which
+   runs an agent's own sign-in command and closes when it exits. Its look is the
+   Chat spec's mockup — a title, "Terminal, for this sign-in only", a close
+   control and the screen — in the chrome's own tokens.
+
+   Above every other layer, popovers included: while it is up, the sign-in is
+   the one thing on the screen that can be answered.
 
    Nothing below names a colour. */
+
+.signterm{
+  position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:1.5rem;
+  background:var(--scrim);
+}
+.signdialog{
+  width:min(46rem,100%); display:grid; grid-template-rows:auto auto auto; overflow:hidden;
+  background:var(--stock-hi); border:1px solid var(--rule-soft); border-radius:8px; box-shadow:var(--lift);
+  animation:signin-in .18s cubic-bezier(.16,1,.3,1);
+}
+@keyframes signin-in{from{opacity:0; transform:translateY(4px)}}
+@media (prefers-reduced-motion:reduce){.signdialog{animation:none}}
+
+.signhead{display:flex; align-items:center; gap:.6rem; min-width:0; padding:.7rem .5rem .6rem 1rem}
+.signhead b{font-weight:600; font-size:.95rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.signsub{font-size:.75rem; color:var(--ink-3); white-space:nowrap}
+.signclose{
+  margin-left:auto; flex:none; width:1.8rem; height:1.8rem; padding:0;
+  border:0; border-radius:4px; background:none; color:var(--ink-3);
+  font-size:1.15rem; line-height:1; cursor:pointer;
+}
+.signclose:hover, .signclose:focus-visible{background:var(--field); color:var(--ink); outline:none}
+
+/* THE SCREEN: a fixed box the emulator is fitted to, so the command is started
+   at the size it will be drawn at. */
+.signscreen{position:relative; height:min(22rem,60vh); background:var(--stock-lo); border-top:1px solid var(--rule)}
+.signscreen .termhost{position:absolute; inset:.5rem .25rem .35rem .75rem}
+.termhost .xterm{height:100%}
+/* The emulator's sheet paints its viewport black, and the rows it fits leave a
+   strip of it below the last line; the screen's own ground shows instead. */
+.termhost .xterm .xterm-viewport{background-color:transparent}
+
+/* WHAT HAPPENED, when the pop-up stays: a refusal, or a sign-in that did not
+   finish. Empty, it takes no room. */
+.signsaid{margin:0; padding:.55rem 1rem .65rem; font-size:.8rem; line-height:1.4; color:var(--ink-2); border-top:1px solid var(--rule)}
+.signsaid:empty{display:none}
+.signsaid[data-tone="bad"]{color:var(--yellow)}

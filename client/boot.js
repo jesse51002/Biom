@@ -15,10 +15,13 @@
 /** @import { Theme, VaultInfo } from "../contracts/types.ts" */
 
 import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, vaultBase } from "../contracts/wire.js";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 import { h, fill, remembered } from "./platform/dom.js";
 import { useAssets } from "./platform/markdown.js";
 import { makeHttp, TOKEN_PARAM } from "./transport/http.js";
 import { makeEvents } from "./transport/events.js";
+import { openTerminalSocket, terminalUrl } from "./transport/terminal.js";
 import { makeWorkspace } from "./store/workspace.js";
 import { applyTheme, paperOf } from "./theme/theme.js";
 import { faceCss } from "./theme/faces.js";
@@ -32,6 +35,7 @@ import { makeRunsView } from "./views/runs.js";
 import { makeTableView } from "./views/table.js";
 import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
+import { makeSignInTerminal } from "./views/terminal.js";
 import { makeShell, parseHash } from "./shell/shell.js";
 
 /* ── which build this is ────────────────────────────────────────────────── */
@@ -258,6 +262,22 @@ const views = {
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
 };
 
+/* ── the sign-in terminal ────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE, because the command runs in a workspace's
+// folder and the start page has none. Nothing is opened here: a socket is
+// opened by `open`, for one ticket, and the pop-up is up exactly as long as it.
+// The Agent screen is what calls it, for an agent whose sign-in method is a
+// terminal; xterm's constructors are handed in so no module below this one
+// names the library.
+const signInTerminal = vault === null ? null : makeSignInTerminal({
+  h,
+  connect: (hear) => openTerminalSocket({ url: terminalUrl(location, base, token), hear }),
+  Terminal,
+  FitAddon,
+  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
+});
+
 const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events, newerVersion });
 
 /* ── the wiring ─────────────────────────────────────────────────────────── */
@@ -292,6 +312,8 @@ function theme() {
   // `<canvas>` or a library writing its own literal fills, is redrawn by the
   // plugin that owns it rather than by a hook out here.
   frameHost.broadcast({ kind: "theme", theme: next });
+  // The emulator paints a canvas, which reads no custom property either.
+  signInTerminal?.retheme();
 }
 
 // Both stores repaint the same shell. The shell decides what actually changed —

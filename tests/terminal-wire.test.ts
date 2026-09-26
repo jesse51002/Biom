@@ -24,6 +24,69 @@ test("the route, the ops and the events are the same on both sides", () => {
   for (const op of server.TERMINAL_OPS) expect([op, /spawn|exec|run|command|shell/.test(op)]).toEqual([op, false]);
 });
 
+test("the client's socket opens once, hands up events and bytes, says closed exactly once, and never reopens", async () => {
+  const sockets: any[] = [];
+  class FakeSocket {
+    sent: string[] = [];
+    closed = 0;
+    binaryType = "";
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: unknown }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) {
+      sockets.push(this);
+    }
+    send(t: string) {
+      this.sent.push(t);
+    }
+    close() {
+      this.closed++;
+    }
+  }
+  const heard: any[] = [];
+  const s = client.openTerminalSocket({ url: "ws://h/v/x/terminal", hear: (m) => heard.push(m), WebSocket: FakeSocket });
+  const ws = sockets[0];
+  expect(ws.binaryType).toBe("arraybuffer");
+  // Nothing is sent, or queued, before it opens.
+  expect(s.send({ op: "input", data: "early" })).toBe(false);
+  ws.onopen();
+  expect(s.send({ op: "create", ticket: "t" })).toBe(true);
+  expect(ws.sent).toEqual([JSON.stringify({ op: "create", ticket: "t" })]);
+  ws.onmessage({ data: JSON.stringify({ ev: "started" }) });
+  ws.onmessage({ data: "not json" });
+  ws.onmessage({ data: new TextEncoder().encode("hi").buffer });
+  ws.onclose();
+  ws.onclose();
+  expect(heard.map((m) => m.kind)).toEqual(["open", "event", "bytes", "closed"]);
+  expect(new TextDecoder().decode(heard[2].data)).toBe("hi");
+  expect(s.state()).toBe("closed");
+  expect(s.send({ op: "input", data: "late" })).toBe(false);
+  expect(sockets).toHaveLength(1);
+
+  // A socket that cannot be made says closed, after the caller has its handle.
+  const told: any[] = [];
+  class Refusing {
+    constructor() {
+      throw new Error("no");
+    }
+  }
+  const dead = client.openTerminalSocket({ url: "ws://h", hear: (m) => told.push(m), WebSocket: Refusing });
+  expect(told).toEqual([]);
+  await Promise.resolve();
+  expect(told).toEqual([{ kind: "closed" }]);
+  expect(dead.state()).toBe("closed");
+
+  // Closing from this side says closed once, and closes the socket.
+  const again: any[] = [];
+  const mine = client.openTerminalSocket({ url: "ws://h", hear: (m) => again.push(m), WebSocket: FakeSocket });
+  sockets[1].onopen();
+  mine.close();
+  sockets[1].onclose();
+  expect(sockets[1].closed).toBe(1);
+  expect(again.map((m) => m.kind)).toEqual(["open", "closed"]);
+});
+
 test("the socket address carries the vault prefix and the launch token", () => {
   expect(client.terminalUrl({ protocol: "http:", host: "127.0.0.1:5000" }, "/v/%2Fa", "t k")).toBe("ws://127.0.0.1:5000/v/%2Fa/terminal?token=t%20k");
   expect(client.terminalUrl({ protocol: "https:", host: "h" }, "/v/x", null)).toBe("wss://h/v/x/terminal");
