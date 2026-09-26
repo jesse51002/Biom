@@ -2904,6 +2904,23 @@ export const PARENT_ENV = "BIOM_SHELL";
  *  `/dev/null` — which is what a great many launchers do — would read end of file
  *  immediately and exit before it had served a single request. Only a parent that
  *  actually holds the pipe sets it. */
+/** HOW LONG THE AGENTS ARE GIVEN TO END GRACEFULLY on the way out, in ms. Each
+ *  process has its own TERM, a grace and a KILL, well inside this; the bound is
+ *  for what is not a process — a chat's log that will not flush to a disk that
+ *  has stopped answering — so that a server whose window has gone cannot wait
+ *  on it for ever. Past it the process exits, and the `exit` handler KILLs
+ *  whatever an agent still was. */
+export const AGENTS_ENDING_MS = 10_000;
+
+/** The agents' graceful end, bounded by `AGENTS_ENDING_MS`. Never rejects. */
+function endAgentsWithin(host: Host): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((done) => {
+    timer = setTimeout(done, AGENTS_ENDING_MS);
+  });
+  return Promise.race([host.endAgents().catch(() => {}), late]).finally(() => clearTimeout(timer));
+}
+
 /** END EVERY RUN, THEN EXIT, on the signals that still run a handler. Armed
  *  once; a second signal while the first is being honoured exits at once
  *  rather than waiting again, because somebody pressing Ctrl-C twice means it. */
@@ -2920,7 +2937,7 @@ function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
       // and neither waits on the other.
       // The exit codes main's terminal handlers used to answer with, so a
       // signal still reads as the signal it was.
-      void Promise.allSettled([host.endRuns(), host.endAgents()]).finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
+      void Promise.allSettled([host.endRuns(), endAgentsWithin(host)]).finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
     });
   }
 }
@@ -2943,7 +2960,7 @@ function exitWhenTheParentGoes(host: Host): void {
     // reason: there is nothing else to flush.
     // And every chat's agent beside them, each turn in flight ended `crashed`
     // and its log flushed, so the next launch reads what happened.
-    await Promise.allSettled([host.endRuns(), host.endAgents()]);
+    await Promise.allSettled([host.endRuns(), endAgentsWithin(host)]);
     process.exit(0);
   })();
 }

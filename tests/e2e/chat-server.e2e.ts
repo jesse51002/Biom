@@ -22,6 +22,9 @@
 //      disk, a `change` on the stream, and ONE history edit stamped with the
 //      chat's agent id.
 //   5. Stop ends a turn `cancelled`.
+//   5b. A plain shell write the agent makes in its own shell is one edit by
+//      `shell` — and that shell had the person's LOGIN environment, a marker
+//      only their `~/.bash_profile` sets.
 //   6. Jev names the chat and faces its turn, asked with the key from the
 //      login environment — and the key is in nothing the server says.
 //   7. An agent that refuses a session asks to be signed in; the sign-in's
@@ -29,6 +32,8 @@
 //      Active again — and the same ticket a second time runs nothing.
 //   8. Closing the stream forgets the window.
 //   9. The server stopping leaves no agent process behind.
+//  10. Nor does the application going away: a server whose parent's pipe
+//      closes — the desktop window gone — ends its agents on the way out.
 //
 // Every page, word, key and id here is invented.
 
@@ -171,6 +176,8 @@ beforeAll(async () => {
   signedIn = join(box.root, "signed-in");
   fakeLog = join(box.root, "fake.log");
   writeFileSync(signedIn, "invented\n");
+  // What only a login shell reads: the agent must be started with it.
+  writeFileSync(join(box.env.HOME as string, ".bash_profile"), "export INVENTED_LOGIN_MARK=from-the-login-shell\n");
   installFakeAgent(bin, {
     scenario: {
       log: fakeLog,
@@ -321,6 +328,18 @@ walk("5. Stop ends a turn cancelled", async () => {
   expect(chatSeen(chat).last!.light).toBe("none");
 });
 
+walk("5b. a shell write is one edit by `shell`, from a shell that had the login environment", async () => {
+  const file = "pages/home/login-env.txt";
+  await call<ChatSummary>("chat.send", { chat, text: `Look around.\n!sh env > ${file}` });
+  await until("the turn ended", 20000, () =>
+    chatSeen(chat).updates.some((u) => u.kind === "turn" && u.phase === "idle" && u.turn === 4));
+  expect(readFileSync(join(vault, file), "utf8")).toContain("INVENTED_LOGIN_MARK=from-the-login-shell");
+  const edits = (await call<HistoryRead>("history.read")).entries.filter((e) => e.kind === "edit" && e.path === file);
+  expect(edits.map((e) => (e as Extract<HistoryEntry, { kind: "edit" }>).via)).toEqual(["shell"]);
+  expect(edits[0]!.writer).toMatchObject({ kind: "agent", agent: agentId, chat, turn: 4 });
+  rmSync(join(vault, file), { force: true });
+});
+
 walk("6. Jev names the chat and faces its turns, asked with the login environment's key, which the server says nowhere", async () => {
   await until("the name's face arrived", 20000, () =>
     chatSeen(chat).updates.some((u) => u.kind === "name" && u.face !== null));
@@ -402,4 +421,65 @@ walk("9. the server stopping leaves no agent process behind", async () => {
   // The chat's log says the turn in flight — none — and the server's stderr
   // carries no stack trace.
   expect(stackTraces(said.err)).toEqual([]);
+});
+
+walk("10. a server whose parent's pipe closes ends its agents on the way out", async () => {
+  const port2 = await freePort();
+  const base2 = `http://127.0.0.1:${port2}`;
+  const vault2 = join(box.root, "vault-two");
+  const log2 = join(box.root, "fake-two.log");
+  const bin2 = join(box.root, "bin-two");
+  installFakeAgent(bin2, { scenario: { log: log2 } });
+  const child = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
+    cwd: HERE,
+    env: {
+      ...box.env,
+      PORT: String(port2),
+      VAULT: vault2,
+      PATH: [bin2, dirname(process.execPath), "/usr/bin", "/bin"].join(":"),
+      // The shell's marker: the other end of stdin is its parent.
+      BIOM_SHELL: "1",
+    },
+    stdin: "pipe",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  try {
+    let cookie2 = "";
+    await until("the second server answered", BOUNDS.serve, async () => {
+      try {
+        const res = await fetch(`${base2}/`);
+        cookie2 = (res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+        await res.text();
+        return res.ok && cookie2 !== "";
+      } catch {
+        return false;
+      }
+    });
+    const ask = async <T>(kind: string, body: Record<string, unknown> = {}): Promise<T> => {
+      const res = await fetch(`${base2}/v/${encodeURIComponent(vault2)}/api/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookie2 },
+        body: JSON.stringify({ id: `p${++n}`, g: 1, kind, ...body }),
+      });
+      const env = (await res.json()) as { ok: boolean; value?: T };
+      if (!env.ok) throw new Error(`${kind} refused`);
+      return env.value as T;
+    };
+    await until("the fake is Active there", 30000, async () =>
+      (await ask<AgentInfo[]>("agents.list")).some((a) => a.key === AGENT && a.state === "active"));
+    const made = await ask<ChatSummary>("chat.new", { agent: AGENT, text: "Still going?\n!sleep 20000" });
+    await until("its turn is running", 15000, async () => (await ask<ChatSummary[]>("chat.list")).find((c) => c.id === made.id)?.phase === "running");
+    const pids = readFileSync(log2, "utf8").split("\n").filter((l) => l.includes('"fake":"started"')).map((l) => (JSON.parse(l) as { pid: number }).pid);
+    expect(pids.some(alive)).toBe(true);
+    // The application goes: its end of the pipe closes.
+    (child.stdin as unknown as { end(): void }).end();
+    await child.exited;
+    await until("every fake agent of the second server is gone", 5000, () => pids.every((p) => !alive(p)));
+    // The turn in flight was ended, and the log says so for the next launch.
+    const kept = readFileSync(join(vault2, ".biom", "chats", `${made.id}.jsonl`), "utf8");
+    expect(kept).toContain('"stop":"crashed"');
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+  }
 });
