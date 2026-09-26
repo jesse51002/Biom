@@ -71,6 +71,7 @@ import {
 import { spawnPty } from "./platform/pty.ts";
 import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
 import type { Attachment } from "./workspace/terminals.ts";
+import type { Tickets } from "./workspace/terminals.ts";
 import { mirrored, route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
@@ -114,7 +115,6 @@ declare const Bun: {
       closeOnBackpressureLimit?: boolean;
       open?(ws: TerminalSocket): void;
       message?(ws: TerminalSocket, message: string | Uint8Array): void;
-      drain?(ws: TerminalSocket): void;
       close?(ws: TerminalSocket): void;
     };
   }): BunServer;
@@ -124,9 +124,12 @@ interface BunServer {
   upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
   requestIP(request: Request): { address: string } | null;
 }
-/** What a terminal socket carries from the upgrade to its handlers. */
+/** What a terminal socket carries from the upgrade to its handlers: the
+ *  vault's root it runs in, and the sign-in state its ticket is redeemed
+ *  against. */
 interface TerminalSocketData {
-  vault: string;
+  cwd: string;
+  tickets: Tickets;
   attachment: Attachment | null;
 }
 interface TerminalSocket {
@@ -143,8 +146,8 @@ interface TerminalSocket {
 // the server may name the key.
 // `exit` is beside it because the one thing this process does about a parent
 // that has gone is stop being a process.
-// `on` is beside them because a shell this process started must not outlive it:
-// the exit handler is where every terminal tree is killed — and every run is
+// `on` is beside them because a command this process started must not outlive
+// it: the exit handler is where every sign-in's tree is killed — and every run is
 // ended before the process is, on the three signals that still run a handler;
 // see `endRunsOn`.
 declare const process: {
@@ -2229,9 +2232,13 @@ export function tokenOk(expected: string | null, url: URL): boolean {
 
 /* ── this machine's own window, and the terminal ──────────────────────────── */
 
+/** THE SIGN-IN STATE OF A VAULT WITH NO AGENTS: no ticket was ever minted, so
+ *  none redeems, and nothing is looked at again. */
+const NO_SIGN_IN: Tickets = { redeem: () => null, ended: () => {} };
+
 /** THE CAPABILITY THAT SAYS *THIS MACHINE'S OWN WINDOW*, and three things spend
- *  it: the terminal, the agent and chat kinds on the API route, and the live
- *  stream. It was the terminal's alone until the eleventh contracts edit, when
+ *  it: the sign-in terminal, the agent and chat kinds on the API route, and the
+ *  live stream. It was the terminal's alone until the eleventh contracts edit, when
  *  talking to an agent became as much command execution as a shell is — an
  *  agent answered `allow_always` does whatever it is told — and so it
  *  generalised rather than being minted twice.
@@ -2281,10 +2288,13 @@ function loopbackHost(host: string | null, port: number): boolean {
 
 /** THE TERMINAL IS LOCAL COMMAND EXECUTION, AND IT IS GUARDED LIKE IT. The API
  *  route above is open in a source run because what it reaches is a workspace;
- *  what `/v/<vault>/terminal` reaches is a shell running as the person, so no
- *  build answers it without every check below — a development server that
- *  became an unauthenticated terminal service would be a remote shell for
- *  anybody on the same network, because `Bun.serve` listens on every interface.
+ *  what `/v/<vault>/terminal` reaches is a command running as the person — only
+ *  ever the one a server-minted sign-in ticket stands for, which is
+ *  `server/workspace/terminals.ts`'s rule, and never one the socket names — so
+ *  no build answers it without every check below: a development server that
+ *  became an unauthenticated terminal service would be a way to run an agent's
+ *  sign-in for anybody on the same network, because `Bun.serve` listens on
+ *  every interface.
  *
  *  FIVE CHECKS, AND EACH STOPS SOMETHING THE OTHERS DO NOT:
  *
@@ -2316,11 +2326,20 @@ function loopbackHost(host: string | null, port: number): boolean {
  *
  *  Pure, and exported: the refusal is a sentence for the log and a test, and the
  *  socket itself is never told which check failed. */
-export const TERMINAL_COOKIE = LOCAL_COOKIE;
-
-/** The terminal's name for `localCookie`, kept for its importers while the
- *  terminal is cut down to the sign-in pop-up. */
-export const terminalCookie = localCookie;
+export function terminalRefusal(
+  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
+  if (!asked.tokenOk) return "this launch's token is missing";
+  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
+  const host = asked.host ?? "";
+  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
+  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
+  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
+  return null;
+}
 
 const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -2338,21 +2357,6 @@ export function cookieValue(header: string | null, name: string): string | null 
     if (at < 0) continue;
     if (part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
   }
-  return null;
-}
-
-export function terminalRefusal(
-  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
-  expected: { port: number; capability: string },
-): string | null {
-  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
-  if (!asked.tokenOk) return "this launch's token is missing";
-  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
-  const host = asked.host ?? "";
-  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
-  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
-  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
-  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
   return null;
 }
 
@@ -2604,11 +2608,11 @@ if (import.meta.main) {
   // because the terminal, the agent and chat kinds and the live stream are
   // guarded in every build. See `localRefusal`.
   const LOCAL_CAP = mintToken();
-  // Every workspace's terminal sessions. Constructed here like everything else,
-  // handed the one capability it spawns with and the environment it scrubs.
-  const terminals = makeTerminals({ spawn: spawnPty, env: process.env });
-  // A SHELL NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the one
-  // place every ending passes through — the window closing, the parent pipe
+  // The sign-in terminal, handed the one capability it spawns with. Which
+  // command it may run is a vault's sign-in state, handed per socket below.
+  const terminals = makeTerminals({ spawn: spawnPty });
+  // A SIGN-IN NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the
+  // one place every ending passes through — the window closing, the parent pipe
   // reaching end of file, Ctrl-C in `make dev` — so every tree is killed there,
   // synchronously, because no timer runs after it. The two signals are turned
   // into an exit so that handler runs; without one a signal ends the process and
@@ -2682,9 +2686,10 @@ if (import.meta.main) {
         });
       }
 
-      // THE TERMINAL, and nothing about it is reachable without every check in
-      // `terminalRefusal`. The refusal goes to the log and never to the socket:
-      // telling a caller which check failed is telling it which to forge next.
+      // THE SIGN-IN TERMINAL, and nothing about it is reachable without every
+      // check in `terminalRefusal`. The refusal goes to the log and never to the
+      // socket: telling a caller which check failed is telling it which to
+      // forge next.
       if (rest === TERMINAL_ROUTE) {
         if (named === null) return new Response("This request names no workspace", { status: 404 });
         const refused = terminalRefusal(
@@ -2702,16 +2707,21 @@ if (import.meta.main) {
           console.warn(`terminal refused   →  ${refused}`);
           return new Response("Forbidden", { status: 403 });
         }
-        // THE FOLDER A SHELL STARTS IN IS THE MOUNT'S OWN PATH, resolved here and
+        // THE FOLDER A SIGN-IN RUNS IN IS THE MOUNT'S OWN PATH, resolved here and
         // never defaulted: a workspace that will not open is a refusal, not a
-        // terminal in the home directory.
+        // command in the home directory.
         let cwd: string;
         try {
           cwd = (await (await host.deps(named.path)).vault.info()).path;
         } catch {
           return new Response("That workspace is not open", { status: 404 });
         }
-        if (server.upgrade(request, { data: { vault: cwd, attachment: null } })) return undefined;
+        // WHICH COMMAND MAY RUN is that vault's sign-in state and nothing the
+        // socket says: its agents mint a ticket when they answer a terminal
+        // sign-in, and redeem it once. No vault has agents in this build yet,
+        // so there is no ticket to redeem and every one is refused.
+        const tickets: Tickets = NO_SIGN_IN;
+        if (server.upgrade(request, { data: { cwd, tickets, attachment: null } })) return undefined;
         return new Response("Expected a WebSocket", { status: 400 });
       }
 
@@ -2766,27 +2776,26 @@ if (import.meta.main) {
 
       return await serveStatic(decodeURIComponent(url.pathname), grant);
     },
-    // ONE SOCKET PER WINDOW PER WORKSPACE, and all it does is hand bytes to the
-    // registry and back. Every decision about a session is in
+    // ONE SOCKET PER SIGN-IN, and all it does is hand bytes to the terminal and
+    // back. Every decision about the command is in
     // `server/workspace/terminals.ts`; this is the wire.
     websocket: {
-      // Above the registry's own input limit, so an oversized paste is refused
+      // Above the terminal's own input limit, so an oversized paste is refused
       // with a sentence rather than by the socket closing under the person.
       maxPayloadLength: 4 * 1024 * 1024,
+      // Above the terminal's own lag bound, past which it drops output itself.
       backpressureLimit: 16 * 1024 * 1024,
       closeOnBackpressureLimit: false,
       open(ws) {
-        ws.data.attachment = terminals.attach(ws.data.vault, {
+        ws.data.attachment = terminals.attach(ws.data.cwd, ws.data.tickets, {
           send: (text) => void ws.send(text),
           sendBinary: (bytes) => void ws.send(bytes),
           buffered: () => ws.getBufferedAmount(),
+          close: () => ws.close(),
         });
       },
       message(ws, message) {
         ws.data.attachment?.receive(message);
-      },
-      drain(ws) {
-        ws.data.attachment?.drained();
       },
       close(ws) {
         ws.data.attachment?.detach();

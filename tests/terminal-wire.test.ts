@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE TERMINAL'S WIRE IS SPELLED TWICE, and this is what holds the two equal.
+// THE SIGN-IN TERMINAL'S WIRE IS SPELLED TWICE, and this is what holds the two
+// equal.
 //
 // `server/workspace/terminals.ts` and `client/transport/terminal.js` cannot share
-// a module: `contracts/` is the only thing both tiers may import and it is frozen
-// — and a terminal kind is the one thing no artifact may ever be able to name. So
-// the route, the ops, the events and the frame kinds are written in both and
-// compared here, and a frame encoded by one is decoded by the other.
+// a module: `contracts/` is the only thing both tiers may import, and a terminal
+// kind is the one thing no box may ever be able to name. So the route, the ops
+// and the events are written in both and compared here.
 //
 // It also holds the gate in front of the socket: `terminalRefusal` in
 // `server/main.ts`, as a table of the requests that must be refused.
@@ -14,24 +14,14 @@ import { test, expect } from "bun:test";
 
 import * as server from "../server/workspace/terminals.ts";
 import * as client from "../client/transport/terminal.js";
-import { cookieValue, isLoopback, terminalCookie, terminalRefusal } from "../server/main.ts";
+import { cookieValue, isLoopback, localCookie, terminalRefusal } from "../server/main.ts";
 
-test("the route, the ops, the events and the frame kinds are the same on both sides", () => {
+test("the route, the ops and the events are the same on both sides", () => {
   expect(client.TERMINAL_ROUTE).toBe(server.TERMINAL_ROUTE);
   expect([...client.TERMINAL_OPS]).toEqual([...server.TERMINAL_OPS]);
   expect([...client.TERMINAL_EVENTS]).toEqual([...server.TERMINAL_EVENTS]);
-  expect(client.FRAME_OUTPUT).toBe(server.FRAME_OUTPUT);
-  expect(client.FRAME_REPLAY).toBe(server.FRAME_REPLAY);
-});
-
-test("a frame the server encodes is the frame the client decodes", () => {
-  const bytes = new TextEncoder().encode("héllo [31mred[0m");
-  const id = crypto.randomUUID();
-  const out = client.decodeFrame(server.frame(server.FRAME_OUTPUT, id, bytes));
-  expect(out).toEqual({ replay: false, id, data: bytes });
-  expect(client.decodeFrame(server.frame(server.FRAME_REPLAY, "x", new Uint8Array()))?.replay).toBe(true);
-  expect(client.decodeFrame(new Uint8Array([9, 0]))).toBeNull();
-  expect(client.decodeFrame(new Uint8Array([1, 40, 65]))).toBeNull();
+  // No op names a command: the ticket is the only thing that says what runs.
+  for (const op of server.TERMINAL_OPS) expect([op, /spawn|exec|run|command|shell/.test(op)]).toEqual([op, false]);
 });
 
 test("the socket address carries the vault prefix and the launch token", () => {
@@ -85,8 +75,8 @@ test("loopback is the peer address, and a cookie is read by its exact name", () 
   expect(isLoopback("::ffff:127.0.0.1")).toBe(true);
   expect(isLoopback("10.0.0.1")).toBe(false);
   expect(isLoopback("")).toBe(false);
-  expect(terminalCookie(4401)).toBe("biom-local-4401");
-  expect(cookieValue("a=1; biom-terminal-4400=xyz; b=2", "biom-terminal-4400")).toBe("xyz");
-  expect(cookieValue("biom-terminal-44000=no", "biom-terminal-4400")).toBeNull();
+  expect(localCookie(4401)).toBe("biom-local-4401");
+  expect(cookieValue("a=1; biom-local-4400=xyz; b=2", "biom-local-4400")).toBe("xyz");
+  expect(cookieValue("biom-local-44000=no", "biom-local-4400")).toBeNull();
   expect(cookieValue(null, "x")).toBeNull();
 });

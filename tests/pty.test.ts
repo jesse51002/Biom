@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The pseudo-terminal, against a real shell where there is one.
+// The pseudo-terminal, against a real command where there is one.
 //
-// What is held here is what the spec's acceptance table asks of the process
-// half: a real TTY in the directory it was given at the size it was given, a
-// resize the shell can read back, an honest exit status, a failure that names
-// the folder or the shell rather than falling back somewhere else, and an end
-// that takes the whole tree — including a job an interactive shell put in a
-// process group of its own, which a signal to the shell's group alone misses.
+// What is held here is the process half of the sign-in terminal: a real TTY in
+// the directory it was given at the size it was given, a resize the command can
+// read back, an honest exit status, a failure that names the folder or the
+// program rather than falling back somewhere else, and an end that takes the
+// whole tree — including a job a shell put in a process group of its own, which
+// a signal to the command's group alone misses. The command here is a plain
+// `/bin/sh`, because a shell is the command that can show all of that.
 
 import { test, expect } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -71,13 +72,13 @@ test("the tree is every descendant and every group they lead, never 0 or 1", () 
   expect(treeOf(parsePs("5 1 1\n6 5 0"), 5).groups).toEqual([5]);
 });
 
-/* ── a real shell ──────────────────────────────────────────────────────── */
+/* ── a real command ────────────────────────────────────────────────────── */
 
-const SH = { ...process.env, SHELL: "/bin/sh" };
+const ENV = { ...process.env };
 
 async function started(cwd: string) {
   let out = "";
-  const pty = await spawnPty({ cwd, cols: 93, rows: 31, env: SH, onData: (b) => { out += new TextDecoder().decode(b); } });
+  const pty = await spawnPty({ command: ["/bin/sh"], cwd, cols: 93, rows: 31, env: ENV, onData: (b) => { out += new TextDecoder().decode(b); } });
   return { pty, said: () => out };
 }
 
@@ -112,9 +113,30 @@ test.if(unix)("a real TTY, in the folder it was given, at the size it was given"
 
 test.if(unix)("a folder that is not there is refused by name, and nothing starts anywhere else", async () => {
   const missing = join(tmpdir(), "biom-pty-not-there-" + Date.now());
-  const refused = await spawnPty({ cwd: missing, cols: 80, rows: 24, env: SH, onData: () => {} }).catch((e) => e);
+  const refused = await spawnPty({ command: ["/bin/sh"], cwd: missing, cols: 80, rows: 24, env: ENV, onData: () => {} }).catch((e) => e);
   expect(refused).toBeInstanceOf(PtyError);
   expect(String(refused.message)).toContain(missing);
+});
+
+test.if(unix)("a program that is not there is refused by name; a bare name is found on the command's own PATH", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "biom-pty-"));
+  try {
+    const refuse = (command: string[], env: Record<string, string | undefined> = ENV) =>
+      spawnPty({ command, cwd: dir, cols: 80, rows: 24, env, onData: () => {} }).catch((e) => e);
+    for (const command of [[], [""], ["/opt/biom-not-a-program"], ["./not-here"], ["biom-not-a-program-anywhere"]]) {
+      const refused = await refuse(command);
+      expect([command, refused instanceof PtyError]).toEqual([command, true]);
+    }
+    expect(String((await refuse(["/opt/biom-not-a-program"])).message)).toContain("/opt/biom-not-a-program");
+    // `sh` is on the server's PATH but not on the one the command is given.
+    expect(await refuse(["sh"], { PATH: dir })).toBeInstanceOf(PtyError);
+    // And it is found on the one it is given, and runs to its own exit code.
+    const pty = await spawnPty({ command: ["sh", "-c", "exit 5"], cwd: dir, cols: 80, rows: 24, env: { PATH: "/usr/bin:/bin" }, onData: () => {} });
+    expect(pty.command).toMatch(/\/sh$/);
+    expect(await pty.exited).toEqual({ code: 5, signal: null });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test.if(unix)("END TAKES THE TREE — a background job in a group of its own included", async () => {
