@@ -463,10 +463,10 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       // answer the Agent screen registered. A page routed to `@agent` in a
       // box of its own is on `@agent` too, and is refused there.
       //
-      // WHAT MOVES THE SCREEN IS THE PERSON'S, as `open` is: a chat opened, a
-      // new thread and the panel going somewhere each move what is on screen,
-      // so each is honoured only just after a touch from that same box. The
-      // list opening or shutting moves nothing and is not held to it.
+      // EACH IS THE PERSON'S, as `open` is: a chat opened, a new thread and the
+      // panel going somewhere move what is on screen, and the list opening or
+      // shutting redraws the look whole — so each is honoured only just after a
+      // touch from that same box, and a look on a loop can do neither.
       //
       // NONE OF IT CARRIES WORDS TO AN AGENT, and nothing here could: the
       // guard admitted ids and closed words only, and the answer is the ui's.
@@ -477,7 +477,7 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
         if (ctx.page !== AGENT_PAGE || lookAnswer === null) {
           return no(req.id, ERRORS.IDENTITY, "only the Agent screen's own look may ask that");
         }
-        if (req.kind !== "look.list" && !(await asked(ctx))) {
+        if (!(await asked(ctx))) {
           console.warn(`[biom] the Agent screen's look asked ${req.kind} with no click on it; only the person moves the screen, so it stayed where it was`);
           return no(req.id, ERRORS.IDENTITY, "only the person moves the screen: the look asks in answer to a click on it");
         }

@@ -44,6 +44,19 @@ import { agentMode, showChat } from "../store/chats.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 
+/** A short fixed-width mark of a string, to tell two apart — not a secret.
+ *  @param {string} text */
+function signature(text) {
+  let a = 5381;
+  let b = 52711;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = ((a << 5) + a + c) | 0;
+    b = ((b << 5) + b ^ c) | 0;
+  }
+  return (a >>> 0).toString(36) + (b >>> 0).toString(36);
+}
+
 /** THE KEY THE BOX IS MOUNTED UNDER. Not `@agent` itself: a page routed to
  *  `#/page/@agent` is mounted under its id by the page view, and must be a box
  *  of its own that this view never feeds rather than this one taken over. */
@@ -146,6 +159,9 @@ export function makeAgentView(deps) {
   let html = null;
   let reading = false;
   let rereadAgain = false;
+  /** When the last read of the look's document failed, so a server that
+   *  refuses it is not asked again on every push. */
+  let readFailed = 0;
   /** The current realm holds its ports: it has said hello. */
   let helloed = false;
 
@@ -166,7 +182,13 @@ export function makeAgentView(deps) {
       do {
         rereadAgain = false;
         const page = await chats.lookPage();
-        const next = weaveRuntime(page.html, { id: page.id, name: page.name, plugin: page.plugin, input: page.input }, vault);
+        // THE RUNGS ARE PART OF WHAT THE BOX DRAWS: a workspace naming another
+        // look in `plugins/biom-agent/extensions.yaml` changes the read's
+        // extensions and not its document, and the box reads them only as it
+        // loads — so they are woven in as a mark, and a changed rung is a
+        // changed document, reloaded in the same element.
+        const next = weaveRuntime(page.html, { id: page.id, name: page.name, plugin: page.plugin, input: page.input }, vault) +
+          "<!-- rungs " + signature(JSON.stringify(page.extensions ?? null)) + " -->";
         if (next !== html) {
           html = next;
           const f = frameHost.for(LOOK_KEY, next, CTX);
@@ -177,8 +199,10 @@ export function makeAgentView(deps) {
           posted = null;
         }
         saying("");
+        readFailed = 0;
       } while (rereadAgain);
     } catch (e) {
+      readFailed = Date.now();
       console.warn("[biom] the Agent screen's look could not be read", e);
       saying("The Agent screen could not be drawn: " + (e instanceof Error && e.message ? e.message : "the server did not answer") + ". What you type below still reaches your agent.");
     } finally {
@@ -206,7 +230,10 @@ export function makeAgentView(deps) {
 
   /* ── what the look is told ─────────────────────────────────────────── */
 
-  /** What the look was last handed whole. @type {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null } | null} */
+  /** What the look was last handed whole — and which read of the chat's
+   *  stream, so a chat read again from the start (another chat opened and
+   *  this one come back to) is handed over whole again rather than patched
+   *  across a gap. @type {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null, epoch: number } | null} */
   let posted = null;
   /** Updates for the posted chat, waiting for the next patch. @type {ChatUpdate[]} */
   let queue = [];
@@ -257,14 +284,22 @@ export function makeAgentView(deps) {
    *  @returns {Address | null} */
   function lastPage() {
     const all = deps.history?.get() ?? [];
-    for (let i = all.length - 1; i >= 0; i--) {
-      const e = /** @type {any} */ (all[i]).entry;
-      if (e.kind !== "view" || e.window !== deps.window || e.place.view !== "page") continue;
-      const a = addressOfPlace(e.place, idOf);
-      if (a !== null && a.id !== "") return a;
+    const pages = ws.get().pages;
+    const key = all.length + ":" + (all.length ? /** @type {any} */ (all[all.length - 1]).entry.seq : 0);
+    if (lastSeen.all !== all || lastSeen.key !== key || lastSeen.pages !== pages) {
+      lastSeen = { all, key, pages, found: null };
+      for (let i = all.length - 1; i >= 0; i--) {
+        const e = /** @type {any} */ (all[i]).entry;
+        if (e.kind !== "view" || e.window !== deps.window || e.place.view !== "page") continue;
+        const a = addressOfPlace(e.place, idOf);
+        if (a !== null && a.id !== "") { lastSeen.found = a; break; }
+      }
     }
-    return lastRoute;
+    return lastSeen.found ?? lastRoute;
   }
+  /** The history as `lastPage` last walked it, so a patch a frame does not
+   *  walk five thousand entries each time. @type {{ all: unknown, key: string, pages: unknown, found: Address | null }} */
+  let lastSeen = { all: null, key: "", pages: null, found: null };
 
   /** @returns {PageName | null} */
   function besideNow() {
@@ -274,7 +309,7 @@ export function makeAgentView(deps) {
     return a === null ? null : nameOf(a.id);
   }
 
-  /** @param {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null }} want */
+  /** @param {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null, epoch: number }} want */
   function postState(want) {
     if (frame === null) return;
     const s = chats.get();
@@ -306,9 +341,9 @@ export function makeAgentView(deps) {
     const s = chats.get();
     const ready = u.chat === null || (s.open === u.chat && !s.loading);
     if (mode !== "none" && ready) {
-      /** @type {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null }} */
-      const want = { mode: mode === "panel" ? "panel" : "screen", list: u.chatList, chat: u.chat };
-      if (posted === null || posted.mode !== want.mode || posted.list !== want.list || posted.chat !== want.chat) {
+      /** @type {{ mode: "screen" | "panel", list: boolean, chat: ChatId | null, epoch: number }} */
+      const want = { mode: mode === "panel" ? "panel" : "screen", list: u.chatList, chat: u.chat, epoch: u.chat === null ? 0 : s.epoch };
+      if (posted === null || posted.mode !== want.mode || posted.list !== want.list || posted.chat !== want.chat || posted.epoch !== want.epoch) {
         postState(want);
         return;
       }
@@ -331,9 +366,11 @@ export function makeAgentView(deps) {
     scheduled = false;
     if (frame === null || !helloed || posted === null) { queue = []; return; }
     if (queue.length > PATCH_MAX) {
-      // Too much to say as a patch: said whole instead.
+      // Too much to say as a patch: said whole instead, by the same rule as
+      // any state, so it is never a stream the store no longer holds.
       queue = [];
-      postState(posted);
+      posted = null;
+      post();
       return;
     }
     /** @type {{ kind: "look.patch", chat: ChatId | null, updates?: ChatUpdate[], chats?: ChatSummary[], names?: Record<string, PageName>, input?: LookInput, beside?: PageName | null }} */
@@ -368,11 +405,22 @@ export function makeAgentView(deps) {
    *  instead of a chat that never draws. @param {ChatId | null} chat @param {unknown} e */
   function lost(chat, e) {
     const code = e && typeof e === "object" ? /** @type {{ code?: unknown }} */ (e).code : undefined;
-    if (code !== ERRORS.NOT_FOUND && code !== ERRORS.BAD_REQUEST) { console.warn("[biom] the chat could not be read", e); return; }
+    if (code !== ERRORS.NOT_FOUND && code !== ERRORS.BAD_REQUEST) {
+      console.warn("[biom] the chat could not be read", e);
+      if (chat !== null) openFailed = { chat, at: Date.now() };
+      return;
+    }
     if (chat === null || ui.get().chat !== chat) return;
     if (ui.get().route.view === "agent") ui.go("agent", "");
     else ui.set({ chat: null });
   }
+
+  /** A chat whose read failed for a reason that may pass, and when: it is
+   *  not asked for again on every push, but after a pause. @type {{ chat: ChatId, at: number } | null} */
+  let openFailed = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let retry = null;
+  const RETRY_AFTER = 3000;
 
   let shownMode = "";
   function sync() {
@@ -386,9 +434,14 @@ export function makeAgentView(deps) {
     // The store holds the stream of the chat this window has open.
     if (chats.get().open !== u.chat) {
       const chat = u.chat;
-      void chats.open(chat).catch((e) => lost(chat, e));
+      const waited = openFailed !== null && openFailed.chat === chat ? Date.now() - openFailed.at : Infinity;
+      if (waited >= RETRY_AFTER) {
+        void chats.open(chat).then(() => { if (openFailed?.chat === chat) openFailed = null; }, (e) => lost(chat, e));
+      } else if (retry === null) {
+        retry = setTimeout(() => { retry = null; sync(); }, RETRY_AFTER - waited);
+      }
     }
-    if (mode !== "none" && html === null && !reading) void readLook();
+    if (mode !== "none" && html === null && !reading && Date.now() - readFailed >= RETRY_AFTER) void readLook();
     input.sync();
     post();
     chrome();
@@ -411,6 +464,9 @@ export function makeAgentView(deps) {
   function applyWidth() {
     const max = Math.max(PANEL_MIN, (win.innerWidth || 0) - PAGE_KEEPS);
     const w = Math.round(Math.max(PANEL_MIN, Math.min(width, max)));
+    // What is kept is what is drawn, so an arrow held past the edge does not
+    // bank width the panel cannot show.
+    if (drag === null) width = w;
     slot.style.setProperty("--agent-w", w + "px");
     grip.setAttribute("aria-valuenow", String(w));
     grip.setAttribute("aria-valuemax", String(Math.round(max)));
@@ -484,13 +540,24 @@ export function makeAgentView(deps) {
 
   /* ── moves ─────────────────────────────────────────────────────────── */
 
+  /** THE CARET GOES TO THE INPUT only from the look's own box, which the person
+   *  is in — never out of a page they are typing in beside the panel because
+   *  the look asked, since the look's word for a click is not a wall and the
+   *  input is where keystrokes reach an agent. */
+  function focusFromLook() {
+    const at = typeof document === "undefined" ? null : document.activeElement;
+    if (frame !== null && at === frame.el) input.focus();
+  }
+
   /** The full Agent screen, with the chat this window has open: the panel
-   *  shuts first, so the window never says it is beside a page it left. */
-  function toScreen() {
+   *  shuts first, so the window never says it is beside a page it left.
+   *  @param {boolean} [fromLook] */
+  function toScreen(fromLook = false) {
     const u = ui.get();
     if (u.panel) ui.set({ panel: false });
     ui.open("agent", u.chat ?? "");
-    input.focus();
+    if (fromLook) focusFromLook();
+    else input.focus();
   }
 
   sync();
@@ -506,7 +573,7 @@ export function makeAgentView(deps) {
         case "look.open": {
           if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
           if (u.chat !== req.chat) showChat(ui, req.chat, "open");
-          input.focus();
+          focusFromLook();
           return null;
         }
         case "look.new": {
@@ -514,6 +581,7 @@ export function makeAgentView(deps) {
           if (mode === "screen") ui.open("agent", "");
           else ui.set({ chat: null });
           input.fresh();
+          focusFromLook();
           return null;
         }
         case "look.list": {
@@ -522,7 +590,7 @@ export function makeAgentView(deps) {
         }
         case "look.panel": {
           if (req.to === "screen") {
-            if (mode !== "screen") toScreen();
+            if (mode !== "screen") toScreen(true);
             return null;
           }
           if (req.to === "beside") {
@@ -540,7 +608,7 @@ export function makeAgentView(deps) {
       }
     },
 
-    open: toScreen,
+    open: () => toScreen(),
 
     edit(page) {
       ui.set({ panel: true, chat: null });

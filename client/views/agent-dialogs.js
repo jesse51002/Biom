@@ -110,8 +110,11 @@ export function makeAgentDialogs(deps) {
   /** @type {Shown | null} */
   let shown = null;
   let q = "";
-  let sel = 0;
-  /** @type {{ el: HTMLElement, act: (() => void) | null }[]} */
+  let sel = -1;
+  /** The rows that can be picked, and whether a row is one Enter may do
+   *  unasked: an agent on this machine or a model is; an INSTALL is not, so a
+   *  second Enter after a send never puts software on the machine.
+   *  @type {{ el: HTMLElement, act: (() => void) | null, safe: boolean }[]} */
   let items = [];
   /** @type {RegistryAgent[] | null} */
   let registry = null;
@@ -136,11 +139,11 @@ export function makeAgentDialogs(deps) {
   const search = /** @type {HTMLInputElement} */ (h("input", {
     type: "search", autocomplete: "off", spellcheck: "false", "aria-label": "Search",
     "aria-controls": "agentsdlglist",
-    oninput: () => { q = search.value; sel = 0; draw(); },
+    oninput: () => { q = search.value; sel = -1; draw(); },
     onkeydown: (/** @type {KeyboardEvent} */ e) => key(e),
   }));
   const list = h("div#agentsdlglist.alist", { role: "listbox", "aria-label": "Agents" });
-  const dialog = h("div.adialog", { role: "dialog", "aria-modal": "true", "aria-labelledby": "agentsdlgtitle", onkeydown: (/** @type {KeyboardEvent} */ e) => trap(e) },
+  const dialog = h("div.adialog", { role: "dialog", "aria-modal": "true", "aria-labelledby": "agentsdlgtitle", onkeydown: (/** @type {KeyboardEvent} */ e) => dialogKey(e) },
     h("div.dh", title, h("button.iconbtn.x", { type: "button", "aria-label": "Close", title: "Close", onclick: () => close() }, icon("close"))),
     why,
     h("label.asearch", icon("search"), search),
@@ -166,14 +169,23 @@ export function makeAgentDialogs(deps) {
       const acting = items.filter((it) => it.act !== null);
       if (!acting.length) return;
       const now = acting.indexOf(/** @type {any} */ (items[sel]));
-      const next = (now + (e.key === "ArrowDown" ? 1 : -1) + acting.length) % acting.length;
+      const next = now < 0
+        ? (e.key === "ArrowDown" ? 0 : acting.length - 1)
+        : (now + (e.key === "ArrowDown" ? 1 : -1) + acting.length) % acting.length;
       sel = items.indexOf(/** @type {any} */ (acting[next]));
       mark();
       items[sel]?.el.scrollIntoView?.({ block: "nearest" });
     } else if (e.key === "Enter") {
       e.preventDefault();
       items[sel]?.act?.();
-    } else if (e.key === "Escape") {
+    }
+  }
+
+  /** Escape shuts it from anywhere inside, and Tab stays inside.
+   *  @param {KeyboardEvent} e */
+  function dialogKey(e) {
+    trap(e);
+    if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       close();
@@ -184,10 +196,10 @@ export function makeAgentDialogs(deps) {
     items.forEach((it, i) => it.el.setAttribute("aria-selected", String(i === sel)));
   }
 
-  /** @param {HTMLElement} el @param {(() => void) | null} act */
-  function item(el, act) {
+  /** @param {HTMLElement} el @param {(() => void) | null} act @param {boolean} [safe] */
+  function item(el, act, safe = true) {
     const at = items.length;
-    items.push({ el, act });
+    items.push({ el, act, safe });
     el.addEventListener("mouseenter", () => { if (act) { sel = at; mark(); } });
     el.addEventListener("click", (/** @type {MouseEvent} */ e) => {
       // A button in the row does its own thing; the row does the first one.
@@ -281,7 +293,7 @@ export function makeAgentDialogs(deps) {
           pic(r.icon),
           h("span.txt", h("span.nm", r.name), h("span.ds" + (saidNow || r.needs ? ".bad" : ""), saidNow ?? r.needs ?? r.line)),
           h("span.st"),
-          el), act));
+          el), act, false));
       }
       if (!reg.length && want) out.push(h("div.anone", "Nothing in the registry matches “" + q.trim() + "”."));
     }
@@ -328,13 +340,34 @@ export function makeAgentDialogs(deps) {
 
   function draw() {
     if (shown === null) return;
+    // The row that was lit stays lit by what it is, not by where it was.
+    const litKey = items[sel]?.el.getAttribute("data-agent") ?? items[sel]?.el.getAttribute("data-value") ?? null;
+    const focusWasIn = list.contains(doc.activeElement);
     items = [];
     const rows = shown.kind === "agents" ? drawAgents() : drawModels();
     list.setAttribute("aria-label", shown.kind === "agents" ? "Agents" : "Choices");
     list.replaceChildren(...rows);
-    const acting = items.map((it, i) => (it.act ? i : -1)).filter((i) => i >= 0);
-    if (!acting.includes(sel)) sel = acting[0] ?? 0;
+    const again = litKey === null ? -1 : items.findIndex((it) => it.act !== null && (it.el.getAttribute("data-agent") ?? it.el.getAttribute("data-value")) === litKey);
+    // NOTHING IS LIT UNASKED BUT A ROW ENTER MAY DO: an install waits for an
+    // arrow key or the pointer.
+    sel = again >= 0 ? again : items.findIndex((it) => it.act !== null && it.safe);
     mark();
+    // A button the redraw took from under the caret hands it back to the
+    // search, inside the dialog, rather than to the page behind it.
+    if (focusWasIn && !list.contains(doc.activeElement)) search.focus({ preventScroll: true });
+  }
+
+  /** What a redraw of More agents would show that moved: the agents, and the
+   *  sentence over them. A chat streaming moves neither, and redraws nothing. */
+  let drawnFor = "";
+  function maybeDraw() {
+    if (shown === null) return;
+    const s = chats.get();
+    const why = shown.kind === "agents" ? shown.opts.why() : null;
+    const key = JSON.stringify([s.agents, why]);
+    if (key === drawnFor) return;
+    drawnFor = key;
+    draw();
   }
 
   /* ── acts ──────────────────────────────────────────────────────────── */
@@ -437,12 +470,13 @@ export function makeAgentDialogs(deps) {
   function show(what) {
     const was = shown;
     shown = what;
-    if (was === null || was.kind !== what.kind) { q = ""; search.value = ""; sel = 0; expanded = null; }
+    if (was === null || was.kind !== what.kind) { q = ""; search.value = ""; sel = -1; expanded = null; }
     if (was === null) {
       const at = doc.activeElement;
       restore = at instanceof HTMLElement ? at : null;
       doc.body.append(modal);
-      off = chats.on(() => draw());
+      drawnFor = "";
+      off = chats.on(() => maybeDraw());
     }
     draw();
     requestAnimationFrame(() => search.focus({ preventScroll: true }));

@@ -192,6 +192,77 @@ test("reopening the stream reads what was missed: the list, the agents, and the 
   expect(reads).toBe(2);
 });
 
+test("A STREAM REOPENED MID-TURN LOSES NO WORDS: what the stream brings while the catch-up read is out is folded after the read, never before it", async () => {
+  /** @type {(v: any) => void} */
+  let answer = () => {};
+  let first = true;
+  const { transport } = transportOf({
+    "chat.read": () => {
+      if (first) { first = false; return { chat: summary(), updates: [up(1, "prompt", { text: "a" }), up(10, "reply", { text: "b" })] }; }
+      return new Promise((r) => { answer = r; });
+    },
+    "chat.list": () => [], "agents.list": () => [],
+  });
+  const store = makeChatStore({ transport });
+  await store.open(CHAT);
+  /** @type {number[][]} */
+  const grew = [];
+  store.onUpdates((_c, u) => grew.push(u.map((x) => x.seq)));
+  const syncing = store.resync();
+  await new Promise((r) => setTimeout(r, 0));
+  // Live, while the read of 11 onward is out.
+  store.takeChat({ chat: summary({ updated: 30 }), updates: [up(20, "reply", { text: "e" })] });
+  expect(grew).toEqual([]);
+  answer({ chat: summary({ updated: 29 }), updates: [up(11, "reply", { text: "c" }), up(19, "reply", { text: "d" })] });
+  await syncing;
+  expect(store.get().updates.map((u) => /** @type {any} */ (u).text)).toEqual(["a", "bcde"]);
+  expect(grew).toEqual([[11, 19, 20]]);
+});
+
+test("a stream reopened while a chat's first read is out is caught up once that read lands", async () => {
+  /** @type {(v: any) => void} */
+  let answer = () => {};
+  /** @type {any[]} */
+  const reads = [];
+  const { transport } = transportOf({
+    "chat.read": (req) => {
+      reads.push(req.since);
+      if (req.since === undefined) return new Promise((r) => { answer = r; });
+      return { chat: summary(), updates: [up(5, "reply", { text: "later" })] };
+    },
+    "chat.list": () => [], "agents.list": () => [],
+  });
+  const store = makeChatStore({ transport });
+  const opening = store.open(CHAT);
+  await store.resync();
+  answer({ chat: summary(), updates: [up(1, "prompt", { text: "a" })] });
+  await opening;
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+  expect(reads).toEqual([undefined, 1]);
+  expect(store.get().updates.map((u) => u.seq)).toEqual([1, 5]);
+});
+
+test("every read of a chat from the start is a new epoch, so a chat come back to is handed over whole", async () => {
+  const { transport } = transportOf({ "chat.read": (req) => ({ chat: summary({ id: req.chat }), updates: [] }) });
+  const store = makeChatStore({ transport });
+  await store.open(CHAT);
+  const a = store.get().epoch;
+  await store.open(OTHER);
+  await store.open(CHAT);
+  expect(store.get().epoch).toBeGreaterThan(a);
+});
+
+test("a read that fails for a reason that may pass leaves nothing open, so the chat is read again rather than drawn empty", async () => {
+  let fail = true;
+  const { transport } = transportOf({ "chat.read": () => { if (fail) throw Object.assign(new Error("down"), { code: "internal" }); return { chat: summary(), updates: [up(1, "prompt", { text: "a" })] }; } });
+  const store = makeChatStore({ transport });
+  await expect(store.open(CHAT)).rejects.toMatchObject({ code: "internal" });
+  expect(store.get().open).toBe(null);
+  fail = false;
+  await store.open(CHAT);
+  expect(store.get().updates.length).toBe(1);
+});
+
 test("lastSent is this window's clock at the moment it sent, for the switcher", async () => {
   let t = 100;
   const { transport } = transportOf({ "chat.new": (req) => summary({ id: OTHER, phase: req.text ? "starting" : "idle" }), "chat.send": () => summary() });
@@ -350,7 +421,7 @@ test("THE LOOK'S KINDS ARE ANSWERED FOR THE @agent BOX ALONE: another page's box
   expect(d.calls).toEqual([]);
 });
 
-test("the look moves the screen only just after a touch from its box; the list opens without one; a refusal carries its own code", async () => {
+test("the look is answered only just after a touch from its box, the list included; a refusal carries its own code", async () => {
   let t = 0;
   const d = bridgeDoubles();
   const bridge = makeBridge(/** @type {any} */ (d.ws), d.transport, d.ui, "", { now: () => t, wait: async () => {} });
@@ -359,8 +430,9 @@ test("the look moves the screen only just after a touch from its box; the list o
   const asked = [];
   bridge.answerLook((req) => { asked.push(req.kind); return req.kind === "look.open" ? { code: ERRORS.NOT_FOUND, message: "there is no such chat" } : null; });
   expect(await bridge.resolve(look("look.new"), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
-  expect(await bridge.resolve(look("look.list", { open: false }), ctx)).toMatchObject({ ok: true });
+  expect(await bridge.resolve(look("look.list", { open: false }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   bridge.touched?.(ctx);
+  expect(await bridge.resolve(look("look.list", { open: false }), ctx)).toMatchObject({ ok: true });
   expect(await bridge.resolve(look("look.new"), ctx)).toMatchObject({ ok: true });
   expect(await bridge.resolve(look("look.open", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.NOT_FOUND, message: "there is no such chat" } });
   t = 5000;
@@ -545,6 +617,32 @@ test("a flood too big for a patch is handed over whole instead", async () => {
   // Held folded: a run of chunks is one update, not thousands.
   expect(s.posted[0].state.updates.map((/** @type {any} */ u) => u.kind)).toEqual(["prompt", "reply"]);
   expect(s.posted[0].state.updates[1].text.length).toBe(many.length);
+});
+
+test("THE LOOK NEVER MOVES THE CARET out of wherever the person is: only the rail's Agent does", async () => {
+  const s = await stand({ route: { view: "agent", id: "", screen: "page" } });
+  const ctx = s.mounts[0].ctx;
+  s.view.answer(/** @type {any} */ (look("look.open", { chat: CHAT })), ctx);
+  s.view.answer(/** @type {any} */ (look("look.new")), ctx);
+  s.ui.open("page", "home", "page", true);
+  s.view.answer(/** @type {any} */ (look("look.panel", { to: "screen" })), ctx);
+  expect(s.said.filter((x) => x[0] === "focus")).toEqual([]);
+  s.view.open();
+  expect(s.said.filter((x) => x[0] === "focus")).toEqual([["focus"]]);
+});
+
+test("a chat come back to after another is handed over whole again, not patched across what it missed", async () => {
+  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" } });
+  await new Promise((r) => setTimeout(r, 0));
+  s.hello();
+  const states = () => s.posted.filter((p) => p.kind === "look.state").length;
+  const before = states();
+  s.ui.open("agent", OTHER);
+  s.ui.open("agent", CHAT);
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(states()).toBeGreaterThan(before);
+  expect(s.posted.filter((p) => p.kind === "look.state").at(-1).state.chat).toBe(CHAT);
 });
 
 test("a new thread leaves the list as it was; the panel goes to the screen, beside the last page, or shut", async () => {

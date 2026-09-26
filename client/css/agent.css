@@ -116,7 +116,7 @@
   border:0; border-radius:0; background:var(--led); color:var(--on-spot); cursor:pointer;
   transition:background .15s ease, color .15s ease, transform .1s ease;
 }
-.agentdock .send .ico{width:17px; height:17px}
+.agentdock .send .ico{width:17px; height:17px; pointer-events:none}
 .agentdock .send:hover:not([disabled]){background:color-mix(in srgb, var(--led) 88%, var(--ink))}
 .agentdock .send[disabled]{background:var(--agent-field-3); color:var(--ink-3); cursor:default}
 .agentdock .send:active:not([disabled]){transform:scale(.93)}

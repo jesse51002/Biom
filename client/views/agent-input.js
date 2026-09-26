@@ -52,6 +52,7 @@ import {
  *   and the caret after them — **Edit**'s — naming the page the chat is for.
  * @property {() => void} focus
  * @property {() => void} fresh A new thread began: nothing pending for a page.
+ *   It moves no caret; the view decides where the caret goes.
  */
 
 /** How the dock stands off the look's foot in a chat, under the composer —
@@ -120,7 +121,7 @@ export function makeAgentInput(deps) {
   const slash = h("div#agentslash.slash", { role: "listbox", "aria-label": "Commands and skills", hidden: "" });
   const text = /** @type {HTMLTextAreaElement} */ (h("textarea#agentta.agentta", {
     rows: "1", spellcheck: "true", placeholder: "Ask anything",
-    "aria-label": "Message", "aria-controls": "agentslash", "aria-expanded": "false", "aria-autocomplete": "list",
+    "aria-label": "Message", "aria-controls": "agentslash", "aria-autocomplete": "list",
     oninput: () => { said = ""; autosize(); paint(); void drawSlash(true); },
     onkeydown: (/** @type {KeyboardEvent} */ e) => keydown(e),
   }));
@@ -142,7 +143,7 @@ export function makeAgentInput(deps) {
    *  @type {{ was: "stop" | "send", at: number } | null} */
   let pressedAs = null;
   const send = h("button.send", {
-    type: "button", "aria-label": "Send",
+    type: "button", "aria-label": "",
     onpointerdown: () => { pressedAs = { was: now().busy ? "stop" : "send", at: Date.now() }; },
     onclick: () => press(),
   }, icon("up"));
@@ -210,16 +211,22 @@ export function makeAgentInput(deps) {
     }
     sep.hidden = !pickers.length;
 
-    send.className = n.busy ? "send stop" : "send";
-    send.replaceChildren(icon(n.busy ? "stop" : "up"));
-    send.setAttribute("aria-label", n.busy ? "Stop" : "Send");
-    send.title = n.busy ? "Stop" : "";
+    if (send.getAttribute("aria-label") !== (n.busy ? "Stop" : "Send")) {
+      send.className = n.busy ? "send stop" : "send";
+      send.replaceChildren(icon(n.busy ? "stop" : "up"));
+      send.setAttribute("aria-label", n.busy ? "Stop" : "Send");
+      send.title = n.busy ? "Stop" : "";
+    }
     if (n.busy) send.toggleAttribute("disabled", stopping);
     else send.toggleAttribute("disabled", sending || text.value.trim() === "");
 
     const offer = switcher?.get().offer ?? null;
     follow.hidden = offer === null;
     if (offer !== null) followName.textContent = offer.name;
+
+    // THE WORDS BEING SENT ARE NOT EDITED WHILE THEY GO: whatever was typed
+    // meanwhile would be left beside them and sent a second time.
+    text.readOnly = sending;
 
     const phase = n.chat?.phase ?? "idle";
     working.hidden = !n.busy;
@@ -305,6 +312,13 @@ export function makeAgentInput(deps) {
     // ONE MESSAGE AT A TIME: while a turn runs the button is Stop and Enter
     // sends nothing.
     if (n.busy) return;
+    // A CHAT THIS WINDOW NAMES AND HAS NOT READ YET is not the start screen:
+    // sending now would make a new chat of words meant for this one.
+    if (n.chatId !== null && n.chat === null) {
+      said = "This chat is still being read.";
+      paint();
+      return;
+    }
     closeSlash();
     said = "";
     sending = true;
@@ -326,7 +340,15 @@ export function makeAgentInput(deps) {
       }
       autosize();
     } catch (e) {
-      said = codeOf(e) === "limit" ? "One message at a time: this chat’s turn is still going." : "Not sent: " + sentence(e);
+      const code = codeOf(e);
+      if (code === "limit") said = "One message at a time: this chat’s turn is still going.";
+      else if (code === "timeout" || code === "fetch_failed") {
+        // IT MAY HAVE GONE: the server can have taken it and the answer been
+        // lost. The list is read again, and the person is told to look
+        // before sending the same words twice.
+        said = "The server did not answer in time. If your message shows in the chat, it went out; otherwise send it again.";
+        void chats.resync();
+      } else said = "Not sent: " + sentence(e);
     } finally {
       sending = false;
       paint();
@@ -382,9 +404,10 @@ export function makeAgentInput(deps) {
   let slashGen = 0;
 
   function closeSlash() {
+    // A list still being read for what was typed before is not opened after.
+    slashGen++;
     slash.hidden = true;
     rows = [];
-    text.setAttribute("aria-expanded", "false");
     text.removeAttribute("aria-activedescendant");
   }
 
@@ -423,7 +446,6 @@ export function makeAgentInput(deps) {
       }, h("span.sn", "/" + c.name), h("span.sw", c.description + (c.hint ? " · " + c.hint : ""))))
       : [h("div.none", "Nothing starts with /" + q)]));
     slash.hidden = false;
-    text.setAttribute("aria-expanded", "true");
     markSlash();
   }
 
@@ -647,7 +669,10 @@ export function makeAgentInput(deps) {
       return () => { movers.delete(fn); };
     },
     prefill(words, page) {
-      text.value = words;
+      // A DRAFT ALREADY ON THE START SCREEN IS KEPT, after the page's location:
+      // Edit names the page, and does not throw away what was typed.
+      const draft = ui.get().chat === null ? text.value.replace(/^Edit [^\n]*?: /, "") : "";
+      text.value = words + draft;
       pendingPage = page;
       autosize();
       paint();
@@ -660,7 +685,6 @@ export function makeAgentInput(deps) {
     },
     fresh() {
       pendingPage = null;
-      text.focus({ preventScroll: true });
     },
   };
 }

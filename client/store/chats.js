@@ -44,6 +44,9 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  *   update — what its pickers show — or null before it has one.
  * @property {SlashCommand[] | null} commands The open chat's last `commands`
  *   update — its / menu, merged by the server — or null.
+ * @property {number} epoch Which read of the open chat's stream this is: it
+ *   moves every time the stream is read from the start, so a reader that was
+ *   handed the stream whole knows when it must be handed it whole again.
  */
 
 /**
@@ -199,10 +202,18 @@ export function makeChatStore(deps) {
   let open = null;
   let loading = false;
   let h = held();
-  /** Batches for the open chat that arrived while its first read was in
-   *  flight: the read may or may not have seen them, and `fold` says which.
-   *  @type {unknown[][]} */
-  let early = [];
+  /** Batches for the open chat that arrived while a read of it was in flight
+   *  — its first, or a catch-up — which the read may or may not have seen:
+   *  folded AFTER the read, and `fold` says which were new. Folding one first
+   *  would move the seq held past what the read brings, and the read's words
+   *  would be dropped as said. Null while no read is out.
+   *  @type {unknown[][] | null} */
+  let early = null;
+  /** A catch-up was asked for while the first read was out: the stream closed
+   *  and opened under it, and what it missed is read once that read lands. */
+  let catchAfter = false;
+  /** Every read of a stream from the start, counted. */
+  let epoch = 0;
   /** Which open this is, so a read that lands after another open is dropped. */
   let gen = 0;
   /** @type {Map<ChatId, number>} */
@@ -222,6 +233,7 @@ export function makeChatStore(deps) {
       updates: h.updates,
       config: latestOf(h, "config")?.options ?? null,
       commands: latestOf(h, "commands")?.commands ?? null,
+      epoch,
     };
   }
 
@@ -276,10 +288,13 @@ export function makeChatStore(deps) {
     const my = ++gen;
     open = chat;
     h = held();
-    early = [];
+    epoch++;
+    early = null;
+    catchAfter = false;
     loading = chat !== null;
     emit();
     if (chat === null) return;
+    early = [];
     try {
       if (!isOpaqueId(chat)) throw Object.assign(new Error("there is no such chat"), { code: "not_found" });
       /** @type {ChatRead} */
@@ -290,29 +305,55 @@ export function makeChatStore(deps) {
       for (const b of early) fold(h, b);
     } catch (e) {
       if (my !== gen) return;
+      // NOTHING IS HELD FOR IT, so it is not the open chat: the next open of
+      // it reads it again rather than drawing it empty for good.
+      open = null;
       loading = false;
-      early = [];
+      early = null;
       emit();
       throw e;
     }
-    early = [];
+    early = null;
     loading = false;
+    epoch++;
     emit();
+    if (catchAfter) { catchAfter = false; void catchUp().catch((e) => console.warn("[biom] the chat could not be read again", e)); }
   }
 
   /** What was missed while the stream was shut: the open chat's stream from
-   *  the last seq held, folded as a batch. */
+   *  the last seq held, folded as a batch — and what the stream brings while
+   *  the read is out, folded after it. */
   async function catchUp() {
     const chat = open;
-    if (chat === null || loading) return;
+    if (chat === null) return;
+    if (loading || early !== null) { catchAfter = true; return; }
     const my = gen;
-    /** @type {ChatRead} */
-    const read = await ask({ kind: "chat.read", chat, since: h.seq });
+    early = [];
+    /** @type {ChatRead | null} */
+    let read = null;
+    /** @type {unknown} */
+    let failed = null;
+    try {
+      read = await ask({ kind: "chat.read", chat, since: h.seq });
+    } catch (e) {
+      failed = e;
+    }
+    // Another chat opened meanwhile: it owns `early` now, and this is moot.
     if (my !== gen) return;
-    takeSummary(read.chat);
-    const took = fold(h, Array.isArray(read.updates) ? read.updates : []);
+    const batches = early;
+    early = null;
+    /** @type {ChatUpdate[]} */
+    let took = [];
+    if (read !== null) {
+      takeSummary(read.chat);
+      took = fold(h, Array.isArray(read.updates) ? read.updates : []);
+    }
+    // What the stream brought meanwhile is never lost, read or no read.
+    for (const b of batches) took = took.concat(fold(h, b));
     emit();
     if (took.length) grew.emit({ chat, updates: took });
+    if (failed !== null) throw failed;
+    if (catchAfter) { catchAfter = false; await catchUp(); }
   }
 
   async function readList() {
@@ -355,7 +396,7 @@ export function makeChatStore(deps) {
       /** @type {ChatUpdate[]} */
       let took = [];
       if (push.chat.id === open && updates.length) {
-        if (loading) early.push(updates);
+        if (early !== null) early.push(updates);
         else took = fold(h, updates);
         moved = moved || took.length > 0;
       }
