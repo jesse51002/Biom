@@ -151,6 +151,18 @@ export function textOf(block: unknown): string | null {
 
 const CATEGORIES = new Set(["model", "mode", "thought_level"]);
 
+/** WHAT A PICKER OR A MENU CAN HOLD, and no more is believed: the probe's
+ *  lists ride every `agents` event to every window, and a chat's every
+ *  `config` and `commands` update. An id or a value longer than its bound is
+ *  not the agent's word cut short — it is left out; a name, a line or a hint
+ *  is cut. */
+export const WIRE_BOUNDS = { options: 64, choices: 1000, commands: 500, id: 256, name: 200, description: 1000, hint: 500 } as const;
+const cut = (s: string | null, max: number): string | null => (s !== null && s.length > max ? s.slice(0, max) : s);
+const idOf = (v: unknown): string | null => {
+  const s = str(v);
+  return s !== null && s !== "" && s.length <= WIRE_BOUNDS.id ? s : null;
+};
+
 /** THE AGENT'S SESSION CONFIG OPTIONS, as Biom's pickers read them — and an
  *  agent's older `modes` as one `mode` option all the same (*Chat*, `acp`),
  *  unless it already lists an option of that category. `legacyMode` is the id
@@ -161,10 +173,12 @@ const CATEGORIES = new Set(["model", "mode", "thought_level"]);
 export function toConfigOptions(configOptions: unknown, modes: unknown): { options: ConfigOption[]; legacyMode: string | null } {
   const options: ConfigOption[] = [];
   for (const raw of arr(configOptions)) {
+    if (options.length >= WIRE_BOUNDS.options) break;
     if (!isObj(raw)) continue;
-    const id = str(raw.id);
-    const name = str(raw.name);
-    if (id === null || id === "" || name === null) continue;
+    const id = idOf(raw.id);
+    const name = cut(str(raw.name), WIRE_BOUNDS.name);
+    // An id the agent gave twice is its first: `chat.config` names one.
+    if (id === null || name === null || options.some((o) => o.id === id)) continue;
     const category = typeof raw.category === "string" && CATEGORIES.has(raw.category) ? (raw.category as ConfigOption["category"]) : "other";
     if (raw.type === "boolean") {
       options.push({ id, name, category, type: "boolean", value: raw.currentValue === true, choices: [] });
@@ -173,10 +187,12 @@ export function toConfigOptions(configOptions: unknown, modes: unknown): { optio
     if (raw.type !== "select") continue;
     const choices: ConfigChoice[] = [];
     for (const item of arr(raw.options)) {
+      if (choices.length >= WIRE_BOUNDS.choices) break;
       if (!isObj(item)) continue;
       if (Array.isArray(item.options)) {
-        const group = str(item.name) ?? str(item.group);
+        const group = cut(str(item.name) ?? str(item.group), WIRE_BOUNDS.name);
         for (const inner of item.options) {
+          if (choices.length >= WIRE_BOUNDS.choices) break;
           const c = choiceOf(inner, group);
           if (c) choices.push(c);
         }
@@ -194,11 +210,12 @@ export function toConfigOptions(configOptions: unknown, modes: unknown): { optio
     const available = arr(modes.availableModes);
     const choices: ConfigChoice[] = [];
     for (const m of available) {
+      if (choices.length >= WIRE_BOUNDS.choices) break;
       if (!isObj(m)) continue;
-      const value = str(m.id);
-      const name = str(m.name);
+      const value = idOf(m.id);
+      const name = cut(str(m.name), WIRE_BOUNDS.name);
       if (value === null || name === null) continue;
-      choices.push({ value, name, description: str(m.description), group: null });
+      choices.push({ value, name, description: cut(str(m.description), WIRE_BOUNDS.description), group: null });
     }
     if (choices.length > 0) {
       legacyMode = options.some((o) => o.id === "mode") ? "_mode" : "mode";
@@ -210,10 +227,10 @@ export function toConfigOptions(configOptions: unknown, modes: unknown): { optio
 
 function choiceOf(item: unknown, group: string | null): ConfigChoice | null {
   if (!isObj(item)) return null;
-  const value = str(item.value);
-  const name = str(item.name);
+  const value = idOf(item.value);
+  const name = cut(str(item.name), WIRE_BOUNDS.name);
   if (value === null || name === null) return null;
-  return { value, name, description: str(item.description), group };
+  return { value, name, description: cut(str(item.description), WIRE_BOUNDS.description), group };
 }
 
 /** How to set one option: `session/set_mode` for the synthesised mode option,
@@ -236,12 +253,13 @@ export function toSlashCommands(list: unknown): SlashCommand[] {
   const out: SlashCommand[] = [];
   const seen = new Set<string>();
   for (const raw of arr(list)) {
+    if (out.length >= WIRE_BOUNDS.commands) break;
     if (!isObj(raw)) continue;
     const name = str(raw.name)?.replace(/^\//, "") ?? null;
-    if (name === null || name === "" || seen.has(name)) continue;
+    if (name === null || name === "" || name.length > WIRE_BOUNDS.name || seen.has(name)) continue;
     seen.add(name);
     const input = isObj(raw.input) ? raw.input : null;
-    out.push({ name, description: str(raw.description) ?? "", hint: input ? str(input.hint) : null, source: "agent", skill: null });
+    out.push({ name, description: cut(str(raw.description), WIRE_BOUNDS.description) ?? "", hint: input ? cut(str(input.hint), WIRE_BOUNDS.hint) : null, source: "agent", skill: null });
   }
   return out;
 }
