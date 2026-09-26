@@ -1,0 +1,613 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Installing an agent from the ACP Registry, with nothing fetched and nothing
+// installed for real: the registry is an invented document, every download is
+// bytes this file builds — a tar, a gzip, a zip, a bare program — the network
+// is a function answering them, and `npm`, `uv` and `bzip2` are a fake runner
+// that writes what each would have written. Every agent, package, url and
+// checksum here is invented; only Biom's own folder under a temporary
+// directory is touched.
+//
+// What is held: a download whose SHA-256 is not the registry's is refused and
+// leaves nothing; each distribution kind installs into Biom's own folder at the
+// pinned version, writes the record discovery reads, and is then probed Active;
+// a binary the registry lists no checksum for is never installed; npx without
+// Node and uvx without uv are said plainly; the registry is read once within
+// its lifetime, a stale copy stands in when the network will not answer, and
+// nothing at all is a refusal in words. And an archive is judged before a byte
+// of it is written: a name that climbs out, an absolute name, a link that
+// points out — lexically or by a chain of links — an entry beneath a link, a
+// name given twice, a device and a damaged header each refuse it, and nothing
+// lands outside.
+
+import { test, expect, afterAll } from "bun:test";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { deflateRawSync, gzipSync } from "node:zlib";
+
+import { makeAgents } from "../server/workspace/agents.ts";
+import type { AgentsDeps } from "../server/workspace/agents.ts";
+import { ArchiveError, judge, linkLands, tarEntries, zipEntries } from "../server/domain/agents-archive.ts";
+import { REGISTRY_URL, archiveKind, parseRegistry, safeRelPath } from "../server/domain/agents-registry.ts";
+import type { AcpConnection, AcpExit } from "../server/platform/acp.ts";
+import type { AgentInfo, AgentLaunch, ProcessRunner, RegistryAgent } from "../contracts/types.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "biom-install-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+let n = 0;
+const fresh = (): string => {
+  const at = join(scratch, `h${++n}`);
+  mkdirSync(at, { recursive: true });
+  return at;
+};
+
+/* ── invented archives ───────────────────────────────────────────────── */
+
+const enc = new TextEncoder();
+const bytes = (s: string): Uint8Array => enc.encode(s);
+const sha = (b: Uint8Array): string => createHash("sha256").update(b).digest("hex");
+
+function field(h: Uint8Array, at: number, len: number, value: string): void {
+  h.set(enc.encode(value).subarray(0, len), at);
+}
+function octal(h: Uint8Array, at: number, len: number, value: number): void {
+  field(h, at, len, value.toString(8).padStart(len - 1, "0") + "\u0000");
+}
+
+interface TarItem {
+  name: string;
+  type?: string;
+  data?: Uint8Array;
+  mode?: number;
+  link?: string;
+}
+
+/** A ustar archive of `items`, each header's checksum right unless `corrupt`. */
+function tar(items: TarItem[], corrupt = false): Uint8Array {
+  const parts: Uint8Array[] = [];
+  for (const it of items) {
+    const h = new Uint8Array(512);
+    const data = it.data ?? new Uint8Array(0);
+    field(h, 0, 100, it.name);
+    octal(h, 100, 8, it.mode ?? 0o644);
+    octal(h, 108, 8, 0);
+    octal(h, 116, 8, 0);
+    octal(h, 124, 12, (it.type ?? "0") === "0" ? data.length : 0);
+    octal(h, 136, 12, 0);
+    h.fill(0x20, 148, 156);
+    h[156] = (it.type ?? "0").charCodeAt(0);
+    field(h, 157, 100, it.link ?? "");
+    field(h, 257, 6, "ustar\u0000");
+    field(h, 263, 2, "00");
+    let sum = 0;
+    for (const b of h) sum += b;
+    octal(h, 148, 7, corrupt ? sum + 1 : sum);
+    parts.push(h);
+    if ((it.type ?? "0") === "0") {
+      const padded = new Uint8Array(Math.ceil(data.length / 512) * 512);
+      padded.set(data);
+      parts.push(padded);
+    }
+  }
+  parts.push(new Uint8Array(1024));
+  return concat(parts);
+}
+
+interface ZipItem {
+  name: string;
+  data?: Uint8Array;
+  deflate?: boolean;
+  mode?: number;
+  symlink?: boolean;
+  badCrc?: boolean;
+}
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** A zip of `items`, made on "Unix" so modes and links carry. */
+function zip(items: ZipItem[]): Uint8Array {
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const it of items) {
+    const data = it.data ?? new Uint8Array(0);
+    const stored = it.deflate ? new Uint8Array(deflateRawSync(data)) : data;
+    const crc = it.badCrc ? 0x1234 : Bun.hash.crc32(data) >>> 0;
+    const name = enc.encode(it.name);
+    const local = new Uint8Array(30 + name.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(8, it.deflate ? 8 : 0, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, stored.length, true);
+    lv.setUint32(22, data.length, true);
+    lv.setUint16(26, name.length, true);
+    local.set(name, 30);
+    const central = new Uint8Array(46 + name.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, (3 << 8) | 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(10, it.deflate ? 8 : 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, stored.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true);
+    const kind = it.name.endsWith("/") ? 0o040000 : it.symlink ? 0o120000 : 0o100000;
+    cv.setUint32(38, ((kind | (it.mode ?? 0o644)) << 16) >>> 0, true);
+    cv.setUint32(42, offset, true);
+    central.set(name, 46);
+    locals.push(local, stored);
+    centrals.push(central);
+    offset += local.length + stored.length;
+  }
+  const cd = concat(centrals);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, items.length, true);
+  ev.setUint16(10, items.length, true);
+  ev.setUint32(12, cd.length, true);
+  ev.setUint32(16, offset, true);
+  return concat([...locals, cd, end]);
+}
+
+const reader = (b: Uint8Array) => (offset: number, length: number): Uint8Array => b.slice(offset, offset + length);
+
+/* ── the archive, judged ──────────────────────────────────────────────── */
+
+test("a tar's table of contents: names made safe, links and modes read, the root skipped", () => {
+  const b = tar([
+    { name: "./", type: "5" },
+    { name: "./bin/", type: "5", mode: 0o755 },
+    { name: "./bin/agent", data: bytes("#!/bin/sh\n"), mode: 0o4755 },
+    { name: "bin/alias", type: "2", link: "agent" },
+    { name: "bin/copy", type: "1", link: "./bin/agent" },
+  ]);
+  const list = judge(tarEntries(reader(b), b.length));
+  expect(list.map((e) => [e.path, e.type])).toEqual([["bin", "dir"], ["bin/agent", "file"], ["bin/alias", "symlink"], ["bin/copy", "hardlink"]]);
+  // setuid is never unpacked.
+  expect(list[1]?.mode).toBe(0o755);
+});
+
+test("an archive that climbs out, names an absolute path, or is damaged is refused whole", () => {
+  const refuse = (b: Uint8Array) => expect(() => judge(tarEntries(reader(b), b.length))).toThrow(ArchiveError);
+  refuse(tar([{ name: "fine", data: bytes("x") }, { name: "../../evil", data: bytes("x") }]));
+  refuse(tar([{ name: "/etc/evil", data: bytes("x") }]));
+  refuse(tar([{ name: "a\\..\\..\\evil", data: bytes("x") }]));
+  refuse(tar([{ name: "C:/evil", data: bytes("x") }]));
+  refuse(tar([{ name: "fine", data: bytes("x") }], true));
+  refuse(tar([{ name: "dev", type: "3" }]));
+  refuse(tar([{ name: "fifo", type: "6" }]));
+  // Links that land outside, and names given twice.
+  refuse(tar([{ name: "out", type: "2", link: "../outside" }]));
+  refuse(tar([{ name: "abs", type: "2", link: "/etc/passwd" }]));
+  refuse(tar([{ name: "a", data: bytes("1") }, { name: "a", data: bytes("2") }]));
+  refuse(tar([{ name: "Readme", data: bytes("1") }, { name: "README", data: bytes("2") }]));
+  // An entry beneath a link the archive makes, even under another case.
+  refuse(tar([{ name: "sub/", type: "5" }, { name: "l", type: "2", link: "sub" }, { name: "l/x", data: bytes("x") }]));
+  refuse(tar([{ name: "L", type: "2", link: "sub" }, { name: "l/x", data: bytes("x") }]));
+  // A hard link to nothing earlier in the archive.
+  refuse(tar([{ name: "h", type: "1", link: "missing" }]));
+  // Truncated.
+  const whole = tar([{ name: "f", data: new Uint8Array(2000) }]);
+  refuse(whole.subarray(0, 1024));
+});
+
+test("the pure path rules", () => {
+  expect(safeRelPath("./a//b/./c")).toBe("a/b/c");
+  expect(safeRelPath("./")).toBe("");
+  expect(safeRelPath("a/../b")).toBeNull();
+  expect(safeRelPath("/a")).toBeNull();
+  expect(safeRelPath("a\u0000b")).toBeNull();
+  expect(linkLands("bin/x", "../lib/y")).toBe("lib/y");
+  expect(linkLands("x", "../y")).toBeNull();
+  expect(linkLands("a/b", "/y")).toBeNull();
+  expect(archiveKind("https://h/x/agent-1.0-linux.tar.gz")).toBe("tar.gz");
+  expect(archiveKind("https://h/x/coco-1.0.73%2B1.e6-linux-amd64.tar.gz")).toBe("tar.gz");
+  expect(archiveKind("https://h/x/a.tar.bz2")).toBe("tar.bz2");
+  expect(archiveKind("https://h/x/a.zip")).toBe("zip");
+  expect(archiveKind("https://h/x/sigit-linux-amd64")).toBe("raw");
+  expect(archiveKind("https://h/x/tool.exe")).toBe("raw");
+  expect(archiveKind("https://h/x/tool.tar.xz")).toBeNull();
+  expect(archiveKind("https://h/x/tool.dmg")).toBeNull();
+});
+
+test("a zip's table of contents: modes, links and folders; a climbing name, a bad checksum and encryption refuse it", () => {
+  const b = zip([{ name: "dir/" }, { name: "dir/run", data: bytes("#!/bin/sh\n"), mode: 0o755, deflate: true }, { name: "dir/l", data: bytes("run"), symlink: true }]);
+  const list = zipEntries(reader(b), b.length);
+  expect(list.map((e) => [e.path, e.type, e.mode])).toEqual([["dir", "dir", 0o644], ["dir/run", "file", 0o755], ["dir/l", "symlink", 0o644]]);
+  const bad = zip([{ name: "../evil", data: bytes("x") }]);
+  expect(() => zipEntries(reader(bad), bad.length)).toThrow(ArchiveError);
+  const junk = bytes("PK not really a zip at all, just words long enough");
+  expect(() => zipEntries(reader(junk), junk.length)).toThrow(ArchiveError);
+  const locked = zip([{ name: "x", data: bytes("x") }]);
+  // Set the encrypted flag in the central directory entry.
+  const cdAt = locked.length - 22 - (46 + 1);
+  locked[cdAt + 8] = 1;
+  expect(() => zipEntries(reader(locked), locked.length)).toThrow("encrypted");
+});
+
+/* ── the registry ─────────────────────────────────────────────────────── */
+
+const PLATFORM = "linux-x86_64";
+
+function registryDoc(extra: Record<string, unknown>[] = []): Record<string, unknown> {
+  return { version: "1.0.0", agents: extra, extensions: [] };
+}
+
+test("the registry is read as untrusted: a bad id, a url spec, an unpinned spec, a climbing cmd and a plain-http download are dropped", () => {
+  const entries = parseRegistry(registryDoc([
+    { id: "good", name: "Good", version: "1.0.0", description: "Invented", distribution: { npx: { package: "good-agent@1.0.0" } } },
+    { id: "../bad", name: "Bad", version: "1.0.0", distribution: { npx: { package: "x@1.0.0" } } },
+    { id: "urlspec", name: "U", version: "1.0.0", distribution: { npx: { package: "git+https://example.invalid/x.git" } } },
+    { id: "flagspec", name: "F", version: "1.0.0", distribution: { npx: { package: "--prefix=/@1.0.0" } } },
+    { id: "unpinned", name: "P", version: "1.0.0", distribution: { npx: { package: "some-agent@latest" }, uvx: { package: "some-agent" } } },
+    { id: "climb", name: "C", version: "1.0.0", distribution: { binary: { [PLATFORM]: { archive: "https://example.invalid/a.tar.gz", cmd: "../../bin/sh", sha256: "a".repeat(64) } } } },
+    { id: "plain", name: "H", version: "1.0.0", distribution: { binary: { [PLATFORM]: { archive: "http://example.invalid/a.tar.gz", cmd: "./a", sha256: "a".repeat(64) } } } },
+    { id: "badversion", name: "V", version: "../1", distribution: { npx: { package: "v@1.0.0" } } },
+  ]));
+  const byId = Object.fromEntries(entries.map((e) => [e.key, e]));
+  expect(Object.keys(byId).sort()).toEqual(["climb", "flagspec", "good", "plain", "unpinned", "urlspec"]);
+  expect(byId.good?.npx?.spec).toBe("good-agent@1.0.0");
+  for (const k of ["urlspec", "flagspec", "unpinned"]) {
+    expect(byId[k]?.npx).toBeNull();
+    expect(byId[k]?.uvx).toBeNull();
+  }
+  expect(byId.climb?.binary).toEqual({});
+  expect(byId.plain?.binary).toEqual({});
+  expect(() => parseRegistry({ nope: true })).toThrow();
+});
+
+/* ── installing ───────────────────────────────────────────────────────── */
+
+const SECRET = "sk-invented-install";
+
+interface Rig {
+  deps: AgentsDeps;
+  ran: { cmd: string[]; cwd: string; env: Record<string, string>; stdout: string }[];
+  fetched: string[];
+  probes: AgentLaunch[];
+  home: string;
+}
+
+function rig(opts: {
+  entries: Record<string, unknown>[];
+  files?: Record<string, Uint8Array>;
+  bins?: Record<string, string>;
+  /** What the fake `npm`, `uv` or `bzip2` does, given its command. */
+  tool?: (spec: { cmd: string[]; cwd: string; env: Record<string, string>; stdout: string }) => number;
+  registryDown?: boolean;
+  now?: () => number;
+  home?: string;
+}): Rig {
+  const ran: Rig["ran"] = [];
+  const fetched: string[] = [];
+  const probes: AgentLaunch[] = [];
+  const home = opts.home ?? fresh();
+  const doc = registryDoc(opts.entries);
+  const processes: ProcessRunner = {
+    start(spec) {
+      ran.push({ cmd: spec.cmd, cwd: spec.cwd, env: spec.env, stdout: spec.stdout });
+      const exit = opts.tool ? opts.tool(spec) : 1;
+      return { pid: 5000 + ran.length, pgid: 5000 + ran.length, born: null, done: Promise.resolve({ exit, signal: null }) };
+    },
+    async end() {},
+    killNow() {},
+    alive: () => false,
+  };
+  const connect = (launch: AgentLaunch): AcpConnection => {
+    probes.push(launch);
+    let finish!: (e: AcpExit) => void;
+    const closed = new Promise<AcpExit>((r) => {
+      finish = r;
+    });
+    return {
+      async request(method) {
+        if (method === "initialize") return { protocolVersion: 1, agentInfo: { name: "x", version: "9.9.9" } };
+        if (method === "session/new") return { sessionId: "s" };
+        throw Object.assign(new Error("no"), { code: -32601 });
+      },
+      notify() {},
+      handle() {},
+      onNotification: () => () => {},
+      stderr: () => "",
+      async close() {
+        finish({ code: 0, signal: null });
+        return closed;
+      },
+      closed,
+    };
+  };
+  const deps: AgentsDeps = {
+    connect,
+    env: async () => ({ PATH: "/invented/bin", SECRET_KEY: SECRET }),
+    which: async (c) => (opts.bins ?? { node: "/invented/bin/node", npm: "/invented/bin/npm", uv: "/invented/bin/uv", bzip2: "/invented/bin/bzip2" })[c] ?? null,
+    fetch: (async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      fetched.push(url);
+      if (url === REGISTRY_URL) {
+        if (opts.registryDown) throw new TypeError("offline");
+        return new Response(JSON.stringify(doc));
+      }
+      const body = opts.files?.[url];
+      if (body === undefined) return new Response("missing", { status: 404 });
+      return new Response(body);
+    }) as typeof fetch,
+    home,
+    cwd: "/invented/vault",
+    now: opts.now ?? (() => Date.now()),
+    processes,
+    version: "0.0.0-test",
+    platform: "linux",
+    arch: "x64",
+    timing: { commands: 10, initialize: 300, session: 300 },
+  };
+  return { deps, ran, fetched, probes, home };
+}
+
+async function installed(r: Rig, key: string): Promise<AgentInfo> {
+  const agents = makeAgents(r.deps);
+  const answered = agents.install(key);
+  expect(answered.reason).toBe("installing");
+  expect(answered.source).toBe("installed");
+  await agents.settled();
+  const a = agents.list().find((x) => x.key === key);
+  if (a === undefined) throw new Error(`${key} is not listed`);
+  return a;
+}
+
+const binaryEntry = (id: string, url: string, sum: string | null, cmd = "./agent"): Record<string, unknown> => ({
+  id,
+  name: `Invented ${id}`,
+  version: "2.0.0",
+  description: "An invented agent",
+  distribution: { binary: { [PLATFORM]: { archive: url, cmd, args: ["acp"], ...(sum === null ? {} : { sha256: sum }) } } },
+});
+
+const program = bytes("#!/bin/sh\necho invented\n");
+
+test("a download whose SHA-256 is not the registry's is refused, and nothing is left", async () => {
+  const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const r = rig({ entries: [binaryEntry("liar", "https://dl.invented.example/liar.tar.gz", "0".repeat(64))], files: { "https://dl.invented.example/liar.tar.gz": body } });
+  const a = await installed(r, "liar");
+  expect(a.state).toBe("inactive");
+  expect(a.reason).toBe("failed");
+  expect(a.message).toContain("did not match the checksum");
+  expect(existsSync(join(r.home, "liar", "2.0.0"))).toBe(false);
+  expect(existsSync(join(r.home, "liar", "installed.json"))).toBe(false);
+  expect(r.probes).toEqual([]);
+});
+
+test("a binary the registry lists no checksum for is never installed", async () => {
+  const r = rig({ entries: [binaryEntry("unchecked", "https://dl.invented.example/u.tar.gz", null)] });
+  const a = await installed(r, "unchecked");
+  expect(a.reason).toBe("failed");
+  expect(a.message).toContain("no checksum");
+  expect(r.fetched).toEqual([REGISTRY_URL]);
+});
+
+test("a .tar.gz installs into Biom's own folder at the pinned version, and is probed Active from there", async () => {
+  const body = gzipSync(tar([
+    { name: "pkg/", type: "5" },
+    { name: "pkg/bin/", type: "5" },
+    { name: "pkg/bin/agent", data: program, mode: 0o755 },
+    { name: "pkg/lib/", type: "5" },
+    { name: "pkg/lib/data.txt", data: bytes("invented") },
+    { name: "pkg/agent", type: "2", link: "bin/agent" },
+  ]));
+  const url = "https://dl.invented.example/good.tar.gz";
+  const r = rig({ entries: [binaryEntry("good", url, sha(body), "./pkg/agent")], files: { [url]: body } });
+  const a = await installed(r, "good");
+  expect(a.state).toBe("active");
+  expect(a.source).toBe("installed");
+  expect(a.version).toBe("9.9.9");
+  const dir = join(r.home, "good", "2.0.0");
+  expect(readFileSync(join(dir, "pkg", "lib", "data.txt"), "utf8")).toBe("invented");
+  expect(readlinkSync(join(dir, "pkg", "agent"))).toBe("bin/agent");
+  expect(statSync(join(dir, "pkg", "bin", "agent")).mode & 0o111).not.toBe(0);
+  expect(JSON.parse(readFileSync(join(r.home, "good", "installed.json"), "utf8"))).toEqual({
+    key: "good", version: "2.0.0", via: "binary", file: "2.0.0/pkg/agent", node: false, args: ["acp"], env: {},
+  });
+  expect(r.probes[0]?.command).toBe(join(dir, "pkg", "agent"));
+  expect(r.probes[0]?.args).toEqual(["acp"]);
+  // Nothing was staged anywhere but Biom's folder, and nothing is left staged.
+  expect(readdirNames(join(r.home, "good")).filter((x) => x.startsWith(".part-"))).toEqual([]);
+});
+
+function readdirNames(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+test("a .zip installs, deflated entries and links included", async () => {
+  const body = zip([{ name: "bin/" }, { name: "bin/agent", data: program, mode: 0o755, deflate: true }, { name: "agent", data: bytes("bin/agent"), symlink: true }]);
+  const url = "https://dl.invented.example/z.zip";
+  const r = rig({ entries: [binaryEntry("zipped", url, sha(body))], files: { [url]: body } });
+  const a = await installed(r, "zipped");
+  expect(a.state).toBe("active");
+  expect(readFileSync(join(r.home, "zipped", "2.0.0", "bin", "agent"), "utf8")).toBe("#!/bin/sh\necho invented\n");
+  expect(lstatSync(join(r.home, "zipped", "2.0.0", "agent")).isSymbolicLink()).toBe(true);
+});
+
+test("a .tar.bz2 is decompressed by bzip2, and a raw download is the program itself", async () => {
+  const inner = tar([{ name: "agent", data: program, mode: 0o755 }]);
+  const bzUrl = "https://dl.invented.example/b.tar.bz2";
+  const bzBody = bytes("an invented bzip2 stream");
+  const r = rig({
+    entries: [binaryEntry("bz", bzUrl, sha(bzBody))],
+    files: { [bzUrl]: bzBody },
+    tool: (spec) => {
+      // The fake `bzip2 -dc`: what the stream decompresses to, on stdout.
+      if (spec.cmd[0]?.endsWith("bzip2")) {
+        writeFileSync(spec.stdout, inner);
+        return 0;
+      }
+      return 1;
+    },
+  });
+  const a = await installed(r, "bz");
+  expect(a.state).toBe("active");
+  expect(r.ran[0]?.cmd).toEqual(["/invented/bin/bzip2", "-dc", expect.stringContaining("download")]);
+  expect(readFileSync(join(r.home, "bz", "2.0.0", "agent"), "utf8")).toContain("invented");
+
+  const rawUrl = "https://dl.invented.example/raw-agent-linux-amd64";
+  const raw = rig({ entries: [binaryEntry("raw", rawUrl, sha(program), "./raw-agent-linux-amd64")], files: { [rawUrl]: program } });
+  const b = await installed(raw, "raw");
+  expect(b.state).toBe("active");
+  expect(raw.probes[0]?.command).toBe(join(raw.home, "raw", "2.0.0", "raw-agent-linux-amd64"));
+  expect(statSync(raw.probes[0]?.command as string).mode & 0o111).not.toBe(0);
+
+  const noBzip = rig({ entries: [binaryEntry("bz2", bzUrl, sha(bzBody))], files: { [bzUrl]: bzBody }, bins: { node: "/n", npm: "/m" } });
+  const c = await installed(noBzip, "bz2");
+  expect(c.reason).toBe("failed");
+  expect(c.message).toContain("bzip2");
+});
+
+test("an archive that would write outside, or link outside by a chain, is refused and nothing lands outside", async () => {
+  const cases: [string, Uint8Array][] = [
+    ["climb", gzipSync(tar([{ name: "agent", data: program }, { name: "../../escaped", data: bytes("x") }]))],
+    ["linkout", gzipSync(tar([{ name: "agent", data: program }, { name: "out", type: "2", link: "../../.." }]))],
+    // Each link looks inside on its own; together they climb out.
+    ["chain", gzipSync(tar([{ name: "agent", data: program }, { name: "t", type: "2", link: "." }, { name: "u", type: "2", link: "t/.." }]))],
+    ["beneath", gzipSync(tar([{ name: "agent", data: program }, { name: "l", type: "2", link: "." }, { name: "l/escaped", data: bytes("x") }]))],
+  ];
+  for (const [id, body] of cases) {
+    const url = `https://dl.invented.example/${id}.tar.gz`;
+    const r = rig({ entries: [binaryEntry(id, url, sha(body))], files: { [url]: body } });
+    const a = await installed(r, id);
+    expect(a.reason).toBe("failed");
+    expect(a.message?.startsWith("The archive")).toBe(true);
+    expect(existsSync(join(r.home, id, "2.0.0"))).toBe(false);
+    expect(existsSync(join(r.home, "escaped"))).toBe(false);
+    expect(existsSync(join(r.home, id, "escaped"))).toBe(false);
+    expect(existsSync(join(scratch, "escaped"))).toBe(false);
+    expect(r.probes).toEqual([]);
+  }
+  const damaged = zip([{ name: "agent", data: program, badCrc: true }]);
+  const url = "https://dl.invented.example/crc.zip";
+  const r = rig({ entries: [binaryEntry("crc", url, sha(damaged))], files: { [url]: damaged } });
+  const a = await installed(r, "crc");
+  expect(a.message).toContain("checksum");
+});
+
+test("npx installs with npm into Biom's folder, pinned, and runs the package's bin with node", async () => {
+  const entry = { id: "jsagent", name: "JS agent", version: "3.1.0", description: "Invented", distribution: { npx: { package: "@invented/js-agent@3.1.0", args: ["--acp"], env: { NO_UPDATE: "1" } } } };
+  const r = rig({
+    entries: [entry],
+    tool: (spec) => {
+      const prefix = spec.cmd[spec.cmd.indexOf("--prefix") + 1] as string;
+      const pkg = join(prefix, "node_modules", "@invented", "js-agent");
+      mkdirSync(join(pkg, "dist"), { recursive: true });
+      writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@invented/js-agent", bin: { "js-agent": "dist/index.js", other: "dist/other.js" } }));
+      writeFileSync(join(pkg, "dist", "index.js"), "// invented");
+      return 0;
+    },
+  });
+  const a = await installed(r, "jsagent");
+  expect(a.state).toBe("active");
+  const final = join(r.home, "jsagent", "3.1.0");
+  expect(r.ran[0]?.cmd).toEqual(["/invented/bin/npm", "install", "--prefix", final, "--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error", "--", "@invented/js-agent@3.1.0"]);
+  expect(r.probes[0]?.command).toBe("/invented/bin/node");
+  expect(r.probes[0]?.args).toEqual([join(final, "node_modules", "@invented", "js-agent", "dist", "index.js"), "--acp"]);
+  expect(r.probes[0]?.env.NO_UPDATE).toBe("1");
+});
+
+test("uvx installs with uv into directories of Biom's own", async () => {
+  const entry = { id: "pyagent", name: "Py agent", version: "0.4.0", description: "Invented", distribution: { uvx: { package: "py-agent@0.4.0", args: ["acp"] } } };
+  const r = rig({
+    entries: [entry],
+    tool: (spec) => {
+      const bin = spec.env.UV_TOOL_BIN_DIR as string;
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "py-agent"), "#!/bin/sh\n");
+      return 0;
+    },
+  });
+  const a = await installed(r, "pyagent");
+  expect(a.state).toBe("active");
+  const final = join(r.home, "pyagent", "0.4.0");
+  expect(r.ran[0]?.cmd).toEqual(["/invented/bin/uv", "tool", "install", "--", "py-agent==0.4.0"]);
+  expect(r.ran[0]?.env.UV_TOOL_DIR).toBe(join(final, "tools"));
+  expect(r.ran[0]?.env.UV_TOOL_BIN_DIR).toBe(join(final, "bin"));
+  expect(r.probes[0]?.command).toBe(join(final, "bin", "py-agent"));
+});
+
+test("npx without Node and uvx without uv are said plainly, and a failed npm leaves nothing", async () => {
+  const js = { id: "jsonly", name: "JS only", version: "1.0.0", distribution: { npx: { package: "js-only@1.0.0" } } };
+  const py = { id: "pyonly", name: "Py only", version: "1.0.0", distribution: { uvx: { package: "py-only==1.0.0" } } };
+  const bare = rig({ entries: [js, py], bins: {} });
+  const a = await installed(bare, "jsonly");
+  expect(a.reason).toBe("failed");
+  expect(a.message).toBe("It installs with npx, which needs Node.js, and this machine has none.");
+  const b = await installed(bare, "pyonly");
+  expect(b.message).toBe("It installs with uvx, which needs uv, and this machine has none.");
+  expect(bare.ran).toEqual([]);
+
+  const agents = makeAgents(bare.deps);
+  const list: RegistryAgent[] = await agents.registry();
+  expect(list.find((x) => x.key === "jsonly")?.needs).toContain("Node.js");
+  expect(list.find((x) => x.key === "pyonly")?.needs).toContain("uv");
+
+  const broken = rig({ entries: [js], tool: () => 1 });
+  const c = await installed(broken, "jsonly");
+  expect(c.message).toContain("The npm install failed");
+  expect(existsSync(join(broken.home, "jsonly", "1.0.0"))).toBe(false);
+});
+
+test("the registry: read once in its lifetime, a stale copy when offline, a refusal in words with neither, and what this machine has", async () => {
+  let now = 1_000_000;
+  const home = fresh();
+  const entries = [
+    { id: "opencode", name: "OpenCode", version: "1.18.32", description: "The open source coding agent", icon: "https://cdn.invented.example/opencode.svg", distribution: { npx: { package: "opencode-ai@1.18.32" } } },
+    binaryEntry("nochecksum", "https://dl.invented.example/n.tar.gz", null),
+  ];
+  const r = rig({ entries, now: () => now, home, bins: { node: "/n", npm: "/m", opencode: "/invented/bin/opencode" } });
+  const agents = makeAgents(r.deps);
+  const first = await agents.registry();
+  expect(first.find((x) => x.key === "opencode")).toEqual({
+    key: "opencode", name: "OpenCode", line: "The open source coding agent", version: "1.18.32", icon: "https://cdn.invented.example/opencode.svg", via: "npx", here: true, needs: null,
+  });
+  expect(first.find((x) => x.key === "nochecksum")?.needs).toContain("no checksum");
+  await agents.registry();
+  expect(r.fetched.filter((u) => u === REGISTRY_URL).length).toBe(1);
+  await agents.settled();
+  // The list learned the registry's picture.
+  expect(agents.list().find((x) => x.key === "opencode")?.icon).toBe("https://cdn.invented.example/opencode.svg");
+
+  // A later server, offline, past the lifetime: the copy on disk stands in.
+  now += 7 * 60 * 60 * 1000;
+  const offline = rig({ entries, now: () => now, home, registryDown: true });
+  expect((await makeAgents(offline.deps).registry()).length).toBe(2);
+  // Offline with nothing on disk is a refusal in words.
+  const nothing = rig({ entries, registryDown: true });
+  await expect(makeAgents(nothing.deps).registry()).rejects.toThrow("could not be reached");
+});
+
+test("installing refuses a name that is not an agent's, and the install's secrets stay out of what the client sees", async () => {
+  const body = gzipSync(tar([{ name: "agent", data: program, mode: 0o755 }]));
+  const url = "https://dl.invented.example/s.tar.gz";
+  const r = rig({ entries: [binaryEntry("sec", url, sha(body))], files: { [url]: body } });
+  const agents = makeAgents(r.deps);
+  expect(() => agents.install("../../x")).toThrow("not an agent's name");
+  const heard: AgentInfo[][] = [];
+  agents.on((l) => heard.push(l));
+  agents.install("sec");
+  await agents.settled();
+  expect(JSON.stringify(heard)).not.toContain(SECRET);
+  expect(heard.some((l) => l.some((a) => a.reason === "installing"))).toBe(true);
+  expect(heard.at(-1)?.find((a) => a.key === "sec")?.state).toBe("active");
+});
