@@ -60,6 +60,8 @@ function world(opts: {
   scenarios?: Record<string, Scenario>;
   /** The sign-in method an agent wants in every process, by key. */
   signedInWith?: (key: string) => string | null;
+  /** The chats open in a window now. */
+  openIn?: () => string[];
 } = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
@@ -88,6 +90,7 @@ function world(opts: {
       },
       refused: (key) => void refused.push(key),
       signedInWith: opts.signedInWith ?? (() => null),
+      openIn: opts.openIn ?? (() => []),
       connect: (launch, cwd) => connectAcp(launch, cwd, undefined, { log: () => {}, graceMs: 500 }),
       root,
       logDir: join(root, ".biom"),
@@ -848,4 +851,87 @@ only("an authenticate the agent refuses is a sign-in refusal, and the message wa
   await until("the sign-in refusal", 15_000, () => w.refused.length > 0);
   expect(w.refused).toEqual(["fake"]);
   expect(summaryOf(w.chats, made.id).phase).toBe("held");
+});
+
+/* ── an idle agent is ended (O17) ─────────────────────────────────────── */
+
+const alivePid = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const startedPids = (heard: Record<string, unknown>[]): number[] =>
+  heard.filter((h) => h.fake === "started").map((h) => h.pid as number);
+
+only("AN IDLE AGENT IS ENDED: no turn for thirty minutes and open in no window, and the next message starts a new one handed the chat", async () => {
+  const open = new Set<string>();
+  const w = world({ openIn: () => [...open] });
+  const made = await w.chats.create({ agent: "fake", text: "Remember the word heron." });
+  await settled(w.chats, made.id, 1);
+  const first = summaryOf(w.chats, made.id).agentId;
+  expect(first).not.toBeNull();
+  const [pid] = startedPids(w.heard());
+
+  // Twenty-nine minutes is not idle enough.
+  w.skewBy(29 * 60_000);
+  expect(w.chats.reap()).toBe(0);
+  // Past thirty, a chat open in a window keeps its agent.
+  open.add(made.id);
+  w.skewBy(2 * 60_000);
+  expect(w.chats.reap()).toBe(0);
+  expect(summaryOf(w.chats, made.id).agentId).toBe(first);
+  // Open in no window, it is ended.
+  open.delete(made.id);
+  expect(w.chats.reap()).toBe(1);
+  expect(summaryOf(w.chats, made.id).agentId).toBeNull();
+  await until("the idle agent to be gone", 5_000, () => !alivePid(pid as number));
+  // Nothing is ended twice.
+  expect(w.chats.reap()).toBe(0);
+
+  // The next message starts it again, under a new id, and hands it the chat.
+  await w.chats.send(made.id, "What was the word?");
+  const done = await settled(w.chats, made.id, 2);
+  expect(done.stop).toBe("end_turn");
+  const second = summaryOf(w.chats, made.id).agentId;
+  expect(second).not.toBeNull();
+  expect(second).not.toBe(first);
+  const said = prompts(w.heard());
+  expect(said.at(-1)).toContain("heron");
+  expect(said.at(-1)).toContain("What was the word?");
+});
+
+only("an agent that can reload its session is reopened with it after an idle end, not handed the chat", async () => {
+  const w = world({ scenarios: { fake: { agentCapabilities: { loadSession: true } } } });
+  const made = await w.chats.create({ agent: "fake", text: "First." });
+  await settled(w.chats, made.id, 1);
+  w.skewBy(31 * 60_000);
+  expect(w.chats.reap()).toBe(1);
+  await w.chats.send(made.id, "Second.");
+  await settled(w.chats, made.id, 2);
+  const methods = w.heard().map((h) => h.method).filter((m) => typeof m === "string");
+  expect(methods.filter((m) => m === "session/load").length).toBe(1);
+  expect(prompts(w.heard()).at(-1)).toBe("Second.");
+});
+
+only("A REAP RACING A SEND never ends an agent a turn is using: the send wins either way round, and its turn ends end_turn", async () => {
+  const w = world();
+  const made = await w.chats.create({ agent: "fake", text: "One." });
+  await settled(w.chats, made.id, 1);
+  w.skewBy(31 * 60_000);
+  // The reap lands between the send being asked and its turn starting.
+  const sending = w.chats.send(made.id, "Two.");
+  w.chats.reap();
+  await sending;
+  expect((await settled(w.chats, made.id, 2)).stop).toBe("end_turn");
+
+  // And with the turn under way: nothing a turn uses is idle.
+  w.skewBy(31 * 60_000);
+  await w.chats.send(made.id, "Three.\n!sleep 400");
+  expect(w.chats.reap()).toBe(0);
+  const three = await settled(w.chats, made.id, 3);
+  expect(three.stop).toBe("end_turn");
+  expect(replyOf((await w.chats.read(made.id)).updates, 3)).toContain("echo: Three.");
 });

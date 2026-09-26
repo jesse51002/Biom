@@ -94,6 +94,11 @@
 // session is opened or reopened; one whose method is refused is a sign-in
 // refusal like any other. No other agent is ever sent `authenticate` here.
 //
+// AN IDLE AGENT IS ENDED: `reap`, on the composition root's timer, ends a
+// chat's agent that has had no turn for thirty minutes when no window has the
+// chat open. Its chat is untouched; the next message starts it again exactly
+// as a reopening does.
+//
 // NO AGENT OUTLIVES ITS CHAT OR THE SERVER: `close` ends a chat's, `endAll`
 // every one with the TERM–grace–KILL ladder, and `killAll` KILLs them all at
 // once for the exit handler.
@@ -195,6 +200,11 @@ export interface ChatsDeps {
    *  nothing. Where it is not null, every process a chat starts calls
    *  `authenticate` with it before opening a session. */
   signedInWith: (key: AgentKey) => string | null;
+  /** THE CHATS OPEN IN A WINDOW NOW — on an Agent screen or in a panel, as
+   *  the windows report it (the history's `windows()`, handed down; this
+   *  module reads no history). An idle agent is ended only for a chat nobody
+   *  has open. */
+  openIn: () => Iterable<ChatId>;
   /** Open one ACP connection — `connectAcp` in `server/platform/acp.ts` in the
    *  running server, a scripted fake in a test. */
   connect: (launch: AgentLaunch, cwd: string) => AcpConnection;
@@ -260,12 +270,23 @@ export interface Chats {
   endAll(): Promise<void>;
   /** KILL every agent now, synchronously, for the process's exit handler. */
   killAll(): void;
+  /** END EVERY IDLE AGENT: one whose chat has had no turn for `IDLE_MS` and is
+   *  open in no window. Its chat is untouched, and the next message starts
+   *  the agent again as a reopening does — resumed, reloaded or handed the
+   *  chat so far — under a new id. Answers how many were ended. The
+   *  composition root calls it on a timer. */
+  reap(): number;
 }
 
 /* ── bounds and times ─────────────────────────────────────────────────── */
 
 /** How long pushes are gathered before one goes out. */
 const PUSH_MS = 30;
+/** HOW LONG A CHAT'S AGENT MAY SIT WITH NO TURN before it is ended, when no
+ *  window has the chat open. One process per chat, started for a message and
+ *  kept for the next, is a process per chat anybody ever wrote in; this is
+ *  what bounds that without ending one a person is looking at. */
+export const IDLE_MS = 30 * 60 * 1000;
 /** How long a light stays green after `end_turn`. */
 export const GREEN_MS = 10 * 60 * 1000;
 /** `initialize` and opening a session: generous, because the first start of
@@ -327,6 +348,9 @@ interface Live {
   rawModes: unknown;
   legacyMode: string | null;
   cancelTimer: ReturnType<typeof setTimeout> | null;
+  /** When it was started, by the server's clock — idle from here when no
+   *  turn has ended since. */
+  since: number;
 }
 
 /** One tool call of this chat's agent, merged whole. */
@@ -1236,7 +1260,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     const live: Live = {
       agentId: randomUUID(), key, harness: harnessOf(key), conn: null, sessionId: null, ready: Promise.resolve(false),
       opened: false, gone: false, ending: false, replaying: false, early: [], rawConfig: null, rawModes: null, legacyMode: null,
-      cancelTimer: null,
+      cancelTimer: null, since: now(),
     };
     c.live = live;
     c.harness = live.harness;
@@ -1897,6 +1921,35 @@ export function makeChats(deps: ChatsDeps): Chats {
         logs.push(c.log.flushed());
       }
       await Promise.all(logs);
+    },
+
+    reap() {
+      if (stopping) return 0;
+      // Which chats a window has open — and when that cannot be said, none is
+      // ended: ending the one a person is looking at is the worse mistake.
+      let open: Set<ChatId>;
+      try {
+        open = new Set(deps.openIn());
+      } catch (e) {
+        say(`chats: which chats are open could not be read, so no idle agent was ended: ${said(e)}`);
+        return 0;
+      }
+      const at = now();
+      let ended = 0;
+      for (const c of chats.values()) {
+        const live = c.live;
+        // Only an agent at rest: started, its session open, no turn held,
+        // starting, running or being stopped — a turn in any of those owns it.
+        if (live === null || live.gone || !live.opened) continue;
+        if (c.phase !== "idle" || c.held !== null || c.cancelling) continue;
+        if (open.has(c.id)) continue;
+        const last = Math.max(c.endedAt ?? 0, live.since);
+        if (at - last < IDLE_MS) continue;
+        say(`chats: ${c.id}: ${live.harness} had no turn for ${Math.round((at - last) / 60_000)} minutes and no window has the chat open, so it was ended`);
+        void endLive(c, live);
+        ended++;
+      }
+      return ended;
     },
 
     killAll() {

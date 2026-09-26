@@ -769,6 +769,21 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     void conn.closed.then(() => connections.delete(conn));
     return conn;
   };
+  /** HOW OFTEN EVERY FOLDER'S CHATS ARE ASKED TO END THEIR IDLE AGENTS, in
+   *  ms. Idle is thirty minutes (`IDLE_MS` in the chats), so once a minute
+   *  ends one at most a minute late. One timer for the host, unref'd so it
+   *  never keeps a process alive, and cleared by `close`. */
+  const REAP_EVERY_MS = 60_000;
+  const reaper = setInterval(() => {
+    for (const held of settledMounts) {
+      try {
+        held.chats.reap();
+      } catch (e) {
+        console.warn("idle agents could not be ended", e instanceof Error ? e.name : typeof e);
+      }
+    }
+  }, REAP_EVERY_MS);
+  (reaper as { unref?: () => void }).unref?.();
   const killConnections = (): void => {
     for (const conn of [...connections]) {
       try {
@@ -1156,6 +1171,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // Grok Build, Cursor and Junie: `authenticate` in every process, with
       // the method that last signed each in. Null for every other agent.
       signedInWith: (key) => agents.signedInWith(key),
+      // THE CHATS A WINDOW HAS OPEN, as the windows with a stream open report
+      // them: an idle agent is ended only for a chat nobody is looking at.
+      openIn: () => {
+        const open: ChatId[] = [];
+        for (const w of history.windows()) if (w.chat !== null) open.push(w.chat);
+        return open;
+      },
       connect,
       root: path,
       logDir: join(path, BIOM_DIR),
@@ -1748,6 +1770,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     watch: subscribe,
     watching: () => [...live.entries()].map(([path, now]) => ({ path, handles: now.watcher.handles() })),
     close: () => {
+      clearInterval(reaper);
       // NO AGENT OUTLIVES ITS FOLDER'S CLOSING, which is the whole host's
       // here: nothing is evicted while the server runs, so this and the exit
       // are the two moments a folder stops being served.
