@@ -57,7 +57,7 @@ It owns what was opened, shown and changed, and what moves the screen. It does
 | the switcher | `client/store/switcher.js` (9) | `decide()`, pure; whose the screen is; Go back to and Go to page |
 | the open gate | `client/bridge/bridge.js` (10) | a box's `open` honoured only just after that box's touch |
 | the touch | `guest/biom.js`, `client/frame/frame.js` (11), `client/shell/shell.js` (15) | the person's hand, in a box and on the host's own screens |
-| the pop-ups | `client/views/goback.js` (14); Go to page is the Agent view's | drawing only |
+| the pop-ups | `client/views/goback.js` (14); Go to page in `client/views/agent-input.js` (14) | drawing only |
 
 ## 2. Every screen has an address
 
@@ -220,6 +220,7 @@ in the order they bind:
    offered. More than two minutes ago is what lets it move, so a touch exactly
    `idle` ago still holds; a touch counts only after the person's latest
    message to that chat — one at the same instant is the act that sent it.
+   When that was is the chat store's `lastSent`, by this window's clock.
 5. **No bouncing**: inside `settle` of the last move the write WAITS and is
    decided again when the settle ends, rather than dropped.
 6. Otherwise it moves, with the chat in the panel beside the page — never a
@@ -293,7 +294,8 @@ while the screen is not theirs and there is somewhere to go back to.
 `client/views/goback.js` draws it; the switcher decides it.
 
 **Go to page** belongs to one chat: the open chat's latest write the switcher
-did not bring up, shown above the chat's input while that chat is on screen.
+did not bring up, shown above the chat's input while that chat is on screen —
+drawn by `client/views/agent-input.js` from the switcher's `offer`.
 Pressing it is an open — from the full Agent screen, with the chat in the panel
 beside the page. A move by the switcher clears it.
 
@@ -325,6 +327,8 @@ client/bridge/bridge.js        OPEN_AFTER_TOUCH, OPEN_GRACE, touched, the `open`
 client/frame/frame.js          the `touch` branch of fromGuest, a session's `top`, the `hear` argument
 client/shell/shell.js          syncHash, the hashchange handler, the canvas's touches, the backslot
 client/views/goback.js         makeGoBack, GO_BACK_WORDS
+client/views/agent-input.js    Go to page, above the input; the dock's NOT_TOUCH
+client/store/chats.js          lastSent: when this window last sent in a chat
 client/boot.js                 thisWindow, the stream's query, the mirror and the switcher, inFront
 guest/biom.js                  touches(): the `touch` notice
 tests/address.test.ts  history.test.ts  history-route.test.ts  history-store.test.js
