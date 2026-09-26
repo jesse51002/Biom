@@ -4,9 +4,10 @@
 // chat, no vault and no agent by name.
 //
 // A STUB, AND NOTHING CONSTRUCTS IT YET. The names are real so the chats and
-// the agents can be built against them; the bodies are the ACP connection
-// track's to write, and that track may reshape anything here that nothing else
-// has started to call. What it owes:
+// the agents can be built against them; the bodies are track A1's to write, and
+// A1 may reshape anything here that nothing else has started to call — except
+// `AcpConnection`, which track A2's probe fakes in its tests: change it only by
+// agreement. What it owes:
 //
 //   - framing that survives a partial line, several messages in one chunk,
 //     CRLF, a blank line and an oversized line (capped, then the connection

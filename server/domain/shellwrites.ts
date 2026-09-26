@@ -2,7 +2,7 @@
 // Layer 2 — WHICH FILES A SHELL COMMAND LINE WRITES, read conservatively.
 //
 // A STUB: it answers nothing, which is the inert answer — a command it cannot
-// read writes nothing the history records. The chats track builds it.
+// read writes nothing the history records. Track A1 builds it.
 //
 // Until the door is built, an agent's plain shell writes are one of the three
 // ways Biom sees an edit (*History and View Switcher*, `door`): `sed -i`, `>`

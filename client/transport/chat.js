@@ -2,7 +2,8 @@
 // Layer 7 — THE STREAM'S THREE JSON EVENTS, TYPED: `history`, `chat` and
 // `agents` (`STREAM` in `contracts/wire.js`, `StreamEvent` in `types.ts`).
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the chat client track builds it.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track B2 builds it, with the
+// named-event hook it reads in `events.js`.
 //
 // There is ONE stream per tab and `events.js` owns it — a second
 // `EventSource` would be a second watcher on the server for the same folder.

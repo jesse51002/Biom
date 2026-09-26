@@ -2,8 +2,8 @@
 // Layer 3 — WHAT AGENTS THIS MACHINE HAS: finding them, probing them,
 // installing one from the ACP Registry and signing one in.
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the agents track builds it, and may
-// reshape anything here nothing else has started to call.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track A2 builds it, and may reshape
+// anything here nothing else has started to call.
 //
 // What it owes (*Chat*, `picker`, `install`, `credentials`, and the
 // *Agent sign-in* research under it):
@@ -11,7 +11,8 @@
 //   - FINDING is looking: the commands of the agents Biom knows on the login
 //     shell's `PATH`, the agents Biom installed into a folder of its own, and
 //     OpenClaw's command and whether its Gateway answers on this machine — a
-//     Gateway on another machine is never offered;
+//     Gateway on another machine is never offered, and **Start Gateway** is
+//     `start`;
 //   - an agent is ACTIVE when it starts, answers `initialize` and opens a
 //     session, and INACTIVE with a reason otherwise; the probe session's
 //     config options and commands fill the start screen before a chat has a
@@ -35,12 +36,35 @@
 // variable changes how anything here loads.
 
 import type { AgentInfo, AgentKey, AgentLaunch, RegistryAgent, SignIn } from "../../contracts/types.ts";
+import type { AcpConnection } from "../platform/acp.ts";
+
+/** EVERYTHING THE AGENTS ARE HANDED. The probe speaks ACP through `connect`,
+ *  the same seam the chats use — `connectAcp` in the running server, and in a
+ *  test a fake `AcpConnection` (`server/platform/acp.ts`) that answers
+ *  `initialize` and `session/new` from a script, so no agent is ever run. */
+export interface AgentsDeps {
+  connect: (launch: AgentLaunch, cwd: string) => AcpConnection;
+  /** The person's login environment, read once per server — `loginEnv`. */
+  env: () => Promise<Record<string, string>>;
+  /** Where a command is on that environment's `PATH`, or null. */
+  which: (command: string, env: Record<string, string>) => Promise<string | null>;
+  /** The network, for the registry and a binary's download. */
+  fetch: typeof fetch;
+  /** Biom's own folder of installed agents, under the per-user data
+   *  directory and never in a vault. */
+  home: string;
+  /** Where a probe runs: a vault's root. */
+  cwd: string;
+  now: () => number;
+}
 
 export interface Agents {
   /** What is known now; probes still in flight are `checking`. */
   list(): AgentInfo[];
   /** Look again at one agent. Answers it as `checking`. */
   probe(key: AgentKey): AgentInfo;
+  /** **Start Gateway**: OpenClaw's, on this machine. Answers it as `checking`. */
+  start(key: AgentKey): AgentInfo;
   registry(): Promise<RegistryAgent[]>;
   /** Answers the agent as `installing`. */
   install(key: AgentKey): AgentInfo;
@@ -59,6 +83,6 @@ export interface Agents {
 }
 
 /** NOT BUILT: throws. */
-export function makeAgents(_deps: unknown): Agents {
+export function makeAgents(_deps: AgentsDeps): Agents {
   throw new Error("server/workspace/agents.ts: finding agents is not built yet");
 }

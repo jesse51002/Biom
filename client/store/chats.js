@@ -3,7 +3,7 @@
 // chats, the open chat's stream, what this machine has, and every act the
 // input box, the pickers and the pop-ups perform.
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the chat client track builds it.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track C1 builds it.
 //
 // Every act here is one `chat.*` or `agents.*` kind through the transport,
 // and every one of them is the host's to say: nothing in a box can reach

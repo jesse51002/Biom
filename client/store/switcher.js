@@ -3,7 +3,7 @@
 // context from above and deciding, on its own, whether an agent's write
 // brings its screen up, is offered in **Go to page**, or does nothing.
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the switcher track builds it.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track B2 builds it.
 //
 // Nobody asks it anything. What it owes (*History and View Switcher*,
 // `yours`, `switcher`, `moves`, `popups`):
@@ -18,7 +18,14 @@
 //     more than `idle` ago, touches before their latest message not counting;
 //     otherwise it offers **Go to page**; never off a held screen; never
 //     sooner than `settle` after its last move;
-//   - **Go back to** names the person's work while an agent has the screen.
+//   - **Go back to** names the person's work while an agent has the screen;
+//   - a screen becoming the person's without an open — touched, or five
+//     minutes on screen — is reported as a `claim`, so the history says so;
+//   - A MOVE OFF THE FULL AGENT SCREEN brings the page up with the chat in
+//     the panel beside it, never a bare page with the chat gone (the owner's
+//     decision of 2026-09-26): the verdict says `panel: true`, and the report
+//     that follows carries it;
+//   - it reads an edit's `place` off the entry and never maps a path itself.
 //
 // ITS CLOCK AND ITS TIMES ARE INJECTED AND THERE IS NO OTHER SWITCH. The
 // factory takes `now` and `timing`; `client/boot.js` passes `Date.now` and
@@ -46,9 +53,10 @@
  */
 
 /**
- * @typedef {{ kind: "move", to: Address, agent: AgentId, chat: ChatId }
+ * @typedef {{ kind: "move", to: Address, panel: boolean, agent: AgentId, chat: ChatId }
  *   | { kind: "offer", to: Address }
- *   | { kind: "none" }} Verdict
+ *   | { kind: "none" }} Verdict `panel` is whether the chat's panel opens
+ *   beside the page — always, when the screen was the full Agent screen.
  */
 
 /**

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Layer 9 — THIS WINDOW'S COPY OF THE HISTORY, and its reports to the server.
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the history track builds it.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track B2 builds it.
 //
 // It holds the entries the server appended, each with the time THIS WINDOW
 // RECEIVED it, read off the clock it is handed — the switcher times

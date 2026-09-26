@@ -2,7 +2,7 @@
 // Layer 14 — **GO BACK TO**, top left: the person's work, named, while an
 // agent has the screen.
 //
-// A STUB, AND NOTHING CONSTRUCTS IT YET; the switcher track builds it.
+// A STUB, AND NOTHING CONSTRUCTS IT YET; track B2 builds it.
 //
 // It shows when an agent has moved the screen and the screen is not the
 // person's; it names the latest screen in the history that is theirs,
