@@ -15,7 +15,7 @@
 /** @import { Theme, VaultInfo } from "../contracts/types.ts" */
 
 import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, WINDOW_PARAM, vaultBase } from "../contracts/wire.js";
-import { isWindowId } from "../contracts/guards.js";
+import { isOpaqueId, isWindowId } from "../contracts/guards.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { h, fill, remembered } from "./platform/dom.js";
@@ -30,6 +30,7 @@ import { faceCss } from "./theme/faces.js";
 import { makeUi } from "./store/ui.js";
 import { makeHistoryStore } from "./store/history.js";
 import { makeSwitcher, TIMING } from "./store/switcher.js";
+import { makeChatStore } from "./store/chats.js";
 import { makeBridge } from "./bridge/bridge.js";
 import { makeFrameHost } from "./frame/frame.js";
 import { makePageView, makeDesignView, makeMapView } from "./views/page.js";
@@ -41,6 +42,9 @@ import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
 import { makeSignInTerminal } from "./views/terminal.js";
 import { makeGoBack } from "./views/goback.js";
+import { makeAgentDialogs } from "./views/agent-dialogs.js";
+import { makeAgentInput } from "./views/agent-input.js";
+import { makeAgentView } from "./views/agent.js";
 import { makeShell, parseHash } from "./shell/shell.js";
 
 /* ── which build this is ────────────────────────────────────────────────── */
@@ -257,6 +261,23 @@ const events = makeEvents(base, "?" + streamQuery.toString());
 // agents for the Agent screen.
 const stream = makeChatStream(events);
 const ws = makeWorkspace(transport);
+
+/** WHICH CHAT THIS WINDOW HAD OPEN, AND WHETHER IT SAT BESIDE THE PAGE — kept
+ *  for the session (*Chat*, `history`: "Each window remembers its open chat
+ *  for the session"), per folder, in `sessionStorage`, which a reload keeps and
+ *  another window does not share. On `#/agent/<chat>` the address names the
+ *  chat and wins. A value that is not one is dropped. */
+const CONTEXT_KEY = "biom-agent:" + (vault ?? "");
+/** @returns {{ chat: string | null, panel: boolean }} */
+function heldContext() {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CONTEXT_KEY) ?? "null");
+    return { chat: v && isOpaqueId(v.chat) ? v.chat : null, panel: v !== null && v.panel === true };
+  } catch {
+    return { chat: null, panel: false };
+  }
+}
+
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
 const ui = makeUi({
@@ -265,7 +286,27 @@ const ui = makeUi({
   // store does no I/O. Anything other than "desc" is ascending, so a corrupted
   // value reads as the default rather than as a third state.
   treeOrder: remembered("treeOrder", "asc") === "desc" ? "desc" : "asc",
+  ...(vault === null ? {} : heldContext()),
 });
+if (vault !== null) {
+  ui.on(() => {
+    const u = ui.get();
+    try { sessionStorage.setItem(CONTEXT_KEY, JSON.stringify({ chat: u.chat, panel: u.panel })); } catch { /* kept for this load only */ }
+  });
+}
+
+/* ── the chats ───────────────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE: a chat is a workspace's, run in its
+// folder. This window's copy of the chats and of what agents this machine
+// has, fed by the stream and read again on every open of it — nothing is
+// replayed. Every act the input box makes goes through it.
+const chats = vault === null ? null : makeChatStore({ transport });
+if (chats !== null) {
+  stream.onChat((push) => chats.takeChat(push));
+  stream.onAgents((list) => chats.takeAgents(list));
+  events.onOpen(() => { void chats.resync(); });
+}
 
 /* ── the history and the switcher ────────────────────────────────────────── */
 
@@ -285,6 +326,9 @@ const switcher = mirror === null ? null : makeSwitcher({
   history: mirror,
   window: windowId,
   pages: () => ws.get().pages,
+  // When THIS window last sent a message in a chat: a touch before it does
+  // not hold the screen against that chat's agent.
+  lastSent: (chat) => (chats === null ? null : chats.lastSent(chat)),
   now: Date.now,
   timing: TIMING,
   front: inFront(),
@@ -331,6 +375,27 @@ const signInTerminal = vault === null ? null : makeSignInTerminal({
   mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
 });
 
+/* ── the Agent screen ────────────────────────────────────────────────────── */
+
+// THE LOOK'S BOX AND BIOM'S OWN INPUT BOX OVER IT, and the two pop-ups the
+// input opens. Only in a window with a workspace. The bridge answers the
+// look's four kinds through the view — for the one box it mounted, which it
+// knows by that box's context — and nothing else answers them.
+const agentDialogs = chats === null ? null : makeAgentDialogs({
+  h, chats,
+  signInTerminal: signInTerminal === null ? null : (req) => signInTerminal.open(req),
+});
+const agentInput = chats === null || agentDialogs === null ? null : makeAgentInput({ h, ui, chats, switcher, dialogs: agentDialogs });
+const agentView = chats === null || agentInput === null ? null : makeAgentView({
+  h, frameHost, ui, ws, chats, switcher,
+  history: mirror,
+  window: windowId,
+  input: agentInput,
+  vault: vault ?? "",
+  events: { on: (hear) => events.on(hear) },
+});
+if (agentView !== null) bridge.answerLook((req, ctx) => agentView.answer(req, ctx));
+
 // THERE IS NO REGISTRY HERE ANY MORE, and its absence is the change. The client
 // used to fill a render registry at this point, because the host drew the page
 // and had to be told how. The host does not draw a page now: `views.page` builds
@@ -365,6 +430,8 @@ const views = {
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
   // GO BACK TO, top left, while an agent has the screen.
   goback: switcher === null ? undefined : makeGoBack({ h, switcher }),
+  // THE AGENT SCREEN, and the chat panel beside a page.
+  agent: agentView ?? undefined,
 };
 
 const shell = makeShell({
@@ -416,6 +483,10 @@ ws.on(() => { theme(); shell.repaint(); });
 ui.on(() => shell.repaint());
 // Go back to and Go to page changing, which no store the shell reads says.
 switcher?.on(() => shell.repaint());
+// A chat starting or ending work, or the open one renamed: the rail's count,
+// the bar's lamp and the strip — and nothing else, so a reply streaming does
+// not repaint the chrome thirty times a second.
+agentView?.onChrome(() => shell.repaint());
 
 // The other half of the same signal. `on` says "redraw"; `onChange` says WHAT
 // moved, which is what an artifact needs — it lives in an opaque-origin frame
@@ -461,6 +532,9 @@ if (vault !== null) {
     // The tree is in hand, so a page's uid can be read: the switcher reads the
     // history and takes from it whose the screen was before this load.
     void switcher?.start();
+    // The chats and the agents, read once whether or not the stream opens;
+    // every open of it reads them again.
+    void chats?.resync();
   } catch (err) {
     // WHICH FAILURE THIS IS DECIDES WHERE THE TAB LANDS, and the two are not the
     // same screen. A folder that cannot be opened at all — gone, a file now,

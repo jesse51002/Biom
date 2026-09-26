@@ -1,0 +1,272 @@
+/* The Agent screen's host side: the slot the look's box sits in — the whole
+   screen, or the panel beside a page — Biom's own input box over it, the
+   pickers' menus, More agents and More models, and the lamps the host chrome
+   shows a chat with. After the Chat spec's mockup, whose DIRECTION says: one
+   amber lamp for what is lit, red and green only as verdicts, square corners
+   everywhere and the one circle a dot.
+
+   Nothing below names a colour. The lamps are the palette's own four —
+   `--led`, `--led-red`, `--led-green` and `--dot-off` — which every shipped
+   palette carries. */
+
+:root{
+  --agent-glow:color-mix(in srgb, var(--led) 50%, transparent);
+  --agent-field-2:color-mix(in srgb, var(--ink) 5%, var(--stock-hi));
+  --agent-field-3:color-mix(in srgb, var(--ink) 9%, var(--stock-hi));
+  --agent-small:color-mix(in srgb, var(--ink-2) 72%, var(--ink-3));
+  --agent-placeholder:color-mix(in srgb, var(--ink-2) 82%, var(--stock-hi));
+  --agent-ease:cubic-bezier(.16,1,.3,1);
+}
+
+/* ---------- the slot: one box, three shapes ---------- */
+
+/* THE SLOT'S SHAPE IS THE BED'S, and the shell says which (`data-agent` on
+   `.bed`, in chrome.css's third column): the whole screen, where the canvas is
+   taken out and the slot takes its column; the panel, where the slot's own
+   width is the third column; or nothing, where the slot is not drawn and the
+   box in it keeps running. The slot is put in the bed once and never moved —
+   moving an iframe reloads it. */
+.bed[data-agent="screen"] > .canvas{display:none}
+.bed:not([data-agent="screen"]):not([data-agent="panel"]) > .agentslot{display:none}
+.bed[data-agent="panel"] > .agentslot{width:var(--agent-w, 460px); border-left:1px solid var(--stock-edge)}
+.app.bare .agentslot{display:none}
+
+.agentslot{position:relative; min-width:0; min-height:0; background:var(--stock); overflow:hidden}
+
+.agentbox{position:absolute; inset:0}
+.agentbox iframe{display:block; width:100%; height:100%; border:0; background:var(--stock); color-scheme:normal}
+.agentsay{
+  position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); width:min(34rem, calc(100% - 3rem));
+  margin:0; font:14.5px/1.5 var(--sheet-face); color:var(--ink-2); text-align:center;
+}
+
+/* THE PANEL'S WIDTH, on its left edge: a hairline that lights on the pointer,
+   as the rail's grip does, wider to reach than it looks. */
+.agentgrip{
+  position:absolute; top:0; bottom:0; left:0; z-index:6;
+  width:var(--grip-w); margin-left:calc(var(--grip-w) / -2);
+  cursor:col-resize; touch-action:none;
+}
+.agentgrip::before{content:""; position:absolute; top:0; bottom:0; left:calc(50% - .5px); width:1px; background:transparent; transition:background .12s ease}
+.agentgrip:hover::before, .agentgrip:focus-visible::before{background:var(--nonrepro-t)}
+.agentgrip[data-drag="on"]::before{background:var(--led)}
+.agentgrip:focus-visible{outline:none}
+.agentslot:not([data-mode="panel"]) .agentgrip{display:none}
+/* While it is pulled, no box takes the pointer: over an iframe it is the
+   iframe's, and the drag would stop there. */
+.agentdrag iframe{pointer-events:none}
+.agentdrag, .agentdrag *{cursor:col-resize !important; user-select:none}
+
+/* THE LOOK'S STAGE, where the input box sits: right of the default look's
+   list of chats while it shows, under the panel's head. Only the dock takes
+   the pointer; everything else here is the box's. */
+.agentover{
+  position:absolute; z-index:2; pointer-events:none;
+  top:var(--look-head, 0px); left:var(--look-threads, 0px); right:0; bottom:0;
+  transition:left .6s var(--agent-ease), top .45s var(--agent-ease);
+  container-type:size;
+}
+
+/* ---------- the dock: Biom's own input box ---------- */
+
+.agentdock{
+  position:absolute; left:50%; width:min(720px, calc(100% - 40px));
+  transform:translateX(-50%); pointer-events:auto;
+}
+.agentdock[data-at="center"]{top:50%; transform:translate(-50%,-50%)}
+.agentdock[data-at="bottom"]{bottom:34px}
+.agentdock [hidden]{display:none !important}
+
+.agentdock .composer{
+  position:relative; border:1px solid var(--stock-edge);
+  background:color-mix(in srgb, var(--stock-hi) 55%, transparent);
+  -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+  transition:border-color .18s ease, background .3s ease;
+}
+.agentdock[data-at="bottom"] .composer{background:var(--stock-hi)}
+/* The look's thread fades out under the input rather than ending at a line. */
+.agentdock[data-at="bottom"] .composer::before{
+  content:""; position:absolute; left:-24px; right:-24px; bottom:calc(100% + 1px); height:28px;
+  background:linear-gradient(to bottom, transparent, var(--stock)); pointer-events:none;
+}
+.agentdock .composer:focus-within{border-color:var(--ink-3)}
+.agentta{
+  display:block; width:100%; resize:none; border:0; outline:0; background:transparent;
+  color:var(--ink); font:18px/1.5 var(--sheet-face); padding:17px 18px 8px;
+  min-height:60px; max-height:240px; overflow-y:auto; caret-color:var(--led);
+}
+.agentta::placeholder{color:var(--agent-placeholder)}
+.agentta:focus-visible{outline:none}
+
+.agentdock .cbar{display:flex; align-items:center; gap:2px; padding:4px 8px 8px; min-width:0}
+.agentdock .chip{
+  display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 9px; min-width:0; flex:0 1 auto; overflow:hidden;
+  border:0; border-radius:0; background:none; color:var(--ink-2); cursor:pointer;
+  font:12px var(--gauge-face); letter-spacing:.02em; white-space:nowrap;
+  transition:background .12s ease, color .12s ease;
+}
+.agentdock .chip .nm{overflow:hidden; text-overflow:ellipsis}
+.agentdock .chip .ico{width:11px; height:11px; flex:none; color:var(--ink-3)}
+.agentdock .chip:hover, .agentdock .chip[aria-expanded="true"]{background:var(--agent-field-3); color:var(--ink)}
+.agentdock .chip.agentchip{color:var(--ink)}
+.agentdock .sep{width:1px; height:14px; background:var(--rule); margin:0 3px; flex:none}
+.agentdock .send{
+  margin-left:auto; flex:none; width:34px; height:34px; display:grid; place-items:center;
+  border:0; border-radius:0; background:var(--led); color:var(--on-spot); cursor:pointer;
+  transition:background .15s ease, color .15s ease, transform .1s ease;
+}
+.agentdock .send .ico{width:17px; height:17px}
+.agentdock .send:hover:not([disabled]){background:color-mix(in srgb, var(--led) 88%, var(--ink))}
+.agentdock .send[disabled]{background:var(--agent-field-3); color:var(--ink-3); cursor:default}
+.agentdock .send:active:not([disabled]){transform:scale(.93)}
+.agentdock .send.stop{background:var(--agent-field-3); color:var(--ink)}
+.agentdock .send.stop:hover:not([disabled]){background:color-mix(in srgb, var(--ink) 16%, var(--stock-hi))}
+
+/* The line under the input in a chat: the turn working, or what went wrong. */
+.agentdock .below{
+  position:absolute; left:0; right:0; top:100%; display:flex; align-items:center; gap:12px; min-height:26px;
+  padding:9px 6px 0; font:11px var(--gauge-face); letter-spacing:.03em; color:var(--agent-small);
+}
+.agentdock .below .working{display:inline-flex; align-items:center; gap:8px; color:var(--ink-2)}
+.agentdock .below .said{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.agentdock .below .said:empty{display:none}
+.agentdock[data-at="center"] .below .working{display:none}
+
+/* GO TO PAGE, above the input, while the switcher offers what the chat wrote. */
+.agentdock .follow{
+  position:absolute; left:0; bottom:calc(100% + 12px); z-index:3; max-width:100%;
+  display:inline-flex; align-items:center; gap:10px; height:34px; padding:0 4px 0 12px;
+  border:1px solid var(--stock-edge); border-radius:0; background:var(--stock-hi); cursor:pointer;
+  font:13.5px var(--sheet-face); color:var(--ink-2); animation:agent-fade .25s ease-out;
+}
+.agentdock .follow .ft{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.agentdock .follow .ft b{font:400 12.5px var(--gauge-face); color:var(--ink)}
+.agentdock .follow .go{flex:none; font:11.5px var(--gauge-face); color:var(--on-spot); background:var(--led); padding:5px 10px}
+.agentdock .follow:hover .go{background:color-mix(in srgb, var(--led) 88%, var(--ink))}
+
+/* THE / MENU, over the input. */
+.agentdock .slash{
+  position:absolute; left:0; right:0; bottom:calc(100% + 8px); z-index:5; max-height:320px; overflow:auto;
+  padding:4px; background:var(--stock-hi); border:1px solid var(--stock-edge); animation:agent-menu .16s var(--agent-ease);
+}
+.agentdock .srow{
+  display:flex; align-items:baseline; gap:16px; width:100%; padding:7px 10px; border:0; border-radius:0; background:none;
+  text-align:left; cursor:pointer; font:13px var(--gauge-face); color:var(--ink);
+}
+.agentdock .srow .sn{flex:none}
+.agentdock .srow .sw{min-width:0; font:11.5px var(--gauge-face); color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.agentdock .srow:hover{background:var(--agent-field-3)}
+.agentdock .srow[aria-selected="true"]{background:color-mix(in srgb, var(--led) 16%, var(--stock-hi)); box-shadow:inset 0 0 0 1px var(--led)}
+.agentdock .slash .none{padding:9px 10px; font:12.5px var(--gauge-face); color:var(--ink-3)}
+
+/* ---------- the lamps ---------- */
+
+/* Lit is true, half-lit is partly, off is not; red and green are verdicts. */
+.agentdock .led, .agentmenu .led, .amodal .led, .agentlink .led, .rail .led{
+  display:inline-block; flex:none; width:7px; height:7px; border-radius:50%; background:var(--dot-off);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+:is(.agentdock, .agentmenu, .amodal, .agentlink, .rail) .led.lit{background:var(--led); box-shadow:0 0 0 3px color-mix(in srgb, var(--led) 13%, transparent), 0 0 10px var(--agent-glow)}
+:is(.agentdock, .agentmenu, .amodal, .agentlink, .rail) .led.red{background:var(--led-red); box-shadow:0 0 0 3px color-mix(in srgb, var(--led-red) 14%, transparent)}
+:is(.agentdock, .agentmenu, .amodal, .agentlink, .rail) .led.green{background:var(--led-green); box-shadow:0 0 0 3px color-mix(in srgb, var(--led-green) 12%, transparent)}
+:is(.agentdock, .agentmenu, .amodal, .agentlink, .rail) .led.pulse{animation:agent-pulse 1.3s ease-in-out infinite}
+.agentdock .leds3{display:inline-flex; gap:4px}
+.agentdock .leds3 i{width:5px; height:5px; border-radius:50%; background:var(--dot-off); animation:agent-seq 1.05s infinite}
+.agentdock .leds3 i:nth-child(2){animation-delay:.15s}
+.agentdock .leds3 i:nth-child(3){animation-delay:.3s}
+
+@keyframes agent-pulse{50%{box-shadow:0 0 0 6px color-mix(in srgb, var(--led) 0%, transparent), 0 0 16px var(--agent-glow); filter:brightness(1.15)}}
+@keyframes agent-seq{0%,60%,100%{background:var(--dot-off); box-shadow:none}20%{background:var(--led); box-shadow:0 0 7px var(--agent-glow)}}
+@keyframes agent-menu{from{opacity:0; transform:translateY(4px) scale(.98)}}
+@keyframes agent-fade{from{opacity:0}}
+@keyframes agent-dialog{from{opacity:0; transform:translateY(10px) scale(.985)}}
+
+/* ---------- the pickers' menus ---------- */
+
+.agentmenu{
+  position:fixed; z-index:62; min-width:272px; max-width:340px; max-height:min(420px, calc(100vh - 16px)); overflow:auto;
+  padding:4px; background:var(--stock-hi); border:1px solid var(--stock-edge); border-radius:0;
+  box-shadow:0 1px 0 var(--stock-lo); animation:agent-menu .18s var(--agent-ease);
+}
+.agentmenu .mlabel{font:10.5px var(--gauge-face); letter-spacing:.14em; text-transform:uppercase; color:var(--agent-small); padding:9px 10px 6px}
+.agentmenu .mi{
+  display:flex; align-items:center; gap:11px; width:100%; padding:8px 10px; border:0; border-radius:0; background:none;
+  font:14px/1.35 var(--sheet-face); color:var(--ink); text-align:left; cursor:pointer;
+}
+.agentmenu .mi .txt{display:flex; flex-direction:column; gap:1px; min-width:0}
+.agentmenu .mi .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.agentmenu .mi .sub{color:var(--ink-2); font:11.5px var(--gauge-face); letter-spacing:.02em}
+.agentmenu .mi:hover, .agentmenu .mi:focus-visible{background:var(--agent-field-3); outline:none}
+.agentmenu .mi .check{margin-left:auto; color:var(--led); width:15px; height:15px; flex:none}
+.agentmenu .mi .mact{
+  margin-left:auto; flex:none; font:11.5px var(--gauge-face); color:var(--ink);
+  border:1px solid var(--stock-edge); padding:4px 9px; white-space:nowrap;
+}
+.agentmenu .mi .mact:hover{background:var(--agent-field-3); border-color:var(--ink-3)}
+.agentmenu .mi.addagent{border-top:1px solid var(--rule-soft); margin-top:4px; padding-top:10px}
+.agentmenu .mi.addagent .ico{width:14px; height:14px; color:var(--ink-2); flex:none}
+.agentmenu .mi .mcount{margin-left:auto; font:11px var(--gauge-face); color:var(--ink-3)}
+.agentmenu .mfoot{border-top:1px solid var(--rule-soft); margin:4px -4px -4px; padding:10px 15px 11px; font:12.5px/1.5 var(--sheet-face); color:var(--ink-2)}
+
+/* ---------- More agents and More models ---------- */
+
+/* Over the workspace and under the sign-in terminal, which is the one thing
+   above them. */
+.amodal{position:fixed; inset:0; z-index:60; display:grid; place-items:center}
+.amodal .ascrim{position:absolute; inset:0; background:color-mix(in srgb, var(--stock-lo) 74%, transparent); animation:agent-fade .2s ease-out}
+.amodal .adialog{
+  position:relative; width:min(660px, calc(100vw - 48px)); height:min(620px, calc(100vh - 96px));
+  display:flex; flex-direction:column; background:var(--stock-hi); border:1px solid var(--stock-edge); border-radius:0;
+  box-shadow:0 1px 0 var(--stock-lo), 0 30px 70px -30px var(--shadow); animation:agent-dialog .24s var(--agent-ease);
+}
+.amodal .dh{display:flex; align-items:center; gap:10px; padding:14px 10px 10px 18px}
+.amodal .dh b{font:600 17px var(--sheet-face); color:var(--ink)}
+.amodal .iconbtn{width:30px; height:30px; display:grid; place-items:center; border:0; border-radius:0; background:none; color:var(--ink-2); cursor:pointer}
+.amodal .iconbtn:hover{background:var(--field); color:var(--ink)}
+.amodal .iconbtn .ico{width:15px; height:15px}
+.amodal .x{margin-left:auto}
+.amodal .why{margin:0 18px 12px; font:14.5px/1.45 var(--sheet-face); color:var(--ink-2)}
+.amodal .why[hidden]{display:none}
+.amodal .asearch{display:flex; align-items:center; gap:10px; margin:0 14px 12px; padding:0 12px; height:42px; border:1px solid var(--stock-edge); background:var(--stock); cursor:text}
+.amodal .asearch .ico{width:15px; height:15px; color:var(--ink-3); flex:none}
+.amodal .asearch:focus-within{border-color:var(--ink-3)}
+.amodal .asearch input{flex:1; min-width:0; border:0; outline:0; background:transparent; color:var(--ink); font:15.5px var(--sheet-face); caret-color:var(--led)}
+.amodal .asearch input::placeholder{color:var(--agent-placeholder)}
+.amodal .asearch input::-webkit-search-cancel-button{display:none}
+.amodal .alist{flex:1; min-height:0; overflow:auto; border-top:1px solid var(--rule-soft); padding-bottom:8px}
+.amodal .agrp{font:10.5px var(--gauge-face); letter-spacing:.14em; text-transform:uppercase; color:var(--agent-small); padding:14px 18px 6px}
+.amodal .arow{display:grid; grid-template-columns:20px minmax(0,1fr) auto auto; align-items:center; column-gap:14px; padding:9px 14px 9px 18px; cursor:pointer}
+.amodal .arow[aria-selected="true"]{background:var(--agent-field-3)}
+.amodal .arow.mrow{grid-template-columns:minmax(0,1fr) 16px}
+.amodal .aic{width:20px; height:20px; display:grid; place-items:center; color:var(--ink-2)}
+.amodal .aic svg{width:18px; height:18px}
+/* An agent's picture, as a mask in the ink: see `iconMask`. */
+.amodal .aicmask{width:18px; height:18px; background:currentColor; -webkit-mask:var(--icon) center / contain no-repeat; mask:var(--icon) center / contain no-repeat}
+.amodal .arow .txt{display:flex; flex-direction:column; gap:1px; min-width:0}
+.amodal .arow .nm{font:600 14.5px var(--sheet-face); color:var(--ink)}
+.amodal .arow .ds{font:13px var(--sheet-face); color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.amodal .arow .ds.bad{color:var(--ink-2); white-space:normal}
+.amodal .arow .st{display:inline-flex; align-items:center; gap:8px; font:11.5px var(--gauge-face); color:var(--ink-2); white-space:nowrap}
+.amodal .arow .check{width:15px; height:15px; color:var(--led)}
+.amodal .abtn{font:11.5px var(--gauge-face); color:var(--ink); border:1px solid var(--stock-edge); border-radius:0; padding:6px 11px; white-space:nowrap; background:var(--stock-hi); cursor:pointer}
+.amodal .abtn:hover:not([disabled]){background:var(--agent-field-3)}
+.amodal .abtn.go{background:var(--led); color:var(--on-spot); border-color:var(--led)}
+.amodal .abtn.go:hover{background:color-mix(in srgb, var(--led) 88%, var(--ink))}
+.amodal .abtn.on{color:var(--ink-3); border-color:transparent; background:transparent; cursor:default}
+.amodal .abtn[disabled]{opacity:.6; cursor:default}
+.amodal .aways{display:flex; flex-direction:column; gap:6px; padding:0 14px 10px 52px}
+.amodal .awayrow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; font:13px var(--sheet-face); color:var(--ink-2)}
+.amodal .anone{padding:22px 18px; font:14px var(--sheet-face); color:var(--ink-3); display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+
+/* A NARROW STAGE — the panel — packs the chips closer, as the mockup does, so
+   the agent's own words fit before they are cut. */
+@container (max-width: 560px){
+  .agentdock .chip{padding:0 6px; gap:5px}
+  .agentdock .cbar{padding:4px 6px 8px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .agentover{transition:none}
+  :is(.agentdock, .agentmenu, .amodal, .agentlink, .rail) .led.pulse, .agentdock .leds3 i{animation:none}
+  .agentmenu, .amodal .adialog, .amodal .ascrim, .agentdock .slash, .agentdock .follow{animation:none}
+}

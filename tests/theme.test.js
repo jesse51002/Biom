@@ -376,6 +376,7 @@ test("nothing outside palettes.js names a colour", () => {
     "client/theme/theme.js",
     "client/css/tokens.css",
     "client/css/chrome.css",
+    "client/css/agent.css",
     "client/css/page.css",
     "client/css/panels.css",
     "client/css/table.css",

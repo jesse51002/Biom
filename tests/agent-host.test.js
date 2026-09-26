@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // THE AGENT SCREEN'S HOST SIDE: the chat store, the pure rules the input box
-// and the pickers are drawn by, and the bridge's answer to the look.
+// and the pickers are drawn by, the bridge's answer to the look, and the view
+// that mounts the look's box and feeds it.
 //
-// No browser here. The store runs against a transport double. Every chat,
-// agent, page and word below is invented.
+// No browser here. The store runs against a transport double; the view against
+// a recording element factory, a frame host double and the real ui store — the
+// input box itself is DOM through and through and is walked in a real browser
+// by `tests/e2e/agent-screen.e2e.ts`. Every chat, agent, page and word below is
+// invented.
 
 import { test, expect } from "bun:test";
 import { AGENT_PAGE, ERRORS, PROTOCOL } from "../contracts/wire.js";
@@ -13,6 +17,7 @@ import {
 } from "../client/store/chats.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeBridge } from "../client/bridge/bridge.js";
+import { LOOK_KEY, PATCH_MAX, makeAgentView } from "../client/views/agent.js";
 
 /* ── fixtures, invented ────────────────────────────────────────────────── */
 
@@ -376,4 +381,244 @@ test("a page the look opens comes up with the chat beside it; a page another box
   await bridge.resolve(look("open", { target: { kind: "page", id: "home" } }), lookCtx);
   await bridge.resolve(look("open", { target: { kind: "page", id: "home" } }), pageCtx);
   expect(d.opened).toEqual([["page", "home", undefined, true], ["page", "home", undefined, undefined]]);
+});
+
+/* ── the view ──────────────────────────────────────────────────────────── */
+
+/** A recording element, shaped like the parts of the DOM the view touches. */
+function element(tag) {
+  /** @type {Record<string, any[]>} */
+  const listeners = {};
+  /** @type {Record<string, string>} */
+  const attrs = {};
+  /** @type {Record<string, string>} */
+  const props = {};
+  /** @type {any} */
+  const el = {
+    tagName: tag.toUpperCase(), attrs, props, listeners, children: /** @type {any[]} */ ([]), parentElement: null, hidden: false, textContent: "",
+    style: { setProperty: (/** @type {string} */ k, /** @type {string} */ v) => { props[k] = v; } },
+    setAttribute: (/** @type {string} */ k, /** @type {string} */ v) => { attrs[k] = String(v); },
+    getAttribute: (/** @type {string} */ k) => (k in attrs ? attrs[k] : null),
+    removeAttribute: (/** @type {string} */ k) => { delete attrs[k]; },
+    addEventListener: (/** @type {string} */ k, /** @type {any} */ fn) => { (listeners[k] ||= []).push(fn); },
+    append: (/** @type {any[]} */ ...kids) => { for (const k of kids) { if (k && typeof k === "object") { k.parentElement = el; k.moved = (k.moved ?? 0) + 1; } el.children.push(k); } },
+    getBoundingClientRect: () => ({ width: 460, height: 700, top: 0, bottom: 700, left: 0, right: 460 }),
+    releasePointerCapture() {}, setPointerCapture() {},
+    /** @param {string} name @param {any} ev */
+    fire(name, ev) { for (const fn of listeners[name] || []) fn(ev); },
+  };
+  return el;
+}
+
+/** @param {string} spec @param {any} [props] @param {...any} kids */
+function h(spec, props, ...kids) {
+  const [head, ...classes] = String(spec).split(".");
+  const el = element(head.split("#")[0] || "div");
+  el.className = classes.join(" ");
+  if (props && props.constructor === Object) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : String(v));
+    }
+  } else if (props !== undefined) kids.unshift(props);
+  el.append(...kids.filter((k) => k != null));
+  return el;
+}
+
+const PAGES = [{ id: "home", name: "Home", uid: "u1nvented-home" }, { id: "home/Specs", name: "Specs", uid: "u1nvented-specs" }];
+
+/** The Agent screen, stood up against doubles. */
+async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | null, chatList?: boolean }} */ at = {}) {
+  /** @type {any[]} */
+  const frames = [];
+  /** @type {any[]} */
+  const posted = [];
+  /** @type {any[]} */
+  const mounts = [];
+  const frameHost = {
+    for(/** @type {string} */ key, /** @type {string} */ html, /** @type {any} */ ctx) {
+      const el = element("iframe");
+      const frame = { el, post: (/** @type {any} */ ev) => posted.push(ev), drop() {} };
+      mounts.push({ key, html, ctx, frame });
+      return frame;
+    },
+    broadcast() { throw new Error("broadcast"); },
+    setShim() {}, drop() {}, refresh() {}, compliance: () => null, keep() {},
+  };
+  const { transport, calls } = transportOf({
+    "page.read": (req) => ({ id: req.page, name: "Agent", plugin: "biom-agent", html: "<!doctype html><html><head></head><body><main id=\"g-agent\"></main></body></html>", input: {} }),
+    "chat.read": (req) => ({ chat: summary({ id: req.chat }), updates: [up(1, "prompt", { text: "Invented" })] }),
+  });
+  const chats = makeChatStore({ transport });
+  chats.takeChat({ chat: summary(), updates: [] });
+  chats.takeChat({ chat: summary({ id: OTHER, updated: 5 }), updates: [] });
+  const ui = makeUi({ route: at.route ?? { view: "agent", id: "", screen: "page" }, panel: at.panel ?? false, chat: at.chat ?? null, chatList: at.chatList ?? false });
+  /** @type {any[]} */
+  const said = [];
+  const input = {
+    el: element("div"),
+    sync() {},
+    measure: () => ({ at: /** @type {const} */ (ui.get().chat === null ? "center" : "bottom"), height: 90 }),
+    onMove: () => () => {},
+    prefill: (/** @type {string} */ text, /** @type {any} */ page) => said.push(["prefill", text, page]),
+    focus: () => said.push(["focus"]),
+    fresh: () => said.push(["fresh"]),
+  };
+  /** @type {(() => void)[]} */
+  const raf = [];
+  const win = /** @type {any} */ ({ addEventListener() {}, innerWidth: 1400, requestAnimationFrame: (/** @type {() => void} */ fn) => { raf.push(fn); } });
+  const history = { get: () => /** @type {any[]} */ ([{ entry: { kind: "view", window: "w1nvented-window", place: { view: "page", uid: "u1nvented-specs", screen: "page" } } }]), on: () => () => {} };
+  const view = makeAgentView({
+    h, frameHost: /** @type {any} */ (frameHost), ui, ws: /** @type {any} */ ({ get: () => ({ pages: PAGES }), on: () => () => {} }),
+    chats, switcher: null, history: /** @type {any} */ (history), window: "w1nvented-window", input, vault: "/invented/vault", win,
+  });
+  // The look's document is read, and the box mounted.
+  for (let i = 0; i < 20 && mounts.length === 0; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+  const frame = () => mounts[mounts.length - 1]?.frame;
+  const hello = () => view.slot.fire("biom:notice", { detail: { kind: "hello" }, target: frame().el });
+  const tick = () => { for (const fn of raf.splice(0)) fn(); };
+  return { view, ui, chats, posted, mounts, frame, hello, tick, said, calls };
+}
+
+test("the look's box is mounted once, under a key no page view mounts, with a context it alone holds, and is appended once", async () => {
+  const s = await stand();
+  expect(s.mounts.length).toBe(1);
+  expect(s.mounts[0].key).toBe(LOOK_KEY);
+  expect(s.mounts[0].key).not.toBe(AGENT_PAGE);
+  expect(s.mounts[0].ctx).toEqual({ page: AGENT_PAGE });
+  expect(s.frame().el.moved).toBe(1);
+  // A box with the same page but not the context the view mounted is refused.
+  expect(s.view.answer(/** @type {any} */ (look("look.list", { open: true })), { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.view.answer(/** @type {any} */ (look("look.list", { open: true })), s.mounts[0].ctx)).toBe(null);
+  expect(s.ui.get().chatList).toBe(true);
+});
+
+test("hello is answered with the whole state through that box's own post, and nothing is broadcast", async () => {
+  const s = await stand({ route: { view: "agent", id: "", screen: "page" } });
+  expect(s.posted).toEqual([]);
+  s.hello();
+  expect(s.posted.length).toBe(1);
+  const st = s.posted[0];
+  expect(st.kind).toBe("look.state");
+  expect(st.state).toMatchObject({ mode: "screen", chat: null, list: false, updates: [], input: { at: "center", height: 90 }, beside: { id: "home/Specs", name: "Specs" } });
+  expect(st.state.chats.map((/** @type {any} */ c) => c.id)).toEqual([CHAT, OTHER]);
+});
+
+test("another chat is handed over whole once its stream is read; the stream after it goes as patches, coalesced to one a frame", async () => {
+  const s = await stand();
+  s.hello();
+  s.view.answer(/** @type {any} */ (look("look.open", { chat: CHAT })), s.mounts[0].ctx);
+  expect(s.ui.get().route).toEqual({ view: "agent", id: CHAT, screen: "page" });
+  await new Promise((r) => setTimeout(r, 0));
+  const state = s.posted.filter((p) => p.kind === "look.state").at(-1);
+  expect(state.state.chat).toBe(CHAT);
+  expect(state.state.updates.map((/** @type {any} */ u) => u.kind)).toEqual(["prompt"]);
+  s.posted.length = 0;
+  s.chats.takeChat({ chat: summary({ updated: 11, phase: "running", light: "working" }), updates: [up(2, "turn", { phase: "running", stop: null, reason: null })] });
+  s.chats.takeChat({ chat: summary({ updated: 12, phase: "running", light: "working" }), updates: [up(3, "reply", { text: "a" })] });
+  s.chats.takeChat({ chat: summary({ updated: 13, phase: "running", light: "working" }), updates: [up(4, "reply", { text: "b" })] });
+  expect(s.posted).toEqual([]);
+  s.tick();
+  expect(s.posted.length).toBe(1);
+  expect(s.posted[0]).toMatchObject({ kind: "look.patch", chat: CHAT });
+  expect(s.posted[0].updates.map((/** @type {any} */ u) => u.seq)).toEqual([2, 3, 4]);
+  expect(s.posted[0].chats[0].light).toBe("working");
+  // A chat in the background streaming changes the list and adds no words.
+  s.posted.length = 0;
+  s.chats.takeChat({ chat: summary({ id: OTHER, updated: 14, light: "working", phase: "running" }), updates: [up(9, "reply", { text: "not this chat's" })] });
+  s.tick();
+  expect(s.posted[0].updates).toBeUndefined();
+  expect(s.posted[0].chats.map((/** @type {any} */ c) => c.id)).toEqual([OTHER, CHAT]);
+});
+
+test("a flood too big for a patch is handed over whole instead", async () => {
+  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" } });
+  await new Promise((r) => setTimeout(r, 0));
+  s.hello();
+  s.posted.length = 0;
+  const many = Array.from({ length: PATCH_MAX + 5 }, (_, i) => up(i + 10, "reply", { text: "x" }));
+  s.chats.takeChat({ chat: summary({ updated: 20 }), updates: many });
+  s.tick();
+  expect(s.posted.map((p) => p.kind)).toEqual(["look.state"]);
+  // Held folded: a run of chunks is one update, not thousands.
+  expect(s.posted[0].state.updates.map((/** @type {any} */ u) => u.kind)).toEqual(["prompt", "reply"]);
+  expect(s.posted[0].state.updates[1].text.length).toBe(many.length);
+});
+
+test("a new thread leaves the list as it was; the panel goes to the screen, beside the last page, or shut", async () => {
+  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" }, chatList: true });
+  const ctx = s.mounts[0].ctx;
+  expect(s.view.answer(/** @type {any} */ (look("look.new")), ctx)).toBe(null);
+  expect(s.ui.get().route.id).toBe("");
+  expect(s.ui.get().chatList).toBe(true);
+  expect(s.said).toContainEqual(["fresh"]);
+
+  s.ui.set({ chat: CHAT });
+  expect(s.view.answer(/** @type {any} */ (look("look.panel", { to: "beside" })), ctx)).toBe(null);
+  expect(s.ui.get().route).toEqual({ view: "page", id: "home/Specs", screen: "page" });
+  expect(s.ui.get().panel).toBe(true);
+  expect(s.ui.get().chat).toBe(CHAT);
+
+  // In the panel a chat opened stays in the panel; the page does not move.
+  expect(s.view.answer(/** @type {any} */ (look("look.open", { chat: OTHER })), ctx)).toBe(null);
+  expect(s.ui.get().route.view).toBe("page");
+  expect(s.ui.get().chat).toBe(OTHER);
+  expect(s.view.answer(/** @type {any} */ (look("look.open", { chat: "c1nvented-chat-none" })), ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
+
+  expect(s.view.answer(/** @type {any} */ (look("look.panel", { to: "screen" })), ctx)).toBe(null);
+  expect(s.ui.get().route).toEqual({ view: "agent", id: OTHER, screen: "page" });
+  expect(s.ui.get().panel).toBe(false);
+
+  s.ui.open("page", "home", "page", true);
+  expect(s.view.answer(/** @type {any} */ (look("look.panel", { to: "closed" })), ctx)).toBe(null);
+  expect(s.ui.get().panel).toBe(false);
+  expect(s.ui.get().route.id).toBe("home");
+});
+
+test("Edit opens a new chat beside the page with its location typed in; the rail's Agent goes to the full screen with the chat last open", async () => {
+  const s = await stand({ route: { view: "page", id: "home/Specs", screen: "page" }, chat: CHAT });
+  s.view.edit("home/Specs");
+  expect(s.ui.get()).toMatchObject({ panel: true, chat: null });
+  expect(s.ui.get().route.id).toBe("home/Specs");
+  expect(s.said).toContainEqual(["prefill", "Edit home/Specs: ", "home/Specs"]);
+  s.ui.set({ chat: OTHER });
+  s.view.open();
+  expect(s.ui.get().route).toEqual({ view: "agent", id: OTHER, screen: "page" });
+  expect(s.ui.get().panel).toBe(false);
+  expect(s.ui.cause().mover).toEqual({ by: "you" });
+});
+
+test("the slot's shape follows the window: the screen, the panel, or nothing", async () => {
+  const s = await stand({ route: { view: "page", id: "home", screen: "page" } });
+  expect(s.view.slot.getAttribute("data-mode")).toBe("none");
+  // Nothing is mounted until the Agent screen is first shown.
+  expect(s.mounts.length).toBe(0);
+  s.ui.set({ panel: true });
+  expect(s.view.slot.getAttribute("data-mode")).toBe("panel");
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.mounts.length).toBe(1);
+  expect(s.view.slot.props["--look-head"]).toBe("46px");
+  s.ui.open("agent", CHAT);
+  expect(s.view.slot.getAttribute("data-mode")).toBe("screen");
+  expect(s.view.slot.props["--look-threads"]).toBe("268px");
+  expect(s.view.slot.props["--look-head"]).toBe("0px");
+  // The box never moved while the shape did.
+  expect(s.frame().el.moved).toBe(1);
+});
+
+test("the chrome hears a chat start and end work, and not every word it streams", async () => {
+  const s = await stand();
+  let heard = 0;
+  s.view.onChrome(() => heard++);
+  s.chats.takeChat({ chat: summary({ updated: 20, light: "working", phase: "running" }), updates: [] });
+  expect(s.view.chrome().busy).toBe(1);
+  expect(heard).toBe(1);
+  s.chats.takeChat({ chat: summary({ updated: 21, light: "working", phase: "running" }), updates: [] });
+  s.chats.takeChat({ chat: summary({ updated: 22, light: "working", phase: "running" }), updates: [] });
+  expect(heard).toBe(1);
+  s.chats.takeChat({ chat: summary({ updated: 23, light: "done", phase: "idle", stop: "end_turn" }), updates: [] });
+  expect(s.view.chrome().busy).toBe(0);
+  expect(heard).toBe(2);
 });

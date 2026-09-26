@@ -31,6 +31,7 @@ import { makePageView } from "../client/views/page.js";
 import { closeHref, hrefFor, makeVaultView } from "../client/views/vault.js";
 import { UNTITLED } from "../client/shell/dialog.js";
 import { makeUi } from "../client/store/ui.js";
+import { ROOT_PAGE } from "../client/store/workspace.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── a recording element factory, shaped like client/platform/dom.js ──── */
@@ -2284,19 +2285,57 @@ test("the status strip stops reporting on the page and keeps reporting on the da
   expect(flat(table.strip)).not.toContain("unrestricted");
 });
 
-test("the Dashboard row and the row that names the workspace are both in every build", async () => {
-  const dev = harness();
-  await tick();
-  expect(find(dev.rack, (el) => has(el, "dashboardlink"))).toBeTruthy();
+/** THE AGENT SCREEN, as the shell holds it: a slot, and what the chrome
+ *  reads of the chats. Records what the shell asked of it. */
+function agentStub(/** @type {Partial<{ busy: number, chat: any, chats: number, active: number }>} */ c = {}) {
+  /** @type {any[]} */
+  const asked = [];
+  return {
+    asked,
+    view: {
+      slot: h("div.agentslot"),
+      open: () => asked.push(["open"]),
+      edit: (/** @type {string} */ page) => asked.push(["edit", page]),
+      chrome: () => ({ busy: 0, chat: null, chats: 0, active: 0, ...c }),
+    },
+  };
+}
 
-  const built = harness(DOC, { view: "page", id: DOC.id }, true);
+test("HOME IS THE TREE'S ONE HEADING, in every build: one row that opens the root page, the sort beside it, and no Dashboard", async () => {
+  for (const production of [false, true]) {
+    const g = harness(DOC, { view: "page", id: DOC.id }, production);
+    await tick();
+    expect(find(g.rack, (el) => has(el, "dashboardlink"))).toBe(null);
+    const head = find(g.rack, (el) => has(el, "railhead"));
+    const home = find(head, (el) => has(el, "homerow"));
+    expect(flat(home)).toBe("Home");
+    expect(find(head, (el) => has(el, "railsort"))).toBeTruthy();
+    // One entry that opens the root page, where there used to be two.
+    expect(findAll(g.rack, (el) => el.tagName === "H3")).toEqual([]);
+    home.fire("click");
+    expect(g.ui.get().route).toEqual({ view: "page", id: ROOT_PAGE, screen: "page" });
+    expect(g.ui.cause().mover).toEqual({ by: "you" });
+  }
+});
+
+test("THE AGENT TAKES DASHBOARD'S SLOT: the rail's one button, lit on the Agent screen, with the count of chats working, and it goes to the Agent screen", async () => {
+  const a = agentStub({ busy: 2 });
+  const g = harness(DOC, { view: "page", id: DOC.id }, false, undefined, false, "", { views: { agent: a.view } });
   await tick();
-  // The dashboard IS the root page, and a way to it is always on screen; the
-  // heading stays too because it is the one that NAMES the folder you are in.
-  expect(find(built.rack, (el) => has(el, "dashboardlink"))).toBeTruthy();
-  const head = find(built.rack, (el) => has(el, "railhead"));
-  expect(head).toBeTruthy();
-  expect(flat(find(head, (el) => el.tagName === "A"))).toBe("Everything");
+  const row = g.rack.children[0];
+  expect(has(row, "agentlink")).toBe(true);
+  expect(flat(row)).toContain("Agent");
+  expect(flat(find(row, (el) => has(el, "busy")))).toBe("2");
+  expect(row.attrs["aria-current"]).toBeUndefined();
+  row.fire("click");
+  expect(a.asked).toEqual([["open"]]);
+  g.ui.open("agent", "");
+  await tick();
+  expect(g.rack.children[0].attrs["aria-current"]).toBe("page");
+  // Nothing working, no count.
+  const quiet = harness(DOC, { view: "page", id: DOC.id }, false, undefined, false, "", { views: { agent: agentStub().view } });
+  await tick();
+  expect(find(quiet.rack.children[0], (el) => has(el, "busy"))).toBe(null);
 });
 
 test("the failure screen names no repository in production, and offers the one act that is theirs", async () => {
@@ -2710,7 +2749,7 @@ test("every control in the shell that takes the person somewhere is THEIR open",
   };
 
   // Home, the rail's heading, and the workspace's own screens at the foot.
-  await opened(() => find(g.rack, (el) => has(el, "dashboardlink")).fire("click"), "page");
+  await opened(() => find(g.rack, (el) => has(el, "homerow")).fire("click"), "page");
   for (const [text, view] of [["Design", "design"], ["Instructions", "instructions"], ["Automations", "runs"], ["Map", "map"]]) {
     await opened(() => find(g.rack, (el) => el.tagName === "A" && flat(el) === text).fire("click"), view);
   }
@@ -2842,16 +2881,69 @@ test("a table cell's page link and a run's page link are the person's opens", as
   expect(src).toContain('ui.open("page", id)');
 });
 
-test("the Agent screen routes in every build, and holds a sentence until its view is built", async () => {
+test("the Agent screen routes in every build, and holds a sentence where there is no Agent view", async () => {
   for (const production of [false, true]) {
     const g = harness(DOC, { view: "agent", id: "chat-0001-invented" }, production);
     await tick();
     expect(g.plate.attrs["data-face"]).toBe("agent");
     expect(flat(g.plate)).toContain("Agent screen");
+    expect(g.bed.attrs["data-agent"]).toBe("none");
   }
-  const g = harness(DOC, { view: "agent", id: "" }, false, undefined, false, "", { views: { agent: { screen: () => h("div.agentscreen") } } });
+});
+
+test("THE AGENT SCREEN'S SLOT IS PUT IN THE BED ONCE, beside the canvas, and its shape is the bed's — screen, panel or nothing — never a move", async () => {
+  const a = agentStub();
+  const g = harness(DOC, { view: "agent", id: "" }, false, undefined, false, "", { views: { agent: a.view } });
   await tick();
-  expect(g.plate.firstChild.className).toBe("agentscreen");
+  expect(g.bed.children[2]).toBe(a.view.slot);
+  expect(g.bed.attrs["data-agent"]).toBe("screen");
+  // The plate holds nothing of its own on the Agent screen.
+  expect(g.plate.firstChild.className).toBe("agenthole");
+  g.ui.open("page", DOC.id);
+  await tick();
+  expect(g.bed.attrs["data-agent"]).toBe("none");
+  g.ui.set({ panel: true });
+  await tick();
+  expect(g.bed.attrs["data-agent"]).toBe("panel");
+  g.ui.open("agent", "");
+  g.ui.open("page", DOC.id, "page", true);
+  await tick();
+  expect(a.view.slot.moved).toBe(1);
+  // A workspace that did not open draws its trouble, not a chat.
+  g.shell.trouble(new Error("the server did not answer"));
+  expect(g.bed.attrs["data-agent"]).toBe("none");
+});
+
+test("EDIT IS THE AMBER BUTTON ON THE PAGE BAR, where Agent Terminal was: a new chat beside the page, for that page", async () => {
+  const a = agentStub();
+  const g = harness(DOC, { view: "page", id: DOC.id }, false, undefined, false, "", { views: { agent: a.view } });
+  await tick();
+  const edit = find(g.rail, (el) => has(el, "tool") && has(el, "edit"));
+  expect(flat(edit)).toBe("Edit");
+  edit.fire("click");
+  expect(a.asked).toEqual([["edit", DOC.id]]);
+  // No Agent screen, no Edit; and never on a screen that is not a page.
+  const none = harness(DOC, { view: "page", id: DOC.id });
+  await tick();
+  expect(find(none.rail, (el) => has(el, "edit"))).toBe(null);
+  g.ui.open("design", "");
+  await tick();
+  expect(find(g.rail, (el) => has(el, "edit"))).toBe(null);
+});
+
+test("on the Agent screen the bar says Agent and the chat open in it, with its lamp, and the strip counts the chats and the agents", async () => {
+  const chat = { id: "chat-0001-invented", name: "Invented chat", light: "error" };
+  const a = agentStub({ chat, chats: 3, active: 1, busy: 1 });
+  const g = harness(DOC, { view: "agent", id: chat.id }, true, undefined, false, "", { views: { agent: a.view } });
+  await tick();
+  const crumbs = findAll(g.rail, (el) => has(el, "crumb"));
+  expect(crumbs.map(flat)).toEqual(["Agent", "Invented chat"]);
+  expect(find(crumbs[1], (el) => has(el, "led"))?.className).toBe("led red");
+  crumbs[0].fire("click");
+  expect(g.ui.get().route).toEqual({ view: "agent", id: "", screen: "page" });
+  expect(flat(g.strip)).toContain("Chats 3");
+  expect(flat(g.strip)).toContain("Agents active 1");
+  expect(flat(g.strip)).toContain("Working 1");
 });
 
 /* ── the person's hand on a screen the host draws ────────────────────── */

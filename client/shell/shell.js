@@ -52,6 +52,7 @@
  *            UiState, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
 /** @import { Ui } from "../store/ui.js" */
+/** @import { AgentChrome } from "../views/agent.js" */
 
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { VIEW_NAMES, formatAddress, parseAddress, sameAddress } from "../../contracts/address.js";
@@ -59,6 +60,7 @@ import { remember } from "../platform/dom.js";
 import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 import { NOT_TOUCH } from "../store/switcher.js";
+import { agentMode } from "../store/chats.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
 // directions of one move — into a folder and out of it — and an address built
@@ -91,8 +93,26 @@ import { makeRack } from "./rack.js";
  *   there is nothing of the person's to go back to. Mounted at the top left of
  *   the canvas. Absent where no switcher is built — a tab with no workspace, a
  *   test that is not about it.
- * @property {{ screen: () => HTMLElement }} [agent] THE AGENT SCREEN, whole.
- *   Absent until the Agent view is built, and the route holds a sentence.
+ * @property {ShellAgent} [agent] THE AGENT SCREEN, and the chat panel
+ *   beside a page. Absent in a tab with no workspace and in a test that is not
+ *   about it, where the route holds a sentence.
+ */
+
+/**
+ * THE AGENT SCREEN AS THE SHELL HOLDS IT. `slot` is ONE element — the look's
+ * box and Biom's input box over it — which the shell puts in the bed once,
+ * beside the canvas, and never moves: moving an iframe reloads it. Where it
+ * shows is the bed's `data-agent`: the whole screen on `#/agent`, the panel
+ * beside whatever else is on screen while the panel is open, nowhere
+ * otherwise.
+ * @typedef {object} ShellAgent
+ * @property {HTMLElement} slot
+ * @property {() => void} open The rail's **Agent**: the full screen, and the
+ *   chat this window last had open.
+ * @property {(page: PageId) => void} edit **Edit**: a new chat beside the
+ *   page with the page's location typed in.
+ * @property {() => AgentChrome} chrome The busy count, the open chat and the
+ *   counts the chrome shows.
  */
 
 /**
@@ -213,7 +233,12 @@ export function makeShell(deps) {
     h("i.reg.tl"), h("i.reg.tr"), h("i.reg.bl"), h("i.reg.br"), plate, backslot);
   // The grip sits in the bed rather than in the rack: the rack scrolls, and a
   // handle that scrolls out of view is a handle nobody finds twice.
-  const bed = h("div.bed", rack, canvas, sizer.grip);
+  // THE AGENT SCREEN'S SLOT, after the canvas and put here once: its shape is
+  // the bed's grid (`data-agent`), never a move.
+  const bed = views.agent ? h("div.bed", rack, canvas, views.agent.slot, sizer.grip) : h("div.bed", rack, canvas, sizer.grip);
+  /** WHAT THE PLATE HOLDS ON THE AGENT SCREEN: nothing, kept. The canvas is
+   *  not drawn there — the slot takes its column. */
+  const agentHole = h("div.agenthole");
   const strip = h("div.strip");
 
   /** The window's own bar, or null in a browser. Read once: see `windowBridge`.
@@ -431,8 +456,9 @@ export function makeShell(deps) {
         return views.instructions.vault();
       case "agent":
         // THE AGENT SCREEN — `#/agent` and `#/agent/<chat>` route in every
-        // build; what draws it is the Agent view's.
-        return views.agent ? views.agent.screen() : h("p.hold", "The Agent screen is not in this build yet.");
+        // build — is the slot beside the canvas, which the bed draws in the
+        // canvas's place. The plate keeps nothing of its own meanwhile.
+        return views.agent ? agentHole : h("p.hold", "The Agent screen is not in this workspace window.");
       default:
         return h("p.hold", "Nothing open.");
     }
@@ -552,6 +578,13 @@ export function makeShell(deps) {
     return h("button.tool", { type: "button", onclick, "aria-pressed": String(pressed) }, text);
   }
 
+  /** A CHAT'S LAMP wherever the chrome names a chat, as the server keeps it
+   *  (DECISIONS §6): amber and pulsing while it works, green for ten minutes
+   *  after it finished, red from a stop on an error until its next turn, and
+   *  none otherwise. @param {string} light */
+  const lamp = (light) =>
+    h("span", { class: light === "working" ? "led lit pulse" : light === "done" ? "led green" : light === "error" ? "led red" : "led", "aria-hidden": "true" });
+
   function railParts() {
     const { route } = ui.get();
     const w = ws.get();
@@ -625,6 +658,18 @@ export function makeShell(deps) {
       tools.push(screenTool("automation", "Automations"));
     }
 
+    // EDIT, THE AMBER BUTTON, where Agent Terminal was (*Chat*, `screens`): a
+    // new chat beside the page with the page's location typed in, and the
+    // caret after it. The one lit control on the bar, because it is the one
+    // that hands the page to an agent.
+    if (page && views.agent) {
+      const agent = views.agent;
+      const id = page.id;
+      tools.push(h("button.tool.edit", { type: "button", title: "Ask your agent to change this page", onclick: () => agent.edit(id) },
+        h("span.glyph", { "data-glyph": "pencil", "aria-hidden": "true" }),
+        h("span", "Edit")));
+    }
+
     return [crumbs, h("span.tools", ...tools)];
   }
 
@@ -647,14 +692,14 @@ export function makeShell(deps) {
       const ref = w.pages.find((p) => p.id === id);
       return ref ? ref.name : id.slice(id.lastIndexOf("/") + 1);
     };
-    /** @param {string} text @param {(() => void) | null} go @param {boolean} last */
-    const crumb = (text, go, last) =>
+    /** @param {string} text @param {(() => void) | null} go @param {boolean} last @param {string} [light] */
+    const crumb = (text, go, last, light) =>
       h("button.crumb", {
         type: "button", "aria-current": last ? "page" : null,
         onclick: go || undefined, disabled: go ? null : "",
-      }, text);
+      }, light !== undefined && light !== "none" ? lamp(light) : null, text);
 
-    /** @type {{ text: string, go: (() => void) | null }[]} */
+    /** @type {{ text: string, go: (() => void) | null, light?: string }[]} */
     const items = [];
     /** Every page from the root down to `id`, inclusive. @param {PageId} id */
     const pages = (id) => {
@@ -682,6 +727,12 @@ export function makeShell(deps) {
     } else if (route.view === "map") {
       pages(ROOT_PAGE);
       items.push({ text: "Map", go: null });
+    } else if (route.view === "agent") {
+      // THE AGENT SCREEN: Agent, which is a new thread, then the chat open in
+      // it with its lamp.
+      const chat = views.agent ? views.agent.chrome().chat : null;
+      items.push({ text: "Agent", go: route.id ? () => ui.open("agent", "") : null });
+      if (route.id) items.push({ text: chat ? chat.name || "New chat" : "Chat", go: null, light: chat ? chat.light : "none" });
     }
     // THE VAULT ROUTE HAS NO CRUMB, because it has no rail to put one in: it is
     // the start page and the start page draws no furniture at all. It used to
@@ -692,7 +743,7 @@ export function makeShell(deps) {
     const out = [];
     items.forEach((it, i) => {
       if (i) out.push(h("span.crumbsep", { "aria-hidden": "true" }, "/"));
-      out.push(crumb(it.text, i === items.length - 1 ? null : it.go, i === items.length - 1));
+      out.push(crumb(it.text, i === items.length - 1 ? null : it.go, i === items.length - 1, it.light));
     });
     return out;
   }
@@ -840,25 +891,42 @@ export function makeShell(deps) {
     // is under the finder instead of leaving the last list on screen.
     drawResults();
 
-    return [
-      // A DEDICATED WAY HOME, distinct from the workspace-name link below (which
-      // stays as the page's own heading). One row, always visible, at the very
-      // top of the rail — the same "New page" pattern at the foot, mirrored.
-      //
-      // IT IS IN EVERY BUILD. The audit had it on the production hide list as
-      // one of two rows going home; the owner decided (2026-09-14) that the
-      // dashboard is the root page and a way to it is always on screen.
-      h("button.dashboardlink", {
+    // THE AGENT, WHERE DASHBOARD WAS (*Chat*, `screens`): the rail's one
+    // button, in Dashboard's slot and look, with a count of the chats working
+    // and their lamp; it goes to the full Agent screen and the chat this
+    // window last had open. Without an Agent screen — a test not about it —
+    // there is no row.
+    const agent = views.agent;
+    const busy = agent ? agent.chrome().busy : 0;
+    const agentRow = agent
+      ? h("button.agentlink", {
         type: "button",
-        "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-        onclick: () => ui.open("page", ROOT_PAGE),
-      }, h("span.dashglyph", { "aria-hidden": "true" }), h("span.nm", "Dashboard")),
+        "aria-current": route.view === "agent" ? "page" : null,
+        title: busy ? `${busy} ${busy === 1 ? "chat is" : "chats are"} working` : "The Agent screen",
+        onclick: () => agent.open(),
+      },
+      h("span.glyph", { "data-glyph": "chat", "aria-hidden": "true" }),
+      h("span.nm", "Agent"),
+      busy ? h("span.busy", lamp("working"), h("span.n", String(busy))) : null)
+      : null;
+
+    return [
+      agentRow,
+      // HOME IS THE TREE'S OWN HEADING, and there is one of it: where there
+      // used to be a Dashboard button and a heading that both opened the root
+      // page, there is one row that does, with the sort control beside it,
+      // because the list under it IS the root page's children. It is in every
+      // build — the owner decided (2026-09-14) that a way to the root page is
+      // always on screen.
       h("div.railhead",
-        h("h3", h("a", {
-          href: "#",
+        h("button.homerow", {
+          type: "button",
           "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-          onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.open("page", ROOT_PAGE); },
-        }, home ? home.name : "Workspace")),
+          title: home ? home.name : "Home",
+          onclick: () => ui.open("page", ROOT_PAGE),
+        },
+        h("span.glyph", { "data-glyph": "home", "aria-hidden": "true" }),
+        h("span.nm", "Home")),
         // The label says what pressing it DOES, which for a toggle means naming
         // the state it goes to rather than the one it is in.
         h("button.railsort", {
@@ -969,6 +1037,13 @@ export function makeShell(deps) {
       items.push(["Rows", String(w.table.total)]);
       items.push(["Columns", String(w.table.schema.columns.length)]);
       if (!production) items.push(["Data", "unrestricted"]);
+    } else if (route.view === "agent" && views.agent) {
+      // THE CHATS AND THE AGENTS, as the mockup's strip has them: facts about
+      // the person's own work, in both builds.
+      const c = views.agent.chrome();
+      if (c.busy) items.push(["Working", String(c.busy)]);
+      items.push(["Chats", String(c.chats)]);
+      items.push(["Agents active", String(c.active)]);
     }
 
     // THE ONLY THING SAID ABOUT GIT IS THE BAD NEWS, and the asymmetry is
@@ -1230,6 +1305,10 @@ export function makeShell(deps) {
     sizer.sync();
 
     plate.setAttribute("data-face", faceOf());
+
+    // WHERE THE AGENT SCREEN IS DRAWN: the bed's grid, and nothing moved. A
+    // workspace that did not open draws its trouble, not a chat.
+    bed.setAttribute("data-agent", bare || troubled || !views.agent ? "none" : agentMode(u));
 
     // GO BACK TO, when there is something of the person's to go back to. The
     // view hands back the same button until what it names changes, so a
