@@ -41,8 +41,19 @@ function shim() {
     removeEventListener() {},
     parent: { postMessage() {} },
   });
-  const doc = { querySelectorAll: () => [], documentElement: { style: { setProperty() {} } }, scrollingElement: null };
-  new Function("window", "document", read("guest/biom.js"))(win, doc);
+  // The surface the shim reaches for at load and in its listeners: the
+  // `touch` notice listens for `selectionchange` on the document and reads
+  // the selection and the user activation when one fires.
+  const doc = {
+    querySelectorAll: () => [],
+    documentElement: { style: { setProperty() {} } },
+    scrollingElement: null,
+    addEventListener() {},
+    removeEventListener() {},
+    getSelection: () => null,
+  };
+  const nav = { userActivation: { isActive: false, hasBeenActive: false } };
+  new Function("window", "document", "navigator", read("guest/biom.js"))(win, doc, nav);
   /** @type {any} */
   const port = { onmessage: null, close() {}, postMessage(/** @type {any} */ m) {
     // Answer the shim's own start-up reads at once, so no call is left waiting.
