@@ -149,8 +149,8 @@ export async function readLoginEnv(opts: LoginEnvOptions = {}): Promise<LoginEnv
   if (shell === null || !usable(shell)) return fallback("no login shell could be found");
 
   const tag = randomBytes(16).toString("hex");
-  const start = `__BIOM_ENV_START_${tag}__`;
-  const end = `__BIOM_ENV_END_${tag}__`;
+  const start = `__BIOM_LOGIN_START_${tag}__`;
+  const end = `__BIOM_LOGIN_END_${tag}__`;
   // `command env -0` so an alias or a function called `env` in somebody's rc
   // is not what runs; printf, not echo, whose escapes differ between shells.
   const script = `printf '%s' '${start}'; command env -0; printf '%s' '${end}'`;
