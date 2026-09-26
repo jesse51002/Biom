@@ -27,7 +27,9 @@ description: >-
   through `biom.plugin.extensions()`, with `biom.plugin.list()` and `get()`
   beside it. THE `doc` DOCUMENT READS `head` AND `foot` AND MOUNTS WHAT EACH
   NAMES through `rt.page.mount`, and the board of children is `biom-holds`, a
-  plugin inside `biom-doc/plugins/`. THE LOADER answers `GET /v/<enc>/plugin/`
+  plugin inside `biom-doc/plugins/`; the Agent screen's `biom-agent` mounts
+  the look its `look` variable names, `biom-agent-look` by default, the same
+  way. THE LOADER answers `GET /v/<enc>/plugin/`
   with every folder at every depth — framework, vault, then every page's — one
   script, each file wrapped and named by its path and root, and a loose
   `plugins/<id>.js` refused naming the folder; the client weaves ONE tag and
@@ -39,7 +41,8 @@ description: >-
   "plugin", "register", "mount", "ctx.use", "ctx.has", "ctx.options",
   "data-g-plugin", "page plugin", "vault plugin", "plugin folder",
   "plugin.yaml", "extensions.yaml", "rung", "biom.plugin", "head", "foot",
-  "biom-holds", "reserved id", "duplicate plugin id", "document.currentScript",
+  "biom-holds", "biom-agent", "biom-agent-look", "look variable",
+  "reserved id", "duplicate plugin id", "document.currentScript",
   "markdown plugin", "mermaid", "classic script", "docs/plugins", "no imports
   in the box", "/plugin/ route", or any change to what can fill a node.
 ---
@@ -481,6 +484,21 @@ plugin draws, so a section that places it with `data-g-plugin="biom-holds"`
 gets the same board. `tests/holds.test.ts` is the board; `tests/doc-document.test.ts`
 is the document, its two nodes and the mounting script.
 
+**The Agent screen is the same arrangement, and its whole look is one
+variable.** `biom-agent`'s document is one node, `#g-agent`, and `agent.js`
+beside it — in the bundle, doing nothing on a page without that node — reads
+`biom.plugin.extensions().look` once the runtime has drawn and mounts the
+plugin it names through `rt.page.mount`: `biom-agent-look` by default, from
+`biom-agent/plugin.yaml`. A look that is empty, a list, not an id, or not
+registered is refused in the node, in words that say where the variable is
+written. A workspace replaces the whole look with `look: <its own>` in
+`plugins/biom-agent/extensions.yaml`; `@agent` has no directory, so there is
+no page rung. The look hears the chats through `biom.onLook`, draws in a
+shadow root of its own, and may carry its own sheet because the document
+asked for it — what it may SAY is `boundary-guide`'s and what it draws is
+`chat-guide`'s. `tests/agent-look.test.js` holds the mount and the look outside
+a browser, and `tests/e2e/agent-look.e2e.ts` inside one.
+
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands
 was the whole promise; the cost, named at the time, was that a framework fix
@@ -689,8 +707,14 @@ as long as the box does.
   `rt.page.mount`, the progress slide first while its plugin takes `hidden`
   off the node it was handed; it sorts on `Child.created`, the tenth contracts
   edit, and on the date a name leads with where the host answers none —
-  `tests/automations-runs.test.js`); their scripts are in the bundle and guard
-  on their root node. `mindmap` is also what the rail's
+  `tests/automations-runs.test.js`) and `biom-agent/` (the Agent screen: one
+  node, and `agent.js` mounting what its `look` variable names); their
+  scripts are in the bundle and guard on their root node. `biom-agent-look/`
+  is the look that variable names by default — `look.js` the nodes,
+  `model.js` every decision, `sheet.js` its stylesheet on the box's tokens —
+  and registers like a slot plugin. `biom-agent` is what the Agent screen
+  draws, mounted on `AGENT_PAGE` (`@agent`) and answered as a bare plugin page
+  exactly as the Map is. `mindmap` is also what the rail's
   own Map row draws, mounted on `MAP_PAGE` (`@map`), which `server/domain/pages.ts`
   answers as a bare plugin page with no directory and the shell reads through
   the store like any page, so `client/views/page.js` carries no copy of the
