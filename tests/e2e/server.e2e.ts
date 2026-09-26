@@ -388,6 +388,68 @@ walk("the markdown mirror carries the words", async () => {
     existsSync(mirror) && readFileSync(mirror, "utf8").includes("the save finished and the page came back"));
 });
 
+/* ── every screen has an address, and only the person moves it ───────────
+ *
+ * The *History and View Switcher* spec's addresses and its one rule about the
+ * screen, asked of the assembled program. A page's Instructions and Automations
+ * were held beside the route, so a reload dropped them and Back could not reach
+ * one; they are addresses now. And a page's own code never moves the screen:
+ * the bridge honours a box's `open` only just after the box said the person
+ * touched it — which a unit test can state and only a real browser, with real
+ * trusted events crossing a real opaque-origin frame, can prove. */
+walk("a page's Instructions is an address of its own: a reload lands on it and Back leaves it", async () => {
+  const at = `${base}/?vault=${encodeURIComponent(vault)}#/page/${encodeURIComponent(made)}`;
+  await page.goto(at, { waitUntil: "domcontentloaded" });
+  const tool = page.locator("span.tools button.tool", { hasText: "Instructions" }).first();
+  await until("the page's bar was drawn", BOUNDS.draw, async () => (await tool.count()) > 0);
+  await tool.click();
+  const screen = `#/page/${encodeURIComponent(made)}/instructions`;
+  await until("the route named the screen", BOUNDS.draw, async () => (await page.evaluate(() => location.hash)) === screen);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await until("the reload landed on the Instructions screen", BOUNDS.draw, async () =>
+    (await page.locator("span.tools button.tool[aria-pressed='true']", { hasText: "Instructions" }).count()) > 0);
+  expect(await page.evaluate(() => location.hash)).toBe(screen);
+
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await until("Back left the Instructions screen for the page", BOUNDS.draw, async () =>
+    (await page.evaluate(() => location.hash)) === `#/page/${encodeURIComponent(made)}`);
+  await until("the page's own face is back", BOUNDS.draw, async () =>
+    (await page.locator("span.tools button.tool[aria-pressed='true']").count()) === 0);
+});
+
+walk("a page's own code cannot move the screen, and the person's click on it can", async () => {
+  // A PAGE OF ITS OWN DOCUMENT that asks to open the root the moment it loads,
+  // with nobody touching it, and again when its button is clicked. Invented
+  // for this run.
+  const dir = join(vault, "pages", "home", "children", "Mover");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "content.yaml"), "name: Mover\nplugin: html\n", "utf8");
+  writeFileSync(join(dir, "index.html"), [
+    "<!doctype html><html><body>",
+    '<button id="go" style="font-size:24px">Go home</button><p id="said">waiting</p>',
+    "<script>",
+    "  const say = (t) => { document.getElementById('said').textContent = t; };",
+    "  biom.ready.then(() => biom.open({ kind: 'page', id: 'home' }))",
+    "    .then(() => say('moved by itself'), (e) => say('refused: ' + e.code));",
+    "  document.getElementById('go').addEventListener('click', () => biom.open({ kind: 'page', id: 'home' }));",
+    "</script></body></html>",
+  ].join("\n"), "utf8");
+
+  const mover = `#/page/${encodeURIComponent("home/Mover")}`;
+  await page.goto(`${base}/?vault=${encodeURIComponent(vault)}${mover}`, { waitUntil: "domcontentloaded" });
+  const box = page.frameLocator("iframe.artifact");
+  await until("the page's own open was refused", BOUNDS.draw, async () =>
+    (await box.locator("#said").innerText().catch(() => "")) === "refused: identity");
+  expect(await page.evaluate(() => location.hash)).toBe(mover);
+
+  // THE PERSON'S CLICK: a trusted pointerdown the shim reports as a touch,
+  // then the page's handler asks, and the screen moves as the person's open.
+  await box.locator("#go").click();
+  await until("the click moved the screen", BOUNDS.draw, async () =>
+    (await page.evaluate(() => location.hash)) === "#/page/home");
+});
+
 /* ── the design doc, read against the palette it ships with ───────────────
  *
  * THE FAULT THIS CATCHES IS INVISIBLE TO EVERY UNIT TEST AND OBVIOUS ON A
