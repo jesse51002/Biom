@@ -1,0 +1,10 @@
+# The Agent screen's variables, each with its default. One key, flat. This file
+# is the framework's rung; a vault writes over it in
+# plugins/biom-agent/extensions.yaml, and the nearest rung wins.
+
+# A plugin id: THE LOOK — what draws the start screen, a chat and the list of
+# chats, mounted into this document's one node and fed the chats by the host.
+# A workspace names a plugin of its own here to replace the whole look without
+# copying this document. The input box is never the look's: it is Biom's, in
+# the host, over the box, so only the person's typing reaches an agent.
+look: biom-agent-look
