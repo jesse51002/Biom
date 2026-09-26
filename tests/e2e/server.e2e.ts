@@ -553,11 +553,13 @@ walk("a workspace already on disk is opened from the picker and lands on its roo
   // design rather than the bug that looks like it: the server mounts `VAULT` if
   // it is named, else the folder last opened here, else one of its own. Step 1
   // saw the picker because this run's data directory was empty; it is not empty
-  // now, so the same address goes straight to a workspace.
+  // now, so the same address goes straight to a workspace — and a window whose
+  // address names no screen opens on the Agent screen, as the Chat spec's first
+  // line has it.
   await page.goto(`${base}/`, { waitUntil: "domcontentloaded" });
-  await until("the remembered workspace was mounted", BOUNDS.draw, async () => {
+  await until("the remembered workspace was mounted, on the Agent screen", BOUNDS.draw, async () => {
     const hash = await page.evaluate(() => location.hash);
-    return hash.includes("page/");
+    return hash === "#/agent";
   });
   expect(await page.locator("div.ports.vault").count()).toBe(0);
 

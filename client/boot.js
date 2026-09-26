@@ -288,6 +288,9 @@ const ui = makeUi({
   treeOrder: remembered("treeOrder", "asc") === "desc" ? "desc" : "asc",
   ...(vault === null ? {} : heldContext()),
 });
+// The panel shows beside a page and never on the full Agent screen, so a
+// window reloaded there is not one with the panel open.
+if (ui.get().route.view === "agent" && ui.get().panel) ui.set({ panel: false });
 if (vault !== null) {
   ui.on(() => {
     const u = ui.get();
