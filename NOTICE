@@ -39,6 +39,11 @@ each one is and why that build.
     Copyright (c) 2019, The xterm.js authors
     vendor/addon-fit.LICENSE
 
+  Noto Emoji animations — CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+    © Google. Downscaled to 64 px and re-encoded as animated WebP; the
+    frames and their timing are Google's.
+    vendor/noto/LICENSE
+
 THE DECLARATION FILES BESIDE THEM ARE OURS
 
 `vendor/markdown-it.d.ts` and `vendor/yaml.d.ts` are hand-written here and

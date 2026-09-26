@@ -1,0 +1,22 @@
+Noto Emoji animations — every .webp in this directory
+
+Creator:   Google. © Google.
+Source:    https://fonts.gstatic.com/s/e/notoemoji/latest/<code>/512.gif,
+           fetched 2026-09-26 — Google's animated Noto emoji, where <code>
+           is each file's own name here without the `.webp`.
+
+Licence:   Creative Commons Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+           Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+
+CHANGED:   each file was downscaled from 512 px to 64 px and re-encoded from
+           GIF to animated WebP. The frames, their order and their timing are
+           Google's; nothing was drawn, retimed or recoloured. The command that
+           reproduces every file byte for byte, and the sha256 of each source
+           and of each result, are in vendor/README.md.
+
+The material is offered as-is, with no warranties of any kind; see Section 5
+of the licence, Disclaimer of Warranties and Limitation of Liability.
+
+Biom uses these as the faces of Jev's status on a chat's messages and on a
+chat's name (server/domain/jev.ts). Only the faces on those two lists are here.
