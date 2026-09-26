@@ -278,8 +278,8 @@ s), waiting `OPEN_GRACE` (250 ms) for one still on its way, because a wikilink
 opens over the runtime's port while the touch rides the ordinary one and two
 ports promise no order. A child row, a board's card and a followed link are
 each a click first, and the shim reports the click before the page's handler
-runs. An `open` on load or on a timer is refused `identity`, and said on the
-console in words. **This is a reasonableness property, not a wall**: code in
+runs. An `open` on load or on a timer is refused `identity`, and said in words
+on the window's console. **This is a reasonableness property, not a wall**: code in
 the box shares a realm with the shim and could forge a touch, as it could do
 anything the person can with the data kinds.
 

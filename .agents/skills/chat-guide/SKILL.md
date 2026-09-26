@@ -117,7 +117,7 @@ agent's own**: finding one means starting it with ACP arguments, and `goose`,
 `grok`, `droid`, `pool`, `nova` and `cortex` are also other programs' words, so
 those agents are found only once Biom installed them. OpenClaw is reached only
 through a Gateway on THIS machine, by a constant address, and **Start Gateway**
-is `agents.start`. The first `agents.list` starts the look; **a list read more
+is `agents.start`. The first `agents.list` starts the search; **a list read more
 than `TIMING.rediscover` (thirty seconds) after the last look looks again and
 probes only what is new**, so an agent installed while Biom runs is found
 without a restart and a busy picker is not a probe storm.
