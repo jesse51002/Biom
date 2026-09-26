@@ -17,7 +17,7 @@ import type { AgentInfo, ChatPush, ChatSummary, ChatUpdate, EditVia, Writer } fr
 import { connectAcp } from "../server/platform/acp.ts";
 import { initializeParams } from "../server/platform/acp-wire.ts";
 import { makeFiles } from "../server/platform/files.ts";
-import { GREEN_MS, makeChats } from "../server/workspace/chats.ts";
+import { GREEN_MS, makeChats, readSkills } from "../server/workspace/chats.ts";
 import type { Chats, Skill } from "../server/workspace/chats.ts";
 import type { TurnSignal } from "../server/domain/jev.ts";
 import type { Scenario } from "./fake-acp-agent.ts";
@@ -737,4 +737,29 @@ test("an unknown chat is not_found and an empty message is bad_request", async (
   expect(s.page).toBeNull();
   const onPage = await w.chats.create({ agent: "fake", page: "home/Specs" });
   expect(onPage.page).toEqual({ view: "page", uid: "uid-home/Specs", screen: "page" });
+});
+
+test("the workspace's skills: each folder's SKILL.md, named and described by its frontmatter", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "biom-skills-")));
+  const put = (rel: string, text: string) => {
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  };
+  put(".agents/skills/plain/SKILL.md", "---\nname: plain\ndescription: A plain one, invented.\n---\n\n# Plain\n");
+  put(".agents/skills/quoted/SKILL.md", '---\nname: quoted-name\ndescription: "Quoted: with a colon, invented."\n---\nbody\n');
+  put(".agents/skills/folded/SKILL.md", "---\nname: folded\ndescription: >\n  Folded over\n  two lines.\n---\n");
+  put(".agents/skills/bare/SKILL.md", "# No frontmatter at all\n");
+  put(".agents/skills/broken/SKILL.md", "---\nname: [unclosed\n---\n");
+  put(".agents/skills/empty-dir/README.md", "not a skill\n");
+  put(".agents/skills/_lib/SKILL.md", "---\nname: lib\n---\n");
+  put(".agents/skills/check.ts", "// the checker\n");
+  const skills = await readSkills(makeFiles(root));
+  expect(skills.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+    { name: "bare", description: "", path: ".agents/skills/bare/SKILL.md" },
+    { name: "broken", description: "", path: ".agents/skills/broken/SKILL.md" },
+    { name: "folded", description: "Folded over two lines.", path: ".agents/skills/folded/SKILL.md" },
+    { name: "plain", description: "A plain one, invented.", path: ".agents/skills/plain/SKILL.md" },
+    { name: "quoted-name", description: "Quoted: with a colon, invented.", path: ".agents/skills/quoted/SKILL.md" },
+  ]);
+  expect(await readSkills(makeFiles(join(root, "nowhere")))).toEqual([]);
 });

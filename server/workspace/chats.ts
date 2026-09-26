@@ -110,6 +110,7 @@ import {
   readUpdate, reopenParams, setConfigRequest, textOf, toConfigOptions, toPlan, toSlashCommands, toUsage,
 } from "../platform/acp-wire.ts";
 import { within } from "../platform/files.ts";
+import { parseAny } from "../platform/yaml.ts";
 import type { Edit, EditEvent, VaultRoots } from "../domain/edits.ts";
 import { TOOL_EDIT_KINDS, editsOf, toolLineOf, toolPaths } from "../domain/edits.ts";
 import type { TurnSignal } from "../domain/jev.ts";
@@ -121,6 +122,50 @@ export interface Skill {
   description: string;
   /** Vault-relative, forward-slashed: `.agents/skills/<name>/SKILL.md`. */
   path: string;
+}
+
+/** Where a vault keeps its skills, one folder each. */
+const SKILLS_DIR = ".agents/skills";
+
+/** THE WORKSPACE'S SKILLS, as the / menu lists them: every folder under
+ *  `.agents/skills/` holding a `SKILL.md`, named and described by its
+ *  frontmatter — the folder's name where the frontmatter names none, and no
+ *  description where it will not parse. A folder starting `_` is the
+ *  checker's and is not a skill. What `ChatsDeps.skills` is, over the vault's
+ *  own `Files`. */
+export async function readSkills(files: Files): Promise<Skill[]> {
+  let dirs: { name: string; dir: boolean }[];
+  try {
+    dirs = await files.list(SKILLS_DIR);
+  } catch {
+    return [];
+  }
+  const out: Skill[] = [];
+  for (const d of dirs) {
+    if (!d.dir || d.name.startsWith("_") || d.name.startsWith(".")) continue;
+    const path = `${SKILLS_DIR}/${d.name}/SKILL.md`;
+    let text: string | null;
+    try {
+      text = await files.read(path);
+    } catch {
+      text = null;
+    }
+    if (text === null) continue;
+    let name = d.name;
+    let description = "";
+    const m = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+    if (m) {
+      try {
+        const front = parseAny(m[1] as string) as Record<string, unknown> | null;
+        if (front && typeof front.name === "string" && front.name.trim() !== "") name = front.name.trim();
+        if (front && typeof front.description === "string") description = front.description.trim();
+      } catch {
+        // A frontmatter that will not parse still names its folder.
+      }
+    }
+    out.push({ name, description, path });
+  }
+  return out;
 }
 
 /** EVERYTHING THE CHATS ARE HANDED, and they reach nothing else. */
