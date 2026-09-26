@@ -9,7 +9,7 @@
 
 import { test, expect, afterEach } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -762,4 +762,45 @@ test("the workspace's skills: each folder's SKILL.md, named and described by its
     { name: "quoted-name", description: "Quoted: with a colon, invented.", path: ".agents/skills/quoted/SKILL.md" },
   ]);
   expect(await readSkills(makeFiles(join(root, "nowhere")))).toEqual([]);
+});
+
+only("a line torn by a crash spoils only itself: the chat reads back, and the next line starts clean", async () => {
+  const w = world();
+  const s = await w.chats.create({ agent: "fake", text: "before the tear" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.endAll();
+  const file = join(w.root, ".biom", "chats", `${s.id}.jsonl`);
+  appendFileSync(file, '{"t":"u","u":{"seq":999,"kind":"reply","te');
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the tear");
+  await settled(again, s.id, 2);
+  await again.endAll();
+  const third = w.make();
+  await third.loaded;
+  const { updates } = await third.read(s.id);
+  expect(updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text)).toEqual(["before the tear", "after the tear"]);
+  expect(updates.some((u) => u.seq === 999)).toBe(false);
+  const lines = readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
+  expect(lines.filter((l) => { try { JSON.parse(l); return false; } catch { return true; } }).length).toBe(1);
+});
+
+only("a tool line updated many times is one line in memory, and the log is rewritten compact at the turn's end", async () => {
+  const steps: Record<string, unknown>[] = [{ tool: { toolCallId: "busy", title: "Counting", kind: "other", status: "in_progress" } }];
+  for (let i = 0; i < 260; i++) steps.push({ toolUpdate: { toolCallId: "busy", content: [{ type: "content", content: { type: "text", text: `step ${i}` } }] } });
+  steps.push({ sleep: 50 }, { toolUpdate: { toolCallId: "busy", status: "completed" } }, { reply: "counted" });
+  const w = world({ scenarios: { fake: { turns: [steps as never] } } });
+  const s = await w.chats.create({ agent: "fake", text: "count" });
+  await settled(w.chats, s.id, 1);
+  const { updates } = await w.chats.read(s.id);
+  const lines = updates.filter((u) => u.kind === "tool");
+  expect(lines.length).toBe(1);
+  expect((lines[0] as { tool: { status: string; output: string } }).tool).toMatchObject({ status: "completed", output: "step 259" });
+  await w.chats.endAll();
+  const file = join(w.root, ".biom", "chats", `${s.id}.jsonl`);
+  const kept = readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
+  expect(kept.filter((l) => l.includes('"kind":"tool"')).length).toBeLessThan(5);
+  const again = w.make();
+  await again.loaded;
+  expect((await again.read(s.id)).updates).toEqual(updates);
 });
