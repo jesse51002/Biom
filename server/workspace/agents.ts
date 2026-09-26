@@ -145,6 +145,8 @@ export interface AgentsTiming {
   gatewayPoll: number;
   registryFetch: number;
   registryTtl: number;
+  /** How old the last look for agents may be before a list looks again. */
+  rediscover: number;
   /** A download that sends nothing for this long is abandoned. */
   downloadIdle: number;
   download: number;
@@ -170,6 +172,7 @@ export const TIMING: AgentsTiming = {
   gatewayPoll: 500,
   registryFetch: 15_000,
   registryTtl: 6 * 60 * 60 * 1000,
+  rediscover: 30_000,
   downloadIdle: 60_000,
   download: 30 * 60 * 1000,
   install: 15 * 60 * 1000,
@@ -391,7 +394,10 @@ export function makeAgents(deps: AgentsDeps): Agents {
   /** Tickets redeemed, whose command's end re-probes their agent. */
   const redeemed = new Map<string, { agent: AgentKey; until: number }>();
   let closed = false;
-  let discovering: Promise<void> | null = null;
+  /** A look for agents in flight, and when the last one began — by the
+   *  injected clock. */
+  let looking: Promise<void> | null = null;
+  let lookedAt: number | null = null;
   let cache: { at: number; entries: RegistryEntry[] } | null = null;
   let cacheLoaded = false;
 
@@ -639,9 +645,33 @@ export function makeAgents(deps: AgentsDeps): Agents {
     if (changed) emit();
   }
 
+  /** LOOK NOW, unless a look is already under way — then that one. Two
+   *  looks never run at once. */
+  function lookNow(): Promise<void> {
+    if (looking !== null) return looking;
+    lookedAt = deps.now();
+    const run: Promise<void> = track(lookAround()).finally(() => {
+      if (looking === run) looking = null;
+    });
+    looking = run;
+    return run;
+  }
+
+  /** The first look, for whatever needs the agents found before it answers:
+   *  a launch. After it, only a look already under way is waited for. */
   function discover(): Promise<void> {
-    if (discovering === null) discovering = track(lookAround());
-    return discovering;
+    if (lookedAt === null) return lookNow();
+    return looking ?? Promise.resolve();
+  }
+
+  /** AN AGENT PUT ON THIS MACHINE SINCE THE LAST LOOK IS FOUND: a list looks
+   *  again once the last look is `rediscover` old. What a look finds new is
+   *  probed and what it already knew is not — a known agent is looked at
+   *  again only when asked — so however often the list is read, it is one
+   *  look per half-minute and one probe per agent that arrived. */
+  function rediscover(): void {
+    const stale = lookedAt === null || (looking === null && deps.now() - lookedAt >= t.rediscover);
+    if (stale) lookNow().catch(() => {});
   }
 
   /* ── the probe ────────────────────────────────────────────────────── */
@@ -1402,7 +1432,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
 
   return {
     list() {
-      void discover();
+      rediscover();
       return snapshot();
     },
 
@@ -1465,9 +1495,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       const entries = await readRegistry();
       // Look again: an agent installed outside Biom since the last look is
       // here now, and the list learns it too.
-      const looking = track(lookAround());
-      discovering ??= looking;
-      await looking;
+      await lookNow();
       const env = await deps.env();
       const out: RegistryAgent[] = [];
       for (const e of entries) {

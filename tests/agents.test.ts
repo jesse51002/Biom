@@ -869,3 +869,44 @@ test("a per-process sign-in told to another workspace carries its method there, 
   expect(b.agents.signedInWith("cursor")).toBe("cursor_login");
   authed = new WeakSet();
 });
+
+test("AN AGENT THAT ARRIVES LATER IS FOUND: a list more than 30 s after the last look looks again, probes only what is new, and never storms", async () => {
+  let clock = 1_000_000;
+  const bins: Record<string, string> = {};
+  const m = machine({ bins, now: () => clock });
+  m.agents.list();
+  await m.agents.settled();
+  expect(m.agents.list()).toEqual([]);
+
+  // Installed on the PATH a moment later: not looked for again yet.
+  bins.gemini = "/invented/bin/gemini";
+  clock += 5_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "gemini")).toBeUndefined();
+
+  // Past thirty seconds, a list looks again and finds it — and probes it.
+  clock += 30_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "gemini")?.state).toBe("active");
+  const geminiLooks = () => m.calls.filter((c) => c.launch.command === "/invented/bin/gemini").length;
+  expect(geminiLooks()).toBe(1);
+
+  // Another agent arrives; the next look probes it and NOT the one it knew.
+  bins.opencode = "/invented/bin/opencode";
+  clock += 31_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "opencode")?.state).toBe("active");
+  expect(geminiLooks()).toBe(1);
+
+  // A hundred lists in the same half-minute are one look at most.
+  bins.kimi = "/invented/bin/kimi";
+  clock += 31_000;
+  const before = m.calls.length;
+  for (let i = 0; i < 100; i++) m.agents.list();
+  await m.agents.settled();
+  expect(m.calls.length - before).toBe(1);
+  expect(byKey(m.agents.list(), "kimi")?.state).toBe("active");
+});

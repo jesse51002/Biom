@@ -763,3 +763,51 @@ test("installing refuses a name that is not an agent's, and the install's secret
   expect(heard.some((l) => l.some((a) => a.reason === "installing"))).toBe(true);
   expect(heard.at(-1)?.find((a) => a.key === "sec")?.state).toBe("active");
 });
+
+test("A LOOK FOR NEW AGENTS DURING AN INSTALL leaves the install alone: the agent stays installing, is not dropped or probed early, and is probed once when it lands", async () => {
+  let clock = 5_000_000;
+  const entry = { id: "jsagent", name: "JS agent", version: "3.1.0", description: "Invented", distribution: { npx: { package: "@invented/js-agent@3.1.0", args: ["--acp"] } } };
+  const r = rig({ entries: [entry], now: () => clock });
+  // `npm`, held: it has not finished until the test says so.
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  r.deps.processes = {
+    start(spec) {
+      r.ran.push({ cmd: spec.cmd, cwd: spec.cwd, env: spec.env, stdout: spec.stdout });
+      const done = held.then(() => {
+        const prefix = spec.cmd[spec.cmd.indexOf("--prefix") + 1] as string;
+        const pkg = join(prefix, "node_modules", "@invented", "js-agent");
+        mkdirSync(join(pkg, "dist"), { recursive: true });
+        writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@invented/js-agent", bin: { "js-agent": "dist/index.js" } }));
+        writeFileSync(join(pkg, "dist", "index.js"), "// invented");
+        return { exit: 0, signal: null };
+      });
+      return { pid: 6001, pgid: 6001, born: null, done };
+    },
+    async end() {},
+    killNow() {},
+    alive: () => false,
+  };
+  const agents = makeAgents(r.deps);
+  agents.list();
+  expect(agents.install("jsagent").reason).toBe("installing");
+  // Well past the half-minute, again and again, while npm is still running.
+  for (let i = 0; i < 5; i++) {
+    clock += 31_000;
+    agents.list();
+    await Bun.sleep(5);
+  }
+  const during = agents.list().find((a) => a.key === "jsagent");
+  expect(during?.reason).toBe("installing");
+  expect(r.probes.length).toBe(0);
+  release();
+  await agents.settled();
+  expect(agents.list().find((a) => a.key === "jsagent")?.state).toBe("active");
+  // And one look after it landed, not one per list.
+  clock += 31_000;
+  agents.list();
+  await agents.settled();
+  expect(r.probes.length).toBe(1);
+});
