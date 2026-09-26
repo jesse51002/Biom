@@ -1,4 +1,6 @@
-Third-party code, served as it sits and never edited.
+Third-party code, served as it sits and never patched. What is built or
+converted here out of upstream's own files says so where it is described, with
+the command that reproduces it.
 
 | | version | which upstream build, and why that one |
 |---|---|---|
@@ -16,11 +18,12 @@ Third-party code, served as it sits and never edited.
 | `addon-fit.d.ts` | — | ours, hand-written, deliberately partial |
 | `noto/*.webp` | `latest`, fetched 2026-09-26 | Google's animated Noto emoji, `512.gif` — CONVERTED here to 64 px animated WebP, CC BY 4.0 |
 
-**xterm.js is the agent terminal's emulator, and it runs in the HOST, never in a
+**xterm.js is the sign-in pop-up's emulator, and it runs in the HOST, never in a
 box.** `client/boot.js` imports it through the import map in `client/index.html`
 and hands the constructor to `client/views/terminal.js`, so no other module
-names it. It is emulation only — the shell, the PTY and every process decision
-are the server's (`server/platform/pty.ts`, `server/workspace/terminals.ts`).
+names it. It is emulation only — the command, the PTY and every process
+decision are the server's (`server/platform/pty.ts`,
+`server/workspace/terminals.ts`).
 Both builds are upstream's own single-file ESM with one `export` and no
 `import`, copied as they sit; the `sourceMappingURL` comment at the foot of each
 names a `.map` that is deliberately not vendored, so an open DevTools reports
@@ -163,8 +166,11 @@ signal to add it deliberately — not to widen the file to `any`.
 so a second copy beside the UMD file would be the same bytes under a different
 name. Verified against the 15.0.0 tarball: identical.
 
-**Nothing here is modified, ever.** A patched vendor file is a fork nobody
-remembers making. If one needs changing, wrap it in `client/` instead.
+**Nothing here is patched, ever.** A patched vendor file is a fork nobody
+remembers making. If one needs changing, wrap it in `client/` instead. The
+`noto/` faces are the one set CONVERTED here — downscaled and re-encoded, every
+frame and its timing Google's — and their section below carries the command
+that makes them byte for byte, which is a recorded build step and not an edit.
 
 **`markdown-it` is reached through an import map**, declared in
 `client/index.html`. That keeps `import MarkdownIt from "markdown-it"` a BARE
