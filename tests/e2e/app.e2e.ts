@@ -462,8 +462,8 @@ walk("the production hide list holds on the screens that carry it", async () => 
 
   // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD, which is where it went
   // missing and therefore where it has to be asserted.
-  await until("the Dashboard row was drawn", BOUNDS.draw, async () =>
-    (await wire.evaluate<number>("document.querySelectorAll('button.dashboardlink').length")) === 1);
+  await until("the Agent row was drawn, in Dashboard's slot", BOUNDS.draw, async () =>
+    (await wire.evaluate<number>("document.querySelectorAll('button.agentlink').length")) === 1);
 
   // AND THE MAP ROW, IN THE BUILD. It was withheld from the built application
   // because a stranger's workspace is one page and maps to one light; the owner

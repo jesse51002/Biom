@@ -19,7 +19,7 @@
 //      through the page's own `fetch`, at the page's own origin, which is the
 //      same request the picker's Create button makes.
 //   3. The root page draws itself with the copy it was seeded with, prints the
-//      folder it asked the host for, and the rail has a Dashboard row — which is the third of the owner's bugs: the row was in
+//      folder it asked the host for, and the rail has the Agent row — which is the third of the owner's bugs: the row was in
 //      the source and not in the build.
 //   4. A page made by name through New opens.
 //   5. That page's `content.yaml` is edited FROM OUTSIDE and the page redraws
@@ -208,7 +208,7 @@ walk("a workspace is a parent and a name, and creating one opens it", async () =
   await page.goto(`${base}/?vault=${encodeURIComponent(vault)}#/page/home`, { waitUntil: "domcontentloaded" });
 });
 
-walk("the root page draws its seeded copy, and the rail has a Dashboard row", async () => {
+walk("the root page draws its seeded copy, and the rail has the Agent row and Home", async () => {
   // THE WORDS INSIDE THE BOX, which is the only honest signal that the page is
   // up rather than merely requested: the host cannot read an opaque-origin
   // frame, so nothing outside it knows what it says. The strip's Drawn count is
@@ -227,10 +227,14 @@ walk("the root page draws its seeded copy, and the rail has a Dashboard row", as
   // frame, which is a thing only this layer can prove.
   expect(await page.frameLocator("iframe.artifact").locator("#where").innerText()).toBe(vault);
 
-  // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD. Layer two asserts it
-  // again in the packaged application, which is where it went missing.
-  expect(await page.locator("button.dashboardlink").count()).toBe(1);
-  expect(await page.locator("button.dashboardlink").innerText()).toContain("Dashboard");
+  // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD — the Dashboard's,
+  // and the Agent's since the Chat spec gave it Dashboard's slot; Home is the
+  // tree's own heading. Layer two asserts it again in the packaged
+  // application, which is where it went missing.
+  expect(await page.locator("button.dashboardlink").count()).toBe(0);
+  expect(await page.locator("button.agentlink").count()).toBe(1);
+  expect(await page.locator("button.agentlink").innerText()).toContain("Agent");
+  expect(await page.locator("div.railhead button.homerow").innerText()).toBe("Home");
 
   // AND NO AGENT TERMINAL. The bar's button and the dock it opened went with
   // the Chat spec, which leaves a terminal only for signing an agent in — a

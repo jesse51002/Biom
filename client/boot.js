@@ -524,11 +524,17 @@ if (vault === null && startupTrouble !== "") shell.trouble(new Error(startupTrou
 if (vault !== null) {
   try {
     await ws.loadTree();
-    // Cold start: a tool for building tools has an empty empty-state, so the first
-    // screen is never one. A hash that already names a page wins over this.
+    // COLD START OPENS ON THE AGENT SCREEN (*Chat*: "Biom opens on the Agent
+    // screen"), the first screen every launch. A hash that already names a
+    // screen wins over this; where there is no Agent screen, the first page,
+    // because a tool for building tools has an empty empty-state and the first
+    // screen is never one.
     const route = ui.get().route;
     const first = ws.get().pages[0];
-    if (route.view === "page" && !route.id && first) ui.go("page", first.id);
+    if (route.view === "page" && !route.id) {
+      if (agentView !== null) ui.go("agent", "");
+      else if (first) ui.go("page", first.id);
+    }
     // The tree is in hand, so a page's uid can be read: the switcher reads the
     // history and takes from it whose the screen was before this load.
     void switcher?.start();
