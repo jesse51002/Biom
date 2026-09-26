@@ -437,10 +437,9 @@ moving an iframe reloads it. `client/views/agent.js` builds ONE element, the
 slot, which the shell puts in the bed beside the canvas once; its three shapes —
 the whole screen on `#/agent`, the panel beside whatever else is on screen
 while `panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps
-running. The box is
-mounted under `LOOK_KEY`, `@agent:screen` — not `@agent` itself, so a page
-routed to `#/page/@agent` is a box of its own that is never fed — with ONE
-context object, whose identity is what `answer` checks. The look is posted
+running. The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent`
+itself, so a page routed to `#/page/@agent` is a box of its own that is never
+fed — with ONE context object, whose identity is what `answer` checks. The look is posted
 `look.state` when its box says hello and whenever the shape moves — the mode,
 the list, the chat, the epoch — and `look.patch` for the rest, one a frame
 (a timer flushes a hidden window's), and a patch that would carry more than
@@ -474,7 +473,8 @@ it, on the palette's tokens and its four lamps.
 screen; the rail's **Agent** row, in Dashboard's old slot, counts the chats
 working and returns to the chat last open; **Home** is the page tree's own
 heading; **Edit**, amber on the page bar, opens the panel beside the page on a
-new thread with `Edit <page id>: ` typed in and the chat made for that page; the
+new thread with `Edit <page id>: ` typed in, and the chat it makes when sent is
+that page's; the
 crumbs name the open chat with its lamp, and the strip counts the chats and the
 Active agents.
 
