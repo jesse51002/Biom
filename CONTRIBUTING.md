@@ -23,7 +23,7 @@ Run these before you propose a change. They are the same three CI runs.
 
 ```
 make check      # layering, then types, then every client module parses
-make test       # the unit suite. Eleven seconds, and the gate before every commit
+make test       # the unit suite. No browser, and the gate before every commit
 make e2e        # the program, assembled, on a screen. Needs a browser; minutes
 ```
 
