@@ -383,6 +383,29 @@
    page.css owns that name for something else entirely. */
 .plate{padding:2.5rem 3.5rem 3.5rem; min-height:100%}
 
+/* GO BACK TO, top left, while an agent has the screen (*History and View
+   Switcher*, `popups`) — after the Chat mockup's `#goback`, on the palette's
+   tokens. The slot holds it and nothing else, and takes no room of its own.
+   WHILE IT SHOWS THE SCREEN UNDER IT MOVES DOWN, so it never sits over a
+   page's heading: the canvas says `data-back` and the plate takes the band
+   inside its own height, so nothing below it grows a scrollbar. */
+.backslot{position:absolute; left:16px; top:14px; z-index:4; max-width:calc(100% - 32px)}
+.backslot:empty{display:none}
+.canvas[data-back] > .plate{padding-top:3.5rem; box-sizing:border-box}
+.goback{
+  display:inline-flex; align-items:center; gap:10px; height:34px; max-width:100%;
+  padding:0 12px 0 4px; border:1px solid var(--stock-edge); background:var(--stock-hi);
+  font:13.5px var(--sheet-face); color:var(--ink-2); cursor:pointer;
+  animation:goback-in .25s ease-out;
+}
+.goback .ft{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.goback .ft b{font:400 12.5px var(--gauge-face); color:var(--ink)}
+.goback .go{flex:none; font:11.5px var(--gauge-face); color:var(--on-spot); background:var(--cyan); padding:5px 9px}
+.goback:hover .go{background:color-mix(in srgb, var(--cyan) 88%, var(--ink))}
+.goback:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+@keyframes goback-in{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.goback{animation:none}}
+
 /* A PAGE IS ONE BOX AND IT ALWAYS FILLS. There is no second treatment and no
    measure: the box is handed the canvas height, scrolls inside itself, and never
    reports a height back — which is what makes it its own viewport, and being its

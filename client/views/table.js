@@ -22,7 +22,8 @@
 // A row is data and only data. It does not open as a page; point a Page column
 // at one instead. That keeps one story about where data integrity lives.
 
-/** @import { Cell, Column, ColumnType, Page, Palette, Row, RowId, RowInput, TableName, TableSchema, TableView, UiStore, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { Cell, Column, ColumnType, Page, Palette, Row, RowId, RowInput, TableName, TableSchema, TableView, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { Ui } from "../store/ui.js" */
 
 import { tokenOf } from "../theme/palettes.js";
 import { h, svg } from "../platform/dom.js";
@@ -370,7 +371,7 @@ const SEEN_TABLES = new Map();
 const SEEN_PAGES = new Map();
 
 /**
- * @param {{ ws: WorkspaceStore, ui: UiStore, production?: boolean }} deps
+ * @param {{ ws: WorkspaceStore, ui: Ui, production?: boolean }} deps
  *   `production` is which build this is; absent means development. It decides
  *   one thing on this screen: whether the *Used by* pills are drawn.
  * @returns {(view: TableView | null) => HTMLElement}
@@ -398,7 +399,7 @@ export function makeTableView(deps) {
 
 /**
  * @param {WorkspaceStore} ws
- * @param {UiStore} ui
+ * @param {Ui} ui
  * @param {TableName} name
  * @param {boolean} [production]
  */
@@ -803,7 +804,8 @@ function makeGrid(ws, ui, name, production = false) {
       const open = at
         ? h("button.goto", {
             type: "button", "aria-label": `Open ${at.label}`,
-            onclick: () => { closePopover(); ui.go("page", at.value); },
+            // The person, following the cell's page: an open.
+            onclick: () => { closePopover(); ui.open("page", at.value); },
           }, svg("0 0 16 16", OPEN, "arrow"))
         : null;
       return pickerCell(row, col, list, open);
@@ -1424,7 +1426,7 @@ function makeGrid(ws, ui, name, production = false) {
           h("button.usepill", {
             type: "button",
             "aria-label": `Open ${page.name}, which ${how} this table`,
-            onclick: () => ui.go("page", page.id),
+            onclick: () => ui.open("page", page.id),
           }, h("b", page.name), h("span", how)))]
       : ["No page reads this yet."]));
   }

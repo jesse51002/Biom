@@ -14,7 +14,8 @@
 // automation is made and where what it wrote is drawn; this is only where it
 // is watched.
 
-/** @import { Automation, RunRow, VarScalar, WorkspaceStore, UiStore } from "../../contracts/types.ts" */
+/** @import { Automation, RunRow, VarScalar, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { Ui } from "../store/ui.js" */
 import { clock, followLog, lastLine } from "../widgets/runsui.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
@@ -45,7 +46,7 @@ export const FOLLOW_EVERY = 1000;
  * @typedef {object} RunsViewDeps
  * @property {H} h
  * @property {WorkspaceStore} ws
- * @property {UiStore} ui
+ * @property {Ui} ui A run's page link is the person's open.
  * @property {{ on: (hear: () => void) => () => void }} [events]
  */
 
@@ -187,7 +188,7 @@ export function makeRunsView(deps) {
     function pageLink(/** @type {string} */ id) {
       const there = ws.get().pages.some((p) => p.id === id);
       if (!there) return h("span.pagelink.gone", id, " · " + WORDS.orphan);
-      return h("a.pagelink", { href: "#", onclick: (/** @type {Event} */ e) => { e.preventDefault(); e.stopPropagation(); ui.go("page", id); } }, id);
+      return h("a.pagelink", { href: "#", onclick: (/** @type {Event} */ e) => { e.preventDefault(); e.stopPropagation(); ui.open("page", id); } }, id);
     }
 
     if (deps.events) off = deps.events.on(() => void draw());

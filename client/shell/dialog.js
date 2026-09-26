@@ -25,8 +25,9 @@
 // Wanting a page to be something in particular is a sentence you give the agent
 // — which is the other half of this workspace already, not a box in a dialog.
 
-/** @import { PageId, UiStore } from "../../contracts/types.ts" */
+/** @import { PageId } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { Ui } from "../store/ui.js" */
 
 // Re-exported by the store rather than reached for in contracts, which is where
 // every other client module takes it from — one spelling, one import.
@@ -38,7 +39,8 @@ import { ROOT_PAGE, segmentOf } from "../store/workspace.js";
  * @typedef {object} DialogDeps
  * @property {H} h
  * @property {Workspace} ws
- * @property {UiStore} ui
+ * @property {Ui} ui A page or a table just made is opened as the PERSON'S open:
+ *   they asked for it, and it is theirs to read.
  */
 
 /** What a page is called when the name field was left empty. A real name rather
@@ -114,7 +116,7 @@ export function makeDialog(deps) {
       const parent = ui.get().dialogParent;
       const ref = await ws.createPage({ name: typed.trim() || UNTITLED, parent: parent ?? undefined });
       close();
-      ui.go("page", ref.id);
+      ui.open("page", ref.id);
     } catch (err) {
       console.error("the page was not made", err);
       say("The page was not made: " + reason(err));
@@ -143,7 +145,7 @@ export function makeDialog(deps) {
         await ws.moveChild({ kind: "table", id: name, name }, ROOT_PAGE, parent);
       }
       close();
-      ui.go("table", name);
+      ui.open("table", name);
     } catch (err) {
       console.error("the table was not made", err);
       say("The table was not made: " + reason(err));

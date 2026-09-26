@@ -392,6 +392,10 @@ function harness(
    *  claim it makes, that every other parameter survives, is only testable if
    *  the query can be handed in. */
   search = "",
+  /** MORE OF WHAT THE SHELL IS HANDED: views to add or replace — Go back to,
+   *  the Agent screen — and deps beyond the ones above, such as the touch
+   *  sink. @type {{ views?: Record<string, any>, deps?: Record<string, any> }} */
+  more = {},
 ) {
   const ws = fakeWs(page);
   if (unmounted) {
@@ -405,7 +409,7 @@ function harness(
   // NO REGISTRY. `faceOf` used to ask one whether this page's render wanted the
   // canvas; there is no registry and no render, and every page is one runtime in
   // one box that fills.
-  const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events, search });
+  const shell = makeShell({ h, fill, ws, ui, frameHost, views: { ...views, ...(more.views ?? {}) }, production, events, search, ...(more.deps ?? {}) });
 
   ws.on(() => shell.repaint());
   ui.on(() => shell.repaint());
@@ -2677,4 +2681,253 @@ test("a close held over a live run draws the question in the bar; yes forces the
   } finally {
     w.done();
   }
+});
+
+/* ══ WHO MOVED THE SCREEN: every navigation site, classified ════════════════
+ *
+ * Only the person and the switcher move the screen (*History and View
+ * Switcher*, `switcher`), and the history records the person's move as an
+ * OPEN. So every control that takes the person somewhere says `open`, and the
+ * only moves nobody asked for — a rename or a delete re-pointing the route, a
+ * cold start, a workspace that would not open — say `go`. One test per class:
+ * the rail and its foot, the page bar, the finder, Back, the dialog, the tree,
+ * a table's page link, a run's page link — and the system's.               */
+
+const moverOf = (/** @type {any} */ ui) => ui.cause().mover.by;
+
+test("every control in the shell that takes the person somewhere is THEIR open", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  await tick();
+
+  /** @param {() => void} press @param {string} view */
+  const opened = async (press, view) => {
+    const before = g.ui.cause().seq;
+    press();
+    await tick();
+    expect(g.ui.cause().seq).toBe(before + 1);
+    expect(moverOf(g.ui)).toBe("you");
+    expect(g.ui.get().route.view).toBe(view);
+  };
+
+  // Home, the rail's heading, and the workspace's own screens at the foot.
+  await opened(() => find(g.rack, (el) => has(el, "dashboardlink")).fire("click"), "page");
+  for (const [text, view] of [["Design", "design"], ["Instructions", "instructions"], ["Automations", "runs"], ["Map", "map"]]) {
+    await opened(() => find(g.rack, (el) => el.tagName === "A" && flat(el) === text).fire("click"), view);
+  }
+  // The page path.
+  g.ui.open("page", "notes");
+  await tick();
+  await opened(() => find(g.rail, (el) => el.tagName === "BUTTON" && has(el, "crumb") && !el.disabled).fire("click"), "page");
+  // A page's two screens, from the bar.
+  g.ui.open("page", "notes");
+  await tick();
+  await opened(() => byButton(g.rail, "Instructions").fire("click"), "page");
+  expect(g.ui.get().route.screen).toBe("instructions");
+  await opened(() => byButton(g.rail, "Instructions").fire("click"), "page");
+  expect(g.ui.get().route.screen).toBe("page");
+});
+
+test("a search hit is the person's open", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  const finder = find(g.rack, (el) => has(el, "railfind"));
+  finder.fire("input", { currentTarget: { value: "board" } });
+  await tick();
+  find(g.rack, (el) => has(el, "foundrow")).fire("click");
+  expect(g.ui.get().route).toEqual({ view: "page", id: "board", screen: "page" });
+  expect(moverOf(g.ui)).toBe("you");
+});
+
+test("a page or a table just made is opened as the person's", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  find(g.rack, (el) => el.className === "newpage").fire("click");
+  await tick();
+  const dlg = find(g.root, (el) => el.className === "dialog");
+  find(dlg, (el) => has(el, "kind") && flat(el).startsWith("Page")).fire("click");
+  await tick();
+  await tick();
+  expect(g.ui.get().route.id).toBe("scratch");
+  expect(moverOf(g.ui)).toBe("you");
+});
+
+test("BACK, FORWARD AND A TYPED HASH are the person's open; the hash this shell wrote itself is nothing", async () => {
+  /** @type {Function | null} */
+  let onHash = null;
+  const g = harness(DOC, { view: "page", id: "notes" });
+  // Re-mount against a window that has a location and a hashchange listener.
+  globalThis.window = {
+    addEventListener(/** @type {string} */ name, /** @type {Function} */ fn) { if (name === "hashchange") onHash = fn; },
+    removeEventListener() {},
+    location: { hash: "#/page/notes" },
+  };
+  g.shell.mount(element("div"));
+  const before = g.ui.cause().seq;
+  onHash?.();
+  expect(g.ui.cause().seq).toBe(before);           // the hash says where we are
+
+  globalThis.window.location.hash = "#/page/board";
+  onHash?.();
+  expect(g.ui.get().route.id).toBe("board");
+  expect(moverOf(g.ui)).toBe("you");
+});
+
+test("the address bar gains an entry for the person's open, and REPLACES its entry for the system's move and for the switcher's own", async () => {
+  /** @type {string[]} */
+  const replaced = [];
+  const g = harness(DOC, { view: "page", id: "notes" });
+  const location = { hash: "#/page/notes" };
+  globalThis.window = {
+    addEventListener() {}, removeEventListener() {},
+    location,
+    history: { state: null, replaceState: (/** @type {any} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => { replaced.push(url); location.hash = url; } },
+  };
+  const AGENT = "agent-0001-invented";
+  const CHAT = "chat-0001-invented";
+
+  g.ui.open("page", "board");
+  expect(location.hash).toBe("#/page/board");
+  expect(replaced).toEqual([]);
+
+  // A rename re-pointing the route: the old id names nothing, so no entry.
+  g.ui.go("page", "board2");
+  expect(replaced).toEqual(["#/page/board2"]);
+
+  // The switcher leaving the person's own screen keeps its entry…
+  g.ui.follow({ view: "page", id: "notes", screen: "page" }, { agent: AGENT, chat: CHAT }, false);
+  expect(location.hash).toBe("#/page/notes");
+  expect(replaced).toHaveLength(1);
+  // …and leaving one of its own replaces it.
+  g.ui.follow({ view: "page", id: "board", screen: "page" }, { agent: AGENT, chat: CHAT }, true);
+  expect(replaced).toEqual(["#/page/board2", "#/page/board"]);
+});
+
+test("a workspace that will not open moves the screen as the system, not as the person", () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  g.shell.trouble(new Error("gone"), true);
+  expect(g.ui.get().route.view).toBe("vault");
+  expect(moverOf(g.ui)).toBe("system");
+});
+
+test("the tree: a row pressed is the person's open; a page moved from under the route is re-pointed as the system's, keeping the screen", async () => {
+  const g = tree(KIDS, { route: { view: "page", id: "home/Notes", screen: "instructions" } });
+  const rows = rowsOf(g.draw());
+  rows[2].fire("click");                             // Job board
+  expect(g.ui.get().route).toEqual({ view: "page", id: "home/Board", screen: "page" });
+  expect(moverOf(g.ui)).toBe("you");
+
+  // Back on Notes' Instructions, Notes is dragged into Job board: its id is
+  // gone, the route follows it as the system's move, and the screen stays.
+  g.ui.open("page", "home/Notes", "instructions");
+  const again = rowsOf(g.draw());
+  again[0].fire("dragstart", drag());
+  again[2].fire("dragover", drag());
+  again[2].fire("drop", drag());
+  await tick();
+  expect(g.ui.get().route).toEqual({ view: "page", id: "home/Board/Notes", screen: "instructions" });
+  expect(moverOf(g.ui)).toBe("system");
+});
+
+test("a table cell's page link and a run's page link are the person's opens", async () => {
+  // Driven through the real handlers: both are `ui.open`, never `ui.go`.
+  const src = [readFileSync(new URL("../client/views/table.js", import.meta.url), "utf8"),
+    readFileSync(new URL("../client/views/runs.js", import.meta.url), "utf8"),
+    readFileSync(new URL("../client/views/tree.js", import.meta.url), "utf8"),
+    readFileSync(new URL("../client/shell/dialog.js", import.meta.url), "utf8")].join("\n");
+  // THE ONLY `ui.go` LEFT IN THE VIEWS are the tree's re-pointing after a
+  // rename, a move and a delete — the system's.
+  const goes = src.split("\n").filter((line) => /\bui\.go\(/.test(line));
+  expect(goes).toHaveLength(3);
+  for (const line of goes) expect(line).toMatch(/rebase|ROOT_PAGE/);
+  expect(src).toContain('ui.open("page", at.value)');
+  expect(src).toContain('ui.open("page", page.id)');
+  expect(src).toContain('ui.open("page", id)');
+});
+
+test("the Agent screen routes in every build, and holds a sentence until its view is built", async () => {
+  for (const production of [false, true]) {
+    const g = harness(DOC, { view: "agent", id: "chat-0001-invented" }, production);
+    await tick();
+    expect(g.plate.attrs["data-face"]).toBe("agent");
+    expect(flat(g.plate)).toContain("Agent screen");
+  }
+  const g = harness(DOC, { view: "agent", id: "" }, false, undefined, false, "", { views: { agent: { screen: () => h("div.agentscreen") } } });
+  await tick();
+  expect(g.plate.firstChild.className).toBe("agentscreen");
+});
+
+/* ── the person's hand on a screen the host draws ────────────────────── */
+
+test("a click, a key or a scroll on the canvas is a touch; an event nobody made, and one inside a NOT_TOUCH element, is not", async () => {
+  let touched = 0;
+  const g = harness(DOC, { view: "page", id: "notes", screen: "instructions" }, false, undefined, false, "", { deps: { touched: () => touched++ } });
+  const realNow = Date.now;
+  let clock = 1_000_000;
+  Date.now = () => clock;
+  try {
+    g.canvas.fire("pointerdown", { isTrusted: true });
+    expect(touched).toBe(1);
+    // At most one of each a second.
+    clock += 500;
+    g.canvas.fire("pointerdown", { isTrusted: true });
+    expect(touched).toBe(1);
+    g.canvas.fire("keydown", { isTrusted: true });
+    g.canvas.fire("wheel", { isTrusted: true });
+    expect(touched).toBe(3);
+    clock += 2_000;
+    g.canvas.fire("pointerdown", { isTrusted: false });
+    g.canvas.fire("scroll", { isTrusted: true });
+    expect(touched).toBe(3);
+    // The chat's input, and Go back to, wear the mark.
+    g.canvas.fire("keydown", { isTrusted: true, target: { closest: (/** @type {string} */ sel) => (sel === "[data-no-touch]" ? {} : null) } });
+    expect(touched).toBe(3);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+/* ── Go back to ──────────────────────────────────────────────────────── */
+
+test("Go back to sits in the canvas while there is something to go back to, gives the screen room, and is never re-inserted by a repaint", async () => {
+  /** @type {any} */
+  let back = null;
+  const button = h("button.goback", "Go back to Log");
+  const g = harness(DOC, { view: "page", id: "notes" }, false, undefined, false, "", { views: { goback: () => back } });
+  await tick();
+  const slot = g.canvas.children[5];
+  expect(slot.children).toHaveLength(0);
+  expect("data-back" in g.canvas.attrs).toBe(false);
+  // The slot is not a touch, so pressing the button never first claims the screen.
+  expect(slot.attrs["data-no-touch"]).toBe("");
+
+  back = button;
+  g.shell.repaint();
+  expect(slot.children[0]).toBe(button);
+  expect("data-back" in g.canvas.attrs).toBe(true);
+  const moved = button.moved;
+  g.shell.repaint();
+  g.ui.set({ dialog: false, inserting: 1 });
+  expect(button.moved).toBe(moved);
+
+  back = null;
+  g.shell.repaint();
+  expect(slot.children).toHaveLength(0);
+  expect("data-back" in g.canvas.attrs).toBe(false);
+});
+
+test("the Go back to view names the person's work, keeps its button until the name changes, and presses back", async () => {
+  const { makeGoBack } = await import("../client/views/goback.js");
+  /** @type {any} */
+  let back = { to: { view: "page", id: "log", screen: "page" }, name: "Log" };
+  let pressed = 0;
+  const draw = makeGoBack({ h, switcher: { get: () => ({ back, offer: null }), back: () => { pressed++; } } });
+  const one = /** @type {any} */ (draw());
+  expect(flat(one)).toBe("←Go back to Log");
+  expect(draw()).toBe(one);
+  one.fire("click");
+  expect(pressed).toBe(1);
+  back = { ...back, name: "Boards" };
+  const two = /** @type {any} */ (draw());
+  expect(two).not.toBe(one);
+  expect(flat(two)).toContain("Boards");
+  back = null;
+  expect(draw()).toBe(null);
 });

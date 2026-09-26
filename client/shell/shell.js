@@ -49,14 +49,16 @@
 // repaint from arguing with a drag.
 
 /** @import { Address, FrameHost, Page, PageId, PageScreen, TableView,
- *            UiState, UiStore, VaultInfo, ViewName } from "../../contracts/types.ts" */
+ *            UiState, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { Ui } from "../store/ui.js" */
 
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { VIEW_NAMES, formatAddress, parseAddress, sameAddress } from "../../contracts/address.js";
 import { remember } from "../platform/dom.js";
 import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
+import { NOT_TOUCH } from "../store/switcher.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
 // directions of one move — into a folder and out of it — and an address built
@@ -85,6 +87,12 @@ import { makeRack } from "./rack.js";
  *   the workspace's INSTRUCTIONS.md with its skills, and a page's own.
  * @property {(page: Page) => HTMLElement} automation a page's automations:
  *   manifest, files, runs.
+ * @property {() => HTMLElement | null} [goback] **GO BACK TO**, or null while
+ *   there is nothing of the person's to go back to. Mounted at the top left of
+ *   the canvas. Absent where no switcher is built — a tab with no workspace, a
+ *   test that is not about it.
+ * @property {{ screen: () => HTMLElement }} [agent] THE AGENT SCREEN, whole.
+ *   Absent until the Agent view is built, and the route holds a sentence.
  */
 
 /**
@@ -95,7 +103,13 @@ import { makeRack } from "./rack.js";
  *   table and then places it, which is `moveChild` — the same write the rail
  *   makes when you drag one — and that lives on the store rather than in the
  *   frozen contract.
- * @property {UiStore} ui
+ * @property {Ui} ui WHERE THE PERSON IS. Every control in here that takes them
+ *   somewhere is THEIR open — the rail, a crumb, a hit, Home, Back — and only a
+ *   workspace failing to open moves them without being asked (`trouble`).
+ * @property {() => void} [touched] THE PERSON TOUCHED THE SCREEN the host
+ *   draws itself — a click, a key or a scroll on the canvas, anywhere not
+ *   marked `NOT_TOUCH`. A box says its own through the frame host. Absent where
+ *   no switcher is built.
  * @property {FrameHost} frameHost
  * @property {ShellViews} views
  * @property {string} [newerVersion] A NEWER RELEASE THAN THIS ONE, by name, or
@@ -189,8 +203,14 @@ export function makeShell(deps) {
   const rail = h("div.rail");
   const rack = h("nav.rack", { "aria-label": "Workspace" });
   const plate = h("div.plate");
+  /** WHERE **GO BACK TO** SITS: the top left of the canvas, over whatever the
+   *  screen is, after the plate so the plate keeps its place among the
+   *  canvas's children. NOT A TOUCH: pressing it must not first make the
+   *  screen it offers a way out of the person's, which would take the button
+   *  away between the press and the click. */
+  const backslot = h("div.backslot", { [NOT_TOUCH]: "" });
   const canvas = h("div.canvas",
-    h("i.reg.tl"), h("i.reg.tr"), h("i.reg.bl"), h("i.reg.br"), plate);
+    h("i.reg.tl"), h("i.reg.tr"), h("i.reg.bl"), h("i.reg.br"), plate, backslot);
   // The grip sits in the bed rather than in the rack: the rack scrolls, and a
   // handle that scrolls out of view is a handle nobody finds twice.
   const bed = h("div.bed", rack, canvas, sizer.grip);
@@ -318,6 +338,10 @@ export function makeShell(deps) {
       case "instructions":
         // The workspace's instructions and skills, read on entry and on Reload.
         return ["instructions", reloads];
+      case "agent":
+        // The Agent screen is the Agent view's own mount, built once and kept,
+        // exactly as the overview is.
+        return ["agent"];
       default:
         return ["none"];
     }
@@ -356,7 +380,7 @@ export function makeShell(deps) {
         h("b", "The workspace did not open"),
         h("span", troubled),
         production
-          ? h("button.btn", { type: "button", onclick: () => ui.go("vault", "") }, "Choose a folder")
+          ? h("button.btn", { type: "button", onclick: () => ui.open("vault", "") }, "Choose a folder")
           : h("code", "make dev"));
     }
 
@@ -405,6 +429,10 @@ export function makeShell(deps) {
       case "instructions":
         // The vault's INSTRUCTIONS.md and its own skills, one tree, one editor.
         return views.instructions.vault();
+      case "agent":
+        // THE AGENT SCREEN — `#/agent` and `#/agent/<chat>` route in every
+        // build; what draws it is the Agent view's.
+        return views.agent ? views.agent.screen() : h("p.hold", "The Agent screen is not in this build yet.");
       default:
         return h("p.hold", "Nothing open.");
     }
@@ -590,7 +618,9 @@ export function makeShell(deps) {
       /** @param {"instructions" | "automation"} which @param {string} text */
       // A SCREEN OF THE PAGE IS AN ADDRESS OF ITS OWN, so pressing one writes
       // the route and the url with it: a reload lands on it and Back leaves it.
-      const screenTool = (which, text) => tool(text, () => ui.set({ route: { ...route, screen: route.screen === which ? "page" : which } }), route.screen === which);
+      // And pressing one is the person OPENING that screen: an open in the
+      // history, like any other.
+      const screenTool = (which, text) => tool(text, () => ui.open("page", route.id, route.screen === which ? "page" : which), route.screen === which);
       tools.push(screenTool("instructions", "Instructions"));
       tools.push(screenTool("automation", "Automations"));
     }
@@ -632,12 +662,12 @@ export function makeShell(deps) {
       // hierarchy, and whether the root's own folder is part of the path is
       // the vault's business. Either way the root is the first crumb once.
       if (id !== ROOT_PAGE && !id.startsWith(ROOT_PAGE + "/")) {
-        items.push({ text: nameOf(ROOT_PAGE), go: () => ui.go("page", ROOT_PAGE) });
+        items.push({ text: nameOf(ROOT_PAGE), go: () => ui.open("page", ROOT_PAGE) });
       }
       const parts = id.split("/");
       for (let n = 1; n <= parts.length; n++) {
         const at = parts.slice(0, n).join("/");
-        items.push({ text: at === id && page ? page.name : nameOf(at), go: () => ui.go("page", at) });
+        items.push({ text: at === id && page ? page.name : nameOf(at), go: () => ui.open("page", at) });
       }
     };
 
@@ -753,7 +783,7 @@ export function makeShell(deps) {
     const rows = found.slice(0, SHOWN).map((r) =>
       h("li.treerow", h("a.foundrow", {
         href: "#",
-        onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.go(r.view, r.id); },
+        onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.open(r.view, r.id); },
       },
       h("span.kindtag", { "data-kind": r.kind, "aria-hidden": "true" }),
       h("span.nm", r.name),
@@ -821,13 +851,13 @@ export function makeShell(deps) {
       h("button.dashboardlink", {
         type: "button",
         "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-        onclick: () => ui.go("page", ROOT_PAGE),
+        onclick: () => ui.open("page", ROOT_PAGE),
       }, h("span.dashglyph", { "aria-hidden": "true" }), h("span.nm", "Dashboard")),
       h("div.railhead",
         h("h3", h("a", {
           href: "#",
           "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-          onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.go("page", ROOT_PAGE); },
+          onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.open("page", ROOT_PAGE); },
         }, home ? home.name : "Workspace")),
         // The label says what pressing it DOES, which for a toggle means naming
         // the state it goes to rather than the one it is in.
@@ -858,22 +888,22 @@ export function makeShell(deps) {
           // and a vault's palette is its pages' business, edited in theme.json.
           // Each row's glyph is drawn from `data-kind` in page.css: a brush, a
           // folded map, a doorway.
-          link("Design", route.view === "design", () => ui.go("design", ""), "design"),
+          link("Design", route.view === "design", () => ui.open("design", ""), "design"),
           // THE WORKSPACE'S OWN INSTRUCTIONS: the vault's INSTRUCTIONS.md and
           // its own skills, in one tree with one editor. The file every agent
           // opened anywhere in the folder reads first, and the person's.
-          link("Instructions", route.view === "instructions", () => ui.go("instructions", ""), "instructions"),
+          link("Instructions", route.view === "instructions", () => ui.open("instructions", ""), "instructions"),
           // AUTOMATIONS: what is running now across the workspace, what has
           // finished, and Start. A page's own screen is where one is made;
           // this is where all of them are watched.
-          link("Automations", route.view === "runs", () => ui.go("runs", ""), "runs"),
+          link("Automations", route.view === "runs", () => ui.open("runs", ""), "runs"),
           // The map: every page as a light, every prose link as a line between
           // two, drawn by the shipped `mindmap` plugin over the whole workspace.
           // IN EVERY BUILD. It was withheld from the built application because
           // a one-page workspace maps to one light; the owner decided on
           // 2026-09-17 that one light is what a one-page workspace looks like,
           // and the drawing is finished.
-          link("Map", route.view === "map", () => ui.go("map", ""), "map"),
+          link("Map", route.view === "map", () => ui.open("map", ""), "map"),
           // CLOSE WORKSPACE, last, and it is the one row that leaves. There was
           // a Settings row here: the picker, drawn INSIDE the chrome, with the
           // folder open behind it and an "Open now" block on top saying which
@@ -1201,6 +1231,14 @@ export function makeShell(deps) {
 
     plate.setAttribute("data-face", faceOf());
 
+    // GO BACK TO, when there is something of the person's to go back to. The
+    // view hands back the same button until what it names changes, so a
+    // repaint between a press and its release never loses the click; and the
+    // canvas says so, which is what gives the screen under it room.
+    const back = bare || !views.goback ? null : views.goback();
+    if (backslot.firstChild !== back) fill(backslot, back);
+    canvas.toggleAttribute("data-back", back !== null);
+
     // THE LINES THIS FILE IS FOR. Nothing the body is made of moved, so it is
     // not asked for one; and a body that came back the node already on screen is
     // left exactly where it is, so every artifact on it keeps running. A page
@@ -1229,13 +1267,26 @@ export function makeShell(deps) {
    *  because refreshing the browser is the second thing anyone tries after
    *  pressing Reload.
    *
-   *  Assigning the hash rather than replacing the entry, so Back works. It fires
-   *  `hashchange`, whose handler compares against the route it just came from
-   *  and does nothing — which is what makes one direction of this loop free. */
+   *  WHETHER THE BROWSER'S HISTORY GAINS AN ENTRY IS THE MOVE'S TO SAY
+   *  (`ui.cause().replace`). The person's open assigns the hash, so Back works.
+   *  A system move REPLACES the entry — Back to an id a rename or a delete
+   *  took away is a Back to nothing. The switcher replaces an entry of its own
+   *  and keeps the person's, so Back from anything it brought up lands on the
+   *  person's work rather than walking back through an agent's moves.
+   *
+   *  Assigning fires `hashchange`, whose handler compares against the route it
+   *  just came from and does nothing; `replaceState` fires nothing at all.
+   *  That is what makes this direction of the loop free. */
   function syncHash() {
     if (typeof window === "undefined" || !window.location) return;
     const want = hashOf(ui.get().route);
-    if (window.location.hash !== want) window.location.hash = want;
+    if (window.location.hash === want) return;
+    const history = window.history;
+    if (ui.cause().replace && history && typeof history.replaceState === "function") {
+      history.replaceState(history.state, "", want);
+    } else {
+      window.location.hash = want;
+    }
   }
 
   return {
@@ -1306,17 +1357,47 @@ export function makeShell(deps) {
         if (notice && notice.kind === "ready") paint();
       });
 
+      // THE PERSON'S HAND ON A SCREEN THE HOST DRAWS — Instructions, the
+      // Automations screens, a table, the design doc's chrome, the map's. A box
+      // cannot be seen into and says its own through the frame host; nothing
+      // inside an iframe reaches these listeners. Only events the browser says
+      // a person made, a scroll only as the gesture that scrolls, and nothing
+      // inside an element marked `NOT_TOUCH` — the chat's input, Go back to.
+      // At most one of each a second: what the switcher wants is THAT the
+      // person was here, not how often.
+      if (deps.touched) {
+        const touched = deps.touched;
+        /** @type {Record<string, number>} */
+        const last = {};
+        /** @param {string} what */
+        const hand = (what) => (/** @type {Event} */ ev) => {
+          if (!ev.isTrusted) return;
+          const at = /** @type {any} */ (ev.target);
+          if (at && typeof at.closest === "function" && at.closest("[" + NOT_TOUCH + "]")) return;
+          const t = Date.now();
+          if (t - (last[what] ?? -Infinity) < 1000) return;
+          last[what] = t;
+          touched();
+        };
+        const quietly = { capture: true, passive: true };
+        canvas.addEventListener("pointerdown", hand("click"), quietly);
+        canvas.addEventListener("keydown", hand("key"), quietly);
+        canvas.addEventListener("wheel", hand("scroll"), quietly);
+        canvas.addEventListener("touchmove", hand("scroll"), quietly);
+      }
+
       // THE FILE CHANGED ON DISK, so press Reload. That is the whole feature:
       // there is no hot patch, no diff on the wire and no new thing a page can
       // say — the server presses the button a person used to have to.
       if (events) events.on(heard);
 
       if (typeof window !== "undefined" && window.addEventListener) {
-        // Back and forward. `go` writes the hash itself, so this only fires for
-        // history the browser moved and never for a route this shell set.
+        // BACK AND FORWARD, and a hash somebody typed: the PERSON moving the
+        // screen, so an open. A route this shell set writes the same hash it
+        // already holds, so the comparison makes that direction a no-op.
         window.addEventListener("hashchange", () => {
           const route = parseHash(window.location.hash);
-          if (!sameAddress(route, ui.get().route)) ui.go(route.view, route.id, route.screen);
+          if (!sameAddress(route, ui.get().route)) ui.open(route.view, route.id, route.screen);
         });
       }
 

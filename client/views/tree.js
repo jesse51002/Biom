@@ -36,8 +36,9 @@
 // Expansion is UI state and lives in the UiStore, because it must not survive a
 // reload of workspace data and must survive a redraw.
 
-/** @import { Child, PageId, TableSchema, PageRef, TableRef, UiStore } from "../../contracts/types.ts" */
+/** @import { Child, PageId, TableSchema, PageRef, TableRef } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { Ui } from "../store/ui.js" */
 
 import { ROOT_PAGE, parentOf, rebase } from "../store/workspace.js";
 import { popover, popItem, popInput, popSep, popLabel, closePopover } from "../widgets/popover.js";
@@ -53,7 +54,9 @@ import { popover, popItem, popInput, popSep, popLabel, closePopover } from "../w
  * @typedef {object} TreeViewDeps
  * @property {H} h
  * @property {Workspace} ws
- * @property {UiStore} ui
+ * @property {Ui} ui WHERE THE PERSON IS. A row pressed is THEIR open; a route
+ *   re-pointed after a rename, a move or a delete is the system's, because
+ *   nobody opened anything — the page they were on changed its id or went.
  */
 
 /**
@@ -151,7 +154,7 @@ export function makeTreeView(deps) {
           // that holds things and watching nothing move is the moment people
           // decide the tree is broken.
           if (isPage && row.kids && !row.open) toggle(child.id);
-          ui.go(isPage ? "page" : "table", child.id);
+          ui.open(isPage ? "page" : "table", child.id);
         },
         ondragstart: (/** @type {DragEvent} */ e) => {
           dragging = { child, parent: row.parent };
@@ -283,7 +286,9 @@ export function makeTreeView(deps) {
           // same way it does after a drag: the page and everything beneath it
           // were renamed, so the route is re-pointed at the same page under
           // its new name.
-          if (moved !== child.id && standing) ui.go("page", rebase(open.id, child.id, moved));
+          // The SCREEN goes with it: a rename on the page's Instructions
+          // leaves the person on the renamed page's Instructions.
+          if (moved !== child.id && standing) ui.go("page", rebase(open.id, child.id, moved), open.screen);
         } else {
           await ws.alterTable(child.id, { ...tableSchema(child.id), name: next });
         }
@@ -295,9 +300,14 @@ export function makeTreeView(deps) {
       const remove = async () => {
         if (isPage) await ws.removePage(child.id);
         else await ws.dropTable(child.id);
-        // Standing on a page that no longer exists is a blank canvas and no
-        // explanation, so leaving is part of deleting.
-        if (ui.get().route.id === child.id) ui.go("page", ROOT_PAGE);
+        // Standing on a page that no longer exists — or on one beneath it,
+        // which went with it — is a blank canvas and no explanation, so
+        // leaving is part of deleting.
+        const at = ui.get().route;
+        const gone = isPage
+          ? at.view === "page" && (at.id === child.id || at.id.startsWith(child.id + "/"))
+          : at.view === "table" && at.id === child.id;
+        if (gone) ui.go("page", ROOT_PAGE);
       };
 
       name.addEventListener("keydown", (/** @type {KeyboardEvent} */ e) => {
@@ -374,7 +384,7 @@ export function makeTreeView(deps) {
         // renames it and everything beneath it, and nothing forwards — so a
         // route left on the old one asks for a page that is not there and gets
         // an empty screen. It is re-pointed at the same page under its new name.
-        if (moved !== null && standing) ui.go("page", rebase(open.id, moving.child.id, moved));
+        if (moved !== null && standing) ui.go("page", rebase(open.id, moving.child.id, moved), open.screen);
       })
       .catch((err) => console.error("the rail could not move that", err));
   }
