@@ -215,7 +215,7 @@ test: install
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/chat-server.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
+	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/chat-server.e2e.ts ./tests/e2e/agent-look.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #
