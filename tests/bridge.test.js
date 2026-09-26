@@ -1159,9 +1159,13 @@ test("an answer that outlives its realm is dropped, never delivered to the one t
 // artifact cannot reach, so replacing it with child.html silently LOST the
 // click. A row you cannot follow is not a row.
 
+// A PAGE'S `open` IS THE PERSON'S, honoured only in answer to a click on that
+// box — a `touch` it reported — so every test below that follows one touches
+// first, as the shim does before a page's own click handler runs. The refusal
+// is in `tests/touch.test.js`, with the rest of the touch.
 const uiSpy = () => {
   const went = [];
-  return { went, go: (view, id) => went.push(view + ":" + id) };
+  return { went, open: (view, id) => went.push(view + ":" + id) };
 };
 
 test("open navigates the host to a page, and to a table", async () => {
@@ -1169,6 +1173,7 @@ test("open navigates the host to a page, and to a table", async () => {
   const { ws, transport, store } = doubles();
   store.pages = [{ id: "notes", name: "Notes" }];
   const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
 
   const toPage = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "notes" } }), CTX);
   expect(toPage.ok).toBe(true);
@@ -1250,6 +1255,7 @@ test("a page may link to the design doc, and following it opens the design view"
   store.pages = [{ id: "notes", name: "Notes" }];
   store.tables = [];
   const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
 
   // Resolve first, then open — the two halves of following a `[[wikilink]]`,
   // with nothing in between, exactly as any other link is followed.
@@ -1275,7 +1281,9 @@ test("the host decides: an id nothing holds is refused, not navigated to", async
   const { ws, transport, store } = doubles();
   store.pages = [];
   store.tables = [];
-  const res = await makeBridge(ws, transport, ui).resolve(
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(
     req({ kind: "open", target: { kind: "page", id: "nowhere" } }), CTX);
 
   expect(res.ok).toBe(false);
@@ -1364,7 +1372,10 @@ test("NOTHING A BOX SAYS BECOMES A CHAT, AGENTS, WINDOW OR HISTORY CALL — ever
     };
   };
   const { ws, transport, calls } = doubles();
-  const bridge = makeBridge(ws, transport, uiSpy());
+  // A clock that never moves and a box that was just clicked, so `open` gets
+  // past its touch and the case behind it really runs.
+  const bridge = makeBridge(ws, transport, uiSpy(), "", { now: () => 0, wait: async () => {} });
+  bridge.touched(NOTES_CTX);
   let sent = 0;
   for (let round = 0; round < 6; round++) {
     for (const [ring, kinds, say] of [["guest", HOST_KIND_NAMES, bridge.resolve], ["runtime", RUNTIME_KIND_NAMES, bridge.runtime]]) {

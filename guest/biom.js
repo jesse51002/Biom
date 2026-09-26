@@ -43,6 +43,8 @@
  * in-box split as a security boundary.
  *
  * What it does beyond wrapping postMessage:
+ *   · says when the PERSON touches the page — which way, throttled, and only
+ *     for events the browser says a person made (`touches` below)
  *   · correlates request ids and rejects on `ok: false` with the closed error
  *   · re-declares the palette, because custom properties do not cross a document
  *     boundary and `var(--ink)` is otherwise undefined in here
@@ -882,6 +884,65 @@
     });
   }
 
+  /* THE PERSON TOUCHING THE PAGE — a click, a key, a selection, a scroll —
+     said to the host as `{ kind: "touch", g, what }` and NOTHING ELSE: no
+     place, no key, no text, because a keystroke's identity crossing the wall
+     would be a keylogger. The switcher of the workspace's *History and View
+     Switcher* spec needs it — a screen is the person's once they touch it,
+     and a touch in the last two minutes keeps an agent from taking the screen
+     — and the host can no more see a click in here than a height. The host
+     also honours this box's `open` only just after one, which is why a
+     child row or a followed link is a click first: this listener is on the
+     window in the CAPTURE phase, so it has spoken before the page's own
+     handler runs.
+
+     ONLY THE PERSON'S. Every event is taken only when `isTrusted` — the
+     browser's own word that a person made it, which no page code can
+     forge by dispatching one — and a scroll is the GESTURE that scrolls
+     (`wheel`, `touchmove`), never the `scroll` event: that fires for a
+     scroll this box made itself, putting the reader back after a redraw
+     (`place`) or held level by the page it is drawn inside (`follow`), and
+     for any page code that scrolls. A scrollbar dragged is a `pointerdown`
+     first, and a page scrolled from the keyboard is a key. A selection is
+     taken only while the page has a fresh user activation, because the
+     runtime and a plugin select text too.
+
+     THROTTLED HERE, one of each `what` a second: the first at once, and the
+     latest of the rest when the second is up, so the host always hears
+     within a second of the person's last touch — which is what keeps a
+     click on a link, a moment after another click, inside the window the
+     host allows an `open`. Queued with every other message until the ports
+     arrive, like everything this box says. */
+  const TOUCH_EVERY = 1000;
+  function touches() {
+    /** @type {Record<string, number>} */
+    const last = {};
+    /** @type {Record<string, any>} */
+    const later = {};
+    /** @param {"click" | "key" | "select" | "scroll"} what */
+    const touch = (what) => {
+      if (later[what]) return;
+      const since = Date.now() - (last[what] || 0);
+      const say = () => { later[what] = null; last[what] = Date.now(); post({ kind: "touch", g: PROTOCOL, what: what }); };
+      if (since >= TOUCH_EVERY) say();
+      else later[what] = setTimeout(say, TOUCH_EVERY - since);
+    };
+    /** @param {"click" | "key" | "scroll"} what */
+    const person = (what) => (/** @type {Event} */ ev) => { if (ev.isTrusted) touch(what); };
+    const quietly = { capture: true, passive: true };
+    window.addEventListener("pointerdown", person("click"), quietly);
+    window.addEventListener("keydown", person("key"), quietly);
+    window.addEventListener("wheel", person("scroll"), quietly);
+    window.addEventListener("touchmove", person("scroll"), quietly);
+    document.addEventListener("selectionchange", () => {
+      const act = /** @type {any} */ (navigator).userActivation;
+      if (!act || !act.isActive) return;
+      const sel = document.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      touch("select");
+    });
+  }
+
   function hello() {
     // "*" is required and is safe: a sandboxed frame has no origin to target,
     // and the host checks object identity against the frame it created.
@@ -892,5 +953,6 @@
   window.addEventListener("unhandledrejection", (e) => report(e.reason));
   window.addEventListener("pagehide", teardown);
 
+  touches();
   hello();
 })();

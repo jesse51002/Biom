@@ -51,7 +51,8 @@
 // permission check. Scoping later is a change in this file and nowhere else —
 // which is the entire reason Port and Binding ship empty rather than not at all.
 
-/** @import { ApiRequest, BlockId, Bridge, BridgeContext, HostError, HostErrorCode, HostRequest, HostResponse, Page, PageDoc, PageId, PageRef, Part, RuntimeRequest, Transport, UiStore, Variables, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { ApiRequest, BlockId, Bridge, BridgeContext, HostError, HostErrorCode, HostRequest, HostResponse, Page, PageDoc, PageId, PageRef, Part, RuntimeRequest, Transport, Variables, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { Ui } from "../store/ui.js" */
 
 import { isHostRequest, isRuntimeRequest } from "../../contracts/guards.js";
 import { weaveRuntime } from "../platform/document.js";
@@ -61,9 +62,25 @@ import { DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } fro
  *  because that is the one an artifact's half of the world is written against;
  *  the runtime entry is a second door in the same wall and only the frame host,
  *  which decides which door a message came through, ever needs to name it.
+ *  `touched` is the frame host telling it a box's `touch` notice arrived, which
+ *  is what an `open` from that box is honoured on (see `open` below).
  *  @typedef {Bridge & {
- *    runtime(req: RuntimeRequest, ctx: BridgeContext): Promise<HostResponse>
+ *    runtime(req: RuntimeRequest, ctx: BridgeContext): Promise<HostResponse>,
+ *    touched?(ctx: BridgeContext): void,
  *  }} PageBridge */
+
+/** HOW LONG AFTER A TOUCH A BOX'S `open` IS STILL THE PERSON'S, in ms. About a
+ *  second is the spec's order of it; half again is room for the box's own
+ *  throttle, which reports the latest touch at most a second late, and for a
+ *  wikilink that asks `link.resolve` before it asks to open. */
+export const OPEN_AFTER_TOUCH = 1500;
+
+/** HOW LONG AN `open` WITH NO TOUCH BEFORE IT WAITS FOR ONE, in ms. The touch
+ *  and the open can travel on the box's two different ports — a wikilink opens
+ *  over the runtime's, the touch rides the ordinary one — and two ports carry
+ *  no promise of order between them, so the click that asked may land a moment
+ *  after the open it caused. */
+export const OPEN_GRACE = 250;
 
 /** @param {string} id @param {unknown} value @returns {HostResponse} */
 const yes = (id, value) => ({ id, g: PROTOCOL, ok: true, value });
@@ -179,17 +196,43 @@ const proseOf = (page) =>
 /**
  * @param {WorkspaceStore} ws
  * @param {Transport} transport
- * @param {UiStore} ui WHERE THE PERSON IS LOOKING. The one thing this module
- *   touches that is not data — `open` asks the host to go somewhere, and going
- *   somewhere is a UI fact. Passed in rather than imported so the bridge still
- *   constructs nothing and can still be stood up in a test with a stub.
+ * @param {Pick<Ui, "open">} ui WHERE THE PERSON IS LOOKING. The one thing this
+ *   module touches that is not data — `open` asks the host to go somewhere, and
+ *   going somewhere is a UI fact, which the store records as the PERSON'S open
+ *   because the bridge honours one only in answer to their click. Passed in
+ *   rather than imported so the bridge still constructs nothing and can still
+ *   be stood up in a test with a stub.
  * @param {string} [vault] WHICH FOLDER THIS TAB IS, absolute. A nested page's
  *   document names the vault's own plugins, exactly as the page view's does, so
  *   the one answer here that is a document rather than data needs it. Defaulted
  *   so a test that only asks for data need not name a folder.
+ * @param {{ now?: () => number, wait?: (ms: number) => Promise<void> }} [clock]
+ *   The clock `open` is timed against, and the wait for a touch that is still
+ *   on its way. The real ones when absent; a test passes its own.
  * @returns {PageBridge}
  */
-export function makeBridge(ws, transport, ui, vault = "") {
+export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
+  const now = clock.now ?? Date.now;
+  const wait = clock.wait ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+
+  /** WHEN EACH BOX WAS LAST TOUCHED, keyed by the context object the frame host
+   *  holds for that realm — which is what makes it THAT SAME BOX and not merely
+   *  a box on the same page. A realm that goes takes its context with it.
+   *  @type {WeakMap<BridgeContext, number>} */
+  const touches = new WeakMap();
+
+  /** Whether this box's person asked — a touch in the last `OPEN_AFTER_TOUCH`,
+   *  waiting `OPEN_GRACE` for one still on its way. @param {BridgeContext} ctx */
+  async function asked(ctx) {
+    const recent = () => {
+      const at = touches.get(ctx);
+      return at !== undefined && now() - at <= OPEN_AFTER_TOUCH;
+    };
+    if (recent()) return true;
+    await wait(OPEN_GRACE);
+    return recent();
+  }
+
   /** In flight, per ring per page. The cap is here rather than in the frame
    *  because the frame is one transport of several and this is the resolver all
    *  of them terminate at.
@@ -314,10 +357,26 @@ export function makeBridge(ws, transport, ui, vault = "") {
       // first thing that page says. `@` is outside a page segment's grammar, so
       // this arm can never shadow a page somebody made. Its own view rather
       // than the page view, because `makeDesignView` is a separate mount.
+      //
+      // A PAGE'S CODE NEVER MOVES THE SCREEN (*History and View Switcher*,
+      // `switcher`: "No agent, run or page moves it"). Only the person and the
+      // switcher do. So a box's `open` is honoured as the PERSON'S open, and
+      // only in answer to their hand on that box: a `touch` from that same box
+      // — a click, a key — in the last `OPEN_AFTER_TOUCH`. A child row, a
+      // board's card and a followed wikilink are all a click first, and the
+      // shim reports the click before the page's own handler runs. A board
+      // opening a page on load, or on a timer, is refused, and said so on the
+      // console in words. This is a REASONABLENESS property and not a wall:
+      // code in the box shares a realm with the shim and could forge a touch,
+      // as it could do anything the person can with the data kinds.
       case "open": {
         const t = req.target;
+        if (!(await asked(ctx))) {
+          console.warn(`[biom] the page "${ctx.page}" asked to open ${t.kind === "table" ? "the table" : "the page"} "${t.id}" with no click on it; only the person moves the screen, so it stayed where it was`);
+          return no(req.id, ERRORS.IDENTITY, "only the person moves the screen: a page opens something in answer to a click on it");
+        }
         if (t.kind === "page" && t.id === DESIGN_PAGE) {
-          ui.go("design", "");
+          ui.open("design", "");
           return yes(req.id, null);
         }
         const w = ws.get();
@@ -325,7 +384,7 @@ export function makeBridge(ws, transport, ui, vault = "") {
           ? w.tables.some((x) => x.name === t.id)
           : w.pages.some((x) => x.id === t.id);
         if (!there) return no(req.id, ERRORS.NOT_FOUND, "no such page or table");
-        ui.go(t.kind === "table" ? "table" : "page", t.id);
+        ui.open(t.kind === "table" ? "table" : "page", t.id);
         return yes(req.id, null);
       }
 
@@ -584,6 +643,10 @@ export function makeBridge(ws, transport, ui, vault = "") {
   };
 
   return {
+    touched(ctx) {
+      touches.set(ctx, now());
+    },
+
     async resolve(req, ctx) {
       // The refusal, and it is a type narrowing rather than a permission check:
       // there is no allow-list to keep in sync and no branch that can be got
