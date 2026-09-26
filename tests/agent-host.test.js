@@ -1,0 +1,379 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// THE AGENT SCREEN'S HOST SIDE: the chat store, the pure rules the input box
+// and the pickers are drawn by, and the bridge's answer to the look.
+//
+// No browser here. The store runs against a transport double. Every chat,
+// agent, page and word below is invented.
+
+import { test, expect } from "bun:test";
+import { AGENT_PAGE, ERRORS, PROTOCOL } from "../contracts/wire.js";
+import {
+  agentMode, choiceName, defaultAgent, fold, freshThread, groupedChoices, held, isUpdate, machineAgents,
+  makeChatStore, pickersOf, showChat, shownChoices, slashQuery, slashRows, waitingWords, withValues,
+} from "../client/store/chats.js";
+import { makeUi } from "../client/store/ui.js";
+import { makeBridge } from "../client/bridge/bridge.js";
+
+/* ── fixtures, invented ────────────────────────────────────────────────── */
+
+const CHAT = "c1nvented-chat-0001";
+const OTHER = "c1nvented-chat-0002";
+
+/** @param {Record<string, unknown>} [over] */
+const summary = (over = {}) => ({
+  id: CHAT, name: "Invented chat", face: null, agent: "claude-acp", harness: "Claude Code", agentId: null,
+  page: null, phase: "idle", turn: 1, light: "none", stop: null, reason: null, created: 1, updated: 10, ...over,
+});
+
+/** @param {number} seq @param {string} kind @param {Record<string, unknown>} [extra] @param {number} [turn] */
+const up = (seq, kind, extra = {}, turn = 1) => ({ seq, at: seq, turn, kind, ...extra });
+/** @param {number} seq @param {string} id @param {string} status */
+const tool = (seq, id, status) => up(seq, "tool", { tool: { id, title: "Invented " + id, kind: "edit", status, locations: [], diffs: [], output: "", truncated: false } });
+
+/** @param {Record<string, unknown>} [over] */
+const agent = (over = {}) => ({
+  key: "claude-acp", name: "Claude Code", line: "Invented line", icon: null, source: "path", version: null,
+  state: "active", reason: null, message: null, auth: [], options: [], commands: [], ...over,
+});
+
+/** A transport answering each kind from a table; a kind it has no answer for
+ *  is refused `not_found`, a handler that throws is refused with its code. */
+function transportOf(/** @type {Record<string, (req: any) => any>} */ answers) {
+  /** @type {any[]} */
+  const calls = [];
+  return {
+    calls,
+    transport: {
+      /** @param {any} req */
+      async call(req) {
+        calls.push(req);
+        const a = answers[req.kind];
+        if (!a) return { id: req.id, g: PROTOCOL, ok: false, error: { code: "not_found", message: "not here" } };
+        try {
+          return { id: req.id, g: PROTOCOL, ok: true, value: await a(req) };
+        } catch (e) {
+          return { id: req.id, g: PROTOCOL, ok: false, error: { code: /** @type {any} */ (e).code ?? "internal", message: String(/** @type {any} */ (e).message) } };
+        }
+      },
+    },
+  };
+}
+
+/* ── the fold ──────────────────────────────────────────────────────────── */
+
+test("a batch's new updates are measured against the seq held when it BEGAN, so a tool line replaced by a later state does not drop the words after it", () => {
+  const h = held();
+  fold(h, [up(1, "prompt", { text: "Invented" }), up(2, "reply", { text: "a" })]);
+  // As the stream gathers them: the tool line's latest state where it first
+  // stood, then the chunks that arrived after its first state.
+  const took = fold(h, [tool(9, "t1", "completed"), up(7, "reply", { text: "b" }), up(8, "reply", { text: "c" })]);
+  expect(took.map((u) => u.seq)).toEqual([9, 7, 8]);
+  expect(h.seq).toBe(9);
+  expect(h.updates.map((u) => u.kind)).toEqual(["prompt", "reply", "tool", "reply"]);
+  // A run of chunks is one update, its words joined and its seq the latest.
+  expect(h.updates[3]).toMatchObject({ kind: "reply", text: "bc", seq: 8 });
+});
+
+test("a tool line is replaced where it first stood, and only by a later state of it", () => {
+  const h = held();
+  fold(h, [tool(3, "t1", "pending"), up(4, "reply", { text: "x" })]);
+  expect(fold(h, [tool(2, "t1", "in_progress")])).toEqual([]);
+  fold(h, [tool(5, "t1", "completed")]);
+  expect(h.updates.map((u) => u.kind)).toEqual(["tool", "reply"]);
+  expect(/** @type {any} */ (h.updates[0]).tool.status).toBe("completed");
+});
+
+test("anything at or under the seq held is a word already said, and is dropped", () => {
+  const h = held();
+  fold(h, [up(1, "prompt", { text: "Invented" }), up(2, "reply", { text: "one" })]);
+  expect(fold(h, [up(2, "reply", { text: "one" }), up(1, "prompt", { text: "Invented" })])).toEqual([]);
+  expect(h.updates.length).toBe(2);
+});
+
+test("a reply joins only the reply just before it in the same turn: a tool line, a thought or a new turn starts another", () => {
+  const h = held();
+  fold(h, [up(1, "reply", { text: "a" }), up(2, "thought", { text: "t" }), up(3, "reply", { text: "b" }), up(4, "reply", { text: "c" }, 2)]);
+  expect(h.updates.map((u) => [u.kind, /** @type {any} */ (u).text, u.turn])).toEqual([["reply", "a", 1], ["thought", "t", 1], ["reply", "b", 1], ["reply", "c", 2]]);
+});
+
+test("only the last config, commands, usage and plan are kept, each where the first stood", () => {
+  const h = held();
+  fold(h, [up(1, "config", { options: [] }), up(2, "commands", { commands: [] }), up(3, "config", { options: [{ id: "model" }] }), up(4, "usage", { used: 1, size: 2, cost: null }), up(5, "usage", { used: 2, size: 2, cost: null })]);
+  expect(h.updates.map((u) => [u.kind, u.seq])).toEqual([["config", 3], ["commands", 2], ["usage", 5]]);
+});
+
+test("an update the store cannot hold is dropped rather than guessed at", () => {
+  expect(isUpdate(up(1, "reply", { text: "ok" }))).toBe(true);
+  expect(isUpdate({ seq: 0, turn: 1, kind: "reply", text: "x" })).toBe(false);
+  expect(isUpdate(up(2, "reply"))).toBe(false);
+  expect(isUpdate(up(3, "tool", { tool: { id: "" } }))).toBe(false);
+  expect(isUpdate(null)).toBe(false);
+});
+
+/* ── the store ─────────────────────────────────────────────────────────── */
+
+test("a chat opened is read from the start, and what the stream carried while the read was out is folded once, after it", async () => {
+  /** @type {(v: any) => void} */
+  let answer = () => {};
+  const { transport } = transportOf({ "chat.read": () => new Promise((r) => { answer = r; }) });
+  const store = makeChatStore({ transport });
+  /** @type {any[]} */
+  const grew = [];
+  store.onUpdates((chat, updates) => grew.push([chat, updates.map((u) => u.seq)]));
+  const opening = store.open(CHAT);
+  expect(store.get().loading).toBe(true);
+  // Pushes land before the read: one the read also has, and one after it.
+  store.takeChat({ chat: summary({ updated: 11 }), updates: [up(2, "reply", { text: "b" })] });
+  store.takeChat({ chat: summary({ updated: 12 }), updates: [up(3, "reply", { text: "c" })] });
+  answer({ chat: summary({ updated: 11 }), updates: [up(1, "prompt", { text: "Invented" }), up(2, "reply", { text: "b" })] });
+  await opening;
+  const s = store.get();
+  expect(s.loading).toBe(false);
+  expect(s.updates.map((u) => [u.kind, /** @type {any} */ (u).text])).toEqual([["prompt", "Invented"], ["reply", "bc"]]);
+  // The first read is said by `on`, with loading going false, not by onUpdates.
+  expect(grew).toEqual([]);
+  // After it, the stream grows the chat and says so.
+  store.takeChat({ chat: summary({ updated: 13 }), updates: [up(4, "turn", { phase: "idle", stop: "end_turn", reason: null })] });
+  expect(grew).toEqual([[CHAT, [4]]]);
+});
+
+test("a push may carry the summary alone, and an answer older than what the stream said never undoes it", async () => {
+  const { transport } = transportOf({ "chat.send": () => summary({ updated: 15, phase: "starting" }) });
+  const store = makeChatStore({ transport });
+  let heard = 0;
+  store.on(() => heard++);
+  store.takeChat({ chat: summary({ updated: 20, phase: "running", light: "working" }), updates: [] });
+  expect(store.summary(CHAT)?.phase).toBe("running");
+  expect(heard).toBe(1);
+  await store.send(CHAT, "Invented");
+  expect(store.summary(CHAT)?.phase).toBe("running");
+  // The same summary again moves nothing and says nothing.
+  store.takeChat({ chat: summary({ updated: 20, phase: "running", light: "working" }), updates: [] });
+  expect(heard).toBe(1);
+});
+
+test("the list is newest first, and a chat's updates reach the store only while it is the one open", () => {
+  const { transport } = transportOf({});
+  const store = makeChatStore({ transport });
+  store.takeChat({ chat: summary({ id: OTHER, updated: 30 }), updates: [up(1, "prompt", { text: "x" })] });
+  store.takeChat({ chat: summary({ updated: 40 }), updates: [] });
+  expect(store.get().chats.map((c) => c.id)).toEqual([CHAT, OTHER]);
+  expect(store.get().updates).toEqual([]);
+});
+
+test("reopening the stream reads what was missed: the list, the agents, and the open chat from the last seq held", async () => {
+  let reads = 0;
+  const { transport, calls } = transportOf({
+    "chat.read": (req) => {
+      reads++;
+      return req.since === undefined
+        ? { chat: summary(), updates: [up(1, "prompt", { text: "a" }), tool(6, "t1", "completed"), up(4, "reply", { text: "b" })] }
+        : { chat: summary({ updated: 50 }), updates: [up(7, "reply", { text: "c" })] };
+    },
+    "chat.list": () => [summary({ id: OTHER, updated: 5 })],
+    "agents.list": () => [agent()],
+  });
+  const store = makeChatStore({ transport });
+  await store.open(CHAT);
+  /** @type {number[][]} */
+  const grew = [];
+  store.onUpdates((_c, u) => grew.push(u.map((x) => x.seq)));
+  await store.resync();
+  expect(calls.find((c) => c.kind === "chat.read" && c.since !== undefined)?.since).toBe(6);
+  expect(grew).toEqual([[7]]);
+  expect(store.get().agents.map((a) => a.key)).toEqual(["claude-acp"]);
+  expect(store.get().agentsKnown).toBe(true);
+  expect(store.get().chats.map((c) => c.id)).toEqual([CHAT, OTHER]);
+  expect(reads).toBe(2);
+});
+
+test("lastSent is this window's clock at the moment it sent, for the switcher", async () => {
+  let t = 100;
+  const { transport } = transportOf({ "chat.new": (req) => summary({ id: OTHER, phase: req.text ? "starting" : "idle" }), "chat.send": () => summary() });
+  const store = makeChatStore({ transport, now: () => t });
+  expect(store.lastSent(CHAT)).toBe(null);
+  await store.create({ agent: "claude-acp" });
+  expect(store.lastSent(OTHER)).toBe(null);
+  t = 200;
+  await store.create({ agent: "claude-acp", text: "Invented" });
+  expect(store.lastSent(OTHER)).toBe(200);
+  t = 300;
+  await store.send(CHAT, "Invented again");
+  expect(store.lastSent(CHAT)).toBe(300);
+});
+
+test("a chat the server does not have is refused, and the store is left with nothing loading", async () => {
+  const { transport } = transportOf({});
+  const store = makeChatStore({ transport });
+  await expect(store.open(CHAT)).rejects.toMatchObject({ code: "not_found" });
+  expect(store.get().loading).toBe(false);
+  await expect(store.open("not an id")).rejects.toMatchObject({ code: "not_found" });
+});
+
+test("chat.new sends only what was given: no agent when none is named, no page, no empty config", async () => {
+  const { transport, calls } = transportOf({ "chat.new": () => summary({ agent: null, harness: null, phase: "held" }) });
+  const store = makeChatStore({ transport });
+  await store.create({ text: "Invented", config: {} });
+  const req = calls[0];
+  expect(Object.keys(req).filter((k) => k !== "id" && k !== "g").sort()).toEqual(["kind", "text"]);
+  await store.create({ agent: "claude-acp", text: "x", page: "home/Specs", config: { model: "opus" } });
+  expect(calls[1]).toMatchObject({ kind: "chat.new", agent: "claude-acp", text: "x", page: "home/Specs", config: { model: "opus" } });
+});
+
+/* ── the pure rules ────────────────────────────────────────────────────── */
+
+test("the / menu opens on a / at the start and one word, and narrows to what starts with it, each name once, in order", () => {
+  expect(slashQuery("/")).toBe("");
+  expect(slashQuery("/Co")).toBe("co");
+  expect(slashQuery("/code review")).toBe(null);
+  expect(slashQuery("hi /code")).toBe(null);
+  expect(slashQuery("")).toBe(null);
+  const commands = [
+    { name: "compact", description: "c", hint: null, source: "agent", skill: null },
+    { name: "code-review", description: "r", hint: null, source: "agent", skill: null },
+    { name: "/init", description: "i", hint: null, source: "agent", skill: null },
+    { name: "competitive-analysis", description: "s", hint: null, source: "skill", skill: ".agents/skills/competitive-analysis/SKILL.md" },
+    { name: "compact", description: "twice", hint: null, source: "skill", skill: "x" },
+    { name: "has space", description: "no", hint: null, source: "agent", skill: null },
+  ];
+  expect(slashRows(/** @type {any} */ (commands), "").map((c) => c.name)).toEqual(["code-review", "compact", "competitive-analysis", "init"]);
+  expect(slashRows(/** @type {any} */ (commands), "c").map((c) => c.name)).toEqual(["code-review", "compact", "competitive-analysis"]);
+  expect(slashRows(/** @type {any} */ (commands), "co").map((c) => c.name)).toEqual(["code-review", "compact", "competitive-analysis"]);
+  expect(slashRows(/** @type {any} */ (commands), "code").map((c) => c.name)).toEqual(["code-review"]);
+  expect(slashRows(/** @type {any} */ (commands), "zz")).toEqual([]);
+});
+
+test("a picker shows five choices and More past five, the chosen one first, and the long list keeps the agent's groups", () => {
+  const choices = ["a", "b", "c", "d", "e", "f", "g"].map((v, i) => ({ value: v, name: v.toUpperCase(), description: null, group: i < 3 ? "Invented Labs" : i < 5 ? "Elsewhere" : null }));
+  const option = { id: "model", name: "Model", category: /** @type {const} */ ("model"), type: /** @type {const} */ ("select"), value: "f", choices };
+  const { shown, more } = shownChoices(option);
+  expect(more).toBe(true);
+  expect(shown.map((c) => c.value)).toEqual(["f", "a", "b", "c", "d"]);
+  expect(shownChoices({ ...option, choices: choices.slice(0, 5) }).more).toBe(false);
+  expect(groupedChoices(option, "").map((g) => [g.group, g.choices.length])).toEqual([["Invented Labs", 3], ["Elsewhere", 2], [null, 2]]);
+  expect(groupedChoices(option, "elsew").map((g) => g.group)).toEqual(["Elsewhere"]);
+  expect(choiceName(option)).toBe("F");
+  expect(choiceName(withValues([option], new Map([["model", "b"]]))[0])).toBe("B");
+  expect(pickersOf([{ ...option, category: "other", id: "x" }, { ...option, category: "thought_level", id: "e" }, option]).map((o) => o.id)).toEqual(["model", "e"]);
+});
+
+test("where the Agent screen is drawn is the route and the panel, and never over the start page", () => {
+  expect(agentMode({ route: { view: "agent", id: "", screen: "page" }, panel: true })).toBe("screen");
+  expect(agentMode({ route: { view: "page", id: "home", screen: "page" }, panel: true })).toBe("panel");
+  expect(agentMode({ route: { view: "page", id: "home", screen: "page" }, panel: false })).toBe("none");
+  expect(agentMode({ route: { view: "vault", id: "", screen: "page" }, panel: true })).toBe("none");
+});
+
+test("a new chat goes to the agent picked while it is here, else the first Active, else the first; Active ones are listed first", () => {
+  const list = [agent({ key: "a", state: "inactive", reason: "signin" }), agent({ key: "b" }), agent({ key: "c", state: "inactive", reason: "gateway" })];
+  expect(defaultAgent(/** @type {any} */ (list), null)).toBe("b");
+  expect(defaultAgent(/** @type {any} */ (list), "c")).toBe("c");
+  expect(defaultAgent(/** @type {any} */ (list), "gone")).toBe("b");
+  expect(defaultAgent(/** @type {any} */ ([list[0]]), null)).toBe("a");
+  expect(defaultAgent([], null)).toBe(null);
+  expect(machineAgents(/** @type {any} */ (list)).map((a) => a.key)).toEqual(["b", "a", "c"]);
+});
+
+test("a held message says what it waits for", () => {
+  const signin = agent({ key: "claude-acp", state: "inactive", reason: "signin" });
+  const other = agent({ key: "codex-acp", name: "Codex" });
+  expect(waitingWords(/** @type {any} */ (summary({ phase: "held" })), /** @type {any} */ ([signin]))).toBe("Your message is waiting. Sign in to Claude Code and it goes out.");
+  expect(waitingWords(/** @type {any} */ (summary({ phase: "held" })), /** @type {any} */ ([signin, other]))).toBe("Your message is waiting. Sign in to Claude Code, or pick another, and it goes out.");
+  expect(waitingWords(/** @type {any} */ (summary({ phase: "held", agent: null, harness: null })), [])).toBe("Your message is waiting. Install an agent and it goes out.");
+  expect(waitingWords(/** @type {any} */ (summary({ phase: "held" })), /** @type {any} */ ([agent({ state: "inactive", reason: "gateway", name: "OpenClaw" })]))).toContain("Start OpenClaw’s Gateway");
+});
+
+test("a new thread on the full screen is the start screen with the list opened, in the panel the start screen beside the page; a chat just made replaces the start screen's entry", () => {
+  const ui = makeUi({ route: { view: "agent", id: CHAT, screen: "page" } });
+  freshThread(ui);
+  expect(ui.get().route).toEqual({ view: "agent", id: "", screen: "page" });
+  expect(ui.get().chat).toBe(null);
+  expect(ui.get().chatList).toBe(true);
+  expect(ui.cause().mover).toEqual({ by: "you" });
+  showChat(ui, OTHER, "made");
+  expect(ui.get().route.id).toBe(OTHER);
+  expect(ui.cause().replace).toBe(true);
+  showChat(ui, CHAT, "open");
+  expect(ui.cause().mover).toEqual({ by: "you" });
+
+  const beside = makeUi({ route: { view: "page", id: "home", screen: "page" }, panel: true, chat: CHAT });
+  freshThread(beside);
+  expect(beside.get().route.view).toBe("page");
+  expect(beside.get().chat).toBe(null);
+  showChat(beside, OTHER, "made");
+  expect(beside.get().chat).toBe(OTHER);
+  expect(beside.get().route.view).toBe("page");
+});
+
+/* ── the bridge's answer to the look ───────────────────────────────────── */
+
+/** The smallest store and transport the bridge reaches for on these kinds. */
+function bridgeDoubles() {
+  /** @type {any[]} */
+  const calls = [];
+  const ws = { get: () => ({ pages: [{ id: "home", name: "Home" }], tables: [] }) };
+  const transport = { call: async (/** @type {any} */ req) => { calls.push(req); return { id: req.id, g: PROTOCOL, ok: true, value: null }; } };
+  /** @type {any[]} */
+  const opened = [];
+  const ui = { open: (/** @type {any[]} */ ...a) => { opened.push(a); } };
+  return { ws, transport, ui, calls, opened };
+}
+
+/** @param {string} kind @param {Record<string, unknown>} [body] */
+const look = (kind, body = {}) => /** @type {any} */ ({ id: "l" + kind, g: PROTOCOL, kind, ...body });
+
+test("THE LOOK'S KINDS ARE ANSWERED FOR THE @agent BOX ALONE: another page's box, or any box before the Agent screen registers, is refused", async () => {
+  const d = bridgeDoubles();
+  const bridge = makeBridge(/** @type {any} */ (d.ws), d.transport, d.ui, "", { now: () => 0, wait: async () => {} });
+  const agentCtx = { page: AGENT_PAGE };
+  const pageCtx = { page: "home" };
+  bridge.touched?.(agentCtx);
+  bridge.touched?.(pageCtx);
+  // Nobody registered yet.
+  expect(await bridge.resolve(look("look.list", { open: true }), agentCtx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  /** @type {any[]} */
+  const asked = [];
+  bridge.answerLook((req, ctx) => { asked.push([req.kind, ctx]); return null; });
+  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }]])) {
+    expect(await bridge.resolve(look(kind, body), pageCtx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  }
+  expect(asked).toEqual([]);
+  expect(await bridge.resolve(look("look.panel", { to: "screen" }), agentCtx)).toMatchObject({ ok: true, value: null });
+  // The very context object the frame host handed over, so the answer can
+  // tell its own box from another on the same page.
+  expect(asked[0][1]).toBe(agentCtx);
+  expect(d.calls).toEqual([]);
+});
+
+test("the look moves the screen only just after a touch from its box; the list opens without one; a refusal carries its own code", async () => {
+  let t = 0;
+  const d = bridgeDoubles();
+  const bridge = makeBridge(/** @type {any} */ (d.ws), d.transport, d.ui, "", { now: () => t, wait: async () => {} });
+  const ctx = { page: AGENT_PAGE };
+  /** @type {string[]} */
+  const asked = [];
+  bridge.answerLook((req) => { asked.push(req.kind); return req.kind === "look.open" ? { code: ERRORS.NOT_FOUND, message: "there is no such chat" } : null; });
+  expect(await bridge.resolve(look("look.new"), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  expect(await bridge.resolve(look("look.list", { open: false }), ctx)).toMatchObject({ ok: true });
+  bridge.touched?.(ctx);
+  expect(await bridge.resolve(look("look.new"), ctx)).toMatchObject({ ok: true });
+  expect(await bridge.resolve(look("look.open", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.NOT_FOUND, message: "there is no such chat" } });
+  t = 5000;
+  expect(await bridge.resolve(look("look.panel", { to: "beside" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  expect(asked).toEqual(["look.list", "look.new", "look.open"]);
+  // A field the guard does not name never gets as far as the answer.
+  expect(await bridge.resolve(look("look.new", { text: "Invented instruction" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.UNKNOWN_KIND } });
+  expect(d.calls).toEqual([]);
+});
+
+test("a page the look opens comes up with the chat beside it; a page another box opens does not", async () => {
+  const d = bridgeDoubles();
+  const bridge = makeBridge(/** @type {any} */ (d.ws), d.transport, d.ui, "", { now: () => 0, wait: async () => {} });
+  const lookCtx = { page: AGENT_PAGE };
+  const pageCtx = { page: "home" };
+  bridge.touched?.(lookCtx);
+  bridge.touched?.(pageCtx);
+  await bridge.resolve(look("open", { target: { kind: "page", id: "home" } }), lookCtx);
+  await bridge.resolve(look("open", { target: { kind: "page", id: "home" } }), pageCtx);
+  expect(d.opened).toEqual([["page", "home", undefined, true], ["page", "home", undefined, undefined]]);
+});

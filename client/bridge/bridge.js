@@ -56,7 +56,17 @@
 
 import { isHostRequest, isRuntimeRequest } from "../../contracts/guards.js";
 import { weaveRuntime } from "../platform/document.js";
-import { DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } from "../../contracts/wire.js";
+import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } from "../../contracts/wire.js";
+
+/** ONE OF THE LOOK'S FOUR REQUESTS, as the Agent screen answers it.
+ *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" }>} LookRequest */
+
+/** WHO ANSWERS THE LOOK: the Agent screen's host side, registered by the
+ *  composition root through `answerLook`, handed each look request with the
+ *  context of the box that asked. It answers null when it did what was asked,
+ *  or a refusal's code and sentence — and it refuses every box but the one it
+ *  mounted, which it knows by that context object's identity.
+ *  @typedef {(req: LookRequest, ctx: BridgeContext) => null | { code: HostErrorCode, message: string }} LookAnswer */
 
 /** `Bridge` plus the privileged half. The contract names the ordinary entry,
  *  because that is the one an artifact's half of the world is written against;
@@ -64,9 +74,12 @@ import { DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } fro
  *  which decides which door a message came through, ever needs to name it.
  *  `touched` is the frame host telling it a box's `touch` notice arrived, which
  *  is what an `open` from that box is honoured on (see `open` below).
+ *  `answerLook` is the composition root registering the Agent screen's answer
+ *  to the look's four kinds; until it is, every one of them is refused.
  *  @typedef {Bridge & {
  *    runtime(req: RuntimeRequest, ctx: BridgeContext): Promise<HostResponse>,
  *    touched?(ctx: BridgeContext): void,
+ *    answerLook(fn: LookAnswer | null): void,
  *  }} PageBridge */
 
 /** HOW LONG AFTER A TOUCH A BOX'S `open` IS STILL THE PERSON'S, in ms. About a
@@ -214,6 +227,10 @@ const proseOf = (page) =>
 export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
   const now = clock.now ?? Date.now;
   const wait = clock.wait ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+
+  /** THE AGENT SCREEN'S ANSWER TO ITS LOOK, once the composition root has
+   *  registered it. @type {LookAnswer | null} */
+  let lookAnswer = null;
 
   /** WHEN EACH BOX WAS LAST TOUCHED, keyed by the context object the frame host
    *  holds for that realm — which is what makes it THAT SAME BOX and not merely
@@ -384,7 +401,11 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
           ? w.tables.some((x) => x.name === t.id)
           : w.pages.some((x) => x.id === t.id);
         if (!there) return no(req.id, ERRORS.NOT_FOUND, "no such page or table");
-        ui.open(t.kind === "table" ? "table" : "page", t.id);
+        // A PAGE OPENED FROM THE CHAT KEEPS THE CHAT BESIDE IT: from the
+        // Agent screen's look — a page a turn changed — the page comes up with
+        // the chat in the panel, as Go to page brings it (the look's `open`
+        // passes the same touch gate as any box's).
+        ui.open(t.kind === "table" ? "table" : "page", t.id, undefined, ctx.page === AGENT_PAGE ? true : undefined);
         return yes(req.id, null);
       }
 
@@ -434,16 +455,35 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
 
       /* ── the Agent screen's look: the eleventh contracts edit ─────────── */
 
-      // THE LOOK MOVING THE SCREEN — a chat, a new thread, the list, the
-      // panel going to the screen, beside the page or shut. Refused until the Agent screen is built: the kinds are
-      // in the contract so the look can be written against them, and the host
-      // side that answers them, for the look's own box and no other, is the
-      // Agent screen's to add.
+      // THE LOOK ASKING TO BE SHOWN SOMETHING — a chat, a new thread, the
+      // list, the panel going to the screen, beside the page or shut. Only the
+      // box on `@agent` may ask at all, and of those only the one the Agent
+      // screen mounted: the page is checked here, and the box — by the
+      // identity of its context, which only the frame host holds — by the
+      // answer the Agent screen registered. A page routed to `@agent` in a
+      // box of its own is on `@agent` too, and is refused there.
+      //
+      // WHAT MOVES THE SCREEN IS THE PERSON'S, as `open` is: a chat opened, a
+      // new thread and the panel going somewhere each move what is on screen,
+      // so each is honoured only just after a touch from that same box. The
+      // list opening or shutting moves nothing and is not held to it.
+      //
+      // NONE OF IT CARRIES WORDS TO AN AGENT, and nothing here could: the
+      // guard admitted ids and closed words only, and the answer is the ui's.
       case "look.open":
       case "look.new":
       case "look.list":
-      case "look.panel":
-        return no(req.id, "unsupported", "the Agent screen is not in this build yet");
+      case "look.panel": {
+        if (ctx.page !== AGENT_PAGE || lookAnswer === null) {
+          return no(req.id, ERRORS.IDENTITY, "only the Agent screen's own look may ask that");
+        }
+        if (req.kind !== "look.list" && !(await asked(ctx))) {
+          console.warn(`[biom] the Agent screen's look asked ${req.kind} with no click on it; only the person moves the screen, so it stayed where it was`);
+          return no(req.id, ERRORS.IDENTITY, "only the person moves the screen: the look asks in answer to a click on it");
+        }
+        const refused = lookAnswer(req, ctx);
+        return refused === null ? yes(req.id, null) : no(req.id, refused.code, refused.message);
+      }
     }
   }
 
@@ -645,6 +685,10 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
   return {
     touched(ctx) {
       touches.set(ctx, now());
+    },
+
+    answerLook(fn) {
+      lookAnswer = fn;
     },
 
     async resolve(req, ctx) {
