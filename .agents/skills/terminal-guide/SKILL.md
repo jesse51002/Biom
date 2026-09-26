@@ -54,9 +54,10 @@ it is the Agent screen, for a `SignIn` of kind `terminal`.
 a **ticket** beside the command it stands for, which the client may show and
 never sends. The socket's `create` carries that ticket and a size — nothing else
 in the message is read, so a `command`, `args` or `env` there does nothing.
-`Tickets.redeem(ticket)` — the vault's `Agents.redeem` — turns it back into the
-`AgentLaunch` it stood for **once**: a ticket spent, expired or never minted
-starts nothing. The run also remembers every ticket it has spent, so a replay is
+`Tickets.redeem(ticket)` — `Agents.redeem` of the vault the socket was
+addressed to, so a ticket minted in one workspace never runs in another —
+turns it back into the `AgentLaunch` it stood for **once**: a ticket spent,
+expired or never minted starts nothing. The run also remembers every ticket it has spent, so a replay is
 refused whatever the minter answers, and every refusal is the same sentence, so
 a caller learns nothing about which tickets exist.
 
@@ -84,7 +85,7 @@ a second window could attach to.
   process that deliberately left the tree is not claimed.
 - **A socket that names no ticket** within ten seconds is closed.
 - **The server going** kills every tree still running, synchronously, in the
-  `exit` handler, beside the runs'.
+  `exit` handler, beside the runs' and the agents'.
 - **However it went**, `Tickets.ended(ticket)` is called, so the server looks at
   that agent again and says the verdict on the `agents` stream event. The client
   never decides that a sign-in worked.
@@ -180,7 +181,7 @@ elsewhere.
 ```
 server/platform/pty.ts            one command in a PTY, env scrub, end the tree
 server/workspace/terminals.ts     the ticket, the run, its lifetime, the wire (server copy)
-server/main.ts                    terminalRefusal, the cookie, the upgrade, NO_SIGN_IN, exit handler
+server/main.ts                    terminalRefusal, the cookie, the upgrade, the vault's Tickets, exit handler
 server/api/routes.ts              proxy strips set-cookie and cookie
 client/transport/terminal.js      the one-shot socket, the wire (client copy)
 client/views/terminal.js          the pop-up, xterm, fit, input, terminalKey
