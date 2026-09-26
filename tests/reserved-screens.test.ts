@@ -9,8 +9,10 @@
 // (`variables.patch`), the raw document (`doc.writeRaw`) — and neither may be
 // created under, removed, moved, moved under or renamed. Each wire kind is
 // walked here at the domain call it becomes. The reserved ids are checked
-// against the server's own page-segment grammar, never a copy of it. The vault
-// is a temporary folder and its one page is invented.
+// against the server's own page-segment grammar, never a copy of it. And it
+// reads as the Agent screen: `biom-agent`'s document, its look named by the
+// plugin's `look` variable through the three rungs. The vault is a temporary
+// folder and its one page is invented.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -19,7 +21,8 @@ import { join } from "node:path";
 
 import { makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format, formatAny } from "../server/platform/yaml.ts";
-import { SEGMENT, makePages, pageDir } from "../server/domain/pages.ts";
+import { AGENT_PLUGIN, SEGMENT, makePages, pageDir } from "../server/domain/pages.ts";
+import { makePlugins } from "../server/domain/plugins.ts";
 import { makeDocs } from "../server/domain/docs.ts";
 import { AGENT_PAGE, DESIGN_PAGE, MAP_PAGE } from "../contracts/wire.js";
 
@@ -72,4 +75,33 @@ test("EVERY WRITE TO THE AGENT SCREEN IS REFUSED, whichever kind asks", async ()
     ];
     for (const [kind, call] of cases) expect([id, kind, await refused(call)]).toEqual([id, kind, "bad_request"]);
   }
+});
+
+test("THE AGENT SCREEN READS AS A BARE PLUGIN PAGE, drawn by biom-agent, its look the framework's by default and the vault's rung over it", async () => {
+  // The framework's own plugins, as they ship, are the fallback rung.
+  const framework = makeFiles(join(import.meta.dir, "..", "guest", "plugins"));
+  const files = makeFiles(root);
+  const plugins = makePlugins(files, framework, parseAny);
+  const pages = makePages(files, yaml, () => [], undefined, "Home", undefined, framework, plugins.extensionsFor);
+
+  const bare = (await pages.read(AGENT_PAGE))!;
+  expect(bare.id).toBe(AGENT_PAGE);
+  expect(bare.plugin).toBe(AGENT_PLUGIN);
+  expect(bare.sections).toEqual([]);
+  expect(bare.variables).toEqual({});
+  // The document is the framework's one node; the host feeds the chats in.
+  expect(bare.html).toContain('id="g-agent"');
+  expect(bare.extensions[AGENT_PLUGIN]!.values.look).toBe("biom-agent-look");
+  expect(bare.extensions[AGENT_PLUGIN]!.from.look).toBe("plugin");
+
+  // A vault replaces the whole look by naming a plugin of its own in its rung,
+  // without copying the document — invented id.
+  await mkdir(join(root, "plugins", AGENT_PLUGIN), { recursive: true });
+  await writeFile(join(root, "plugins", AGENT_PLUGIN, "extensions.yaml"), "look: invented-look\n");
+  const mine = (await pages.read(AGENT_PAGE))!;
+  expect(mine.extensions[AGENT_PLUGIN]!.values.look).toBe("invented-look");
+  expect(mine.extensions[AGENT_PLUGIN]!.from.look).toBe("vault");
+  // And still nothing of it is a file the screen holds.
+  expect(mine.html).toContain('id="g-agent"');
+  expect(() => pageDir(AGENT_PAGE)).toThrow(/framework's screens/);
 });

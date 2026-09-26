@@ -222,6 +222,13 @@ export const frameworkPlugin = (id: string): string => `${id}/index.html`;
  *  the vault's own is a page saying `plugin: <its own>`. */
 export const MAP_PLUGIN = "biom-mindmap";
 
+/** The document the Agent screen draws with: the framework's `biom-agent`, one
+ *  node the host feeds the chats into. What draws inside it is its `look`
+ *  variable — a plugin id, the framework's own by default — which a vault
+ *  changes through a rung over `biom-agent`, `plugins/biom-agent/extensions.yaml`,
+ *  and never by copying this document. */
+export const AGENT_PLUGIN = "biom-agent";
+
 /** The page's own document, when it draws itself. */
 export const PAGE_DOCUMENT = "index.html";
 
@@ -1213,6 +1220,28 @@ export function makePages(
           plugin: MAP_PLUGIN,
           html: await pluginDocument(MAP_PLUGIN),
           input: { rail: true },
+          ports: null,
+          extensions: await extensionsFor(null),
+        };
+      }
+      // THE AGENT SCREEN IS THE MAP'S SIBLING: a bare plugin page with no
+      // directory, drawn by `biom-agent`'s document, the chats posted into it
+      // by the host. What draws the chats is the look its `look` variable
+      // names, and the variable reaches the box the way every plugin's does —
+      // through `extensions`, the three rungs merged, the vault's own
+      // `plugins/biom-agent/extensions.yaml` over the framework's defaults. A
+      // page has no rung here because there is no page. Nothing is written for
+      // it, and every write addressed to it is refused by `pageDir`.
+      if (id === AGENT_PAGE) {
+        return {
+          id,
+          name: "Agent",
+          markdown: await scaleFor(DESIGN_DIR),
+          variables: {},
+          sections: [],
+          plugin: AGENT_PLUGIN,
+          html: await pluginDocument(AGENT_PLUGIN),
+          input: {},
           ports: null,
           extensions: await extensionsFor(null),
         };
