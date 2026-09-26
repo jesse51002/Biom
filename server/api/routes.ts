@@ -221,8 +221,8 @@ export type Written = Omit<EditReport, "via" | "writer">;
  * filesystem's — or, for a table's schema or rows, no file and the table's
  * place. The page itself — made, moved, renamed, removed — is its directory.
  * A keystroke's save is a `burst`, which the history coalesces into one edit
- * per bout of typing: a slot, a variable, a cell, and the editors' quiet
- * saves. Nothing else is, so a page made and then removed is two edits.
+ * per bout of typing: a slot, a variable, a table's rows, and the editors'
+ * quiet saves. Nothing else is, so a page made and then removed is two edits.
  * Read off the request and, where the request cannot say, off the answer: the
  * id a made, moved or renamed page has now, the folder a new automation was
  * given. The screen each path is shown on is the history's address table,
@@ -273,10 +273,13 @@ export function writeOf(req: ApiRequest, value: unknown): Written | null {
     }
     case "vault.writeFile":
       return { path: req.file, ...(req.quiet === true ? { burst: true } : {}) };
-    case "row.update":
-      return table(req.name, true);
+    // A TABLE'S ROWS ARE A BURST, all three: the history says the table changed
+    // and not how, so two such lines a moment apart say nothing one does not —
+    // and a page's code adding rows in a loop would otherwise be a line a row.
     case "row.insert":
+    case "row.update":
     case "row.remove":
+      return table(req.name, true);
     case "table.remove":
     case "table.setParent":
     case "table.importCsv":
@@ -1100,8 +1103,16 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
  * its sentence names no check: telling a caller which one failed is telling it
  * which to forge next. Absent, nothing is gated — every test of `handle` and
  * every caller that predates it.
+ *
+ * `own` is the same question without a kind: *is this request this machine's
+ * own window* — the check a window's report must pass. A request that is not
+ * has its `window` dropped before it is answered, so its write is answered as
+ * ever and recorded as nobody's: A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD
+ * REPORT FOR IT. Without this, anything holding the launch token — a run's
+ * script, which may read every window's id off `window.list` — could put its
+ * writes in the history as the person's. Absent, a `window` is taken as sent.
  */
-export async function route(request: Request, deps: Deps, gate?: (kind: string) => string | null): Promise<Response> {
+export async function route(request: Request, deps: Deps, gate?: (kind: string) => string | null, own?: () => boolean): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Use POST", { status: 405, headers: { allow: "POST" } });
   }
@@ -1143,6 +1154,11 @@ export async function route(request: Request, deps: Deps, gate?: (kind: string) 
         error: fail("identity", "this is answered only to this machine's own window") as HostError,
       });
     }
+  }
+
+  if (own !== undefined && typeof body === "object" && body !== null && "window" in body && !own()) {
+    const { window: _named, ...rest } = body as Record<string, unknown>;
+    body = rest;
   }
 
   return json(await handle(body as ApiRequest, deps));

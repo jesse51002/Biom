@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handle, writeOf } from "../server/api/routes.ts";
+import { handle, route, writeOf } from "../server/api/routes.ts";
 import { makeHistory } from "../server/domain/history.ts";
 import type { History } from "../server/domain/history.ts";
 import { initVault, makeFiles } from "../server/platform/files.ts";
@@ -78,8 +78,17 @@ async function world(over: { history?: History | null } = {}) {
   } as unknown as Parameters<typeof handle>[1];
   let seq = 0;
   const call = (o: Record<string, unknown>): Promise<ApiResponse> => handle({ id: `r${++seq}`, g: PROTOCOL, ...o } as ApiRequest, deps);
+  /** The same, over HTTP, with `own` answering whether the caller is this machine's window. */
+  const post = async (o: Record<string, unknown>, own?: () => boolean): Promise<ApiResponse> => {
+    const request = new Request("http://127.0.0.1:4400/api/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: `r${++seq}`, g: PROTOCOL, ...o }),
+    });
+    return (await (await route(request, deps, undefined, own)).json()) as ApiResponse;
+  };
   return {
-    root, history: history as History, commits, call,
+    root, history: history as History, commits, call, post,
     tick: (ms: number) => { clock += ms; },
     edits: () => (history as History).read().entries.filter((e) => e.kind === "edit"),
     async drop() { await rm(root, { recursive: true, force: true }); },
@@ -205,6 +214,31 @@ test("a page made, and a page removed, are edits of that page — the removed on
   }
 });
 
+test("A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD REPORT FOR IT: anybody else's write is answered and is nobody's", async () => {
+  const w = await world();
+  try {
+    const made = await pageWithASlot(w, "Invented Forgery");
+    const write = { kind: "section.write", page: made.id, section: "intro", part: "body", window: WINDOW };
+    // A caller on the token alone — a run's script — naming the person's window.
+    expect((await w.post({ ...write, data: "Not theirs.\n" }, () => false)).ok).toBe(true);
+    expect(await readFile(join(w.root, pageDir(made.id), "content.yaml"), "utf8")).toContain("Not theirs.");
+    expect(w.edits()).toEqual([]);
+    // The window itself.
+    expect((await w.post({ ...write, data: "Theirs.\n" }, () => true)).ok).toBe(true);
+    expect(w.edits().map((e) => e.writer)).toEqual([{ kind: "you", window: WINDOW }]);
+    // With no answer to ask, the window is taken as sent — every caller from before it.
+    w.tick(5000);
+    expect((await w.post({ ...write, data: "As sent.\n" })).ok).toBe(true);
+    expect(w.edits()).toHaveLength(2);
+    // The question is asked only of a request that names a window.
+    let asked = 0;
+    expect((await w.post({ kind: "page.read", page: made.id }, () => { asked++; return false; })).ok).toBe(true);
+    expect(asked).toBe(0);
+  } finally {
+    await w.drop();
+  }
+});
+
 test("a table's rows are an edit with no file and the table's place", async () => {
   const w = await world();
   try {
@@ -273,9 +307,9 @@ test("writeOf: the file every write kind wrote, or the table it changed", () => 
     [r({ kind: "automation.create", page: "home/Invented", name: "Daily Brief", template: "t" }), { folder: "daily-brief" }, { path: `${dir}/automations/daily-brief` }],
     [r({ kind: "vault.writeFile", file: ".agents/skills/mine/SKILL.md", text: "" }), null, { path: ".agents/skills/mine/SKILL.md" }],
     [r({ kind: "vault.writeFile", file: "INSTRUCTIONS.md", text: "", quiet: true }), null, { path: "INSTRUCTIONS.md", burst: true }],
-    [r({ kind: "row.insert", name: "jobs", row: {} }), 1, { path: null, place: { view: "table", id: "jobs" } }],
+    [r({ kind: "row.insert", name: "jobs", row: {} }), 1, { path: null, place: { view: "table", id: "jobs" }, burst: true }],
     [r({ kind: "row.update", name: "jobs", row: 1, patch: {} }), null, { path: null, place: { view: "table", id: "jobs" }, burst: true }],
-    [r({ kind: "row.remove", name: "jobs", row: 1 }), null, { path: null, place: { view: "table", id: "jobs" } }],
+    [r({ kind: "row.remove", name: "jobs", row: 1 }), null, { path: null, place: { view: "table", id: "jobs" }, burst: true }],
     [r({ kind: "table.create", schema: { name: "jobs", kind: "basic", columns: [] } }), null, { path: null, place: { view: "table", id: "jobs" } }],
     [r({ kind: "table.alter", name: "jobs", schema: { name: "work", kind: "basic", columns: [] } }), null, { path: null, place: { view: "table", id: "work" } }],
     [r({ kind: "table.setParent", name: "jobs", parent: "home" }), null, { path: null, place: { view: "table", id: "jobs" } }],
