@@ -496,9 +496,9 @@ test("a terminal sign-in answers the pop-up's command and a ticket, and the tick
   expect(redeemed?.agent).toBe("gemini");
   expect(redeemed?.command).toBe("/invented/bin/gemini");
   expect(redeemed?.args).toEqual(["--acp", "auth", "login"]);
-  // What the pop-up runs has the login environment, so the agent finds its tools.
-  expect(redeemed?.env.ANTHROPIC_API_KEY).toBe(SECRET);
-  expect(redeemed?.env.LOGIN_MODE).toBe("tty");
+  // What the pop-up runs has the COMPLETE environment — the login shell's and
+  // the method's — because the terminal takes it as the whole of it.
+  expect(redeemed?.env).toEqual({ ...LOGIN, LOGIN_MODE: "tty" });
   expect(m.agents.redeem(native.ticket)).toBeNull();
   expect(m.agents.redeem("not a ticket at all")).toBeNull();
   expect(m.agents.redeem("AAAAAAAAAAAAAAAAAAAAAAAA")).toBeNull();
@@ -577,10 +577,59 @@ test("a refusal from a chat is sticky until a sign-in, and the probe after the p
   const s = await terminal.agents.signIn("opencode", "t");
   if (s.kind !== "terminal") throw new Error("expected a terminal sign-in");
   expect(terminal.agents.redeem(s.ticket)?.agent).toBe("opencode");
+  // A look again while the pop-up runs is still a plain probe: signed out.
   terminal.agents.probe("opencode");
   await terminal.agents.settled();
+  expect(byKey(terminal.agents.list(), "opencode")?.reason).toBe("signin");
+  // The pop-up's command ended: the terminal says so by ticket, and only this
+  // module knows whose it was. The agent is checking at once, then Active.
+  const before = terminal.calls.length;
+  terminal.heard.length = 0;
+  terminal.agents.signedIn(s.ticket);
+  expect(terminal.heard[0]?.find((x) => x.key === "opencode")?.reason).toBe("checking");
+  await terminal.agents.settled();
+  expect(terminal.calls.length).toBe(before + 1);
+  expect(terminal.calls.at(-1)?.methods).not.toContain("authenticate");
   a = byKey(terminal.agents.list(), "opencode") as AgentInfo;
   expect(a.state).toBe("active");
+  expect(terminal.heard.at(-1)?.find((x) => x.key === "opencode")?.state).toBe("active");
+  // Reported twice, or a ticket nobody minted: nothing happens.
+  terminal.agents.signedIn(s.ticket);
+  terminal.agents.signedIn("AAAAAAAAAAAAAAAAAAAAAAAA");
+  terminal.agents.signedIn("../not a ticket");
+  await terminal.agents.settled();
+  expect(terminal.calls.length).toBe(before + 1);
+});
+
+test("a redeemed ticket's end past its bound re-probes nothing", async () => {
+  let now = 5_000_000;
+  const { connect, calls } = agentsOnFake(() => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [{ id: "t", name: "T", type: "terminal", args: ["login"] }] }) }));
+  const agents = makeAgents({
+    connect,
+    env: async () => ({ ...LOGIN }),
+    which: async (c) => (c === "opencode" ? "/invented/bin/opencode" : null),
+    fetch: (async () => {
+      throw new TypeError("offline");
+    }) as unknown as typeof fetch,
+    home: freshHome(),
+    cwd: "/invented/vault",
+    now: () => now,
+    processes: { start: () => ({ pid: -1, pgid: -1, born: null, done: Promise.resolve({ exit: null, signal: "ENOENT" }) }), end: async () => {}, killNow() {}, alive: () => false },
+    version: "0.0.0-test",
+    timing: { commands: 10, signInRun: 1000 },
+  });
+  agents.list();
+  await agents.settled();
+  agents.refused("opencode");
+  const s = await agents.signIn("opencode", "t");
+  if (s.kind !== "terminal") throw new Error("expected a terminal sign-in");
+  expect(agents.redeem(s.ticket)).not.toBeNull();
+  now += 1001;
+  const before = calls.length;
+  agents.signedIn(s.ticket);
+  await agents.settled();
+  expect(calls.length).toBe(before);
+  expect(agents.list()[0]?.reason).toBe("signin");
 });
 
 test("a key that is no agent, or no agent here, is refused in words", async () => {

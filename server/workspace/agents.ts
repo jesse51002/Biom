@@ -130,7 +130,12 @@ export interface AgentsTiming {
   download: number;
   /** One `npm`, `uv` or `bzip2` run. */
   install: number;
+  /** How long an unredeemed sign-in ticket lasts. */
   ticket: number;
+  /** How long after a ticket is redeemed its command's end still re-probes
+   *  the agent: a sign-in somebody finishes in a browser, or by pasting a
+   *  code, takes as long as it takes. */
+  signInRun: number;
 }
 
 export const TIMING: AgentsTiming = {
@@ -148,6 +153,7 @@ export const TIMING: AgentsTiming = {
   download: 30 * 60 * 1000,
   install: 15 * 60 * 1000,
   ticket: 5 * 60 * 1000,
+  signInRun: 60 * 60 * 1000,
 };
 
 /** What `redeem` answers: the command, and whose sign-in it is — so the
@@ -168,10 +174,15 @@ export interface Agents {
   install(key: AgentKey): AgentInfo;
   signIn(key: AgentKey, method: string): Promise<SignIn>;
   /** The command a ticket stands for, once — what the sign-in pop-up runs,
-   *  with the login environment — and the agent it signs in. Null for a
-   *  ticket that is unknown, spent or expired. When the command exits, the
-   *  terminal calls `probe(agent)`, and that probe trusts the session. */
+   *  with the COMPLETE environment it runs in: the login shell's, the
+   *  launch's own variables and the method's — and the agent it signs in.
+   *  Null for a ticket that is unknown, spent or expired. */
   redeem(ticket: string): SignInLaunch | null;
+  /** A redeemed ticket's command has ended: look at its agent again, now,
+   *  and believe the session it opens — it is the probe after a sign-in.
+   *  Answers nothing; the agent is `checking` and its verdict is pushed. A
+   *  ticket that is unknown, already reported or past its bound is nothing. */
+  signedIn(ticket: string): void;
   /** How to start an agent for a chat, or null where it cannot be started. */
   launch(key: AgentKey): Promise<AgentLaunch | null>;
   /** A chat's agent refused a session or a message for want of a sign-in:
@@ -218,7 +229,7 @@ interface Slot {
   refusedSignIn: boolean;
   /** A sign-in has happened since the refusal, so the next session is
    *  believed. */
-  signedIn: boolean;
+  trust: boolean;
   signedInWith: string | null;
 }
 
@@ -319,7 +330,10 @@ export function makeAgents(deps: AgentsDeps): Agents {
   const live = new Set<AcpConnection>();
   /** Process groups an install is running. */
   const running = new Set<number>();
+  /** Sign-in tickets minted and not yet redeemed. */
   const tickets = new Map<string, { launch: SignInLaunch; expires: number }>();
+  /** Tickets redeemed, whose command's end re-probes their agent. */
+  const redeemed = new Map<string, { agent: AgentKey; until: number }>();
   let closed = false;
   let discovering: Promise<void> | null = null;
   let cache: { at: number; entries: RegistryEntry[] } | null = null;
@@ -385,7 +399,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       probeQueued: false,
       installing: false,
       refusedSignIn: false,
-      signedIn: false,
+      trust: false,
       signedInWith: null,
     };
     slots.set(key, slot);
@@ -715,8 +729,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
       emit();
       return;
     }
-    const afterSignIn = auth !== null || slot.signedIn;
-    slot.signedIn = false;
+    const afterSignIn = auth !== null || slot.trust;
+    slot.trust = false;
     const verdict = await session(found.launch, found.fetching, auth);
     if (closed) return;
     apply(slot, verdict, afterSignIn);
@@ -1195,15 +1209,23 @@ export function makeAgents(deps: AgentsDeps): Agents {
     return slot;
   };
 
-  function mint(): string {
+  /** Forget what has run out, and keep each map to a handful — every pop-up
+   *  anybody has open — dropping the oldest. */
+  function prune(): void {
     const now = deps.now();
     for (const [k, v] of tickets) if (v.expires <= now) tickets.delete(k);
-    // A handful outstanding is every pop-up anybody has open; the oldest goes.
-    while (tickets.size >= 16) {
-      const oldest = tickets.keys().next().value;
-      if (oldest === undefined) break;
-      tickets.delete(oldest);
+    for (const [k, v] of redeemed) if (v.until <= now) redeemed.delete(k);
+    for (const m of [tickets, redeemed] as Map<string, unknown>[]) {
+      while (m.size > 16) {
+        const oldest = m.keys().next().value;
+        if (oldest === undefined) break;
+        m.delete(oldest);
+      }
     }
+  }
+
+  function mint(): string {
+    prune();
     return randomBytes(24).toString("base64url");
   }
 
@@ -1342,10 +1364,23 @@ export function makeAgents(deps: AgentsDeps): Agents {
       const held = tickets.get(ticket);
       tickets.delete(ticket);
       if (held === undefined || held.expires <= deps.now()) return null;
-      const slot = slots.get(held.launch.agent);
-      // The person is signing in: the next probe believes its session.
-      if (slot !== undefined) slot.signedIn = true;
+      redeemed.set(ticket, { agent: held.launch.agent, until: deps.now() + t.signInRun });
+      prune();
       return { ...held.launch, args: [...held.launch.args], env: { ...held.launch.env } };
+    },
+
+    signedIn(ticket) {
+      if (typeof ticket !== "string" || !OPAQUE_ID.test(ticket)) return;
+      const run = redeemed.get(ticket);
+      redeemed.delete(ticket);
+      if (run === undefined || run.until <= deps.now() || closed) return;
+      const slot = slots.get(run.agent);
+      if (slot === undefined) return;
+      // The person signed in, or tried: the next session is believed.
+      slot.trust = true;
+      set(slot, "checking", null);
+      emit();
+      queueProbe(slot);
     },
 
     async launch(key) {
@@ -1362,7 +1397,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       const slot = slots.get(key);
       if (slot === undefined) return;
       slot.refusedSignIn = true;
-      slot.signedIn = false;
+      slot.trust = false;
       set(slot, "signin", SIGN_IN);
       emit();
     },
