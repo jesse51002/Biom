@@ -25,6 +25,11 @@
   /** @type {any} */
   const glob = /** @type {any} */ (globalThis);
 
+  /** A word the server sent, looked up in a table of ours by OWN key only —
+   *  `constructor` is a word too, and the prototype is not a row.
+   *  @template T @param {Record<string, T>} table @param {any} key @returns {T | undefined} */
+  const own = (table, key) => (typeof key === "string" && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
+
   /* ── faces ─────────────────────────────────────────────────────────────── */
 
   /** WHERE A FACE'S ART MAY COME FROM: the vendored Noto folder, one file of
@@ -86,7 +91,7 @@
       max_turn_requests: ["The turn ran out of steps.", "It hit the agent's limit on requests in one turn."],
       crashed: ["The agent stopped answering mid-turn.", "Nothing after the last line above was done. Send the message again to carry on."],
     };
-    const w = typeof stop === "string" ? WORDS[stop] : undefined;
+    const w = own(WORDS, stop);
     if (!w) return null;
     const said = typeof reason === "string" && reason.trim() !== "" ? reason.trim() : w[1];
     return { head: w[0], rest: said };
@@ -179,7 +184,7 @@
     const t = tool || {};
     const live = t.status === "pending" || t.status === "in_progress";
     const failed = t.status === "failed";
-    const pair = typeof t.kind === "string" ? VERBS[t.kind] : undefined;
+    const pair = own(VERBS, t.kind);
     const title = typeof t.title === "string" ? t.title.replace(/\s+/g, " ").trim() : "";
     const loc = Array.isArray(t.locations) && t.locations[0] && typeof t.locations[0].path === "string"
       ? t.locations[0].path + (typeof t.locations[0].line === "number" ? ":" + t.locations[0].line : "")

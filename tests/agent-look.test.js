@@ -262,6 +262,11 @@ test("a tool line says its verb for its kind and state, and its object without s
   expect(t({ title: "Read the notes", kind: "execute" }).obj).toBe("Read the notes");
   expect(t({ title: "", kind: "edit", locations: [{ path: "a.md", line: 3 }] }).obj).toBe("a.md:3");
   expect(t({ title: "Todo list", kind: "other", status: "failed" })).toMatchObject({ verb: "Todo list", failed: true });
+  // A word off the wire is looked up by own key only: the prototype is not a row.
+  expect(t({ title: "x", kind: "constructor" })).toMatchObject({ verb: "x" });
+  expect(t({ title: "", kind: "__proto__" }).verb).toBe("Done");
+  expect(M.stopWords("constructor", null)).toBe(null);
+  expect(M.stopWords("toString", null)).toBe(null);
 });
 
 test("the list is grouped as the mockup groups it, newest first, and each row says what the chat is doing and with what", () => {
