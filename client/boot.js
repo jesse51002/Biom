@@ -14,18 +14,22 @@
 
 /** @import { Theme, VaultInfo } from "../contracts/types.ts" */
 
-import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, vaultBase } from "../contracts/wire.js";
+import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, WINDOW_PARAM, vaultBase } from "../contracts/wire.js";
+import { isWindowId } from "../contracts/guards.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { h, fill, remembered } from "./platform/dom.js";
 import { useAssets } from "./platform/markdown.js";
 import { makeHttp, TOKEN_PARAM } from "./transport/http.js";
 import { makeEvents } from "./transport/events.js";
+import { makeChatStream } from "./transport/chat.js";
 import { openTerminalSocket, terminalUrl } from "./transport/terminal.js";
 import { makeWorkspace } from "./store/workspace.js";
 import { applyTheme, paperOf } from "./theme/theme.js";
 import { faceCss } from "./theme/faces.js";
 import { makeUi } from "./store/ui.js";
+import { makeHistoryStore } from "./store/history.js";
+import { makeSwitcher, TIMING } from "./store/switcher.js";
 import { makeBridge } from "./bridge/bridge.js";
 import { makeFrameHost } from "./frame/frame.js";
 import { makePageView, makeDesignView, makeMapView } from "./views/page.js";
@@ -36,6 +40,7 @@ import { makeTableView } from "./views/table.js";
 import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
 import { makeSignInTerminal } from "./views/terminal.js";
+import { makeGoBack } from "./views/goback.js";
 import { makeShell, parseHash } from "./shell/shell.js";
 
 /* ── which build this is ────────────────────────────────────────────────── */
@@ -176,6 +181,41 @@ if (vault === null && !wantsPicker) {
   }
 }
 
+/* ── which window this is ───────────────────────────────────────────────── */
+
+/** THIS WINDOW'S OWN ID, minted once and kept for the tab (`WindowId` in
+ *  `contracts/types.ts`): in `sessionStorage`, which a reload keeps and a
+ *  second window does not share, and never saved anywhere else. The history's
+ *  opens and views belong to it, the person's writes are stamped with it, and
+ *  the server keeps what it has open while its stream is attached — so a
+ *  reload comes back as the same window, with its history, rather than as a
+ *  stranger. A value in storage that is not an id is replaced, and a browser
+ *  that refuses storage gets an id for this load alone.
+ *  @returns {string} */
+function thisWindow() {
+  const KEY = "biom-window";
+  try {
+    const held = sessionStorage.getItem(KEY);
+    if (isWindowId(held)) return held;
+  } catch { /* storage refused: an id for this load */ }
+  const minted = mint();
+  try { sessionStorage.setItem(KEY, minted); } catch { /* kept for this load only */ }
+  return minted;
+}
+
+/** A uuid where the browser offers one, and otherwise sixteen random bytes as
+ *  base64url — either is `OPAQUE_ID`'s grammar. @returns {string} */
+function mint() {
+  const c = /** @type {any} */ (globalThis).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === "function") c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const windowId = thisWindow();
+
 /* ── construction ───────────────────────────────────────────────────────── */
 
 // The vault is the BASE URL, which is why transport did not have to change: it
@@ -197,15 +237,25 @@ const base = vault === null ? "" : vaultBase(vault);
 const assets = vault === null ? "" : location.origin + base + "/asset/";
 useAssets(assets);
 
-const transport = makeHttp(base, token);
+// EVERY CALL CARRIES THIS WINDOW'S ID, written by the transport over whatever a
+// request carried, so the server can stamp the person's writes as theirs.
+const transport = makeHttp(base, token, windowId);
 // THE SERVER PRESSING RELOAD. One stream per tab, under this tab's vault
 // prefix — which is what makes an event from another folder unable to reach
 // this one: the vault is settled above before a single module is constructed,
 // so opening another folder is a navigation and a fresh document with a stream
 // of its own. With no folder chosen the base is "" and nothing is opened.
 // The stream carries the chats and the history, so in the built application
-// it carries the launch token too, as the API route's address does.
-const events = makeEvents(base, token === null ? "" : `?${TOKEN_PARAM}=${encodeURIComponent(token)}`);
+// it carries the launch token too, as the API route's address does — and this
+// window's id, because the server keeps what a window has open exactly as long
+// as its stream is attached.
+const streamQuery = new URLSearchParams();
+if (token !== null) streamQuery.set(TOKEN_PARAM, token);
+streamQuery.set(WINDOW_PARAM, windowId);
+const events = makeEvents(base, "?" + streamQuery.toString());
+// THE STREAM'S JSON EVENTS, decoded: the history here, and the chats and the
+// agents for the Agent screen.
+const stream = makeChatStream(events);
 const ws = makeWorkspace(transport);
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
@@ -217,6 +267,39 @@ const ui = makeUi({
   treeOrder: remembered("treeOrder", "asc") === "desc" ? "desc" : "asc",
 });
 
+/* ── the history and the switcher ────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE: the history is a workspace's, and the
+// start page has none. This window's copy of it — `mirror`, because `history`
+// is the browser's own — follows the stream; the
+// switcher watches it and the window's context from above, reports the
+// context on every change, and — the only thing besides the person that ever
+// does — moves the screen for the open chat's agent. Its clock is this
+// window's and its times are the spec's: five minutes, two minutes and five
+// seconds.
+const mirror = vault === null ? null : makeHistoryStore({ transport, now: Date.now });
+/** THE WINDOW IN FRONT: shown, and the one the person is in. */
+const inFront = () => document.visibilityState === "visible" && document.hasFocus();
+const switcher = mirror === null ? null : makeSwitcher({
+  ui,
+  history: mirror,
+  window: windowId,
+  pages: () => ws.get().pages,
+  now: Date.now,
+  timing: TIMING,
+  front: inFront(),
+});
+if (mirror !== null && switcher !== null) {
+  stream.onHistory((entries) => mirror.take(entries, true));
+  // EVERY OPEN OF THE STREAM, the first included: read what was missed, and
+  // tell the server again what it forgot when the stream closed.
+  events.onOpen(() => { void switcher.resync(); });
+  const front = () => switcher.front(inFront());
+  document.addEventListener("visibilitychange", front);
+  window.addEventListener("focus", front);
+  window.addEventListener("blur", front);
+}
+
 // DOM-free, and it never learns the artifact is in a frame. Writes go through
 // the store, so an artifact inserting a row updates the grid on screen.
 const bridge = makeBridge(ws, transport, ui, vault ?? "");
@@ -226,7 +309,11 @@ const bridge = makeBridge(ws, transport, ui, vault ?? "");
 // absolute urls back to this origin's `/fonts/`, which the server answers with
 // the CORS header an opaque origin needs.
 const faces = faceCss(location.origin + "/fonts/");
-const frameHost = makeFrameHost(bridge, assets, faces);
+// A BOX'S TOUCH goes up to the switcher by the page on screen, and to the
+// bridge, which honours that box's `open` only just after one.
+const frameHost = makeFrameHost(bridge, assets, faces, {
+  touched: (page) => switcher?.touched(page),
+});
 
 /* ── the sign-in terminal ────────────────────────────────────────────────── */
 
@@ -276,9 +363,15 @@ const views = {
   runs: makeRunsView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
   instructions: makeInstructionsView({ h, ws, ui }),
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
+  // GO BACK TO, top left, while an agent has the screen.
+  goback: switcher === null ? undefined : makeGoBack({ h, switcher }),
 };
 
-const shell = makeShell({ h, fill, ws, ui, frameHost, views, production, events, newerVersion });
+const shell = makeShell({
+  h, fill, ws, ui, frameHost, views, production, events, newerVersion,
+  // The person's hand on a screen the host draws; a box says its own above.
+  touched: switcher === null ? undefined : () => switcher.touched(),
+});
 
 /* ── the wiring ─────────────────────────────────────────────────────────── */
 
@@ -321,6 +414,8 @@ function theme() {
 // every artifact iframe on it.
 ws.on(() => { theme(); shell.repaint(); });
 ui.on(() => shell.repaint());
+// Go back to and Go to page changing, which no store the shell reads says.
+switcher?.on(() => shell.repaint());
 
 // The other half of the same signal. `on` says "redraw"; `onChange` says WHAT
 // moved, which is what an artifact needs — it lives in an opaque-origin frame
@@ -363,6 +458,9 @@ if (vault !== null) {
     const route = ui.get().route;
     const first = ws.get().pages[0];
     if (route.view === "page" && !route.id && first) ui.go("page", first.id);
+    // The tree is in hand, so a page's uid can be read: the switcher reads the
+    // history and takes from it whose the screen was before this load.
+    void switcher?.start();
   } catch (err) {
     // WHICH FAILURE THIS IS DECIDES WHERE THE TAB LANDS, and the two are not the
     // same screen. A folder that cannot be opened at all — gone, a file now,
