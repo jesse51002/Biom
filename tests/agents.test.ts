@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { makeAgents } from "../server/workspace/agents.ts";
 import type { Agents, AgentsDeps } from "../server/workspace/agents.ts";
 import type { AcpConnection, AcpExit } from "../server/platform/acp.ts";
+import { initializeParams, toConfigOptions } from "../server/platform/acp-wire.ts";
 import type { AgentInfo, AgentLaunch, ProcessRunner } from "../contracts/types.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "biom-agents-"));
@@ -50,6 +51,7 @@ interface Call {
   methods: string[];
   params: Record<string, unknown>;
   closed: boolean;
+  killed: boolean;
 }
 
 const acpError = (code: number, message: string): Error => Object.assign(new Error(message), { code });
@@ -58,7 +60,7 @@ const acpError = (code: number, message: string): Error => Object.assign(new Err
 function agentsOnFake(script: (launch: AgentLaunch) => Script) {
   const calls: Call[] = [];
   const connect = (launch: AgentLaunch, cwd: string): AcpConnection => {
-    const call: Call = { launch, cwd, methods: [], params: {}, closed: false };
+    const call: Call = { launch, cwd, methods: [], params: {}, closed: false, killed: false };
     calls.push(call);
     const heard = new Set<(method: string, params: unknown) => void>();
     let finish!: (e: AcpExit) => void;
@@ -93,6 +95,10 @@ function agentsOnFake(script: (launch: AgentLaunch) => Script) {
         call.closed = true;
         finish({ code: 0, signal: null });
         return closed;
+      },
+      kill() {
+        call.killed = true;
+        finish({ code: null, signal: "SIGKILL" });
       },
       closed,
     };
@@ -204,7 +210,6 @@ function machine(opts: {
     cwd: "/invented/vault",
     now: () => Date.now(),
     processes,
-    version: "0.0.0-test",
     timing: { initialize: 300, session: 300, commands: 50, gatewayPoll: 5, gatewayWait: 500, ...opts.timing },
   });
   const heard: AgentInfo[][] = [];
@@ -249,11 +254,11 @@ test("an agent on the PATH is listed and probed Active, with its pickers and com
   expect(call.launch.args).toEqual(["acp"]);
   expect(call.launch.env.ANTHROPIC_API_KEY).toBe(SECRET);
   expect(call.cwd).toBe("/invented/vault");
-  // Offered what a chat offers: files both ways, no terminal, both sign-in flags.
-  expect(call.params.initialize).toEqual({
-    protocolVersion: 1,
+  // Offered exactly what a chat offers — the one reading of the protocol:
+  // files both ways, no terminal, both sign-in flags.
+  expect(call.params.initialize).toEqual(initializeParams());
+  expect(call.params.initialize).toMatchObject({
     clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false, auth: { terminal: true }, _meta: { "terminal-auth": true } },
-    clientInfo: { name: "biom", title: "Biom", version: "0.0.0-test" },
   });
   expect(call.params["session/new"]).toEqual({ cwd: "/invented/vault", mcpServers: [] });
   expect(call.methods).not.toContain("authenticate");
@@ -469,7 +474,73 @@ test("an agent that will not even connect is Inactive, and killAll closes a prob
   for (let i = 0; i < 50 && m.calls.length === 0; i++) await Bun.sleep(5);
   expect(m.calls.length).toBe(1);
   m.agents.killAll();
-  expect(m.calls[0]?.closed).toBe(true);
+  // KILL at once, for an exit handler that runs no timer again.
+  expect(m.calls[0]?.killed).toBe(true);
+});
+
+test("the probe reads its pickers as a chat does, so an option id from the probe is one a chat's session knows", async () => {
+  const modes = { currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code", description: "Writes" }] };
+  const configOptions = [{ id: "mode", name: "Style", category: "other", type: "boolean", currentValue: false }];
+  const m = machine({
+    bins: { opencode: "/invented/bin/opencode" },
+    script: () => ({ ...healthy(), "session/new": () => ({ sessionId: "s-9", configOptions, modes }) }),
+  });
+  m.agents.list();
+  await m.agents.settled();
+  const a = byKey(m.agents.list(), "opencode") as AgentInfo;
+  expect(a.options).toEqual(toConfigOptions(configOptions, modes).options);
+  // The older modes are a mode option, under "_mode" because "mode" is taken.
+  expect(a.options.map((o) => o.id)).toEqual(["mode", "_mode"]);
+});
+
+test("an agent answering another major of ACP is Inactive, as a chat would refuse it", async () => {
+  const m = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 2 }) }) });
+  m.agents.list();
+  await m.agents.settled();
+  const a = byKey(m.agents.list(), "opencode") as AgentInfo;
+  expect(a.reason).toBe("failed");
+  expect(a.message).toBe("It speaks ACP version 2, and Biom speaks 1.");
+  expect(m.calls[0]?.methods).toEqual(["initialize"]);
+});
+
+test("the sign-in retry handshake the chats wait on: refused is heard Inactive at once, and only a sign-in is heard Active again", async () => {
+  const states = (m: Machine): string[] => m.heard.map((l) => {
+    const a = byKey(l, "opencode");
+    return a === undefined ? "absent" : a.state === "active" ? "active" : `inactive:${a.reason}`;
+  });
+  // A terminal sign-in, ended by ticket.
+  const t = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [{ id: "t", name: "T", type: "terminal", args: ["login"] }] }) }) });
+  t.agents.list();
+  await t.agents.settled();
+  t.heard.length = 0;
+  t.agents.refused("opencode");
+  // Synchronously, in refused() itself.
+  expect(states(t)).toEqual(["inactive:signin"]);
+  // A look again in between opens a session and is still not heard Active.
+  t.agents.probe("opencode");
+  await t.agents.settled();
+  const s = await t.agents.signIn("opencode", "t");
+  if (s.kind !== "terminal") throw new Error("expected a terminal sign-in");
+  t.agents.redeem(s.ticket);
+  t.agents.signedIn(s.ticket);
+  await t.agents.settled();
+  const seen = states(t);
+  expect(seen[0]).toBe("inactive:signin");
+  expect(seen.at(-1)).toBe("active");
+  expect(seen.indexOf("active")).toBe(seen.length - 1);
+
+  // An agent-type sign-in.
+  const g = machine({ bins: { opencode: "/invented/bin/opencode" } });
+  g.agents.list();
+  await g.agents.settled();
+  g.heard.length = 0;
+  g.agents.refused("opencode");
+  expect(states(g)).toEqual(["inactive:signin"]);
+  await g.agents.signIn("opencode", "login");
+  await g.agents.settled();
+  const heard = states(g);
+  expect(heard.at(-1)).toBe("active");
+  expect(heard.slice(0, -1).every((x) => x.startsWith("inactive:"))).toBe(true);
 });
 
 /* ── signing in ───────────────────────────────────────────────────────── */
@@ -548,7 +619,6 @@ test("a ticket expires", async () => {
     cwd: "/invented/vault",
     now: () => now,
     processes: { start: () => ({ pid: -1, pgid: -1, born: null, done: Promise.resolve({ exit: null, signal: "ENOENT" }) }), end: async () => {}, killNow() {}, alive: () => false },
-    version: "0.0.0-test",
     timing: { commands: 10, ticket: 1000 },
   });
   agents.list();
@@ -639,7 +709,6 @@ test("a redeemed ticket's end past its bound re-probes nothing", async () => {
     cwd: "/invented/vault",
     now: () => now,
     processes: { start: () => ({ pid: -1, pgid: -1, born: null, done: Promise.resolve({ exit: null, signal: "ENOENT" }) }), end: async () => {}, killNow() {}, alive: () => false },
-    version: "0.0.0-test",
     timing: { commands: 10, signInRun: 1000 },
   });
   agents.list();

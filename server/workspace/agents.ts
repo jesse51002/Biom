@@ -15,8 +15,11 @@
 // ACTIVE MEANS THE SESSION OPENED, and nothing short of it: the agent started,
 // answered `initialize` and answered `session/new`. Anything less is Inactive
 // with a reason word and a sentence of Biom's own — never the agent's stderr,
-// never its error text. The probe offers exactly what a chat offers
-// (`initializeParams`), and NEVER CALLS `authenticate`: on an agent already
+// never its error text. The probe speaks through the one reading of the
+// protocol the chats use, `server/platform/acp-wire.ts` — the same
+// `initialize`, the same `session/new`, the same pickers with the same option
+// ids, so a `chat.config` made before a chat has a session names an option the
+// chat's own session knows — and it NEVER CALLS `authenticate`: on an agent already
 // signed in that can sign it out, or open a browser for nothing. The probe
 // session's config options and commands are kept on the agent, so the start
 // screen's pickers and the / menu are full before a chat has a session; and
@@ -75,8 +78,10 @@ import { createGunzip } from "node:zlib";
 import type { AgentInfo, AgentKey, AgentLaunch, AgentReason, ConfigOption, ProcessRunner, RegistryAgent, SignIn, SlashCommand } from "../../contracts/types.ts";
 import { AGENT_KEY, OPAQUE_ID } from "../../contracts/wire.js";
 import type { AcpConnection } from "../platform/acp.ts";
-import { AUTH_REQUIRED, authInfo, initializeParams, readAgentVersion, readAuthMethods, readCommands, readConfigOptions, readSessionId, terminalCommand } from "../domain/agents-acp.ts";
-import type { AuthMethod } from "../domain/agents-acp.ts";
+import { isAuthRequired } from "../platform/acp.ts";
+import { ACP_PROTOCOL_VERSION, initializeParams, newSessionParams, readInitialize, readSession, readUpdate, toConfigOptions, toSlashCommands } from "../platform/acp-wire.ts";
+import { authInfo, readAuthMethods, terminalCommand } from "../domain/agents-auth.ts";
+import type { AuthMethod } from "../domain/agents-auth.ts";
 import { ArchiveError, MAX_TOTAL, judge, tarEntries, zipData, zipEntries } from "../domain/agents-archive.ts";
 import type { Entry } from "../domain/agents-archive.ts";
 import { KNOWN_AGENTS, knownAgent } from "../domain/agents-known.ts";
@@ -106,8 +111,6 @@ export interface AgentsDeps {
   /** What runs `npm`, `uv` and `bzip2` for an install, and OpenClaw's
    *  Gateway — the one runner the composition root already holds. */
   processes: ProcessRunner;
-  /** This build's version, for `initialize`'s `clientInfo`. */
-  version: string;
   /** Absent: this process's. A test names another machine. */
   platform?: string;
   arch?: string;
@@ -208,7 +211,8 @@ export interface Agents {
   /** Settles when nothing is in flight: no finding, probe, install or
    *  sign-in. For a test, and for a caller that wants the verdicts. */
   settled(): Promise<void>;
-  /** End every probe and install process, now. */
+  /** End every probe and install process, now: KILL, synchronously, for the
+   *  server's exit handler. */
   killAll(): void;
 }
 
@@ -649,10 +653,10 @@ export function makeAgents(deps: AgentsDeps): Agents {
     const commandsBySession = new Map<string, SlashCommand[]>();
     let wake: (() => void) | null = null;
     const off = conn.onNotification((method, params) => {
-      if (method !== "session/update" || typeof params !== "object" || params === null) return;
-      const p = params as { sessionId?: unknown; update?: { sessionUpdate?: unknown; availableCommands?: unknown } };
-      if (typeof p.sessionId !== "string" || p.update?.sessionUpdate !== "available_commands_update") return;
-      commandsBySession.set(p.sessionId, readCommands(p.update.availableCommands));
+      if (method !== "session/update") return;
+      const u = readUpdate(params);
+      if (u === null || u.update.sessionUpdate !== "available_commands_update") return;
+      commandsBySession.set(u.sessionId, toSlashCommands(u.update.availableCommands));
       wake?.();
     });
     let methods: AuthMethod[] = [];
@@ -663,20 +667,28 @@ export function makeAgents(deps: AgentsDeps): Agents {
     let opened: string | null = null;
     let deletable = false;
     try {
-      const init = await bounded(conn.request("initialize", initializeParams(deps.version), { timeoutMs: fetching ? t.initializeFetching : t.initialize }), fetching ? t.initializeFetching : t.initialize, "initialize");
-      methods = readAuthMethods(init);
-      version = readAgentVersion(init);
+      const init = await bounded(conn.request("initialize", initializeParams(), { timeoutMs: fetching ? t.initializeFetching : t.initialize }), fetching ? t.initializeFetching : t.initialize, "initialize");
+      const facts = readInitialize(init);
+      methods = readAuthMethods(facts.authMethods);
+      version = facts.agentInfo?.version ?? null;
+      if (version !== null && version.length > 64) version = version.slice(0, 64);
       deletable = offersDelete(init);
+      // A chat refuses an agent answering another major, so the probe does too.
+      if (facts.protocolVersion !== ACP_PROTOCOL_VERSION) {
+        return { state: "inactive", reason: "failed", message: `It speaks ACP version ${facts.protocolVersion ?? "unknown"}, and Biom speaks ${ACP_PROTOCOL_VERSION}.`, version, methods };
+      }
       if (auth !== null) {
         stage = "authenticate";
         await bounded(conn.request("authenticate", { methodId: auth }, { timeoutMs: t.authenticate }), t.authenticate, "authenticate");
       }
       stage = "session/new";
-      const answer = await bounded(conn.request("session/new", { cwd: deps.cwd, mcpServers: [] }, { timeoutMs: t.session }), t.session, "session/new");
-      const id = readSessionId(answer);
-      if (id === null) return { state: "inactive", reason: "failed", message: "It answered without opening a session.", version, methods };
+      const answer = await bounded(conn.request("session/new", newSessionParams(deps.cwd), { timeoutMs: t.session }), t.session, "session/new");
+      const sess = readSession(answer);
+      const id = sess.sessionId;
+      if (id === null || id === "") return { state: "inactive", reason: "failed", message: "It answered without opening a session.", version, methods };
       opened = id;
-      const options = readConfigOptions(answer);
+      // The chats' own reading, so the option ids are the ones a chat's session reports.
+      const options = toConfigOptions(sess.configOptions, sess.modes).options;
       if (!commandsBySession.has(id)) {
         await Promise.race([
           new Promise<void>((r) => {
@@ -690,7 +702,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
       }
       return { state: "active", version, methods, options, commands: commandsBySession.get(id) ?? [] };
     } catch (e) {
-      if (typeof (e as { code?: unknown }).code === "number" && (e as { code: number }).code === AUTH_REQUIRED) {
+      if (isAuthRequired(e)) {
         return { state: "inactive", reason: "signin", message: SIGN_IN, version, methods };
       }
       // A sign-in the person asked for that did not finish leaves the agent
@@ -1537,11 +1549,13 @@ export function makeAgents(deps: AgentsDeps): Agents {
 
     killAll() {
       closed = true;
+      // KILL, now: an exit handler runs no timer again, so TERM and a grace
+      // would never reach their KILL.
       for (const conn of live) {
         try {
-          void conn.close().catch(() => null);
+          conn.kill();
         } catch {
-          // Already going.
+          // Already gone.
         }
       }
       live.clear();

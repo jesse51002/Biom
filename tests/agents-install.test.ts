@@ -331,6 +331,9 @@ function rig(opts: {
         finish({ code: 0, signal: null });
         return closed;
       },
+      kill() {
+        finish({ code: null, signal: "SIGKILL" });
+      },
       closed,
     };
   };
@@ -355,7 +358,6 @@ function rig(opts: {
     cwd: "/invented/vault",
     now: opts.now ?? (() => Date.now()),
     processes,
-    version: "0.0.0-test",
     platform: "linux",
     arch: "x64",
     timing: { commands: 10, initialize: 300, session: 300 },
