@@ -329,6 +329,9 @@ const switcher = mirror === null ? null : makeSwitcher({
   history: mirror,
   window: windowId,
   pages: () => ws.get().pages,
+  // The tree re-listed: an agent's write to a page it had just made, which the
+  // history named before the tree did, is decided once the tree names it.
+  onPages: (hear) => ws.on(hear),
   // When THIS window last sent a message in a chat: a touch before it does
   // not hold the screen against that chat's agent.
   lastSent: (chat) => (chats === null ? null : chats.lastSent(chat)),

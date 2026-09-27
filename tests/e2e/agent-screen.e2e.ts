@@ -28,6 +28,9 @@
 //   9. A first message to an agent that is not signed in waits: More agents
 //      says so, Sign in runs the agent's own command in the pop-up, and the
 //      message goes out the moment the agent is Active.
+//  10. A page the agent MAKES from the full Agent screen is brought up, with
+//      the chat beside it and Go back to over it — though the history names
+//      it before this window's tree lists it.
 //
 // Every page, word, key and id here is invented.
 
@@ -463,6 +466,24 @@ walk("9. a first message to an agent not signed in waits, says so, and goes out 
   expect(read.updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text)).toEqual(["An invented message that waits"]);
   // Sent once: one reply for the one prompt.
   expect(read.updates.filter((u) => u.kind === "reply").map((u) => (u as { text: string }).text).join("")).toBe("echo: An invented message that waits");
+});
+
+walk("10. a page the agent makes is brought up beside the chat, though the history names it before the tree lists it", "agent-10.png", async () => {
+  // The chat from 9, on the full Agent screen, its agent signed in and idle.
+  const made = (await hash()).split("/")[2] as string;
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("screen");
+  const input = page.locator("#agentta");
+  await input.fill("!write pages/home/children/Fresh/content.yaml name: Fresh");
+  await input.press("Enter");
+  await until("the turn that made Fresh ended", 30000, async () => (await summaryOf(made))?.turn === 2 && (await summaryOf(made))?.phase === "idle");
+  await until("the window went to the page the agent made", 10000, async () => (await hash()) === "#/page/" + encodeURIComponent("home/Fresh"));
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+  expect(await page.locator("div.agentbox iframe").count()).toBe(1);
+  await until("Go back to shows", 10000, async () => (await page.locator(".backslot button").count()) === 1);
+  await until("the context names the switcher's screen with the chat beside it", 10000, async () => {
+    const w = await myWindow();
+    return w?.panel === true && w.chat === made && w.address.view === "page" && w.address.id === "home/Fresh";
+  });
 });
 
 afterAll(() => {

@@ -79,6 +79,15 @@ export const NOT_TOUCH = "data-no-touch";
  *  @type {Readonly<SwitcherTiming>} */
 export const TIMING = Object.freeze({ adopt: 5 * 60_000, idle: 2 * 60_000, settle: 5_000 });
 
+/** HOW LONG AN AGENT'S WRITE TO A PAGE THIS WINDOW'S TREE HAS NOT LISTED YET
+ *  WAITS FOR IT (DECISIONS O39). A page an agent has just made reaches the
+ *  history about 30 ms after the write, with its `uid`, and this window's tree
+ *  lists it only after the watcher's settle and a `page.list` round trip — so
+ *  the edit's place names nothing here yet. It is kept, and taken again each
+ *  time the tree changes, for this long after it arrived. Not one of the
+ *  spec's times: it is how late the tree may be, not a rule of the switcher. */
+export const UNLISTED_MS = 5_000;
+
 /**
  * One write, as the switcher looks at it: whose chat, which agent, and the
  * screen that shows what it wrote.
@@ -231,6 +240,9 @@ export function boxOf(a) {
  *   **Go back to** reads.
  * @property {() => readonly PageRef[]} pages The tree the workspace store
  *   holds, for a page's `uid`, its id now and its name.
+ * @property {(hear: () => void) => () => void} [onPages] Hear the tree
+ *   change — the workspace store's `on` — so a write to a page the tree had
+ *   not listed yet is taken again once it has. Absent, it is never retried.
  * @property {(chat: ChatId) => number | null} [lastSent] When the person last
  *   sent a message in that chat, BY THIS WINDOW'S CLOCK, or null. The chat
  *   store's; absent, no message has ever been sent.
@@ -298,6 +310,9 @@ export function makeSwitcher(deps) {
   let offer = null;
   /** An edit waiting out the settle. @type {(() => void) | null} */
   let waiting = null;
+  /** The open chat's latest write to a page this window's tree has not listed
+   *  yet, and when this window got it. @type {{ chat: ChatId, agent: AgentId, place: Place, got: number } | null} */
+  let unlisted = null;
   /** The adopt timer. @type {(() => void) | null} */
   let adopting = null;
   /** The context the server was last told. @type {WindowReport | null} */
@@ -484,6 +499,12 @@ export function makeSwitcher(deps) {
    *  Only live entries — one read back after a reload happened minutes ago —
    *  and only the open chat's, so a background chat writing in the same batch
    *  can never stand in front of it.
+   *
+   *  A WRITE TO A PAGE THE TREE HAS NOT LISTED YET is still that write: a page
+   *  the agent has just made is in the history before it is in this window's
+   *  tree. It is kept — the latest one, a newer write of the chat's replacing
+   *  it — and decided by `listed` once the tree names it, as if it had been
+   *  named on arrival (DECISIONS O39).
    *  @param {readonly Received[]} added */
   function heard(added) {
     const chat = ui.get().chat;
@@ -494,11 +515,30 @@ export function makeSwitcher(deps) {
         if (!r.live || e.kind !== "edit" || e.writer.kind !== "agent" || e.place === null) continue;
         if (e.writer.chat !== chat) continue;
         const to = addressOfPlace(e.place, idOf);
-        if (to === null) continue;
+        if (to === null) {
+          unlisted = { chat: e.writer.chat, agent: e.writer.agent, place: e.place, got: r.got };
+          break;
+        }
+        unlisted = null;
         consider({ chat: e.writer.chat, agent: e.writer.agent, to });
         break;
       }
     }
+    tell();
+  }
+
+  /** THE TREE CHANGED: a write kept for a page it had not listed is decided
+   *  now that it does, with every rule as it stands — a touch since, a held
+   *  screen, the settle — or dropped once `UNLISTED_MS` has passed since it
+   *  arrived, because a page that has not turned up by then is not coming. */
+  function listed() {
+    if (unlisted === null) return;
+    const u = unlisted;
+    if (now() - u.got > UNLISTED_MS) { unlisted = null; return; }
+    const to = addressOfPlace(u.place, idOf);
+    if (to === null) return;
+    unlisted = null;
+    consider({ chat: u.chat, agent: u.agent, to });
     tell();
   }
 
@@ -557,6 +597,7 @@ export function makeSwitcher(deps) {
 
   ui.on(changed);
   history.on(heard);
+  deps.onPages?.(listed);
 
   return {
     get: view,

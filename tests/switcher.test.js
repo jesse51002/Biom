@@ -14,7 +14,7 @@
 
 import { test, expect } from "bun:test";
 
-import { decide, makeSwitcher, screenName, boxOf, TIMING } from "../client/store/switcher.js";
+import { decide, makeSwitcher, screenName, boxOf, TIMING, UNLISTED_MS } from "../client/store/switcher.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeHistoryStore } from "../client/store/history.js";
 import { placeOf } from "../contracts/address.js";
@@ -260,9 +260,9 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =
 
 /** A window: the real ui and history stores, the switcher over them, a fake
  *  clock and the fake server. */
-function windowOn(route = page("log"), opts = {}) {
+function windowOn(route = page("log"), opts = {}, serverPages = PAGES) {
   const clock = fakeClock();
-  const server = fakeServer();
+  const server = fakeServer(serverPages);
   const ui = makeUi({ route, panel: true, chat: CHAT });
   const history = makeHistoryStore({ transport: server.transport, now: clock.now });
   let sent = /** @type {number | null} */ (null);
@@ -726,4 +726,87 @@ test("an offer the person opened themselves is spent: leaving the page does not 
   expect(w.switcher.get().offer).toBe(null);
   w.ui.open("page", "log");
   expect(w.switcher.get().offer).toBe(null);
+});
+
+/* ══ a page the agent has just made (DECISIONS O39) ═════════════════════════ */
+
+const FRESH = { id: "fresh", name: "Fresh", uid: "u-fresh" };
+
+/** A window whose tree has not listed Fresh yet, though the server — and so
+ *  the history — has it with its uid; `list()` is the tree re-listed with it,
+ *  heard as the workspace store's change is. */
+function beforeTheTree(route = page("log")) {
+  let tree = [...PAGES];
+  /** @type {Set<() => void>} */
+  const hears = new Set();
+  const w = windowOn(route, {
+    pages: () => tree,
+    onPages: (/** @type {() => void} */ hear) => { hears.add(hear); return () => { hears.delete(hear); }; },
+  }, [...PAGES, FRESH]);
+  return { ...w, list() { tree = [...PAGES, FRESH]; for (const hear of [...hears]) hear(); } };
+}
+
+test("a page the agent has just made is brought up once this window's tree lists it, a moment after the history named it", async () => {
+  const w = beforeTheTree();
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("fresh"));
+  // The history has it; the tree does not yet, so nothing names the screen.
+  expect(w.ui.get().route).toEqual(page("log"));
+  w.clock.advance(200);
+  w.list();
+  expect(w.ui.get().route).toEqual(page("fresh"));
+  expect(w.ui.get().panel).toBe(true);
+  expect(w.ui.cause().mover).toEqual({ by: "switcher", agent: AGENT, chat: CHAT });
+  await settle();
+  expect(w.switcher.get().back?.name).toBe("Log");
+});
+
+test("a page the tree lists only after UNLISTED_MS is not brought up; exactly then it still is", async () => {
+  expect(UNLISTED_MS).toBe(5_000);
+  const late = beforeTheTree();
+  await late.switcher.start();
+  late.clock.advance(10 * MIN);
+  late.stream(late.server.edit("fresh"));
+  late.clock.advance(6_000);
+  late.list();
+  expect(late.ui.get().route).toEqual(page("log"));
+  // Dropped, not kept: a later change to the tree brings nothing up either.
+  late.list();
+  expect(late.ui.get().route).toEqual(page("log"));
+
+  const edge = beforeTheTree();
+  await edge.switcher.start();
+  edge.clock.advance(10 * MIN);
+  edge.stream(edge.server.edit("fresh"));
+  edge.clock.advance(UNLISTED_MS);
+  edge.list();
+  expect(edge.ui.get().route).toEqual(page("fresh"));
+});
+
+test("a newer write of the chat takes the place of one waiting for the tree", async () => {
+  const w = beforeTheTree();
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("fresh"));
+  w.clock.advance(100);
+  w.stream(w.server.edit("boards"));
+  expect(w.ui.get().route).toEqual(page("boards"));
+  w.clock.advance(100);
+  w.list();
+  w.clock.advance(10_000);
+  expect(w.moves.filter((m) => m.startsWith("switcher"))).toEqual(["switcher:boards"]);
+});
+
+test("a write waiting for the tree is decided by every rule when it lands: a touch since holds the screen, and it is offered", async () => {
+  const w = beforeTheTree();
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("fresh"));
+  w.clock.advance(100);
+  w.switcher.touched("log");
+  w.clock.advance(100);
+  w.list();
+  expect(w.ui.get().route).toEqual(page("log"));
+  expect(w.switcher.get().offer).toEqual({ to: page("fresh"), name: "Fresh" });
 });
