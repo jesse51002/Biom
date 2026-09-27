@@ -11,24 +11,28 @@
 //   - the agents list finds the fake and probes it Active;
 //   - a chat's `fs/write_text_file` lands on disk and is ONE history edit,
 //     stamped with that chat's agent id and turn, by `fs` — never `you`;
+//   - an idle agent is ended only when no window with a stream open has its
+//     chat open — the root's `openIn`, read off the history's windows;
 //   - no agent process outlives the host: `close()` kills a chat's, and the
 //     exit's KILL reaches an agent that is still on its way out after its chat
 //     closed — which the chats module no longer holds, and the root does.
 //
 // Every page, word and id here is invented.
 
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, setSystemTime } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { makeHost } from "../server/main.ts";
+import { events, makeHost } from "../server/main.ts";
 import type { Host } from "../server/main.ts";
 import { handle } from "../server/api/routes.ts";
 import { installFakeAgent } from "./fake-acp-agent.ts";
 import { PROTOCOL } from "../contracts/wire.js";
-import type { AgentInfo, ApiRequest, ApiResponse, ChatSummary, HistoryRead } from "../contracts/types.ts";
+import { address } from "../contracts/address.js";
+import { IDLE_MS } from "../server/workspace/chats.ts";
+import type { AgentInfo, ApiRequest, ApiResponse, ChatSummary, HistoryRead, WindowContext } from "../contracts/types.ts";
 
 const FRAMEWORK = join(import.meta.dir, "..");
 const unix = process.platform !== "win32";
@@ -163,6 +167,47 @@ test.if(unix)("A CHAT'S WRITE IS ONE HISTORY EDIT, stamped with its agent — an
   for (const p of pids) if (alive(p)) process.kill(p, "SIGKILL");
   expect(gone).toBe(true);
   expect(await until(() => host.agentProcesses() === 0, 3000)).toBe(true);
+}, 60000);
+
+test.if(unix)("AN IDLE AGENT IS NEVER ENDED WHILE A WINDOW HAS ITS CHAT OPEN: the root's `openIn` reads the windows with a stream attached", async () => {
+  const bin = scratch("idle-bin");
+  const log = join(scratch("idle-log"), "fake.log");
+  installFakeAgent(bin, { scenario: { log } });
+  const { host, vault } = await stand(bin);
+  const W = "window-invented-idle-01";
+  let stream: Response | null = null;
+  try {
+    await active(host, vault);
+    const chat = value(await call(host, vault, { kind: "chat.new", agent: "claude-acp", text: "Say something." })) as ChatSummary;
+    await turnEnded(host, vault, chat.id);
+    expect(host.agentProcesses()).toBeGreaterThan(0);
+
+    // A window with its stream open — as the live route opens it — reports
+    // that it has this chat open.
+    stream = events(host, vault, W);
+    const open = async (): Promise<boolean> => {
+      value(await call(host, vault, { kind: "window.report", window: W, context: { address: address("agent", chat.id), panel: false, chat: chat.id, agent: null } }));
+      const list = value(await call(host, vault, { kind: "window.list" })) as WindowContext[];
+      return list.some((c) => c.window === W && c.chat === chat.id);
+    };
+    expect(await until(open, 5000)).toBe(true);
+
+    // Every clock the chats read, well past the idle bound.
+    setSystemTime(new Date(Date.now() + IDLE_MS + 60_000));
+    const chats = (await host.deps(vault)).chats!;
+    // Open in a window: kept.
+    expect(chats.reap()).toBe(0);
+    // The stream closes, so the window is gone, and the agent is ended.
+    await stream.body!.cancel();
+    stream = null;
+    expect(await until(async () => ((value(await call(host, vault, { kind: "window.list" })) as WindowContext[]).length === 0), 5000)).toBe(true);
+    expect(chats.reap()).toBe(1);
+  } finally {
+    setSystemTime();
+    if (stream !== null) await stream.body?.cancel().catch(() => {});
+    host.close();
+    for (const pid of pidsIn(log)) if (alive(pid)) process.kill(pid, "SIGKILL");
+  }
 }, 60000);
 
 test.if(unix)("THE EXIT'S KILL REACHES AN AGENT STILL ON ITS WAY OUT after its chat closed, which the chats no longer hold", async () => {
