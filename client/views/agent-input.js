@@ -531,7 +531,9 @@ export function makeAgentInput(deps) {
     const down = (e) => { const t = /** @type {Node} */ (e.target); if (!m.contains(t) && !anchor.contains(t)) closeMenu(); };
     /** @param {KeyboardEvent} e */
     const key = (e) => {
-      const all = /** @type {HTMLElement[]} */ ([...m.querySelectorAll(".mi:not([disabled])")]);
+      // EVERY CONTROL IN THE MENU, in the order it is drawn: the rows, and an
+      // Inactive agent's own button after its row.
+      const all = /** @type {HTMLElement[]} */ ([...m.querySelectorAll(".mi:not([disabled]), .mact:not([disabled])")]);
       const at = all.indexOf(/** @type {HTMLElement} */ (doc.activeElement));
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); anchor.focus(); }
       else if (e.key === "ArrowDown" && all.length) { e.preventDefault(); all[(at + 1) % all.length]?.focus(); }
@@ -580,20 +582,30 @@ export function makeAgentInput(deps) {
       for (const a of list) {
         const b = buttonOf(a);
         const lamp = a.state === "active" ? "led lit" : a.reason === "checking" || a.reason === "installing" ? "led lit pulse" : "led";
-        const row = h("button.mi", { type: "button", role: "menuitem", "data-agent": a.key },
+        const row = h("button.mi", {
+          type: "button", role: "menuitem", "data-agent": a.key,
+          // An Inactive agent's row opens More agents, where it can be made
+          // Active; only its own button does the making.
+          onclick: () => { close(); if (a.state === "active") void choose(a.key); else openAgents(); },
+        },
           h("span", { class: lamp }),
           h("span.txt", h("span.nm", a.name), h("span.sub", stateWords(a))),
-          a.key === n.agentKey ? icon("check", "check") : null,
-          b ? h("span.mact", { role: "button", "data-act": b }, b === "signin" ? "Sign in" : "Start Gateway") : null);
-        row.addEventListener("click", (e) => {
-          const act = /** @type {HTMLElement} */ (e.target).closest("[data-act]");
-          close();
-          if (a.state === "active") { void choose(a.key); return; }
-          openAgents();
-          if (act && b === "signin") dialogs.signIn(a);
-          else if (act && b === "gateway") void chats.start(a.key).catch((err) => { said = "The Gateway did not start: " + sentence(err); paint(); });
-        });
-        out.push(row);
+          a.key === n.agentKey ? icon("check", "check") : null);
+        // THE ONE BUTTON THAT MAKES IT ACTIVE IS A BUTTON OF ITS OWN, beside
+        // the row and never inside it — a control inside a button is one no
+        // key can reach — and it is in the menu's arrow-key ring after its
+        // row, so Enter on it signs in or starts the Gateway.
+        const pill = b === null ? null : h("button.mact", {
+          type: "button", role: "menuitem", "data-act": b,
+          "aria-label": b === "signin" ? "Sign in to " + a.name : "Start " + a.name + "’s Gateway",
+          onclick: () => {
+            close();
+            openAgents();
+            if (b === "signin") dialogs.signIn(a);
+            else void chats.start(a.key).catch((err) => { said = "The Gateway did not start: " + sentence(err); paint(); });
+          },
+        }, b === "signin" ? "Sign in" : "Start Gateway");
+        out.push(pill === null ? row : h("div.mipair", { role: "none" }, row, pill));
       }
       out.push(h("button.mi.addagent", { type: "button", role: "menuitem", onclick: () => { close(); openAgents(); } }, icon("plus"), h("span.nm", "More agents")));
       out.push(foot(n.chat !== null

@@ -199,11 +199,16 @@
 .agentmenu .mi .sub{color:var(--ink-2); font:11.5px var(--gauge-face); letter-spacing:.02em}
 .agentmenu .mi:hover, .agentmenu .mi:focus-visible{background:var(--agent-field-3); outline:none}
 .agentmenu .mi .check{margin-left:auto; color:var(--led); width:15px; height:15px; flex:none}
-.agentmenu .mi .mact{
-  margin-left:auto; flex:none; font:11.5px var(--gauge-face); color:var(--ink);
-  border:1px solid var(--stock-edge); padding:4px 9px; white-space:nowrap;
+/* An Inactive agent's row and its one button, side by side: the button is a
+   control of its own, in the menu's arrow-key ring, never inside the row. */
+.agentmenu .mipair{display:flex; align-items:center}
+.agentmenu .mipair > .mi{flex:1; min-width:0}
+.agentmenu .mipair:hover, .agentmenu .mipair:has(> .mi:focus-visible){background:var(--agent-field-3)}
+.agentmenu .mact{
+  flex:none; margin-right:10px; font:11.5px var(--gauge-face); color:var(--ink); background:none; cursor:pointer;
+  border:1px solid var(--stock-edge); border-radius:0; padding:4px 9px; white-space:nowrap;
 }
-.agentmenu .mi .mact:hover{background:var(--agent-field-3); border-color:var(--ink-3)}
+.agentmenu .mact:hover, .agentmenu .mact:focus-visible{background:var(--agent-field-3); border-color:var(--ink); outline:none}
 .agentmenu .mi.addagent{border-top:1px solid var(--rule-soft); margin-top:4px; padding-top:10px}
 .agentmenu .mi.addagent .ico{width:14px; height:14px; color:var(--ink-2); flex:none}
 .agentmenu .mi .mcount{margin-left:auto; font:11px var(--gauge-face); color:var(--ink-3)}
