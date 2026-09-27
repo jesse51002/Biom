@@ -224,6 +224,33 @@ test("the history and every window's context stay on the token, for runs — no 
   expect(refusedAsStranger(await call({ kind: "page.list" }, {}))).toBe(false);
 });
 
+test("A WINDOW IS NAMED ONLY BY THIS MACHINE'S OWN WINDOW: the real `own` in main.ts drops `window` from a write without the cookie", async () => {
+  // A write kind that is not local, so the launch token (none, in a source
+  // run) is all it needs, naming a window the way a run could after reading
+  // every window's id off `window.list`. Invented window ids and page names.
+  const W = "window-invented-own-01";
+  const youEdits = async (): Promise<{ window: string }[]> => {
+    const read = await call({ kind: "history.read" }, {}) as unknown as { ok: boolean; value: { entries: { kind: string; writer: { kind: string; window?: string } }[] } };
+    return read.value.entries.filter((e) => e.kind === "edit" && e.writer.kind === "you").map((e) => ({ window: e.writer.window ?? "" }));
+  };
+  const before = (await youEdits()).length;
+  // No cookie: answered, and recorded as nobody's.
+  const stranger = await call({ kind: "page.create", init: { name: "Invented stranger page" }, window: W }, {});
+  expect(stranger.ok).toBe(true);
+  // With the cookie but from another localhost port's page: the same.
+  const other = await call({ kind: "page.create", init: { name: "Invented other port page" }, window: W }, {
+    cookie, host: `localhost:${port}`, origin: `http://localhost:${port + 1}`,
+  });
+  expect(other.ok).toBe(true);
+  expect((await youEdits()).length).toBe(before);
+  // This machine's own window: exactly one edit, stamped with that window.
+  const own = await call({ kind: "page.create", init: { name: "Invented own page" }, window: W }, { cookie });
+  expect(own.ok).toBe(true);
+  const after = await youEdits();
+  expect(after.length).toBe(before + 1);
+  expect(after.at(-1)?.window).toBe(W);
+});
+
 test("A PROXIED REQUEST CAN NEVER CARRY THE COOKIE, even when the page knows it", async () => {
   // The inner ring's `fetch` — what a box's `biom.fetch` becomes — pointed at
   // this server's own API, with the real capability, a loopback Host and this
