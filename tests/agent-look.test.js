@@ -325,6 +325,38 @@ test("a changed file opens as the page its place names, as a table, or not at al
   expect(M.changedTarget({ path: "plugins/x/x.js", place: null, op: "created" }, NAMES)).toMatchObject({ label: "plugins/x/x.js", target: null, page: false });
 });
 
+test("THE PAGES A TURN CHANGED ARE PAGES: a file made inside a page makes it Edited, and only its own document makes it Created, Deleted or Moved", () => {
+  const names = { uidbeta000000001: { id: "home/Beta", name: "Beta" }, uidgamma00000001: { id: "home/Beta/Gamma", name: "Gamma" } };
+  const beta = { view: "page", uid: "uidbeta000000001", screen: "page" };
+  const gamma = { view: "page", uid: "uidgamma00000001", screen: "page" };
+  const rows = (/** @type {any[]} */ edits) => M.changedRows(edits, names).map((/** @type {any} */ r) => [r.label, M.opWords(r.op), M.countWords(r.added, r.removed), r.target && r.target.id]);
+  // The walk's case: an agent made notes.md inside Beta.
+  expect(rows([{ path: "pages/home/children/Beta/notes.md", place: beta, op: "created", added: 1 }])).toEqual([["Beta", "Edited", "+1", "home/Beta"]]);
+  // Several files in one page are one row, their counts summed.
+  expect(rows([
+    { path: "pages/home/children/Beta/content.yaml", place: beta, op: "edited", added: 3, removed: 1 },
+    { path: "pages/home/children/Beta/figure.html", place: beta, op: "created", added: 20 },
+  ])).toEqual([["Beta", "Edited", "+23 \u22121", "home/Beta"]]);
+  // A page made in the turn is Created, whatever else was made in it; a child
+  // page's own document is the child's, not its parent's.
+  expect(rows([
+    { path: "pages/home/children/Beta/children/Gamma/content.yaml", place: gamma, op: "created", added: 5 },
+    { path: "pages/home/children/Beta/children/Gamma/notes.md", place: gamma, op: "created", added: 2 },
+    { path: "pages/home/children/Beta/content.yaml", place: beta, op: "edited", added: 1, removed: 1 },
+  ])).toEqual([["Gamma", "Created", "+7", "home/Beta/Gamma"], ["Beta", "Edited", "+1 \u22121", "home/Beta"]]);
+  // A page whose document went is Deleted and opens nothing; a file removed
+  // from a page that stays leaves it Edited.
+  expect(rows([{ path: "pages/home/children/Beta/content.yaml", place: beta, op: "deleted" }, { path: "pages/home/children/Beta/a.md", place: beta, op: "deleted" }])).toEqual([["Beta", "Deleted", "", null]]);
+  expect(rows([{ path: "pages/home/children/Beta/a.md", place: beta, op: "deleted", removed: 4 }])).toEqual([["Beta", "Edited", "\u22124", "home/Beta"]]);
+  // A table is one row; a file no screen shows is itself.
+  expect(rows([
+    { path: "workspace.db", place: { view: "table", id: "leads" }, op: "edited" },
+    { path: "workspace.db", place: { view: "table", id: "leads" }, op: "edited" },
+    { path: "plugins/x/x.js", place: null, op: "created", added: 9 },
+  ])).toEqual([["leads", "Edited", "", "leads"], ["plugins/x/x.js", "Created", "+9", null]]);
+  expect(M.changedRows(null, names)).toEqual([]);
+});
+
 test("the transcript: blocks in the order they came, a tool line replaced by a later state only, a handover where it happened", () => {
   const T = M.makeTranscript();
   const add = (/** @type {any} */ x) => T.add(x);
@@ -610,6 +642,26 @@ test("a reply's last words are drawn when they come a patch after the turn has e
   const second = byClass(w.root(), "turnw")[1];
   expect(byClass(second, "prose").map((p) => p.textContent).join("|")).toBe("First and last.");
   expect(everything(second).some((e) => e.localName === "strong" && e.textContent === "last")).toBe(true);
+  w.teardown();
+});
+
+test("the block of pages changed draws a new file inside a page as the page Edited, one row a page", () => {
+  const now = Date.now();
+  const w = mounted();
+  const state = chatState("live");
+  state.names = { ...state.names, uidbeta000000001: { id: "home/Beta", name: "Beta" } };
+  w.hear({ kind: "look.state", state });
+  const beta = { view: "page", uid: "uidbeta000000001", screen: "page" };
+  endsWith(w, [
+    { seq: 20, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null },
+    { seq: 21, at: now, turn: 2, kind: "changed", edits: [
+      { path: "pages/home/children/Beta/notes.md", place: beta, op: "created", added: 1 },
+      { path: "pages/home/children/Beta/content.yaml", place: beta, op: "edited", added: 2, removed: 1 },
+    ] },
+  ]);
+  const second = byClass(w.root(), "turnw")[1];
+  expect(byClass(second, "chead").map((e) => e.textContent)).toEqual(["1 page changed"]);
+  expect(byClass(second, "crow").map((r) => r.textContent)).toEqual(["Beta" + "Edited" + "+3 \u22121" + "Open"]);
   w.teardown();
 });
 

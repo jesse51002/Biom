@@ -710,6 +710,54 @@
     return { label: path || "a file", where: path, target: null, page: false };
   }
 
+  /** A page's own document is its `content.yaml`: the file whose creation is
+   *  the page's, whose removal removes it, whose move moves it. Within one
+   *  page's group only that page's own can be named so — a child page's
+   *  document is placed at the child. @param {any} path */
+  const ownDocument = (path) => typeof path === "string" && (path === "content.yaml" || path.endsWith("/content.yaml"));
+
+  /** THE PAGES THE TURN CHANGED, one row each. The chat says what happened to
+   *  each FILE; this says what happened to each PAGE, which is what the block
+   *  is: every file placed at one page is one row, its counts summed, and the
+   *  page reads Created, Deleted or Moved only when its own document was — a
+   *  new file inside a page that was already there makes the page Edited. A
+   *  table's writes are one row per table; a file no screen shows is a row of
+   *  its own, as the file it is. In the order each first appears.
+   *  @param {any} edits @param {Record<string, any>} names
+   *  @returns {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }[]} */
+  function changedRows(edits, names) {
+    /** @type {Map<string, any[]>} */
+    const groups = new Map();
+    for (const e of Array.isArray(edits) ? edits : []) {
+      if (!e || typeof e !== "object") continue;
+      const place = e.place;
+      const key = place && place.view === "page" && typeof place.uid === "string" ? "page:" + place.uid
+        : place && place.view === "table" && typeof place.id === "string" && place.id !== "" ? "table:" + place.id
+        : "file:" + String(e.path || "");
+      const had = groups.get(key);
+      if (had) had.push(e); else groups.set(key, [e]);
+    }
+    /** @type {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }[]} */
+    const out = [];
+    for (const [key, list] of groups) {
+      const doc = key.startsWith("page:") ? list.find((e) => ownDocument(e.path)) : undefined;
+      const ops = [...new Set(list.map((e) => e.op))];
+      const op = key.startsWith("page:")
+        ? (doc && (doc.op === "created" || doc.op === "deleted" || doc.op === "moved") ? doc.op : "edited")
+        : ops.length === 1 ? String(ops[0]) : "edited";
+      const to = changedTarget({ path: (doc || list[0]).path, place: list[0].place, op: op }, names);
+      /** @type {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }} */
+      const row = { label: to.label, where: to.where, target: to.target, page: to.page, op: op };
+      const counted = list.filter((e) => typeof e.added === "number" || typeof e.removed === "number");
+      if (counted.length) {
+        row.added = counted.reduce((n, e) => n + (typeof e.added === "number" ? e.added : 0), 0);
+        row.removed = counted.reduce((n, e) => n + (typeof e.removed === "number" ? e.removed : 0), 0);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
   /** @param {any} op */
   function opWords(op) {
     return op === "created" ? "Created" : op === "deleted" ? "Deleted" : op === "moved" ? "Moved" : "Edited";
@@ -738,6 +786,7 @@
     seconds: seconds,
     request: request,
     changedTarget: changedTarget,
+    changedRows: changedRows,
     opWords: opWords,
   };
 })();

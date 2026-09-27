@@ -973,28 +973,28 @@
       if (!old) animate(v.mood, [{ transform: "scale(.6)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 260, easing: "cubic-bezier(.16,1,.3,1)" });
     }
 
-    /** THE PAGES THE TURN CHANGED, from its `changed` update and `names`.
+    /** THE PAGES THE TURN CHANGED, from its `changed` update and `names`:
+     *  the model folds the chat's files into one row a page.
      *  @param {TurnView} v @param {any} t */
     function paintChanges(v, t) {
-      const edits = Array.isArray(t.changed) ? t.changed.filter((/** @type {any} */ e) => e && typeof e === "object") : [];
-      v.changes.replaceChildren();
-      v.changes.hidden = edits.length === 0;
-      if (!edits.length) return;
       const names = S && S.names && typeof S.names === "object" ? S.names : {};
-      const rows = edits.map((/** @type {any} */ e) => ({ e: e, to: M.changedTarget(e, names) }));
-      const pages = rows.every((/** @type {any} */ r) => r.to.page);
+      const rows = M.changedRows(t.changed, names);
+      v.changes.replaceChildren();
+      v.changes.hidden = rows.length === 0;
+      if (!rows.length) return;
+      const pages = rows.every((/** @type {any} */ r) => r.page);
       const noun = pages ? (rows.length === 1 ? "page" : "pages") : (rows.length === 1 ? "file" : "files");
       v.changes.appendChild(h("div", "chead", rows.length + " " + noun + " changed"));
       for (const r of rows) {
         const cr = h("div", "crow");
         cr.appendChild(icon("page"));
-        const target = r.to.target;
-        const label = target ? h("button", "pg", r.to.label) : h("span", "pg", r.to.label);
+        const target = r.target;
+        const label = target ? h("button", "pg", r.label) : h("span", "pg", r.label);
         if (target) { label.type = "button"; label.addEventListener("click", () => ask("open", { target: target })); }
-        if (r.to.where) label.setAttribute("title", r.to.where);
+        if (r.where) label.setAttribute("title", r.where);
         cr.appendChild(label);
-        cr.appendChild(h("span", "cverb", M.opWords(r.e.op)));
-        cr.appendChild(h("span", "cmeta", M.countWords(r.e.added, r.e.removed)));
+        cr.appendChild(h("span", "cverb", M.opWords(r.op)));
+        cr.appendChild(h("span", "cmeta", M.countWords(r.added, r.removed)));
         if (target) {
           const open = h("button", "copen", "Open");
           open.type = "button";
