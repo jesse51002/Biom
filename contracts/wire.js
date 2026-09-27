@@ -114,7 +114,8 @@ export const STREAM = Object.freeze({
  *  CLOSES, so the contexts `window.list` answers are the windows still there
  *  rather than every window since the server started. An address and not a
  *  message, for the reason the token is: the stream has no envelope. The
- *  server's half is the route's (C0), the client's is `events.js`'s (B2). */
+ *  server reads it on the stream route in `server/main.ts`; the client puts it
+ *  on the address it hands `events.js`, in `client/boot.js`. */
 export const WINDOW_PARAM = "window";
 
 /** THE GRAMMAR OF AN ID NOBODY TYPES: a window's, a chat's, a running agent's,
