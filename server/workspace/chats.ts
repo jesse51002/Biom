@@ -241,6 +241,10 @@ export interface ChatsDeps {
   /** Where a diagnostic line goes — the server's log, never a client.
    *  `console.error` where none is given. */
   log?: (line: string) => void;
+  /** After Stop, how long the agent has to answer `cancelled` before it is
+   *  ended — `CANCEL_GRACE_MS`, fifteen seconds, where none is given. A test
+   *  shortens it. */
+  cancelGraceMs?: number;
 }
 
 export interface Chats {
@@ -299,8 +303,8 @@ export const GREEN_MS = 10 * 60 * 1000;
 const START_MS = 120_000;
 const CONFIG_MS = 30_000;
 /** After Stop, how long the agent has to answer `cancelled` before it is
- *  ended. */
-const CANCEL_GRACE_MS = 15_000;
+ *  ended, unless `ChatsDeps.cancelGraceMs` says otherwise. */
+export const CANCEL_GRACE_MS = 15_000;
 /** A reply or thought update grows by joining chunks up to this. */
 const TEXT_JOIN = 16 * 1024;
 /** How much of the chat so far a new session is handed. */
@@ -512,6 +516,7 @@ function makeLog(path: string, torn: boolean, say: (line: string) => void): LogW
 
 export function makeChats(deps: ChatsDeps): Chats {
   const say = deps.log ?? ((line: string) => console.error(line));
+  const cancelGrace = typeof deps.cancelGraceMs === "number" && deps.cancelGraceMs > 0 ? deps.cancelGraceMs : CANCEL_GRACE_MS;
   const root = resolve(deps.root);
   let realRoot: string | null = null;
   try {
@@ -1826,7 +1831,7 @@ export function makeChats(deps: ChatsDeps): Chats {
             // It did not answer Stop, and the next message cannot wait on it.
             void endLive(c, live);
             void finishTurn(c, turn, "cancelled", null);
-          }, CANCEL_GRACE_MS);
+          }, cancelGrace);
         }
       }
       return summary(c);

@@ -62,6 +62,8 @@ function world(opts: {
   signedInWith?: (key: string) => string | null;
   /** The chats open in a window now. */
   openIn?: () => string[];
+  /** After Stop, how long an agent has to answer before it is ended. */
+  cancelGraceMs?: number;
 } = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
@@ -102,6 +104,7 @@ function world(opts: {
       onTurn: (s) => void signals.push(s),
       now: () => Date.now() + skew,
       log: (l) => void said.push(l),
+      ...(opts.cancelGraceMs === undefined ? {} : { cancelGraceMs: opts.cancelGraceMs }),
     });
     chats.on((p) => void pushes.push(p));
     live.push(chats);
@@ -1054,4 +1057,31 @@ only("A REAP RACING A SEND never ends an agent a turn is using: the send wins ei
   const three = await settled(w.chats, made.id, 3);
   expect(three.stop).toBe("end_turn");
   expect(replyOf((await w.chats.read(made.id)).updates, 3)).toContain("echo: Three.");
+});
+
+/* ── Stop that is not answered (O12) ──────────────────────────────────── */
+
+only("AN AGENT THAT DOES NOT ANSWER STOP within its grace is ended, the turn ends cancelled with no light, and the next message starts a new one", async () => {
+  // A `sleep` step never looks at the cancel: this agent hears Stop and
+  // carries on regardless.
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 20_000 }, { reply: "late" }]] } }, cancelGraceMs: 300 });
+  const s = await w.chats.create({ agent: "fake", text: "ignore Stop" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  await until("a thought", 5000, async () => (await w.chats.read(s.id)).updates.some((u) => u.kind === "thought"));
+  const [pid] = startedPids(w.heard());
+  await w.chats.cancel(s.id);
+  // Within the grace it is still the agent's to answer.
+  expect(summaryOf(w.chats, s.id).phase).toBe("running");
+  await until("the turn to end once the grace is out", 3000, () => summaryOf(w.chats, s.id).phase === "idle");
+  const done = summaryOf(w.chats, s.id);
+  expect([done.stop, done.light, done.agentId]).toEqual(["cancelled", "none", null]);
+  expect(w.heard().some((h) => h.method === "session/cancel")).toBe(true);
+  await until("the agent that ignored Stop to be gone", 5000, () => !alivePid(pid as number));
+  expect(replyOf((await w.chats.read(s.id)).updates, 1)).toBe("");
+  // Nothing waits on it any more: the next message is accepted and answered.
+  w.scenarios.fake = {};
+  await w.chats.send(s.id, "next");
+  const next = await settled(w.chats, s.id, 2);
+  expect(next.stop).toBe("end_turn");
+  expect(startedPids(w.heard()).length).toBe(2);
 });
