@@ -15,11 +15,13 @@
 // both ways, no terminal and both terminal sign-in flags (`acp-wire.ts`);
 // `session/new` carries the vault as `cwd` and no MCP servers.
 //
-// A HELD MESSAGE. A chat created with no agent, or whose agent refused for want
-// of a sign-in, keeps its message and says `held`. The subscription to the
-// agents list is how it goes out: the first agent to turn Active takes a chat
-// with none, and the chat's own agent turning Active again — after the person
-// signed it in — sends it. `switchAgent` on a held chat re-targets it and mints
+// A HELD MESSAGE. A chat created with no agent, whose agent is not Active and
+// has no session of the chat's open — its Gateway down, installing, failed,
+// being looked at — or whose agent refused for want of a sign-in, keeps its
+// message and says `held`. The subscription to the agents list is how it
+// goes out: the first agent to turn Active takes a chat with none, the chat's
+// own agent turning Active sends it, and after a sign-in refusal only once it
+// has been seen Inactive and then Active again. `switchAgent` on a held chat re-targets it and mints
 // nothing. A refusal is retried at most twice, so an agent whose probe opens a
 // session and whose chat session refuses cannot loop.
 //
@@ -1080,7 +1082,13 @@ export function makeChats(deps: ChatsDeps): Chats {
       emitConfig(c);
       void emitCommands(c);
     }
-    if (c.agent === null) setPhase(c, "held");
+    // HELD UNTIL AN AGENT CAN TAKE IT: none named, or one the list does not
+    // say is Active — its Gateway down, installing, failed, being looked at —
+    // with no session of this chat's open. Starting it would only end the
+    // turn red; held, it goes out when the list says Active. A session this
+    // chat has open is an agent that answers, whatever the list says now.
+    const open = c.live !== null && c.live.opened && !c.live.gone;
+    if (c.agent === null || (!open && !isActive(c.agent))) setPhase(c, "held");
     else go(c);
   };
 

@@ -442,6 +442,49 @@ only("a first message with no agent is held, and goes out the moment one is Acti
   expect(replyOf((await w.chats.read(s.id)).updates, 1)).toBe("echo: anyone there?");
 });
 
+only("A MESSAGE TO AN AGENT THAT IS NOT ACTIVE — its Gateway down, installing, failed, checking — is held, starts nothing, and goes out the moment that agent is Active", async () => {
+  for (const reason of ["gateway", "installing", "failed", "checking"] as const) {
+    // No scenario until it is Active: it cannot be started before, as the
+    // agents module's launch answers null for a Gateway that is down or an
+    // install not yet landed.
+    const w = world({ agents: [info("fake", "Fake Agent", { state: "inactive", reason })], scenarios: {} });
+    const s = await w.chats.create({ agent: "fake", text: `wait for me (${reason})` });
+    expect([s.phase, s.light, s.agent, s.stop]).toEqual(["held", "none", "fake", null]);
+    await wait(150);
+    const still = summaryOf(w.chats, s.id);
+    expect([still.phase, still.stop, still.agentId]).toEqual(["held", null, null]);
+    // The list moving with it still not Active sends nothing.
+    w.setAgents([info("fake", "Fake Agent", { state: "inactive", reason })]);
+    await wait(50);
+    expect(summaryOf(w.chats, s.id).phase).toBe("held");
+    expect(w.heard().some((h) => h.fake === "started")).toBe(false);
+    w.scenarios.fake = {};
+    w.setAgents([info("fake", "Fake Agent")]);
+    const done = await settled(w.chats, s.id, 1);
+    expect(done.stop).toBe("end_turn");
+    expect(replyOf((await w.chats.read(s.id)).updates, 1)).toBe(`echo: wait for me (${reason})`);
+  }
+});
+
+only("a later message is held the same way when its agent has no session open, and goes out on the session it has when it does", async () => {
+  const w = world();
+  const s = await w.chats.create({ agent: "fake", text: "one" });
+  await settled(w.chats, s.id, 1);
+  // Its own session open: the list saying Checking — somebody pressed Look
+  // again — holds nothing, because this chat's agent evidently answers.
+  w.setAgents([info("fake", "Fake Agent", { state: "inactive", reason: "checking" })]);
+  await w.chats.send(s.id, "two");
+  expect((await settled(w.chats, s.id, 2)).stop).toBe("end_turn");
+  // Closed, and its Gateway down: the next message waits for it.
+  await w.chats.close(s.id);
+  w.setAgents([info("fake", "Fake Agent", { state: "inactive", reason: "gateway" })]);
+  const held = await w.chats.send(s.id, "three");
+  expect([held.phase, held.agentId]).toEqual(["held", null]);
+  w.setAgents([info("fake", "Fake Agent")]);
+  expect((await settled(w.chats, s.id, 3)).stop).toBe("end_turn");
+  expect(prompts(w.heard()).at(-1)).toContain("three");
+});
+
 only("a switch on a held chat re-targets it and mints nothing until that agent is Active", async () => {
   const w = world({
     agents: [info("fake", "Fake Agent", { state: "inactive", reason: "signin" }), info("fake2", "Second Fake", { state: "inactive", reason: "checking" })],
