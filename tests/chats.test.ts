@@ -814,7 +814,7 @@ only("the / menu: the probe's commands, then the session's, and every workspace 
   expect(updates.find((u) => u.kind === "prompt")).toMatchObject({ text: "/office-hours is this any good" });
 });
 
-only("the agent's title names the chat, usage and plan are kept, and a face is kept per turn", async () => {
+only("the agent's own title does not rename the chat — named once, from its first message — usage and plan are kept, and a face is kept per turn", async () => {
   const w = world({
     scenarios: {
       fake: { turns: [[{ title: "Tidying the boards page" }, { usage: { used: 10, size: 100 } }, { plan: [{ content: "look", priority: "high", status: "pending" }] }, { garbage: "not json" }, { partial: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "in pieces" } } }]] },
@@ -822,11 +822,13 @@ only("the agent's title names the chat, usage and plan are kept, and a face is k
   });
   const s = await w.chats.create({ agent: "fake", text: "tidy up" });
   const done = await settled(w.chats, s.id, 1);
-  expect(done.name).toBe("Tidying the boards page");
+  // `session_info_update` arrives and is not drawn yet (*Chat*, `acp`); the
+  // name's face was picked for the name the chat was given.
+  expect(done.name).toBe("tidy up");
   w.chats.face(s.id, 1, { emoji: "😌", art: null });
   w.chats.face(s.id, 9, { emoji: "😌", art: null });
   const { updates } = await w.chats.read(s.id);
-  expect(updates.filter((u) => u.kind === "name").map((u) => (u as { name: string }).name)).toEqual(["tidy up", "Tidying the boards page"]);
+  expect(updates.filter((u) => u.kind === "name").map((u) => (u as { name: string }).name)).toEqual(["tidy up"]);
   expect(updates.find((u) => u.kind === "usage")).toMatchObject({ used: 10, size: 100, cost: null });
   expect(updates.find((u) => u.kind === "plan")).toMatchObject({ entries: [{ content: "look", priority: "high", status: "pending" }] });
   expect(replyOf(updates, 1)).toBe("in pieces");

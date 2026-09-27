@@ -306,7 +306,6 @@ const TEXT_JOIN = 16 * 1024;
 /** How much of the chat so far a new session is handed. */
 const HANDOFF_MAX = 60_000;
 const NAME_MAX = 60;
-const TITLE_MAX = 80;
 /** The largest file an agent reads or writes through Biom. */
 const FILE_MAX = 32 * 1024 * 1024;
 /** How many sign-in refusals a held message is retried through. */
@@ -1499,17 +1498,18 @@ export function makeChats(deps: ChatsDeps): Chats {
         takeOptions(c, live);
         emitConfig(c);
         return;
-      case "session_info_update":
-        if (typeof u.title === "string" && u.title.trim() !== "") rename(c, nameFrom(u.title, TITLE_MAX));
-        return;
       case "usage_update": {
         const usage = toUsage(u);
         if (usage) emit(c, { kind: "usage", ...usage });
         return;
       }
       default:
-        // `user_message_chunk` is the person's own words back; anything newer
-        // is not drawn yet.
+        // `user_message_chunk` is the person's own words back.
+        // `session_info_update` is the agent's own title for the session,
+        // which does not rename the chat: a chat is named once, from its
+        // first message, and its name's face is picked for that name (*Chat*,
+        // `acp`: it arrives and is not drawn yet; O27). Anything newer is not
+        // drawn yet either.
         return;
     }
   };
