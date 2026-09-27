@@ -110,6 +110,19 @@ the order it was MADE, and `seq` is that order. The lookup reads through a
 made KNOWN, and the watcher would never report it arriving — and is given five
 seconds before the line goes in with no place.
 
+**A page with no `uid` is given one there.** An agent's new page carries none —
+the vault's rules tell it never to type one — and one that wrote a document
+whole may drop the one it had. So the lookup is `makeIdentities` in
+`server/domain/pages.ts`: the first time the history, or the watcher's
+structural settle, meets a page without a `uid`, it gets the one this session
+already knew for that page or a new one, and it keeps that `uid` for the
+session however the file is written again. It goes into the file behind a
+commit as ONE `uid:` line under the first top-level `name:`, every other byte
+as it was, kept only if the document reads back as itself plus that `uid`;
+only where that cannot be verified is it written the way mount writes one. A
+page whose document will not parse — an unknown top-level key included — gets
+none and is never rewritten.
+
 **Bounded in every part**: a ring of `LIMIT` (5000) entries, oldest first out,
 which a reader sees as a gap in `seq`; typing coalesced into **one edit per
 burst** — a keystroke's save by the same writer to the same file within two
@@ -190,6 +203,11 @@ says which beside every route change:
 - **`open(view, id, screen?, panel?)`** — the person: the rail, a link, the
   crumbs, a pop-up, the tree, a page just made, a box's `open`, Back and Forward,
   a typed hash. An `open` in the history, and a new entry in the browser's.
+  **Off the full Agent screen with a chat open, it brings that chat along** in
+  the panel, in the same move — to any view but the workspace picker, which
+  draws no panel, and never from the start screen, which has no chat. It is
+  decided here once, so no caller can forget it and leave a bare page with the
+  chat gone.
 - **`follow(to, by, replace)`** — the switcher, for an agent: always with the
   chat's panel open beside the page.
 - **`go(view, id, screen?)`** — the system, with nobody asking: a cold start, a
@@ -242,7 +260,13 @@ nobody's move and changes nothing.
 
 **It follows only live entries, and only the open chat's latest in a batch**,
 so a background chat writing in the same batch never stands in front of it,
-and a write read back after a reload is never followed.
+and a write read back after a reload is never followed. **A write to a page
+this window's tree has not listed yet is kept**: a page an agent has just made
+reaches the history about 30 ms after the write, and the tree only after the
+watcher's settle and a `page.list` round trip. The latest such write is held —
+a newer write of the chat's, listed or not, replacing it — and decided every
+time the tree changes, as if it had been named on arrival, for at most
+`UNLISTED_MS` (five seconds) after it came.
 
 **It is also what reports the context**: every change of address, panel or
 chat goes out as `window.report`, with `moved` saying who. On start it reads the
@@ -269,7 +293,9 @@ touch on the canvas, one of each a second — except inside an element carrying
 the one the mark exists for, because **typing to an agent is talking to it,
 not touching the page.** Nothing done on the Agent
 screen is a touch, and a touch from a box that is not the screen's own — the
-chat's box in the panel, or the page just left — is nobody's touch of it.
+chat's box in the panel, or the page just left — is nobody's touch of it. A
+page route naming a framework screen's `@` id has no box at all (`boxOf` is
+null), because the shell draws no page for it.
 
 ## 10. A page's code never moves the screen
 
@@ -306,6 +332,8 @@ beside the page. A move by the switcher clears it.
 - A duplicated tab shares its window id, because it copies `sessionStorage`.
 - A write seen only in a catch-up read is never followed — by design, since it
   is the past.
+- A write to a page this window's tree does not list within `UNLISTED_MS` is
+  never followed.
 - On the Agent screen only the open itself holds the screen against a move.
 
 ## Key files
@@ -316,13 +344,14 @@ contracts/address.js           VIEW_NAMES, PAGE_SCREENS, HELD, address, normalAd
 server/domain/history.ts       makeHistory (report, attach, forget, edit, placeOf, read, windows, on),
                                LIMIT, COALESCE_MS, SAME_WRITE_MS, PATIENCE_MS, addressOfPath, placeOfPath
 server/api/routes.ts           writeOf, recorded, historyAnswer, and `own` on route()
-server/main.ts                 makeHistory per folder, plainDocs' uidOf, events() with attach, the `own` check
+server/main.ts                 makeHistory per folder, uidOf through makeIdentities, events() with attach, the `own` check
+server/domain/pages.ts         makeIdentities, withUidLine: a page's uid given mid-session, stable for it
 client/transport/http.js       the window written onto every call
 client/transport/events.js     onNamed, onOpen, the stream's query
 client/transport/chat.js       isHistoryEntry, isPlace: the history event, checked whole
 client/store/ui.js             open, follow, go, cause, the Mover and Cause typedefs
 client/store/history.js        makeHistoryStore: take, catchUp, report, unanswered
-client/store/switcher.js       decide, TIMING, NOT_TOUCH, screenName, boxOf, makeSwitcher
+client/store/switcher.js       decide, TIMING, UNLISTED_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
 client/bridge/bridge.js        OPEN_AFTER_TOUCH, OPEN_GRACE, touched, the `open` case
 client/frame/frame.js          the `touch` branch of fromGuest, a session's `top`, the `hear` argument
 client/shell/shell.js          syncHash, the hashchange handler, the canvas's touches, the backslot
