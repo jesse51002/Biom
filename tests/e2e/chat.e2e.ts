@@ -40,8 +40,8 @@
 //    9b. A page opened from the full Agent screen keeps the chat beside it.
 //   10–16. The switcher: follow, offer, idle, a send handing the screen over,
 //       five minutes on screen making it the person's (13b), a held screen
-//       (14, and its offer taken in 14b), a chat in the background, and no
-//       bounce.
+//       (14; Go to page clear of the chat's last line in 14a, and taken in
+//       14b), a chat in the background, and no bounce.
 //   17. A shell write: one history edit by `shell`, followed.
 //   17b. A page the agent CREATES is one edit naming it, and is followed;
 //   17c. and one written with no uid gets one, kept, and is followed too.
@@ -56,8 +56,8 @@
 // A STEP THAT FINDS A PRODUCT BUG is `test.failing` with the bug's id in its
 // name: it runs on every `make e2e`, stays green while the product is wrong,
 // and goes red the day it is fixed — which is the prompt to make it a plain
-// step. The ids are the ones the P4 hand-back reports; BUG-E2E-2, 3 and 4
-// were fixed and are plain steps now (3b, 20b, 17b).
+// step. The ids are the ones the P4 hand-back reports; BUG-E2E-2, 3, 4 and 5
+// were fixed and are plain steps now (3b, 20b, 17b, 14a).
 //
 // Every page, word, key, face and id here is invented.
 
@@ -1002,7 +1002,7 @@ walk("14", "a held screen: on A's Automations, the agent's write to B never move
   await shot("chat-14-held.png");
 });
 
-bug("BUG-E2E-5", "Go to page never covers the chat: the look is told the room the pill takes above the input, so its last line stays readable", async () => {
+walk("14a", "Go to page never covers the chat: the look is told the room the pill takes above the input, so its last line stays readable", async () => {
   const follow = page.locator(".agentdock button.follow");
   expect(await follow.isHidden()).toBe(false);
   const pill = await follow.boundingBox();

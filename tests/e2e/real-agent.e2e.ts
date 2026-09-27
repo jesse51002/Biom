@@ -41,7 +41,7 @@
 //      tiny page file in the throwaway workspace: the file is there, and the
 //      history has the edit stamped with the chat's agent id.
 //   3b. The switcher moves the screen to the new page with the chat still
-//      beside it — which fails until BUG-E2E-4 is fixed.
+//      beside it.
 //   4. Stop, a few seconds into a second turn asked to run long, ends it
 //      `cancelled` — so the turn costs a few seconds of output, not a minute.
 //   5. The server stopping leaves no agent process in the workspace.
@@ -295,11 +295,10 @@ walk("3", "one short turn creates a page file: it is on disk, and the history ha
   expect(edits.every((e) => e.place !== null && e.place.view === "page" && e.place.uid === SMOKE_UID)).toBe(true);
 }, 240000);
 
-// A STEP OF ITS OWN, because the fake-agent walk found it failing: the
-// switcher does not follow a page the agent CREATES (BUG-E2E-4 in the P4
-// hand-back, `chat.e2e.ts`). Until that is fixed this step fails alone, and
-// the two either side of it still say what they say.
-walk("3b", "the switcher brings the new page up with the chat still beside it (fails until BUG-E2E-4 is fixed)", async () => {
+// A STEP OF ITS OWN, so a failure here says the switcher and nothing else:
+// following a page the agent CREATES is the case the fake-agent walk once
+// found broken (BUG-E2E-4 in the P4 hand-back; `chat.e2e.ts` 17b now).
+walk("3b", "the switcher brings the new page up with the chat still beside it", async () => {
   await until("the screen moved to the new page", 20000, async () => (await hash()) === `#/page/${encodeURIComponent(SMOKE_ID)}`);
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   expect((await myWindow())?.chat).toBe(chat);
