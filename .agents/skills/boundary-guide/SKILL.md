@@ -301,9 +301,9 @@ or redraw the look whole, so a look on a loop can do none of them. The bridge
 answers the four only for a box on `@agent`, and only through the answer the
 Agent screen registered (`answerLook`), which refuses every box but the one it
 mounted — it knows that box by the identity of the context it mounted it
-with, which only the frame host holds, so even a page routed to `@agent` in a
-box of its own is refused. The
-input box is Biom's, in the host, over the box; everything it says
+with, which only the frame host holds, so any other box on `@agent` — were
+one ever mounted; the shell refuses a page route naming an `@` id — is refused
+too. The input box is Biom's, in the host, over the box; everything it says
 — `chat.*` and `agents.*` — is outer ring, narrowed at the server by
 `isChatRequest`, and `tests/chat-guards.test.ts` pins that neither inner guard
 admits any of them or any kind that could carry text to an agent, and a bridge
@@ -313,10 +313,24 @@ could put words in front of one could do anything the person can. `run.start`
 is the one inner kind that starts an agent at all — an automation, from files
 in the vault and a form's inputs — and it is not that. Every `chat.*` and
 `agents.*` kind, and `window.report`, is also answered only to this machine's
-own window, in every build: the capability cookie, a loopback peer and a
-loopback Host (`localRefusal` in `server/main.ts`). `window.*` and `history.*` are
+own window, in every build: a loopback peer, a loopback Host on this server's
+port, an Origin that is this server's own where one is sent, a
+`Sec-Fetch-Site` of `same-origin` or `none` where one is sent, and the
+capability cookie (`localRefusal` in `server/main.ts`). The two headers are
+there because the cookie alone does not tell this server's pages from a page
+on ANOTHER localhost port — a site ignores the port, so the browser sends that
+page the cookie, `SameSite=Strict` and all — and a browser never lets a page
+forge either. `window.*` and `history.*` are
 outer ring too, under `isHistoryRequest`: a page's own code never reads what
 the window has open.
+
+**The route itself asks two things before any gate.** An Origin of `null` —
+the box's — is refused outright, and the body must be declared
+`application/json` BY ITS TYPE'S ESSENCE, exactly: what comes before the first
+`;`, trimmed and lower-cased, and never a type that merely contains the words.
+Requiring JSON forces a preflight this server never answers, so no page can
+reach the switch with a simple request; `text/plain; x=application/json` is a
+simple request, and a substring check once let it through.
 
 **The window a request came from rides the envelope, and the transport writes
 it.** `Envelope.window` is optional — every caller before it is unchanged —
@@ -613,9 +627,10 @@ locally.
   `HostErrorCode`, `Envelope`, `Protocol`, `BridgeContext`, `Frame`, `FrameHost`,
   and `childKey` (the one true spelling §7 is about).
 - **The outer ring's door, and where a build refuses a kind:**
-  `server/api/routes.ts` — `route(request, deps, gate, own)` (the local gate
-  before a body is answered, and the `window` dropped from a request that is
-  not this machine's own), `handle(req, deps)` (the envelope check, then one
+  `server/api/routes.ts` — `route(request, deps, gate, own)` (the `null`
+  Origin refused, the Content-Type's essence checked, the local gate before a
+  body is answered, and the `window` dropped from a request that is not this
+  machine's own), `handle(req, deps)` (the envelope check, then one
   `case` per kind, and a window's write recorded once the answer is ok),
   `Deps` (including `production`), `CODES` / `codeOf` (a
   lower layer's code is believed only when it is one of ours), `refused` (the
