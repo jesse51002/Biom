@@ -956,3 +956,39 @@ test("A FAILED AGENT IS LOOKED AT AGAIN by a list past the half-minute, and turn
   await m.agents.settled();
   expect(looks("gemini")).toBe(gemini0 + 1);
 });
+
+test("LOOK AGAIN LIFTS A SIGN-IN REFUSAL ONLY FOR AN AGENT THAT OFFERS NO WAY TO SIGN IN: signed in from its own command, it is Active again; one with a way stays at Sign in (O35)", async () => {
+  // Lists no sign-in method at all: Biom cannot sign it in, so the person
+  // does it in a terminal of their own and presses Check again.
+  const bare = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [] }) }) });
+  bare.agents.list();
+  await bare.agents.settled();
+  bare.agents.refused("opencode");
+  await bare.agents.settled();
+  // The look refused() asks for, for its ways to sign in, lifts nothing.
+  expect(byKey(bare.agents.list(), "opencode")?.reason).toBe("signin");
+  expect(byKey(bare.agents.list(), "opencode")?.auth).toEqual([]);
+  expect(bare.agents.probe("opencode").reason).toBe("checking");
+  await bare.agents.settled();
+  expect(byKey(bare.agents.list(), "opencode")?.state).toBe("active");
+  expect(bare.calls.at(-1)?.methods).not.toContain("authenticate");
+
+  // Still refusing when looked at again: back to Sign in, and sticky again.
+  const still = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [] }), "session/new": () => { throw acpError(-32000, "Authentication required"); } }) });
+  still.agents.list();
+  await still.agents.settled();
+  still.agents.probe("opencode");
+  await still.agents.settled();
+  expect(byKey(still.agents.list(), "opencode")?.reason).toBe("signin");
+
+  // Offers a way to sign in — and opens a session while signed out, which is
+  // why the refusal is sticky: a look again does not lift it.
+  const withWay = machine({ bins: { opencode: "/invented/bin/opencode" } });
+  withWay.agents.list();
+  await withWay.agents.settled();
+  withWay.agents.refused("opencode");
+  expect(byKey(withWay.agents.list(), "opencode")?.auth.length).toBeGreaterThan(0);
+  withWay.agents.probe("opencode");
+  await withWay.agents.settled();
+  expect(byKey(withWay.agents.list(), "opencode")?.reason).toBe("signin");
+});

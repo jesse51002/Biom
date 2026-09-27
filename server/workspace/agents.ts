@@ -44,7 +44,9 @@
 // module resolved and never a command line a page wrote. A refusal is STICKY:
 // an agent that opens a session and then refuses the first message stays
 // signed out until somebody signs it in, rather than flipping back to Active on
-// the next probe.
+// the next probe. The one exception is an agent that offers NO way to sign in:
+// Biom cannot sign it in, so a `probe` the person asks for — Check again,
+// after signing in from its own command — is believed (O35).
 //
 // INSTALLING reads the ACP Registry (`server/domain/agents-registry.ts`),
 // cached with a lifetime in memory and in Biom's own folder, and installs into
@@ -223,7 +225,8 @@ export interface Agents {
   /** What is known now; probes still in flight are `checking`. The first
    *  call starts finding them. */
   list(): AgentInfo[];
-  /** Look again at one agent. Answers it as `checking`. */
+  /** Look again at one agent. Answers it as `checking`. For an agent that
+   *  offers no way to sign in, it lifts a sign-in refusal first (O35). */
   probe(key: AgentKey): AgentInfo;
   /** **Start Gateway**: OpenClaw's, on this machine. Answers it as `checking`. */
   start(key: AgentKey): AgentInfo;
@@ -1575,6 +1578,12 @@ export function makeAgents(deps: AgentsDeps): Agents {
       }
       // An install probes what it installed when it lands.
       if (slot.installing) return structuredClone(slot.info);
+      // AN AGENT THAT OFFERS NO WAY TO SIGN IN — no method to press, no
+      // variable to set — cannot be signed in by Biom: the person does it in a
+      // terminal of their own and asks for this look, so it is believed
+      // (O35). Only for such an agent: one that offers a way may open a
+      // session while signed out, and its refusal stays until a sign-in.
+      if (slot.refusedSignIn && slot.methods.length === 0) slot.refusedSignIn = false;
       set(slot, "checking", null);
       emit();
       queueProbe(slot);
