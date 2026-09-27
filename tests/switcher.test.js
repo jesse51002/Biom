@@ -667,3 +667,14 @@ test("a page the person opens from the full Agent screen keeps the chat beside i
   expect(w.ui.get().route).toEqual(page("boards"));
   expect(w.ui.get().panel).toBe(true);
 });
+
+test("two writes of the open chat in one batch: the LATEST is followed, not the first", async () => {
+  // One completed tool call with diffs on two pages is two edits in one
+  // `history` frame; the screen goes to the newer.
+  const w = windowOn();
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("boards"), w.server.edit("docs"));
+  expect(w.ui.get().route).toEqual(page("docs"));
+  expect(w.moves.filter((m) => m.startsWith("switcher"))).toEqual(["switcher:docs"]);
+});
