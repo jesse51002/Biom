@@ -20,7 +20,9 @@
 // made it:
 //
 //   `open`   the person opening a place: the rail, a link, the page path,
-//            search, Home, a pop-up, the tree, a page just made, Back.
+//            search, Home, a pop-up, the tree, a page just made, Back. Off
+//            the full Agent screen it brings the open chat along, in the
+//            panel beside what was opened.
 //   `follow` the switcher bringing a page up for an agent, with the chat in
 //            the panel beside it.
 //   `go`     the system re-pointing the route with nobody asking: a cold
@@ -177,8 +179,19 @@ export function makeUi(initial) {
     open(view, id, screen, panel) {
       // THE PERSON, opening a place. Recorded as an open, and a new entry in
       // the browser's history, so Back leaves it. `panel` opens the chat panel
-      // in the same move, for an open made from the full Agent screen.
-      move(address(view, id, screen), { by: "you" }, false, panel === true ? { panel: true } : undefined);
+      // in the same move.
+      //
+      // OFF THE FULL AGENT SCREEN, THE OPEN CHAT COMES ALONG: whatever the
+      // person opens from a chat on the full screen — the tree, the crumbs,
+      // search, Home, the rail, Back — comes up with that chat in the panel
+      // beside it, as the mockup's Agent screen has it, and never as a bare
+      // page with the chat gone. It is decided here, once, rather than by
+      // every caller remembering to ask: a caller that forgot is exactly how
+      // the chat used to vanish, and with it the switcher's reason to follow
+      // the chat's next write. The start screen has no chat to bring, and the
+      // workspace picker draws no panel.
+      const along = state.route.view === "agent" && state.chat !== null && view !== "agent" && view !== "vault";
+      move(address(view, id, screen), { by: "you" }, false, panel === true || along ? { panel: true } : undefined);
     },
 
     follow(to, by, replace) {

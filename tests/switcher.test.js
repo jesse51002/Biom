@@ -622,3 +622,16 @@ test("a page deleted since is skipped: a write to it moves nothing, and Go back 
   w.stream(gone);
   expect(w.ui.get().route.id).toBe("boards");
 });
+
+test("a page the person opens from the full Agent screen keeps the chat beside it, so the chat's next write is still followed", async () => {
+  const w = windowOn({ view: "agent", id: CHAT, screen: "page" });
+  w.ui.set({ panel: false });
+  await w.switcher.start();
+  // A click in the tree: nobody asked for the panel.
+  w.ui.open("page", "log");
+  expect(w.ui.get()).toMatchObject({ panel: true, chat: CHAT });
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("boards"));
+  expect(w.ui.get().route).toEqual(page("boards"));
+  expect(w.ui.get().panel).toBe(true);
+});

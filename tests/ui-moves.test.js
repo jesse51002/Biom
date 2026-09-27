@@ -90,3 +90,39 @@ test("the cause is written before the listeners hear the move", () => {
   ui.go("page", "c");
   expect(seen).toEqual(["you", "switcher", "system"]);
 });
+
+test("an open off the full Agent screen brings the open chat along in the panel; the start screen and the picker bring nothing", () => {
+  // THE RAIL'S AGENT, as the Agent view does it: the panel shut, then the
+  // full screen with the chat the window last had open.
+  const ui = makeUi({ route: { view: "page", id: "notes", screen: "page" }, chat: CHAT });
+  ui.open("agent", CHAT);
+  expect(ui.get().panel).toBe(false);
+
+  // A page from the tree, the crumbs, search or Home — no caller asks for the
+  // panel, and the chat comes along all the same (DECISIONS O24(b)).
+  ui.open("page", "board");
+  expect(ui.get()).toMatchObject({ route: { view: "page", id: "board", screen: "page" }, panel: true, chat: CHAT });
+  expect(ui.cause().mover).toEqual({ by: "you" });
+
+  // Another screen the rail opens is the same move.
+  ui.set({ panel: false });
+  ui.open("agent", CHAT);
+  ui.open("runs", "");
+  expect(ui.get()).toMatchObject({ panel: true, chat: CHAT });
+
+  // The start screen has no chat to bring.
+  const start = makeUi({ route: { view: "agent", id: "", screen: "page" } });
+  start.open("page", "board");
+  expect(start.get().panel).toBe(false);
+
+  // The workspace picker draws no panel, and one opened over it is not left
+  // standing for the workspace that opens next.
+  const picker = makeUi({ route: { view: "agent", id: CHAT, screen: "page" } });
+  picker.open("vault", "");
+  expect(picker.get().panel).toBe(false);
+
+  // From a page, an open leaves the panel as the person had it.
+  const shut = makeUi({ route: { view: "page", id: "notes", screen: "page" }, chat: CHAT });
+  shut.open("page", "board");
+  expect(shut.get().panel).toBe(false);
+});
