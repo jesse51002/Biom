@@ -165,6 +165,16 @@ function putFake(s: Scenario): void {
   renameSync(next, join(bin, "claude-agent-acp"));
 }
 
+/** A process's state letter as `ps` says it — `Z` for one that has exited and
+ *  not been reaped — or "" for one that is not there at all. */
+const stateOf = (pid: number): string =>
+  (spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout ?? "").trim();
+/** It has stopped running: gone, or a zombie waiting for its parent. */
+const ended = (pid: number): boolean => {
+  const st = stateOf(pid);
+  return st === "" || st.startsWith("Z");
+};
+
 const fakePids = (): number[] =>
   existsSync(fakeLog)
     ? readFileSync(fakeLog, "utf8").split("\n").filter((l) => l.includes('"fake":"started"')).map((l) => (JSON.parse(l) as { pid: number }).pid)
@@ -454,13 +464,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.race([browser?.close().catch(() => {}), Bun.sleep(10000)]);
-  if (server !== null && server.exitCode === null) {
+  if (server !== null && !ended(server.pid)) {
+    const pid = server.pid;
     server.kill("SIGTERM");
-    await Promise.race([server.exited, Bun.sleep(12000)]);
-    if (server.exitCode === null) server.kill("SIGKILL");
+    await until("the server stopped", 12000, () => ended(pid)).catch(() => server?.kill("SIGKILL"));
   }
   // Whatever a failed run left behind goes with it.
-  for (const pid of fakePids()) if (alive(pid)) process.kill(pid, "SIGKILL");
+  for (const pid of fakePids()) if (alive(pid) && !ended(pid)) process.kill(pid, "SIGKILL");
   jev?.stop(true);
   if (box) {
     expect(outside()).toBe(before);
@@ -1319,14 +1329,19 @@ walk("21", "nothing threw on stderr, nothing was written outside the sandbox, an
   const t = Date.now();
   // Bounded: the stream closing is what matters, and a browser slow to go is
   // not what this step is about.
-  await Promise.race([browser?.close().catch(() => {}), Bun.sleep(10000)]);
+  const closed = await Promise.race([(browser?.close() ?? Promise.resolve()).then(() => true, () => true), Bun.sleep(10000).then(() => false)]);
   browser = null;
-  console.log(`[chat.e2e] the browser closed in ${Date.now() - t}ms`);
+  console.log(`[chat.e2e] the browser ${closed ? "closed" : "had not closed"} in ${Date.now() - t}ms`);
   const t0 = Date.now();
+  const pid = server!.pid;
   server!.kill("SIGTERM");
-  await Promise.race([server!.exited, Bun.sleep(20000)]);
-  console.log(`[chat.e2e] the server took ${Date.now() - t0}ms to exit on SIGTERM`);
-  expect(server!.exitCode).not.toBeNull();
+  // WHETHER IT STOPPED IS ASKED OF THE SYSTEM, not of Bun's handle: a process
+  // that has exited and not yet been reaped is a zombie, and in a long run of
+  // several files the runner was seen to hold its children's exits — the
+  // browser's and the server's both — for tens of seconds after they went.
+  await until("the server stopped on SIGTERM", 20000, () => ended(pid));
+  const reaped = await Promise.race([server!.exited.then(() => true), Bun.sleep(3000).then(() => false)]);
+  console.log(`[chat.e2e] the server stopped ${Date.now() - t0}ms after SIGTERM (${stateOf(pid) || "gone"}); the runner ${reaped ? "reaped it" : "had not reaped it yet"}`);
   await until("every fake agent is gone", 8000, () => pids.every((p) => !alive(p)));
   const listed = spawnSync("pgrep", ["-f", "fake-acp-agent.ts"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).map(Number);
   expect(listed.filter((p) => pids.includes(p))).toEqual([]);
