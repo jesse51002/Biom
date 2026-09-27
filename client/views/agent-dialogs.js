@@ -22,7 +22,9 @@
 // after it, on the stream; or a terminal method, which runs in the sign-in
 // pop-up from the ticket the server answered, and the server looks at the
 // agent again when that command has gone. A method that is a key in the
-// environment is named, never asked for: Biom holds no key.
+// environment is named, never asked for: Biom holds no key. An agent that
+// offers no way at all from here is signed in from its own command in a
+// terminal, and **Check again** asks the server to look at it again.
 //
 // Both pop-ups sit on the document, over the workspace, and under the sign-in
 // terminal, which is the one thing above them. Nothing here reaches an agent:
@@ -278,7 +280,7 @@ export function makeAgentDialogs(deps) {
         h("span.txt", h("span.nm", a.name), h("span.ds" + (said.has(a.key) ? ".bad" : ""), line)),
         h("span.st", h("span", { class: lamp }), stateWords(a)),
         el), act));
-      if (expanded === a.key || (a.reason === "signin" && a.auth.some((m) => m.type === "env_var"))) out.push(ways(a));
+      if (a.reason === "signin" && (expanded === a.key || a.auth.some((m) => m.type === "env_var"))) out.push(ways(a));
     }
 
     out.push(h("div.agrp", "From the ACP Registry"));
@@ -305,17 +307,26 @@ export function makeAgentDialogs(deps) {
   }
 
   /** AN AGENT'S WAYS TO SIGN IN, under its row: each method of its own as a
-   *  button, and a key in the environment named rather than asked for.
+   *  button, and a key in the environment named rather than asked for. An
+   *  agent that offers neither is one Biom cannot sign in (DECISIONS O35): the
+   *  person signs in from its own command in a terminal, and **Check again**
+   *  asks the server to look at it again — which, for exactly that agent,
+   *  lifts the refusal it is holding before it looks.
    *  @param {AgentInfo} a */
   function ways(a) {
     const methods = a.auth.filter((m) => m.type === "agent" || m.type === "terminal");
     const vars = a.auth.filter((m) => m.type === "env_var").flatMap((m) => m.vars);
+    // Held while a look is under way, so a second press is not a second probe.
+    const again = () => (busy.has(a.key) ? held("Check again") : btn("Check again", () => void probe(a)));
     return h("div.aways", { "data-agent": a.key },
       expanded === a.key && methods.length
         ? h("span.awayrow", h("span.awaylabel", "Sign in with"), ...methods.map((m) => btn(m.name, () => void signIn(a, m))))
         : null,
       vars.length
-        ? h("span.awayrow", h("span.awaylabel", "Or set " + vars.join(", ") + " in your login shell, then"), btn("Check again", () => void probe(a)))
+        ? h("span.awayrow", h("span.awaylabel", "Or set " + vars.join(", ") + " in your login shell, then"), again())
+        : null,
+      expanded === a.key && !methods.length && !vars.length
+        ? h("span.awayrow", h("span.awaylabel", "Sign in from its own command in a terminal, then"), again())
         : null);
   }
 
@@ -393,10 +404,10 @@ export function makeAgentDialogs(deps) {
     const methods = a.auth.filter((m) => m.type === "agent" || m.type === "terminal");
     const m = method ?? (methods.length === 1 ? methods[0] ?? null : null);
     if (m === null) {
-      // More than one way, or only a key in the environment: shown, and the
-      // person picks.
-      expanded = expanded === a.key && methods.length ? null : a.key;
-      if (!methods.length && !a.auth.some((x) => x.type === "env_var")) said.set(a.key, `${a.name} offers no way to sign in from here; sign in from its own command, then Check again`);
+      // More than one way, only a key in the environment, or no way from here
+      // at all: shown under the row, and the person picks — a method, or
+      // their own command in a terminal and then Check again.
+      expanded = expanded === a.key ? null : a.key;
       draw();
       return;
     }

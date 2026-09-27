@@ -316,3 +316,39 @@ test("More agents says Active or Inactive and nothing else; a failed agent carri
   expect(buttons("goose")).toEqual(["held Installing…"]);
   expect(buttons("claude-acp")).toEqual(["Sign in"]);
 });
+
+/* ── an agent Biom cannot sign in (DECISIONS O35) ──────────────────────── */
+
+test("an agent refusing for a sign-in with no way to sign in from here says to sign in from its own command, and Check again asks the server to look again", async () => {
+  const bare = agent({ key: "claude-acp", name: "Claude Code", state: "inactive", reason: "signin", message: "Sign in to use it.", auth: [] });
+  const s = stand([agent(), bare, agent({ key: "droid", name: "Droid", state: "inactive", reason: "failed", message: "It could not be started." })]);
+  const dialogs = makeAgentDialogs({ h, chats: s.chats, signInTerminal: null, doc });
+  dialogs.agents({ why: () => null, current: () => "codex-acp", use: () => {} });
+  /** @param {string} key */
+  const row = (key) => /** @type {El} */ (doc.body.querySelectorAll(".arow").find((r) => r.getAttribute("data-agent") === key));
+  /** @param {string} key */
+  const ways = (key) => doc.body.querySelectorAll(".aways").find((r) => r.getAttribute("data-agent") === key) ?? null;
+  /** @param {El} el @param {string} words */
+  const button = (el, words) => el.querySelectorAll("button").find((b) => b.text === words) ?? null;
+
+  /** @type {El} */ (button(row("claude-acp"), "Sign in")).fire("click");
+  // No sign-in is started — there is none Biom could run — and nothing names
+  // a button that is not there.
+  expect(s.calls.filter((c) => c.kind === "agents.signIn")).toEqual([]);
+  const shown = /** @type {El} */ (ways("claude-acp"));
+  expect(shown).not.toBe(null);
+  expect(shown.text).toContain("Sign in from its own command in a terminal");
+  expect(row("claude-acp").text).not.toContain("Check again");
+  const again = button(shown, "Check again");
+  expect(again).not.toBe(null);
+  expect(again?.hasAttribute("disabled")).toBe(false);
+
+  /** @type {El} */ (again).fire("click");
+  await Promise.resolve();
+  expect(s.calls.filter((c) => c.kind === "agents.probe").map((c) => c.agent)).toEqual(["claude-acp"]);
+
+  // A failed agent is looked at again by the server on its own (O34): nothing
+  // here offers to.
+  expect(button(row("droid"), "Check again")).toBe(null);
+  expect(ways("droid")).toBe(null);
+});
