@@ -61,6 +61,8 @@ class El {
     this.scrollHeight = 20;
     /** @type {El | null} */
     this.firstElementChild = null;
+    /** @type {{ top: number, bottom: number, left: number, right: number, width: number, height: number } | null} */
+    this.rect = null;
   }
   classes() { return this.className.split(" ").filter(Boolean); }
   get hidden() { return this.hasAttribute("hidden"); }
@@ -121,7 +123,12 @@ class El {
   removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] ?? []).filter((x) => x !== fn); }
   focus() { doc.activeElement = this; }
   blur() { if (doc.activeElement === this) doc.activeElement = doc.body; }
-  getBoundingClientRect() { return { top: 0, bottom: 30, left: 0, right: 200, width: 200, height: 30 }; }
+  /** Where it is drawn: `rect` where a test placed it, a small box otherwise
+   *  — and nothing at all while it is hidden, as `display: none` draws. */
+  getBoundingClientRect() {
+    if (this.hidden) return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+    return this.rect ?? { top: 0, bottom: 30, left: 0, right: 200, width: 200, height: 30 };
+  }
   setSelectionRange() {}
   scrollIntoView() {}
   /** Everything said inside, as a reader would hear it. @returns {string} */
@@ -190,8 +197,8 @@ const agent = (over = {}) => ({
   state: "active", reason: null, message: null, auth: [], options: [], commands: [], ...over,
 });
 
-/** @param {any[]} agents */
-function stand(agents) {
+/** @param {any[]} agents @param {{ switcher?: any, route?: any }} [at] */
+function stand(agents, at = {}) {
   /** @type {any[]} */
   const calls = [];
   const transport = {
@@ -203,7 +210,7 @@ function stand(agents) {
   };
   const chats = makeChatStore({ transport });
   chats.takeAgents(agents);
-  const ui = makeUi({ route: { view: "agent", id: "", screen: "page" } });
+  const ui = makeUi({ route: at.route ?? { view: "agent", id: "", screen: "page" } });
   /** @type {any[]} */
   const said = [];
   const dialogs = {
@@ -214,7 +221,7 @@ function stand(agents) {
     shown: () => null,
   };
   const win = /** @type {any} */ ({ innerWidth: 1400, innerHeight: 900, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: true }) });
-  const input = makeAgentInput({ h, ui, chats, switcher: null, dialogs: /** @type {any} */ (dialogs), doc, win });
+  const input = makeAgentInput({ h, ui, chats, switcher: at.switcher ?? null, dialogs: /** @type {any} */ (dialogs), doc, win });
   doc.body.append(input.el);
   const chip = /** @type {El} */ (input.el.querySelector("button.agentchip"));
   const menu = () => /** @type {El | null} */ (doc.body.querySelector(".agentmenu"));
@@ -351,4 +358,42 @@ test("an agent refusing for a sign-in with no way to sign in from here says to s
   // here offers to.
   expect(button(row("droid"), "Check again")).toBe(null);
   expect(ways("droid")).toBe(null);
+});
+
+/* ── what the input covers of the look ─────────────────────────────────── */
+
+test("the height the look leaves the input covers Go to page above it: it grows by the pill when an offer shows, and gives it back when it goes", () => {
+  const CHAT = "c1nvented-chat-0001";
+  /** @type {{ to: any, name: string } | null} */
+  let offer = null;
+  const switcher = { get: () => ({ back: null, offer }), on: () => () => {} };
+  const s = stand(AGENTS, { switcher, route: { view: "agent", id: CHAT, screen: "page" } });
+  s.chats.takeChat({ chat: { id: CHAT, name: "Invented chat", face: null, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "idle", turn: 1, light: "none", stop: null, reason: null, created: 1, updated: 10 }, updates: [] });
+  // THE DOCK AS A BROWSER LAYS IT OUT at the foot of a chat: the look's stage
+  // ends at 800, the composer stands from 600 to 700 with the line under it
+  // below that, and Go to page hangs 12 px over the composer, 34 px tall.
+  /** @type {El} */ (doc.body).rect = { top: 0, bottom: 800, left: 0, right: 900, width: 900, height: 800 };
+  const composer = /** @type {El} */ (s.input.el.querySelector(".composer"));
+  composer.rect = { top: 600, bottom: 700, left: 90, right: 810, width: 720, height: 100 };
+  const pill = /** @type {El} */ (s.input.el.querySelector("button.follow"));
+  pill.rect = { top: 554, bottom: 588, left: 90, right: 330, width: 240, height: 34 };
+  let told = 0;
+  s.input.onMove(() => { told++; });
+
+  s.input.sync();
+  expect(pill.hidden).toBe(true);
+  expect(s.input.measure()).toEqual({ at: "bottom", height: 200 });
+
+  offer = { to: { view: "page", id: "home", screen: "page" }, name: "Home" };
+  const before = told;
+  s.input.sync();
+  expect(pill.hidden).toBe(false);
+  expect(s.input.measure()).toEqual({ at: "bottom", height: 246 });
+  // The look is told, so it makes room for the pill as the pill appears.
+  expect(told).toBe(before + 1);
+
+  offer = null;
+  s.input.sync();
+  expect(s.input.measure()).toEqual({ at: "bottom", height: 200 });
+  expect(told).toBe(before + 2);
 });

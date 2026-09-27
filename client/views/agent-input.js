@@ -283,17 +283,28 @@ export function makeAgentInput(deps) {
     for (const fn of [...movers]) fn();
   }
 
-  /** @returns {LookInput} */
+  /** WHAT THE HOST DRAWS OVER THE LOOK, measured whole: the composer, the
+   *  line under it down to the stage's foot, and **Go to page** hanging above
+   *  it while an offer shows — so the look leaves room for all of it and its
+   *  latest line is never under the pill. The / menu is not counted: it opens
+   *  over the look on purpose, while the person types.
+   *  @returns {LookInput} */
   function measure() {
     const at = ui.get().chat === null ? "center" : "bottom";
     const c = composer.getBoundingClientRect();
-    if (at === "center") return { at, height: Math.round(c.height) };
+    // A hidden pill is drawn nowhere, and its rect says so with a top of 0.
+    const top = follow.hidden ? c.top : Math.min(c.top, follow.getBoundingClientRect().top);
+    if (at === "center") return { at, height: Math.round(c.bottom - top) };
     const holder = el.parentElement;
     const foot = holder ? holder.getBoundingClientRect().bottom : c.bottom + DOCK_FOOT;
-    return { at, height: Math.max(0, Math.round(foot - c.top)) };
+    return { at, height: Math.max(0, Math.round(foot - top)) };
   }
 
-  if (typeof ResizeObserver === "function") new ResizeObserver(() => tell()).observe(composer);
+  if (typeof ResizeObserver === "function") {
+    const sized = new ResizeObserver(() => tell());
+    sized.observe(composer);
+    sized.observe(follow);
+  }
 
   /* ── sending, and Stop ─────────────────────────────────────────────── */
 
