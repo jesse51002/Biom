@@ -1185,6 +1185,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
     const text = await outgoing(c, held.text);
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
+    const handoff = c.handoff;
     c.held = null;
     c.handoff = false;
     setPhase(c, "running");
@@ -1195,7 +1196,10 @@ export function makeChats(deps: ChatsDeps): Chats {
     } catch (e) {
       if (c.turn !== turn || c.phase === "idle") return;
       if (isAuthRequired(e)) {
+        // Refused, so the session never took it — nor the chat so far it
+        // carried, which goes with the message when it is sent again.
         c.held = { ...held };
+        c.handoff = handoff;
         refusedSignIn(c, live);
         return;
       }
@@ -1370,7 +1374,9 @@ export function makeChats(deps: ChatsDeps): Chats {
         live.rawConfig = facts.configOptions;
         live.rawModes = facts.modes;
         takeOptions(c, live);
-        c.handoff = false;
+        // A handoff still owed stays owed: only `session/new` sets it, and a
+        // session reopened before it accepted a message has not heard the
+        // chat so far any more than it had when it was new.
         return true;
       } catch (e) {
         if (isAuthRequired(e) || isClosed(e)) throw e;

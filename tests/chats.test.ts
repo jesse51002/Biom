@@ -394,6 +394,35 @@ only("a switch mints a new agent id, and the new session is handed the chat so f
   expect(w.chats.agentOfChat(s.id)).toBe(two.agentId);
 });
 
+only("A HANDOFF THE NEW AGENT REFUSED FOR WANT OF A SIGN-IN is handed over again once it is signed in, even to the session it resumes", async () => {
+  const resume = { sessionCapabilities: { resume: {} } };
+  const w = world({
+    agents: [info("fake", "Fake Agent"), info("fake2", "Second Fake")],
+    scenarios: { fake: {}, fake2: { refusePrompts: 1, agentCapabilities: resume } },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "first question" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.switchAgent(s.id, "fake2");
+  await w.chats.send(s.id, "second question");
+  await until("the refusal", 10_000, () => summaryOf(w.chats, s.id).phase === "held");
+  // Signed in: seen Inactive, then Active, and it refuses nothing now.
+  w.scenarios.fake2 = { agentCapabilities: resume };
+  w.setAgents([info("fake", "Fake Agent"), info("fake2", "Second Fake", { state: "inactive", reason: "signin" })]);
+  w.setAgents([info("fake", "Fake Agent"), info("fake2", "Second Fake")]);
+  expect((await settled(w.chats, s.id, 2)).stop).toBe("end_turn");
+  const heard = w.heard("fake2");
+  // The session the refused prompt was meant for is the one reopened.
+  expect(heard.map((h) => h.method).filter((m) => typeof m === "string")).toEqual([
+    "initialize", "session/new", "session/prompt", "initialize", "session/resume", "session/prompt",
+  ]);
+  const sent = prompts(heard);
+  // It never took the first, so the one it took carries the chat so far.
+  for (const p of sent) {
+    expect(p).toContain("The person: first question");
+    expect(p.endsWith("second question")).toBe(true);
+  }
+});
+
 only("a switch is refused while a turn runs", async () => {
   const w = world({ agents: [info("fake", "Fake Agent"), info("fake2", "Second Fake")], scenarios: { fake: { turns: [[{ sleep: 300 }]] }, fake2: {} } });
   const s = await w.chats.create({ agent: "fake", text: "slow" });
