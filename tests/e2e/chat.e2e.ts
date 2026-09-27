@@ -185,7 +185,9 @@ function drain(s: ReadableStream<Uint8Array> | undefined, into: "out" | "err"): 
 
 async function shot(file: string): Promise<void> {
   try {
-    await page.screenshot({ path: join(SHOTS, file) });
+    // On its own short leash, as the harness's own pictures are: a picture
+    // must never be what a step spends its time on.
+    await page.screenshot({ path: join(SHOTS, file), timeout: 8000 });
   } catch {
     // A picture that cannot be taken must never be why a step failed.
   }
@@ -446,11 +448,7 @@ beforeAll(async () => {
 }, 120000);
 
 afterAll(async () => {
-  try {
-    await browser?.close();
-  } catch {
-    /* a browser that already went is not a failure */
-  }
+  await Promise.race([browser?.close().catch(() => {}), Bun.sleep(10000)]);
   if (server !== null && server.exitCode === null) {
     server.kill("SIGTERM");
     await Promise.race([server.exited, Bun.sleep(12000)]);
@@ -1215,12 +1213,12 @@ walk("21", "nothing threw on stderr, nothing was written outside the sandbox, an
   // The probes, the held chat's, the turns', X's and Y's, at least.
   expect(pids.length).toBeGreaterThan(3);
   expect(pids.some(alive)).toBe(true);
-  try {
-    await browser?.close();
-  } catch {
-    /* already gone */
-  }
+  const t = Date.now();
+  // Bounded: the stream closing is what matters, and a browser slow to go is
+  // not what this step is about.
+  await Promise.race([browser?.close().catch(() => {}), Bun.sleep(10000)]);
   browser = null;
+  console.log(`[chat.e2e] the browser closed in ${Date.now() - t}ms`);
   const t0 = Date.now();
   server!.kill("SIGTERM");
   await Promise.race([server!.exited, Bun.sleep(20000)]);
