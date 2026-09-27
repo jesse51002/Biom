@@ -26,7 +26,14 @@ const MONOCLE = { emoji: "🧐", art: "/vendor/noto/1f9d0.webp" };
 
 /* ── fakes ──────────────────────────────────────────────────────────────── */
 
-/** A clock whose timers run only when told to, in order of when they fall. */
+/** The most timers one `advance` runs. A timer that re-arms itself at the
+ *  instant it ran would otherwise spin inside `advance` for ever,
+ *  synchronously, where no test timeout can reach it: the whole `bun test`
+ *  run hangs instead of one test failing. */
+const ADVANCE_MAX = 10_000;
+
+/** A clock whose timers run only when told to, in order of when they fall —
+ *  and which throws, naming the loop, past `ADVANCE_MAX` of them in one advance. */
 function fakeClock(start = 0) {
   let t = start;
   let next = 1;
@@ -46,10 +53,11 @@ function fakeClock(start = 0) {
     },
     advance(ms: number) {
       const end = t + ms;
-      for (;;) {
+      for (let ran = 0; ; ran++) {
         let due: [number, { at: number; fn: () => void }] | null = null;
         for (const entry of timers) if (entry[1].at <= end && (!due || entry[1].at < due[1].at)) due = entry;
         if (!due) break;
+        if (ran >= ADVANCE_MAX) throw new Error(`the fake clock ran ${ADVANCE_MAX} timers in one advance: a timer is re-arming itself at the instant it runs`);
         timers.delete(due[0]);
         t = due[1].at;
         due[1].fn();
@@ -58,6 +66,15 @@ function fakeClock(start = 0) {
     },
   };
 }
+
+test("the fake clock fails a timer that re-arms itself at the instant it runs, rather than hanging the run", () => {
+  const clock = fakeClock();
+  let ran = 0;
+  const again = (): void => { ran++; clock.setTimer(again, 0); };
+  clock.setTimer(again, 0);
+  expect(() => clock.advance(1)).toThrow(/re-arming itself/);
+  expect(ran).toBe(ADVANCE_MAX);
+});
 
 type Reply = Response | Error | ((init: RequestInit) => Promise<Response>);
 

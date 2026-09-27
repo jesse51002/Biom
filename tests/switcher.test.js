@@ -131,8 +131,16 @@ const PAGES = [
   { id: "specs", name: "Specs", uid: "u-specs" },
 ];
 
+/** The most timers one `advance` runs. A timer that re-arms itself at the
+ *  instant it ran — a `wait` whose settle check slipped from `<` to `<=` —
+ *  would otherwise spin inside `advance` for ever, synchronously, where no
+ *  test timeout can reach it: the whole `bun test` run hangs instead of one
+ *  test failing. Every wait bounded, this one included. */
+const ADVANCE_MAX = 10_000;
+
 /** A clock and the timers on it. `advance` runs every timer that falls due, in
- *  order, with the clock set to each one's time as it runs. */
+ *  order, with the clock set to each one's time as it runs — and throws, naming
+ *  the loop, past `ADVANCE_MAX` of them. */
 function fakeClock(start = 1_000_000) {
   let t = start;
   /** @type {{ at: number, fn: () => void, live: boolean }[]} */
@@ -148,9 +156,10 @@ function fakeClock(start = 1_000_000) {
     /** @param {number} ms */
     advance(ms) {
       const to = t + ms;
-      for (;;) {
+      for (let ran = 0; ; ran++) {
         const next = timers.filter((x) => x.live && x.at <= to).sort((a, b) => a.at - b.at)[0];
         if (!next) break;
+        if (ran >= ADVANCE_MAX) throw new Error(`the fake clock ran ${ADVANCE_MAX} timers in one advance: a timer is re-arming itself at the instant it runs`);
         next.live = false;
         t = next.at;
         next.fn();
@@ -160,6 +169,15 @@ function fakeClock(start = 1_000_000) {
     get pending() { return timers.filter((x) => x.live).length; },
   };
 }
+
+test("the fake clock fails a timer that re-arms itself at the instant it runs, rather than hanging the run", () => {
+  const clock = fakeClock();
+  let ran = 0;
+  const again = () => { ran++; clock.after(0, again); };
+  clock.after(0, again);
+  expect(() => clock.advance(1)).toThrow(/re-arming itself/);
+  expect(ran).toBe(ADVANCE_MAX);
+});
 
 /** THE SERVER'S HISTORY, as far as a window can see it: a report appends an
  *  open and a view for the person, a view for a claim or the switcher — none
