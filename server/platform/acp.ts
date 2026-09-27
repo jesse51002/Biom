@@ -174,10 +174,16 @@ export interface AcpOptions {
   log?: (line: string) => void;
 }
 
-/** Big enough for a whole file's diff in one `tool_call_update` or a whole
- *  file in one `fs/write_text_file`; small enough that a process printing
- *  without a newline cannot take the server's memory. */
-export const MAX_LINE = 32 * 1024 * 1024;
+/** THE LONGEST LINE AN AGENT MAY WRITE, in characters: above the largest
+ *  message a handler over this connection is built to take, so a request too
+ *  large is refused in words by its handler and never by ending the agent.
+ *  The largest is a whole file in one `fs/write_text_file` — the chats take
+ *  up to 32 Mi characters (`FILE_MAX` in `chats.ts`) — which JSON may escape
+ *  to six characters each (`\u0001`), with a mebibyte for its envelope and
+ *  path; an ordinary text file's whole diff in one `tool_call_update` fits
+ *  too. Still a bound: a process printing without a newline is ended here,
+ *  not left to take the server's memory. */
+export const MAX_LINE = 6 * 32 * 1024 * 1024 + 1024 * 1024;
 const STDERR_TAIL = 16 * 1024;
 const GRACE_MS = 2000;
 const KILL_WAIT_MS = 2000;

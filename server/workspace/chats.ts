@@ -306,8 +306,11 @@ const TEXT_JOIN = 16 * 1024;
 /** How much of the chat so far a new session is handed. */
 const HANDOFF_MAX = 60_000;
 const NAME_MAX = 60;
-/** The largest file an agent reads or writes through Biom. */
-const FILE_MAX = 32 * 1024 * 1024;
+/** The largest file an agent reads or writes through Biom, in characters.
+ *  The connection's bound on a line (`MAX_LINE` in `acp.ts`) is held above
+ *  this file escaped at JSON's worst, so a write past it is refused here in
+ *  words and never ends the agent. */
+export const FILE_MAX = 32 * 1024 * 1024;
 /** How many sign-in refusals a held message is retried through. */
 const AUTH_RETRIES = 2;
 /** Superseded tool lines in a log before it is rewritten compact. */

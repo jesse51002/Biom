@@ -10,10 +10,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
-  ACP_CLOSED, ACP_TIMEOUT, AUTH_REQUIRED, METHOD_NOT_FOUND, connectAcp, isAcpError, isAuthRequired, isClosed, overProcess, spawnAgent,
+  ACP_CLOSED, ACP_TIMEOUT, AUTH_REQUIRED, MAX_LINE, METHOD_NOT_FOUND, connectAcp, isAcpError, isAuthRequired, isClosed, overProcess, spawnAgent,
 } from "../server/platform/acp.ts";
 import type { AcpExit, AcpProcess } from "../server/platform/acp.ts";
 import { initializeParams } from "../server/platform/acp-wire.ts";
+import { FILE_MAX } from "../server/workspace/chats.ts";
 import { installFakeAgent } from "./fake-acp-agent.ts";
 import type { Scenario } from "./fake-acp-agent.ts";
 
@@ -153,6 +154,38 @@ test("a complete line over the bound fails the connection too", async () => {
   m.stdout(`${JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { t: "z".repeat(80) } })}\n`);
   expect(isClosed(await a.catch((x: unknown) => x))).toBe(true);
 });
+
+test("A WHOLE FILE AS LARGE AS THE CHATS TAKE, in one fs/write_text_file, reaches its handler — and the bound on a line stays above such a file escaped at JSON's worst", async () => {
+  // Exactly FILE_MAX characters, which the chats' own size check accepts, as
+  // short lines each with a quote: JSON escapes the quote and the newline to
+  // two characters each, so the line is longer than the file. Invented text.
+  const m = memory();
+  const lines: string[] = [];
+  const conn = overProcess(m.proc, { log: (l) => lines.push(l) });
+  let got = -1;
+  conn.handle("fs/write_text_file", async (params) => {
+    got = (params as { content: string }).content.length;
+    return {};
+  });
+  const unit = `${"x".repeat(38)}"\n`;
+  const content = unit.repeat(Math.floor(FILE_MAX / unit.length)).padEnd(FILE_MAX, "y");
+  const line = `${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "fs/write_text_file", params: { sessionId: "invented", path: "notes/invented.md", content } })}\n`;
+  expect(content.length).toBe(FILE_MAX);
+  expect(line.length).toBeGreaterThan(FILE_MAX);
+  const bytes = new TextEncoder().encode(line);
+  for (let i = 0; i < bytes.length; i += 1 << 20) m.stdout(bytes.subarray(i, i + (1 << 20)));
+  await until("the write to reach its handler", 5000, () => got >= 0 || m.signals.length > 0);
+  expect(lines).toEqual([]);
+  expect(m.signals).toEqual([]);
+  expect(got).toBe(FILE_MAX);
+  await until("the answer", 2000, () => m.sent().some((s) => s.id === 7));
+  expect(m.sent().find((s) => s.id === 7)).toEqual({ jsonrpc: "2.0", id: 7, result: {} });
+  // Whatever the chats accept fits, escaped at JSON's worst — `\u0001`, six
+  // characters for one — with room for the envelope and the path. A write
+  // too large is then refused in words by its handler, never by ending the
+  // agent.
+  expect(MAX_LINE).toBeGreaterThan(6 * FILE_MAX + 64 * 1024);
+}, 30_000);
 
 test("every pending request rejects with ONE closed error when the process exits, and later requests reject at once", async () => {
   const m = memory();
