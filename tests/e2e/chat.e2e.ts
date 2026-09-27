@@ -25,7 +25,7 @@
 //       heading, the amber Edit on the bar, no Agent Terminal and no dock.
 //    3. A first message with no agent on the machine is held; More agents says
 //       so; it goes out on its own once an agent is found and Active.
-//    3b. The same with an agent still being checked (DECISIONS O24a): a bug.
+//    3b. The same with an agent still being checked (DECISIONS O24a, O33).
 //    2. The start screen: the turning line, View chat history, Ask anything,
 //       and the harness's name on the chip, never a model.
 //    4. A turn: the loader on the message, the light amber then green, the
@@ -37,22 +37,27 @@
 //       up with the chat beside it.
 //    8. The / menu: the agent's commands and the workspace's skills, once each.
 //    9. Edit: a new chat beside the page, maximised and minimised back.
+//    9b. A page opened from the full Agent screen keeps the chat beside it.
 //   10–16. The switcher: follow, offer, idle, a send handing the screen over,
 //       five minutes on screen making it the person's (13b), a held screen
 //       (14, and its offer taken in 14b), a chat in the background, and no
 //       bounce.
 //   17. A shell write: one history edit by `shell`, followed.
-//   17b. A page the agent CREATES is one edit naming it (following it is a bug).
+//   17b. A page the agent CREATES is one edit naming it, and is followed;
+//   17c. and one written with no uid gets one, kept, and is followed too.
 //   18. Every screen's address survives a reload and Back.
 //   19. Sign-in in the pop-up terminal: a command that exits 0 closes it and
 //       the agent is Active; one that exits 1 leaves it open with the reason.
 //   20. A page's own code cannot move the screen; a wikilink click can.
+//   20b. `#/page/@agent`, `@map` and `@design` are no page.
+//   20c. A page on another localhost port gets nothing with the cookie.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
 // A STEP THAT FINDS A PRODUCT BUG is `test.failing` with the bug's id in its
 // name: it runs on every `make e2e`, stays green while the product is wrong,
 // and goes red the day it is fixed — which is the prompt to make it a plain
-// step. The ids are the ones the P4 hand-back reports.
+// step. The ids are the ones the P4 hand-back reports; BUG-E2E-2, 3 and 4
+// were fixed and are plain steps now (3b, 20b, 17b).
 //
 // Every page, word, key, face and id here is invented.
 
@@ -555,6 +560,8 @@ walk("1", "the rail has Agent where Dashboard was and Home as the tree's heading
   // Home is the tree's own heading, and opens the root.
   await page.locator("div.railhead button.homerow").click();
   await until("Home opened the root page", 10000, async () => (await hash()) === "#/page/home");
+  // From the start screen there is no chat to bring along (O24b, O36).
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("none");
   await page.locator("button.agentlink").click();
   await until("Agent went back to the Agent screen", 10000, async () => (await hash()) === "#/agent");
 });
@@ -594,7 +601,7 @@ walk("3", "a first message on a machine with no agent is held, More agents says 
 
 const CHECKING = "An invented message sent while the agent is still being checked";
 
-bug("BUG-E2E-2", "a first message to an agent still being checked is held with More agents saying so, and goes out once it is Active (DECISIONS O24a)", async () => {
+walk("3b", "a first message to an agent still being checked is held with More agents saying so, and goes out once it is Active (DECISIONS O24a, O33)", async () => {
   // THE AGENT IS LOOKED AT AGAIN, AND SLOWLY: its `initialize` answers after
   // five seconds, so for that long it is Inactive and being checked.
   putFake(scenario(signInOk(), { initialize: { delayMs: 5000 } }));
@@ -608,16 +615,15 @@ bug("BUG-E2E-2", "a first message to an agent still being checked is held with M
     const id = (await hash()).split("/")[2] as string;
     // Held — not started past the check — and More agents says it waits.
     const phases: string[] = [];
-    try {
-      await until("More agents opened, saying the message waits for the agent", 6000, async () => {
-        const p = (await summaryOf(id))?.phase ?? "?";
-        if (phases.at(-1) !== p) phases.push(p);
-        return (await page.locator(".amodal p.why").innerText().catch(() => "")).startsWith("Your message is waiting for Claude Code to be ready");
-      });
-    } finally {
-      console.log(`[chat.e2e] BUG-E2E-2: the chat's phases while its agent was being checked: ${phases.join(" → ")}`);
-    }
-    expect(phases).toContain("held");
+    await until("More agents opened, saying the message waits for the agent", 6000, async () => {
+      const p = (await summaryOf(id))?.phase ?? "?";
+      if (phases.at(-1) !== p) phases.push(p);
+      return (await page.locator(".amodal p.why").innerText().catch(() => "")).startsWith("Your message is waiting for Claude Code to be ready");
+    });
+    // Held from the first look, and never started while the check ran: the
+    // chat's own process begins only once the probe has made the agent Active.
+    expect(phases[0]).toBe("held");
+    await until("the agent turned Active", 15000, async () => (await agentState())?.state === "active");
     await until("the message went out once the agent was Active", 45000, async () => (await summaryOf(id))?.stop === "end_turn");
     await until("More agents shut when it went", 10000, async () => (await page.locator(".amodal").count()) === 0);
   } finally {
@@ -858,6 +864,24 @@ walk("9", "Edit on a page opens a new chat beside it with `Edit <path>: ` typed 
   });
 });
 
+walk("9b", "opening a page from the full Agent screen brings the open chat along in the panel beside it (DECISIONS O24b)", async () => {
+  await page.locator("button.agentlink").click();
+  await until("the Agent screen, with chat X", 10000, async () => (await hash()) === `#/agent/${X}`);
+  await page.locator("div.railhead button.homerow").click();
+  await until("Home opened the root page", 10000, async () => (await hash()) === "#/page/home");
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+  await until("the context says X came along", 10000, async () => {
+    const w = await myWindow();
+    return w?.panel === true && w.chat === X && w.address.id === "home";
+  });
+  // And from the tree, the same.
+  await page.locator("button.agentlink").click();
+  await until("the Agent screen again", 10000, async () => (await hash()) === `#/agent/${X}`);
+  await openByTree("Alpha", A);
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+  expect((await myWindow())?.chat).toBe(X);
+});
+
 /* ── 10–16 · the switcher ────────────────────────────────────────────────── */
 
 walk("10", "the switcher follows: the open chat's agent writes B while A is untouched since the message, and B comes up with the chat still beside it; Go back to A returns and goes", async () => {
@@ -888,6 +912,15 @@ walk("10", "the switcher follows: the open chat's agent writes B while A is unto
   await until("back on A", 10000, async () => (await hash()) === routeOf(A));
   await until("Go back to went", 5000, async () => (await back.count()) === 0);
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+});
+
+bug("BUG-E2E-6", "a new file inside a page that was already there makes the pages changed say the page was Edited, not Created (DECISIONS O40)", async () => {
+  // Step 10's turn wrote Beta's notes.md, new, beside Beta's own document.
+  await until("the turn's pages changed name Beta, Edited", 5000, () =>
+    inLook(async (f) => {
+      const row = lastTurn(f).locator(".changes .crow");
+      return ((await row.locator(".pg").textContent()) ?? "").trim() === "Beta" && ((await row.locator(".cverb").textContent()) ?? "").trim() === "Edited";
+    }, false));
 });
 
 walk("11", "the switcher offers: A touched after the message, the agent writes B within two minutes, the screen stays and Go to B shows above the input; pressing it opens B", async () => {
@@ -1070,8 +1103,9 @@ walk("17", "a shell write: `sed -i` in the agent's own shell is one history edit
 });
 
 const D = "home/delta";
+const E = "home/epsilon";
 
-walk("17b", "a page the agent creates is one history edit naming the new page by its uid, and the tree and the chat list it", async () => {
+walk("17b", "a page the agent creates is one history edit naming it by its uid, reads Created, and the switcher brings it up beside the chat (O26, O39)", async () => {
   await besideA();
   const path = `${dirOf(D)}/content.yaml`;
   await send(`Make an invented page\n!write ${path} {name: Delta, uid: inventeddelta001, plugin: biom-doc, contents: [{name: body, parts: {body: "# Delta"}}]}`);
@@ -1079,16 +1113,37 @@ walk("17b", "a page the agent creates is one history edit naming the new page by
   await idle(X);
   const edits = await editsBy(path, X);
   expect(edits.map((e) => [e.via, e.place])).toEqual([["fs", { view: "page", uid: "inventeddelta001", screen: "page" }]]);
-  await until("the tree lists the new page", BOUNDS.redraw, async () => (await page.locator("nav.rack").innerText()).includes("Delta"));
-  await until("the turn's pages changed name it, created", 10000, () =>
-    inLook(async (f) => ((await lastTurn(f).locator(".changes .crow").textContent()) ?? "").includes("Delta"), false));
+  // THE SWITCHER FOLLOWS IT, once the window's tree has listed the page.
+  await until("the screen moved to the new page", 15000, async () => (await hash()) === routeOf(D));
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+  expect((await myWindow())?.chat).toBe(X);
+  await until("Delta drew", BOUNDS.draw, () => pageSays("Delta"));
+  expect(await page.locator("nav.rack").innerText()).toContain("Delta");
+  await until("the turn's pages changed name it, Created", 10000, () =>
+    inLook(async (f) => {
+      const row = lastTurn(f).locator(".changes .crow");
+      return ((await row.locator(".pg").textContent()) ?? "").trim() === "Delta" && ((await row.locator(".cverb").textContent()) ?? "").trim() === "Created";
+    }, false));
 });
 
-bug("BUG-E2E-4", "the switcher follows a page the open chat's agent creates: the new page comes up beside the chat", async () => {
-  // The edit above names the page by its uid; the window's tree lists it a
-  // moment later. A move, or at the least Go to page, is what the spec says.
-  await until("the screen moved to the new page", 10000, async () => (await hash()) === routeOf(D));
-  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
+walk("17c", "a page the agent creates with its own edit tool and no uid gets one at once, written in as one line, and is followed all the same (O26, O38)", async () => {
+  await besideA();
+  const path = `${dirOf(E)}/content.yaml`;
+  // The agent's own edit tool makes the file, with a comment of its own and
+  // no identity; `\\n` is a new line to the fake.
+  const written = "name: Epsilon\n# an invented comment the agent keeps\nplugin: biom-doc\n";
+  await send(`Make another invented page, with no identity\n!edit ${path} =>${written.replace(/\n/g, "\\n")}`);
+  await until("the page is on disk", 15000, () => existsSync(join(vault, path)));
+  await idle(X);
+  await until("the screen moved to the new page", 15000, async () => (await hash()) === routeOf(E));
+  // ITS IDENTITY IS WRITTEN BACK AS ONE LINE under its name, and every other
+  // byte the agent wrote is where it wrote it.
+  const now = readFileSync(join(vault, path), "utf8");
+  const uid = /^uid:\s*(\S+)$/m.exec(now)?.[1] ?? "";
+  expect(uid).toMatch(/^[a-z0-9]{8,32}$/);
+  expect(now).toBe(written.replace("name: Epsilon\n", `name: Epsilon\nuid: ${uid}\n`));
+  const edits = await editsBy(path, X);
+  expect(edits.map((e) => [e.via, e.place])).toEqual([["tool", { view: "page", uid, screen: "page" }]]);
 });
 
 /* ── 18 · addresses ──────────────────────────────────────────────────────── */
@@ -1139,7 +1194,8 @@ walk("19", "sign-in: the picker's Sign in runs the agent's own command in the po
   await until("the agent asks to be signed in", 30000, async () => (await agentState())?.reason === "signin");
   await until("the chip's lamp is out", 10000, async () => (await page.locator(".agentdock .agentchip .led").getAttribute("class")) === "led");
   await page.locator(".agentdock .agentchip").click();
-  const pill = page.locator(`.agentmenu .mi[data-agent=${AGENT}] .mact[data-act=signin]`);
+  // A button of its own beside the agent's row, in the menu's arrow ring (O36).
+  const pill = page.locator(`.agentmenu .mipair:has(.mi[data-agent=${AGENT}]) button.mact[data-act=signin]`);
   await until("the picker shows Sign in", 5000, async () => (await pill.count()) === 1);
   expect((await pill.innerText()).trim()).toBe("Sign in");
   await pill.click();
@@ -1197,12 +1253,59 @@ walk("20", "a page's own code cannot move the screen, and a wikilink the person 
   await until("the person's click moved the screen", 10000, async () => (await hash()) === routeOf(B));
 });
 
-bug("BUG-E2E-3", "a page route naming the Agent screen's reserved id is refused and shown as not found (DECISIONS O24d)", async () => {
-  await page.goto(at(routeOf("@agent")), { waitUntil: "domcontentloaded" });
-  await until("the address is not a page", BOUNDS.draw, async () => {
-    const plate = await page.locator("div.plate").innerText().catch(() => "");
-    return /not found|no such page|isn.t a page/i.test(plate) && (await page.locator("div.plate iframe.artifact").count()) === 0;
+walk("20b", "a page route naming a framework screen's reserved id — @agent, @map, @design — is no page (DECISIONS O24d)", async () => {
+  for (const id of ["@agent", "@map", "@design"]) {
+    await page.goto(at(routeOf(id)), { waitUntil: "domcontentloaded" });
+    await until(`${id} is said to be no page, and no box is mounted for it`, BOUNDS.draw, async () =>
+      (await page.locator("div.plate").innerText().catch(() => "")).includes(`There is no page called “${id}”.`) &&
+      (await page.locator("div.plate iframe.artifact").count()) === 0);
+    // The one Agent screen box is still the only one there is.
+    expect(await page.locator("div.agentbox iframe").count()).toBeLessThanOrEqual(1);
+  }
+});
+
+walk("20c", "a page on another localhost port gets nothing from this server with the person's cookie, while this window's own calls go through (O25)", async () => {
+  // ANOTHER DEVELOPMENT SERVER ON THIS MACHINE. The browser hands it this
+  // server's cookie, because a site ignores the port; the server has to refuse
+  // it by what the browser will not let the page forge.
+  const other = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: () => new Response(`<!doctype html><html><body><p id="said">waiting</p><script>
+      const api = ${JSON.stringify(`${base}/v/${encodeURIComponent(vault)}`)};
+      const said = [];
+      // The stream, as a window: it would list this window if the server took it.
+      const es = new EventSource(api + "/events?window=invented-foreign-window-0001", { withCredentials: true });
+      es.onerror = () => { said.push("stream refused"); es.close(); };
+      // A chat made with words, in the one form the browser lets a page send
+      // across ports unasked.
+      fetch(api + "/api/call", { method: "POST", mode: "no-cors", credentials: "include",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ id: "x", g: 1, kind: "chat.new", agent: "claude-acp", text: "invented words from another port" }) })
+        .then(() => said.push("sent"), () => said.push("send failed"))
+        .finally(() => { document.getElementById("said").textContent = said.join(", "); });
+    </script></body></html>`, { headers: { "content-type": "text/html" } }),
   });
+  try {
+    const before = (await call<ChatSummary[]>("chat.list")).length;
+    const foreign = await page.context().newPage();
+    try {
+      // The cookie is the person's: this very browser holds it for 127.0.0.1.
+      expect((await page.context().cookies(base)).length).toBeGreaterThan(0);
+      await foreign.goto(`http://127.0.0.1:${other.port}/`, { waitUntil: "domcontentloaded" });
+      await until("the other page tried both", 10000, async () => (await foreign.locator("#said").innerText()).includes("sent") || (await foreign.locator("#said").innerText()).includes("failed"));
+      await Bun.sleep(1500);
+    } finally {
+      await foreign.close();
+    }
+    expect((await call<WindowContext[]>("window.list")).some((w) => w.window === "invented-foreign-window-0001")).toBe(false);
+    expect((await call<ChatSummary[]>("chat.list")).length).toBe(before);
+    expect((await call<ChatSummary[]>("chat.list")).some((c) => c.name.includes("another port"))).toBe(false);
+    // And this window is none the worse: its own call still answers.
+    expect((await myWindow())?.window).toBe(await page.evaluate(() => sessionStorage.getItem("biom-window")));
+  } finally {
+    other.stop(true);
+  }
 });
 
 /* ── 21 · lastly ─────────────────────────────────────────────────────────── */

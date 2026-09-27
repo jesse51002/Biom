@@ -26,7 +26,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 /** One thing a turn does, in order. */
 export type Step =
@@ -49,7 +49,8 @@ export type Step =
   /** An `edit` tool call over a file the agent rewrites ITSELF, as a real
    *  agent's own edit tool does rather than through `fs/write_text_file`: the
    *  call pending with its diff and its location, the write, then the call
-   *  completed with the same diff. `from` is replaced once by `to`. */
+   *  completed with the same diff. `from` is replaced once by `to`; a file
+   *  that is not there is made, folders and all, holding `to`. */
   | { editFile: { path: string; from: string; to: string } }
   | { commands: unknown[] }
   | { config: unknown[] }
@@ -255,6 +256,7 @@ function run(scenario: Scenario): void {
         const next = old === null ? step.editFile.to : old.replace(step.editFile.from, step.editFile.to);
         const diff = [{ type: "diff", path: p, oldText: old, newText: next }];
         update(sessionId, { sessionUpdate: "tool_call", toolCallId: tid, title: `Edit ${step.editFile.path}`, kind: "edit", status: "pending", locations: [{ path: p }], content: diff });
+        mkdirSync(dirname(p), { recursive: true });
         writeFileSync(p, next);
         update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: tid, status: "completed", content: diff });
       } else if ("commands" in step) update(sessionId, { sessionUpdate: "available_commands_update", availableCommands: step.commands });
