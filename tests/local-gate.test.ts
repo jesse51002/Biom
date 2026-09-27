@@ -127,7 +127,11 @@ test("the composed document hands this machine the capability, HttpOnly and Same
 
 test("FORGED HOST AND ORIGIN WITH NO COOKIE are refused, for every agent and chat kind and a window's report", async () => {
   for (const kind of LOCAL_KIND_NAMES) {
-    const env = await call({ kind, chat: "c1nvented-chat-0001", agent: "claude-acp", text: "hi" }, FORGED());
+    // A `window` that is no window's id, as below: the gate is asked before the
+    // envelope is checked, so a working gate still answers `identity`, and a
+    // broken one fails this at `bad_request` — never a real agent started, the
+    // registry fetched or npm run on the machine running the tests.
+    const env = await call({ kind, chat: "c1nvented-chat-0001", window: "!" }, FORGED());
     expect([kind, refusedAsStranger(env)]).toEqual([kind, true]);
   }
   // A guessed capability is no capability.
@@ -231,7 +235,10 @@ test("A PROXIED REQUEST CAN NEVER CARRY THE COOKIE, even when the page knows it"
     init: {
       method: "POST",
       headers: { "content-type": "application/json", Cookie: cookie, ...FORGED() },
-      body: JSON.stringify({ id: "p1", g: 1, kind: "chat.new", agent: "claude-acp", text: "delete everything" }),
+      // No agent and no words, and a `window` that is no window's id: were
+      // the cookie ever to get through, this dies at `bad_request` rather
+      // than starting an agent answered `allow_always`.
+      body: JSON.stringify({ id: "p1", g: 1, kind: "chat.new", window: "!" }),
     },
   }, {}) as { ok: boolean; value?: { status: number; body: string } };
   expect(outer.ok).toBe(true);
