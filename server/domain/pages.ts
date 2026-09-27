@@ -821,6 +821,21 @@ export const ROOT_PAGE_STANDIN =
   '  <div data-g-part="asks"></div>\n' +
   "</main>\n";
 
+/** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
+ *  platform's random source — long enough that two pages never share one and
+ *  short enough to read in a file. It is minted here and in no second place:
+ *  `create` writes one into a new page, `identify` into every page that has
+ *  none on mount, and `makeIdentities` into one that arrives without one while
+ *  the server runs. */
+function mintUid(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
+
 /**
  * @param defaultSection the shipped default section's markup, read by the
  *   composition root out of `DEFAULT_SECTION_FILE`. It is a string rather than a
@@ -1007,20 +1022,6 @@ export function makePages(
 
   const refOf = (id: PageId, doc: PageDoc): PageRef =>
     typeof doc.uid === "string" ? { id, name: doc.name, uid: doc.uid } : { id, name: doc.name };
-
-  /** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
-   *  platform's random source — long enough that two pages never share one and
-   *  short enough to read in a file. It is minted here and in no second place:
-   *  `create` writes one into a new page and `identify` into every page that
-   *  has none. */
-  const mintUid = (): string => {
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    let out = "";
-    for (const b of bytes) out += alphabet[b % alphabet.length];
-    return out;
-  };
 
   /** What a page that cannot be read looks like in the tree. Its name is its own
    *  segment — the same thing a page with no `name:` already shows — and it is
@@ -1920,4 +1921,171 @@ function htmlFileOf(part: PartValue): string | null {
   }
   const content = contentOf(part);
   return content !== null && content.type === "html" ? content.data : null;
+}
+
+/* ── a page's identity, while the server runs ───────────────────────────── */
+
+/** WHAT KEEPS EVERY PAGE'S `uid` FOR THE SESSION. `identify` gives a page with
+ *  none an identity on mount; this is the same act for a page that arrives, or
+ *  loses its `uid`, while the server runs — an agent that made a page, which
+ *  the vault's rules tell never to type a `uid`, or one that wrote a page's
+ *  document whole and dropped the one it had. Without it such a page has no
+ *  identity until the next mount, the history places every edit, open and view
+ *  of it nowhere, and the switcher can never bring it up. */
+export interface Identities {
+  /** THE `uid` OF THE PAGE AT `id`, giving it one where its document parses and
+   *  has none — the one this session already knew for that page when no other
+   *  page holds it now, or a new one — and writing that into the file the way
+   *  mount does, behind a commit. Answers once the `uid` is decided, not once
+   *  it is written: nothing that asks has to wait on git. Null for a page that
+   *  is not there or will not parse, which is never rewritten. */
+  of(id: PageId): Promise<string | null>;
+  /** Remember what a list of pages says — every one with a `uid` — so a page
+   *  whose document is later written whole without it gets the same one back. */
+  saw(refs: readonly PageRef[]): void;
+  /** What a structural change turned up: remember every `uid` in the list and
+   *  give an identity to every page in it that has none. Answers how many. */
+  arrived(refs: readonly PageRef[]): Promise<number>;
+  /** Every write-back asked for so far, finished — for a test. */
+  written(): Promise<void>;
+}
+
+/**
+ * @param files A `Files` WITH NO BASELINE — `makeFiles(root)`, never the
+ *   vault's own. A read through the vault's would make a page an agent has
+ *   just made KNOWN, and a write through it would note the bytes; either way
+ *   the watcher would take the page for one it already had and the rail would
+ *   never learn that it arrived. Written through this, the `uid` reaches the
+ *   watcher as the change it is.
+ * @param warn where a write-back that failed is said; the page keeps the `uid`
+ *   in memory, and the next ask writes it again.
+ */
+export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: string, e: unknown) => void = () => {}): Identities {
+  /** The tree as the disk has it now, for the one question that needs all of
+   *  it: does another page hold this `uid`. Over the same baseline-free files. */
+  const tree = makePages(files, yaml);
+  /** Page id → `uid`, and back, as last seen or given. */
+  const known = new Map<PageId, string>();
+  const owner = new Map<string, PageId>();
+  /** Pages whose `uid` is decided and not yet in the file. */
+  const pending = new Set<PageId>();
+  /** DECISIONS ONE AT A TIME, so two asks about one page arriving together —
+   *  the history's and the watcher's — can never mint it two identities. */
+  let deciding: Promise<unknown> = Promise.resolve();
+  /** Write-backs one at a time, each behind its own commit. */
+  let writing: Promise<unknown> = Promise.resolve();
+
+  const learn = (id: PageId, uid: string): void => {
+    // A `uid` seen at a new id is a page that moved: the old id holds it no
+    // longer, and must not hand it to whatever is made there next.
+    const was = owner.get(uid);
+    if (was !== undefined && was !== id && known.get(was) === uid) known.delete(was);
+    const had = known.get(id);
+    if (had !== undefined && had !== uid && owner.get(had) === id) owner.delete(had);
+    known.set(id, uid);
+    owner.set(uid, id);
+  };
+
+  /** The page's document, or null where there is none or it will not parse. */
+  const read = async (id: PageId): Promise<PageDoc | null> => {
+    const text = await files.read(pageDocPath(id));
+    if (text === null) return null;
+    try {
+      return docOf(yaml.parse(text), segmentOf(id));
+    } catch {
+      return null;
+    }
+  };
+
+  /** Does a page other than `id` hold `uid` on disk now? */
+  const heldElsewhere = async (uid: string, id: PageId): Promise<boolean> => {
+    let elsewhere = false;
+    for (const ref of await tree.list()) {
+      if (typeof ref.uid !== "string") continue;
+      learn(ref.id, ref.uid);
+      if (ref.uid === uid && ref.id !== id) elsewhere = true;
+    }
+    return elsewhere;
+  };
+
+  /** THE WAY MOUNT DOES IT: one commit ahead, then the document with its `uid`
+   *  — read again after the commit, so what an agent wrote meanwhile is what
+   *  gets the `uid` rather than what it replaced. */
+  const writeBack = (id: PageId): void => {
+    pending.add(id);
+    const run = writing.then(async () => {
+      try {
+        await files.commit("Before a page was given its identity");
+        const now = await read(id);
+        const uid = known.get(id);
+        if (now === null || uid === undefined) return;
+        if (typeof now.uid === "string") {
+          learn(id, now.uid);
+          return;
+        }
+        await files.write(pageDocPath(id), yaml.format({ ...now, uid }));
+      } finally {
+        pending.delete(id);
+      }
+    });
+    writing = run.then(() => undefined, (e: unknown) => warn(`the identity of ${id} could not be written`, e));
+  };
+
+  const of = async (id: PageId): Promise<string | null> => {
+    const doc = await read(id);
+    if (doc === null) return null;
+    if (typeof doc.uid === "string") {
+      learn(id, doc.uid);
+      return doc.uid;
+    }
+    // ONLY A PAGE IN THE TREE. `@design` reads the design doc, which is a page
+    // in every way but this one: it is in no tree, so an identity would name
+    // nothing, and nothing here writes into it.
+    if (id.startsWith("@")) return null;
+    const decided = deciding.then(async (): Promise<string | null> => {
+      const had = known.get(id);
+      if (had !== undefined && pending.has(id)) return had;
+      const again = await read(id);
+      if (again === null) return null;
+      if (typeof again.uid === "string") {
+        learn(id, again.uid);
+        return again.uid;
+      }
+      // STABLE FOR THE SESSION: the page's own `uid` back, unless the page that
+      // had it has moved away and another holds it now.
+      let uid = had;
+      if (uid !== undefined && await heldElsewhere(uid, id)) uid = undefined;
+      uid ??= mintUid();
+      learn(id, uid);
+      writeBack(id);
+      return uid;
+    });
+    deciding = decided.then(() => undefined, () => undefined);
+    return await decided;
+  };
+
+  return {
+    of,
+    saw(refs) {
+      for (const ref of refs) if (typeof ref.uid === "string") learn(ref.id, ref.uid);
+    },
+    async arrived(refs) {
+      let given = 0;
+      for (const ref of refs) {
+        if (typeof ref.uid === "string") {
+          learn(ref.id, ref.uid);
+          continue;
+        }
+        try {
+          if ((await of(ref.id)) !== null) given++;
+        } catch (e) {
+          warn(`the identity of ${ref.id} could not be decided`, e);
+        }
+      }
+      return given;
+    },
+    async written() {
+      await writing;
+    },
+  };
 }

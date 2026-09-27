@@ -44,7 +44,8 @@ import { makeProcessRunner } from "./platform/process.ts";
 import { makeRunFs } from "./platform/rundir.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir, pageDirs } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makeIdentities, makePages, pageDir, pageDirs } from "./domain/pages.ts";
+import type { Identities } from "./domain/pages.ts";
 import { makePlugins, walkPlugins } from "./domain/plugins.ts";
 import type { PluginWalk } from "./domain/plugins.ts";
 import { makeDocs } from "./domain/docs.ts";
@@ -92,6 +93,7 @@ import type { Runs } from "../contracts/types.ts";
 import type { RunRow } from "../contracts/types.ts";
 import type { DirListing } from "../contracts/types.ts";
 import type { PageId } from "../contracts/types.ts";
+import type { PageRef } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import type { AgentInfo } from "../contracts/types.ts";
@@ -566,6 +568,9 @@ interface Mounted {
   chats: Chats;
   /** Jev's faces for this folder's chats. */
   jev: JevStatus;
+  /** EVERY PAGE'S `uid` FOR THE SESSION: a page arriving without one gets one
+   *  when the history or the watcher's structural settle first meets it. */
+  identities: Identities;
   /** THIS VAULT'S CONTENT BASELINE — what this process last wrote into, or last
    *  read out of, every file under it. It is how the watcher tells an agent's
    *  write from the app's own: `files.ts` keeps it current, and the settle below
@@ -1107,10 +1112,24 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // agent has just made for one it already had — the rail would never learn
     // it arrived. So the history's and the chats' one lookup reads the disk as
     // a stranger would.
-    const plainDocs = makeDocs(makeFiles(path), yaml);
+    //
+    // AND A PAGE WITH NONE IS GIVEN ONE, STABLE FOR THE SESSION: a page an
+    // agent made — which the vault's rules tell it never to give a `uid` — or
+    // one whose document it wrote whole without the `uid` it had. The first
+    // time the page reaches the history, or the watcher's structural settle,
+    // whichever is sooner, it gets the `uid` this session already knew for it
+    // or a new one, and that is written into the file the way mount writes
+    // one. Seeded from the tree as mount left it, so an existing page keeps its
+    // own. Written through the same baseline-free files, for the same reason.
+    const identities = makeIdentities(makeFiles(path), yaml, (what, e) => console.warn(what, e instanceof Error ? e.message : e));
+    try {
+      identities.saw(await pages.list());
+    } catch (e) {
+      console.warn("the pages' identities could not be read", e);
+    }
     const uidOf = async (id: PageId): Promise<string | null> => {
       try {
-        return (await plainDocs.read(id)).uid ?? null;
+        return await identities.of(id);
       } catch {
         return null;
       }
@@ -1257,7 +1276,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       },
     };
     return {
-      path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus,
+      path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus, identities,
       deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed },
       settled: Promise.resolve(), files,
     };
@@ -1492,11 +1511,25 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       if (!moved) return;
       // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
       // re-pointed by identity once per structural settle, not once per list.
+      // AND A PAGE THAT ARRIVED WITHOUT AN IDENTITY GETS ONE, from the same
+      // list — after every verdict above, so the page's arrival has already
+      // been read as one, and through files with no baseline, so the `uid`
+      // written back is one more change the watcher reports rather than one
+      // it silences.
       if ([...touched.values()].some((t) => t.structural)) {
+        let refs: PageRef[] | null = null;
         try {
-          held.runs.relocateAll(await held.deps.pages.list());
+          refs = await held.deps.pages.list();
+          held.runs.relocateAll(refs);
         } catch (e) {
           console.warn("runs could not be re-pointed at their pages", e);
+        }
+        if (refs !== null) {
+          try {
+            await held.identities.arrived(refs);
+          } catch (e) {
+            console.warn("pages that arrived could not be given an identity", e);
+          }
         }
       }
       for (const hear of [...now.hears]) {
