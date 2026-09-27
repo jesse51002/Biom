@@ -240,10 +240,13 @@ export function makeAgentDialogs(deps) {
     const b = buttonOf(a);
     if (b === "signin") { const go = () => void signIn(a, null); return { act: go, el: btn("Sign in", go, ".go") }; }
     if (b === "gateway") { const go = () => void startGateway(a); return { act: go, el: btn("Start Gateway", go) }; }
+    // WORK UNDER WAY is shown the mockup's way, as a button held while it
+    // runs, with the lamp pulsing beside it. Anything else carries nothing
+    // (DECISIONS O28): an Inactive agent carries only the one button that
+    // makes it Active, and a failed one has none — its line says why.
     if (a.reason === "checking") return { act: null, el: held("Checking…") };
     if (a.reason === "installing") return { act: null, el: held("Installing…") };
-    const again = () => void probe(a);
-    return { act: again, el: btn("Check again", again) };
+    return { act: null, el: h("span") };
   }
 
   function drawAgents() {

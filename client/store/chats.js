@@ -674,14 +674,13 @@ export function buttonOf(a) {
   return r === "signin" ? "signin" : r === "gateway" ? "gateway" : null;
 }
 
-/** What the picker says under an agent's name. Active or Inactive and nothing
- *  else, but for the moment something is under way.
- *  @param {AgentInfo} a @returns {string} */
+/** What the picker says under an agent's name: **Active** or **Inactive**
+ *  and nothing else (*Chat*, `picker`; DECISIONS O28). Work under way — a look,
+ *  an install — is the lamp pulsing beside it and, in More agents, the button
+ *  held while it runs; why an agent is Inactive is its line.
+ *  @param {AgentInfo} a @returns {"Active" | "Inactive"} */
 export function stateWords(a) {
-  if (a.state === "active") return "Active";
-  if (a.reason === "checking") return "Checking…";
-  if (a.reason === "installing") return "Installing…";
-  return "Inactive";
+  return a.state === "active" ? "Active" : "Inactive";
 }
 
 /** WHY A HELD MESSAGE IS WAITING, in one sentence for the top of More agents

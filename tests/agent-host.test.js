@@ -13,7 +13,7 @@ import { test, expect } from "bun:test";
 import { AGENT_PAGE, ERRORS, PROTOCOL } from "../contracts/wire.js";
 import {
   agentMode, choiceName, defaultAgent, fold, freshThread, groupedChoices, held, isUpdate, machineAgents,
-  makeChatStore, pickersOf, showChat, shownChoices, slashQuery, slashRows, waitingWords, withValues,
+  makeChatStore, pickersOf, showChat, shownChoices, slashQuery, slashRows, stateWords, buttonOf, waitingWords, withValues,
 } from "../client/store/chats.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeBridge } from "../client/bridge/bridge.js";
@@ -348,6 +348,14 @@ test("a new chat goes to the agent picked while it is here, else the first Activ
   expect(defaultAgent(/** @type {any} */ ([list[0]]), null)).toBe("a");
   expect(defaultAgent([], null)).toBe(null);
   expect(machineAgents(/** @type {any} */ (list)).map((a) => a.key)).toEqual(["b", "a", "c"]);
+});
+
+test("an agent is Active or Inactive and nothing else, and only a sign-in or a Gateway gives it a button", () => {
+  const words = ["checking", "installing", "signin", "gateway", "failed"].map((reason) => stateWords(/** @type {any} */ (agent({ state: "inactive", reason }))));
+  expect(words).toEqual(["Inactive", "Inactive", "Inactive", "Inactive", "Inactive"]);
+  expect(stateWords(/** @type {any} */ (agent()))).toBe("Active");
+  expect(["checking", "installing", "signin", "gateway", "failed"].map((reason) => buttonOf(/** @type {any} */ (agent({ state: "inactive", reason })))))
+    .toEqual([null, null, "signin", "gateway", null]);
 });
 
 test("a held message says what it waits for", () => {

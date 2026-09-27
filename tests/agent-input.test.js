@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE INPUT BOX'S AGENT MENU, on a DOM that is a tree of plain objects: the
+// THE INPUT BOX'S AGENT MENU AND MORE AGENTS, on a DOM that is a tree of plain objects: the
 // real `h` from `client/platform/dom.js`, the real ui and chat stores, and a
 // document just big enough for `makeAgentInput` — elements, a focus, the
 // document's own key listeners, and a selector engine for the few selectors
@@ -16,6 +16,7 @@ import { h } from "../client/platform/dom.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeChatStore } from "../client/store/chats.js";
 import { makeAgentInput } from "../client/views/agent-input.js";
+import { makeAgentDialogs } from "../client/views/agent-dialogs.js";
 
 /* ── a DOM that is a tree ──────────────────────────────────────────────── */
 
@@ -169,14 +170,16 @@ function press(key) {
 }
 
 const g = /** @type {any} */ (globalThis);
-const had = { document: g.document, Node: g.Node };
+const had = { document: g.document, Node: g.Node, HTMLElement: g.HTMLElement, requestAnimationFrame: g.requestAnimationFrame };
 beforeEach(() => {
   g.document = freshDocument();
   g.Node = El;
+  g.HTMLElement = El;
+  // More agents puts the caret in its search a frame after it opens.
+  g.requestAnimationFrame = (/** @type {() => void} */ fn) => { fn(); return 0; };
 });
 afterAll(() => {
-  if (had.document === undefined) delete g.document; else g.document = had.document;
-  if (had.Node === undefined) delete g.Node; else g.Node = had.Node;
+  for (const [k, v] of Object.entries(had)) if (v === undefined) delete g[k]; else g[k] = v;
 });
 
 /* ── the input box, stood up ───────────────────────────────────────────── */
@@ -271,4 +274,45 @@ test("the row of an Inactive agent opens More agents and runs nothing; the row o
   claude.fire("click");
   expect(s.said).toEqual([["agents"]]);
   expect(s.calls).toEqual([]);
+});
+
+/* ── Active or Inactive, and nothing else (DECISIONS O28) ──────────────── */
+
+const BUSY = [
+  agent(),
+  agent({ key: "gemini", name: "Gemini CLI", state: "inactive", reason: "checking", message: null }),
+  agent({ key: "goose", name: "goose", state: "inactive", reason: "installing", message: "Installing from the ACP Registry." }),
+  agent({ key: "droid", name: "Droid", state: "inactive", reason: "failed", message: "It could not be started." }),
+  agent({ key: "claude-acp", name: "Claude Code", state: "inactive", reason: "signin", message: "Sign in to use it." }),
+];
+
+test("the agent menu says Active or Inactive and nothing else: work under way is the lamp pulsing, and only Sign in or Start Gateway is a button", () => {
+  const s = stand(BUSY);
+  s.chip.fire("click");
+  const rows = /** @type {El[]} */ (s.menu()?.querySelectorAll("button.mi[data-agent]"));
+  const said = Object.fromEntries(rows.map((r) => [r.getAttribute("data-agent"), /** @type {El} */ (r.querySelector(".sub")).text]));
+  expect(said).toEqual({ "codex-acp": "Active", gemini: "Inactive", goose: "Inactive", droid: "Inactive", "claude-acp": "Inactive" });
+  const lamp = (/** @type {string} */ key) => /** @type {El} */ (rows.find((r) => r.getAttribute("data-agent") === key)?.children[0]).classes().join(" ");
+  expect(lamp("gemini")).toBe("led lit pulse");
+  expect(lamp("goose")).toBe("led lit pulse");
+  expect(lamp("droid")).toBe("led");
+  expect(s.menu()?.querySelectorAll(".mact").map((b) => b.text)).toEqual(["Sign in"]);
+});
+
+test("More agents says Active or Inactive and nothing else; a failed agent carries no button, and work under way is its button held", () => {
+  const s = stand(BUSY);
+  const dialogs = makeAgentDialogs({ h, chats: s.chats, signInTerminal: null, doc });
+  dialogs.agents({ why: () => null, current: () => "codex-acp", use: () => {} });
+  const rows = /** @type {El[]} */ (doc.body.querySelectorAll(".arow")).filter((r) => BUSY.some((a) => a.key === r.getAttribute("data-agent")));
+  expect(rows.length).toBe(BUSY.length);
+  /** @param {string} key */
+  const row = (key) => /** @type {El} */ (rows.find((r) => r.getAttribute("data-agent") === key));
+  for (const r of rows) expect(["Active", "Inactive"]).toContain(/** @type {El} */ (r.querySelector(".st")).text);
+  /** What a row's buttons say, and which of them can be pressed. @param {string} key */
+  const buttons = (key) => row(key).querySelectorAll("button").map((b) => (b.hasAttribute("disabled") ? "held " : "") + b.text);
+  expect(buttons("droid")).toEqual([]);
+  expect(row("droid").text).toContain("It could not be started.");
+  expect(buttons("gemini")).toEqual(["held Checking…"]);
+  expect(buttons("goose")).toEqual(["held Installing…"]);
+  expect(buttons("claude-acp")).toEqual(["Sign in"]);
 });
