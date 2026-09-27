@@ -576,6 +576,7 @@ tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
 tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the view against a double
+tests/agent-input.test.js       the agent menu and More agents: two states, one button, Check again
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser
 tests/e2e/agent-screen.e2e.ts   the host side on a screen, against the scripted agent

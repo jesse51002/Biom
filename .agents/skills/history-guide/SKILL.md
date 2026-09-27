@@ -360,7 +360,7 @@ client/views/agent-input.js    Go to page, above the input; the dock's NOT_TOUCH
 client/store/chats.js          lastSent: when this window last sent in a chat
 client/boot.js                 thisWindow, the stream's query, the mirror and the switcher, inFront
 guest/biom.js                  touches(): the `touch` notice
-tests/address.test.ts  history.test.ts  history-route.test.ts  history-store.test.js
+tests/address.test.ts  history.test.ts  history-route.test.ts  history-store.test.js  page-identity.test.ts
 tests/switcher.test.js  touch.test.js  ui-moves.test.js  stream.test.js  stream-feeds.test.ts
 tests/e2e/server.e2e.ts        a page's Instructions as an address, and a page's code refused the screen
 ```
