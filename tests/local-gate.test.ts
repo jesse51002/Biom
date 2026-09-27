@@ -7,7 +7,10 @@
 // proxy together. What this proves: a request that forges Host and Origin but
 // has no cookie is refused, in a source run with no launch token at all; a
 // request routed through the inner ring's `fetch` proxy can never carry the
-// cookie, even when the page knows it; and with the cookie it is let through.
+// cookie, even when the page knows it; a page on ANOTHER LOCALHOST PORT, which
+// the browser does hand the cookie, is refused by its Origin, its
+// `Sec-Fetch-Site` and a content type that is JSON only by its essence; and
+// this server's own page, with the cookie, is let through.
 // The vault here is a temporary folder and every id in it is invented.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
@@ -75,6 +78,44 @@ async function call(body: Record<string, unknown>, headers: Record<string, strin
 
 const refusedAsStranger = (env: { ok: boolean; error?: { code: string } }) => env.ok === false && env.error?.code === "identity";
 
+/** One call with every header the caller names, the content type included, and
+ *  what came back: the status, and the envelope when the body was one. */
+async function raw(body: Record<string, unknown>, headers: Record<string, string>): Promise<{ status: number; env: { ok: boolean; error?: { code: string } } | null }> {
+  const res = await fetch(api(), { method: "POST", headers, body: JSON.stringify({ id: "c1", g: 1, ...body }) });
+  const text = await res.text();
+  try {
+    return { status: res.status, env: JSON.parse(text) as { ok: boolean; error?: { code: string } } };
+  } catch {
+    return { status: res.status, env: null };
+  }
+}
+
+/** Refused before the kind was answered: a status with no envelope (the
+ *  content type), or the gate's `identity`. */
+const neverAnswered = (r: { status: number; env: { ok: boolean; error?: { code: string } } | null }) =>
+  r.status === 415 || (r.env !== null && refusedAsStranger(r.env));
+
+/** A PAGE ON ANOTHER LOCALHOST PORT, in the person's own browser: a different
+ *  origin and the SAME SITE, because a site ignores the port — so the browser
+ *  sends it the `SameSite=Strict` cookie. What it can say is what a browser
+ *  lets a page say: its own Origin, `Sec-Fetch-Site: same-site`, and a content
+ *  type that needs no preflight. */
+const CROSS_PORT = () => ({
+  cookie,
+  host: `localhost:${port}`,
+  origin: `http://localhost:${port + 1}`,
+  "sec-fetch-site": "same-site",
+});
+
+/** This server's own page, as a browser sends its POST: its own Origin and
+ *  `Sec-Fetch-Site: same-origin`. */
+const OWN_PAGE = () => ({
+  cookie,
+  host: `localhost:${port}`,
+  origin: `http://localhost:${port}`,
+  "sec-fetch-site": "same-origin",
+});
+
 test("the composed document hands this machine the capability, HttpOnly and SameSite=Strict", async () => {
   const res = await fetch(`${base}/`);
   const set = res.headers.get("set-cookie") ?? "";
@@ -109,6 +150,67 @@ test("with the cookie, from this machine, the gate lets it through", async () =>
 
 test("a DNS-rebinding page that holds the cookie is still refused by its Host", async () => {
   expect(refusedAsStranger(await call({ kind: "chat.list" }, { cookie, host: `attacker.example:${port}` }))).toBe(true);
+});
+
+test("A PAGE ON ANOTHER LOCALHOST PORT, CARRYING THE REAL COOKIE, is refused for every agent and chat kind and a window's report", async () => {
+  // The attack as a browser makes it: `fetch(…, { mode: "no-cors", credentials:
+  // "include" })` from http://localhost:<another port>, with a content type
+  // that needs no preflight and still mentions JSON. Every body carries a
+  // `window` that is no window's id, so a gate that let it through would die
+  // at `bad_request` and never reach an agent, the registry or the network.
+  for (const kind of LOCAL_KIND_NAMES) {
+    const r = await raw({ kind, window: "!" }, { ...CROSS_PORT(), "content-type": "text/plain; x=application/json" });
+    expect([kind, neverAnswered(r)]).toEqual([kind, true]);
+  }
+  // Each half stops it alone. The Origin, with a content type that is exactly
+  // JSON — which a browser would have preflighted, and which a page's own
+  // Origin must not get past the gate either:
+  for (const kind of LOCAL_KIND_NAMES) {
+    const r = await raw({ kind, window: "!" }, { ...CROSS_PORT(), "content-type": "application/json" });
+    expect([kind, r.env !== null && refusedAsStranger(r.env)]).toEqual([kind, true]);
+  }
+  // `Sec-Fetch-Site` alone, where a browser sends no Origin (a no-cors GET does
+  // not) — same-site, and cross-site, are both another page.
+  for (const site of ["same-site", "cross-site"]) {
+    const r = await raw({ kind: "chat.list", window: "!" }, { cookie, host: `localhost:${port}`, "sec-fetch-site": site, "content-type": "application/json" });
+    expect([site, r.env !== null && refusedAsStranger(r.env)]).toEqual([site, true]);
+  }
+  // An opaque origin is no origin of this server's either: the route refuses
+  // it by name before the gate is asked.
+  const opaque = await raw({ kind: "chat.list", window: "!" }, { ...CROSS_PORT(), origin: "null", "sec-fetch-site": "cross-site", "content-type": "application/json" });
+  expect(opaque.status).toBe(403);
+});
+
+test("THE CONTENT TYPE IS JSON BY ITS ESSENCE, not by containing the word — for every kind, local or not", async () => {
+  // This server's own page, with the cookie: the gate would pass it, so what
+  // stops it is the route's content type alone.
+  for (const ct of ["text/plain; x=application/json", "text/plain;charset=application/json", "application/jsonx", "multipart/form-data; boundary=application/json"]) {
+    const r = await raw({ kind: "chat.list", window: "!" }, { ...OWN_PAGE(), "content-type": ct });
+    expect([ct, r.status]).toEqual([ct, 415]);
+  }
+  // And a kind that is not local, with no cookie at all: what a page on another
+  // port used to reach with a simple request — `vault.create` included.
+  const open = await raw({ kind: "page.list" }, { host: `localhost:${port}`, origin: `http://localhost:${port + 1}`, "content-type": "text/plain; x=application/json" });
+  expect(open.status).toBe(415);
+  // JSON with a parameter, or in capitals, is still JSON.
+  for (const ct of ["application/json; charset=utf-8", "Application/JSON"]) {
+    const r = await raw({ kind: "page.list" }, { "content-type": ct });
+    expect([ct, r.env?.ok]).toEqual([ct, true]);
+  }
+});
+
+test("THIS SERVER'S OWN PAGE STILL GETS THROUGH: its POST with its own Origin, and a typed address with Sec-Fetch-Site none", async () => {
+  for (const kind of LOCAL_KIND_NAMES) {
+    const r = await raw({ kind, window: "!" }, { ...OWN_PAGE(), "content-type": "application/json" });
+    expect([kind, r.env?.error?.code]).toEqual([kind, "bad_request"]);
+  }
+  // At 127.0.0.1 as well as localhost: the Origin is whichever the Host is.
+  const numeric = await raw({ kind: "chat.list", window: "!" }, {
+    cookie, host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "sec-fetch-site": "same-origin", "content-type": "application/json",
+  });
+  expect(numeric.env?.error?.code).toBe("bad_request");
+  const typed = await raw({ kind: "chat.list", window: "!" }, { cookie, host: `localhost:${port}`, "sec-fetch-site": "none", "content-type": "application/json" });
+  expect(typed.env?.error?.code).toBe("bad_request");
 });
 
 test("the history and every window's context stay on the token, for runs — no cookie asked", async () => {
@@ -154,6 +256,28 @@ test("the live stream answers only this machine's own window", async () => {
   ctl.abort();
 });
 
+test("THE STREAM REFUSES A PAGE ON ANOTHER PORT that carries the cookie, and still opens for this server's own EventSource", async () => {
+  // Another port's EventSource is a CORS request and names its Origin; its
+  // no-cors GET names none and says `same-site`. Either one is refused.
+  for (const headers of [
+    { ...CROSS_PORT() },
+    { cookie, host: `localhost:${port}`, "sec-fetch-site": "same-site" },
+    { cookie, host: `localhost:${port}`, origin: `http://localhost:${port + 1}` },
+  ]) {
+    const res = await fetch(stream(), { headers });
+    expect([JSON.stringify(headers), res.status]).toEqual([JSON.stringify(headers), 403]);
+    await res.text();
+  }
+  // The client's own: an `EventSource` at the same origin sends no Origin and
+  // `Sec-Fetch-Site: same-origin`, and the cookie by itself.
+  const ctl = new AbortController();
+  const own = await fetch(stream(), { headers: { cookie, host: `localhost:${port}`, "sec-fetch-site": "same-origin" }, signal: ctl.signal });
+  expect(own.status).toBe(200);
+  const first = new TextDecoder().decode((await own.body!.getReader().read()).value);
+  expect(first).toContain(": open");
+  ctl.abort();
+});
+
 test("the list of local kinds is every agent and chat kind and a window's report, and a new chat kind is local by its name", () => {
   expect([...LOCAL_KIND_NAMES].sort()).toEqual([...CHAT_KIND_NAMES, "window.report"].sort());
   expect(isLocalKind("chat.somethingNew")).toBe(true);
@@ -163,19 +287,30 @@ test("the list of local kinds is every agent and chat kind and a window's report
   expect(isLocalKind("page.list")).toBe(false);
 });
 
-test("the refusal, as a table: peer, Host and cookie each stop their own case", () => {
+test("the refusal, as a table: peer, Host, Origin, Sec-Fetch-Site and cookie each stop their own case", () => {
   const cap = "capability";
-  const good = { address: "127.0.0.1", host: "localhost:4400", cookie: cap };
+  const good = { address: "127.0.0.1", host: "localhost:4400", origin: null as string | null, site: null as string | null, cookie: cap };
   const ask = (patch: Partial<typeof good> & Record<string, unknown>) =>
     localRefusal({ ...good, ...patch } as typeof good, { port: 4400, capability: cap });
   expect(ask({})).toBeNull();
   expect(ask({ address: "::1", host: "[::1]:4400" })).toBeNull();
+  // This server's own page, a same-origin EventSource, and an address typed.
+  expect(ask({ origin: "http://localhost:4400", site: "same-origin" })).toBeNull();
+  expect(ask({ origin: "http://[::1]:4400", host: "[::1]:4400", address: "::1" })).toBeNull();
+  expect(ask({ site: "same-origin" })).toBeNull();
+  expect(ask({ site: "none" })).toBeNull();
   for (const [what, patch] of [
     ["a machine on the network", { address: "192.168.1.20" }],
     ["no peer at all", { address: null }],
     ["a rebinding name", { host: "attacker.example:4400" }],
     ["another port", { host: "localhost:9999" }],
     ["no Host", { host: null }],
+    ["a page on another localhost port", { origin: "http://localhost:3000" }],
+    ["another loopback name's page", { origin: "http://127.0.0.1:4400" }],
+    ["an opaque origin", { origin: "null" }],
+    ["a same-site request with no Origin", { site: "same-site" }],
+    ["a cross-site request with no Origin", { site: "cross-site" }],
+    ["this server's Origin said by another site", { origin: "http://localhost:4400", site: "same-site" }],
     ["no cookie", { cookie: null }],
     ["a guessed cookie", { cookie: "guess" }],
   ] as const) {

@@ -2562,7 +2562,18 @@ export function tokenOk(expected: string | null, url: URL): boolean {
  *  it (HttpOnly, and the proxy drops `set-cookie` on the way back), its own
  *  requests are cross-site so the browser never sends it (Strict), and the
  *  proxy drops any `cookie` header a page hands it. A machine on the network is
- *  refused by the peer address before any of that. */
+ *  refused by the peer address before any of that.
+ *
+ *  WHAT IT DOES NOT STOP ALONE: a page on ANOTHER LOCALHOST PORT. A site
+ *  ignores the port, so every `localhost` origin is the same site as this one,
+ *  and the person's browser sends that page this cookie — `SameSite=Strict`
+ *  included. Such a page is any other development server, a static preview of
+ *  a downloaded file, or a project an agent is running. So `localRefusal` asks
+ *  the two headers a browser never lets a page forge as well: the Origin must
+ *  be this server's own where one is sent, and `Sec-Fetch-Site` must say
+ *  `same-origin` or `none` where it is sent — which is `terminalRefusal`'s
+ *  Origin check, on every local kind and on the stream. The proxy forges both
+ *  and still has no cookie; the other port has the cookie and forges neither. */
 export const LOCAL_COOKIE = "biom-local";
 
 /** Named per port, because a cookie ignores the port and two servers on one
@@ -2572,19 +2583,41 @@ export const localCookie = (port: number): string => `${LOCAL_COOKIE}-${port}`;
 
 /** WHETHER A REQUEST IS THIS MACHINE'S OWN WINDOW, or the sentence saying why
  *  not — for the log and a test, and never for the caller, who is told only
- *  that it was refused. A loopback peer, a Host that is a loopback name on this
- *  server's port (which defeats a DNS-rebinding page resolving its own name to
- *  127.0.0.1), and the capability cookie. No Origin check: the one forger this
- *  has to stop — the page proxy — sets any Origin it likes, and an
- *  `EventSource` sends none. */
+ *  that it was refused. FIVE CHECKS, each stopping its own forger:
+ *
+ *    · a loopback peer — a machine on the network;
+ *    · a Host that is a loopback name on this server's port — a DNS-rebinding
+ *      page resolving its own name to 127.0.0.1;
+ *    · an Origin that is this server's own, WHERE ONE IS SENT — a page on
+ *      another localhost port, which the browser hands this server's cookie
+ *      because a site ignores the port (see `LOCAL_COOKIE`), and the box,
+ *      whose origin is `null`. Absent is allowed: a same-origin `EventSource`
+ *      sends none, and neither does a program that is not a browser;
+ *    · `Sec-Fetch-Site` of `same-origin` or `none`, WHERE ONE IS SENT — the
+ *      same page on another port when it makes a request that names no
+ *      Origin, a no-cors GET of the stream;
+ *    · the capability cookie — the page proxy, which forges the headers above
+ *      from a loopback peer and can never present it. */
 export function localRefusal(
-  asked: { address: string | null; host: string | null; cookie: string | null },
+  asked: { address: string | null; host: string | null; origin: string | null; site: string | null; cookie: string | null },
   expected: { port: number; capability: string },
 ): string | null {
   if (!isLoopback(asked.address)) return "offered only to this machine";
   if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
+  const origin = asked.origin ?? null;
+  if (origin !== null && !ownOrigin(origin, asked.host)) return "the Origin is not this server's own page";
+  const site = asked.site ?? null;
+  if (site !== null && site !== "same-origin" && site !== "none") return "the request came from another page, on another port or another site";
   if (asked.cookie === null || asked.cookie !== expected.capability) return "this machine's capability is missing";
   return null;
+}
+
+/** An Origin naming exactly the address this request was made to — which, once
+ *  the Host has passed `loopbackHost`, is this server on this machine. `null`,
+ *  the box's opaque origin, is never one. */
+function ownOrigin(origin: string, host: string | null): boolean {
+  const h = host ?? "";
+  return origin === `http://${h}` || origin === `https://${h}`;
 }
 
 /** A Host header naming a loopback name on this server's own port. */
@@ -2643,10 +2676,9 @@ export function terminalRefusal(
   if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
   if (!asked.tokenOk) return "this launch's token is missing";
   if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
-  const host = asked.host ?? "";
   if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
   if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
-  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
+  if (!ownOrigin(asked.origin, asked.host)) return "a terminal is offered only to this server's own pages";
   if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
   return null;
 }
@@ -3134,6 +3166,8 @@ if (import.meta.main) {
         {
           address: server.requestIP(request)?.address ?? null,
           host: request.headers.get("host"),
+          origin: request.headers.get("origin"),
+          site: request.headers.get("sec-fetch-site"),
           cookie: cookieValue(request.headers.get("cookie"), localCookie(server.port)),
         },
         { port: server.port, capability: LOCAL_CAP },
@@ -3166,9 +3200,11 @@ if (import.meta.main) {
         //
         // THE AGENT AND CHAT KINDS, AND A WINDOW'S REPORT, ANSWER ONLY THIS
         // MACHINE'S OWN WINDOW, in every build: `isLocalKind` names them and
-        // `localRefusal` is the whole of the check. The token above is a source
-        // run's nothing, and an agent answered `allow_always` is command
-        // execution. The reason goes to the log; the caller is told `identity`.
+        // `localRefusal` is the whole of the check — peer, Host, Origin,
+        // `Sec-Fetch-Site` and the cookie, because a page on another localhost
+        // port is handed the cookie too. The token above is a source run's
+        // nothing, and an agent answered `allow_always` is command execution.
+        // The reason goes to the log; the caller is told `identity`.
         //
         // AND A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD REPORT FOR IT:
         // `own` is the same check without a kind, and a request that fails it
@@ -3244,7 +3280,9 @@ if (import.meta.main) {
         // diffs, what the person has open — so it answers only this launch's
         // window: the token where the build has one, and this machine's
         // capability in every build. An `EventSource` sends the same-origin
-        // cookie by itself and its url is built by the client, not resolved
+        // cookie by itself — and no Origin, and `Sec-Fetch-Site: same-origin`,
+        // which is what `localRefusal` lets through where another port's page
+        // is refused — and its url is built by the client, not resolved
         // against a box's base, so the token rides it as a query.
         if (!tokenOk(TOKEN, url)) return new Response("Not authorised", { status: 401 });
         const why = local();

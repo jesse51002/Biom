@@ -1247,8 +1247,8 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
  * a sentence refusing it, or null — asked once the body is read and before
  * anything is answered. It exists for the kinds that answer only this
  * machine's own window (`isLocalKind` in `contracts/guards.js`): the facts it
- * needs — the peer address, the Host, the capability cookie — are the
- * server's, and this layer never sees a socket. A refusal is `identity`, and
+ * needs — the peer address, the Host, the Origin, `Sec-Fetch-Site`, the
+ * capability cookie — are the server's, and this layer never sees a socket. A refusal is `identity`, and
  * its sentence names no check: telling a caller which one failed is telling it
  * which to forge next. Absent, nothing is gated — every test of `handle` and
  * every caller that predates it.
@@ -1281,8 +1281,14 @@ export async function route(request: Request, deps: Deps, gate?: (kind: string) 
     return new Response("Forbidden", { status: 403 });
   }
   // Requiring JSON forces a preflight this server never answers, so a simple
-  // request cannot reach the switch above.
-  if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
+  // request cannot reach the switch above. BY THE TYPE'S ESSENCE, EXACTLY —
+  // what comes before the first `;`, trimmed and in lower case — and never by
+  // containing the word: `text/plain; x=application/json` is a simple request a
+  // browser sends from any page without asking, and a substring check let it
+  // through. From a page on another localhost port it carried the person's
+  // capability cookie to every kind this route answers.
+  const type = (request.headers.get("content-type") ?? "").split(";")[0] ?? "";
+  if (type.trim().toLowerCase() !== "application/json") {
     return new Response("Expected application/json", { status: 415 });
   }
 
