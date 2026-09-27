@@ -277,6 +277,10 @@ test("a patch draws only what it adds: the thread's nodes stay, the words stream
     await post(page, box, { kind: "look.patch", chat: cid("live"), updates: [{ seq: 23, at: now, turn, kind: "reply", text: "I read the Specs page and I will draw " }] });
     await post(page, box, { kind: "look.patch", chat: cid("done"), updates: [{ seq: 99, at: now, turn, kind: "reply", text: "NOT THIS CHAT" }] });
     await post(page, box, { kind: "look.patch", chat: cid("live"), updates: [{ seq: 24, at: now, turn, kind: "reply", text: "the **four** columns." }] });
+    // THE FACE FLIPS IN AFTER THE LOADER FOLDS AWAY, which is an animation of
+    // its own (`paintMood` in look.js) and not the two frames `post` waits: so
+    // it is waited for, bounded, rather than read the instant the patch landed.
+    await box.waitForFunction(() => !!document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelectorAll(".turnw")[1]?.querySelector(".mood img"), null, { timeout: BOUND }).catch(() => {});
     const seen = await inLook<any>(box, `
       const turns = root.querySelectorAll(".turnw");
       const second = turns[1];
