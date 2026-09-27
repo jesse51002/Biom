@@ -18,8 +18,9 @@
 //      Stop ends the turn cancelled.
 //   5. A long list shows five and More models, grouped as the agent groups it;
 //      a choice picked is the agent's option set.
-//   6. Edit opens a new chat beside the page with its location typed in, and
-//      the chat is started for that page.
+//   6. Home from the Agent screen brings its chat along beside the page; Edit
+//      opens a new chat there with its location typed in, and the chat is
+//      started for that page.
 //   7. The panel maximises to the Agent screen and minimises beside the page
 //      with the same box — never reloaded — and the context follows.
 //   8. The window remembers its chat and its panel across a reload, and the
@@ -352,7 +353,9 @@ walk("6. Edit opens a new chat beside the page with its location typed in, and t
     const text = await page.frameLocator("div.plate iframe.artifact").locator("body").innerText().catch(() => "");
     return text.length > 0;
   });
-  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("none");
+  // Home from the full Agent screen brings the open chat along, in the panel
+  // beside the page (DECISIONS O24(b)).
+  expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   await page.locator("button.tool.edit").click();
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   const input = page.locator("#agentta");
