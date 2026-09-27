@@ -696,3 +696,21 @@ test("Go back to reads only this window's views: a page another window opened si
   expect(w.ui.get().route.id).toBe("boards");
   expect(w.switcher.get().back).toEqual({ to: page("log"), name: "Log" });
 });
+
+test("a stream reopening after the server restarted says a screen the switcher brought up as the switcher's again", async () => {
+  const w = windowOn();
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("boards"));
+  await settle();
+  expect(w.ui.get().route.id).toBe("boards");
+
+  // No touch: the screen is still the agent's when the server comes back.
+  w.server.restart();
+  const before = w.server.reports.length;
+  await w.switcher.resync();
+  await settle();
+  expect(w.server.reports.slice(before).map((r) => r.moved)).toEqual([{ by: "switcher", agent: AGENT, chat: CHAT }]);
+  // So the history names it the agent's again, and Go back to survives a reload.
+  expect(w.server.entries.at(-1)).toMatchObject({ kind: "view", writer: { kind: "agent", agent: AGENT, chat: CHAT } });
+});
