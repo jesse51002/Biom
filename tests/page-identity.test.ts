@@ -10,7 +10,9 @@
 // is held here:
 //
 //   - a page with no `uid` is given one the first time it is asked for, and
-//     it is written into the file behind a commit, the way mount does;
+//     it is written into the file behind a commit — as ONE LINE under
+//     `name:`, every other byte the agent wrote kept, and the way mount
+//     writes a document only where that line cannot go in;
 //   - it is STABLE for the session: asked twice at once it is one `uid`, and
 //     an agent writing the document whole without it gets the same one back —
 //     a page that was there at mount included;
@@ -31,7 +33,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { makeIdentities, makePages, pageDir, PAGE_DOC } from "../server/domain/pages.ts";
+import { makeIdentities, makePages, pageDir, PAGE_DOC, withUidLine } from "../server/domain/pages.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { parse, parseAny, format, formatAny } from "../server/platform/yaml.ts";
 import { makeHost } from "../server/main.ts";
@@ -95,6 +97,66 @@ test("A PAGE WITH NO UID IS GIVEN ONE when first asked, and it is written into t
   expect(await ids.of("home/Fresh")).toBe(uid);
   // A page that had one keeps it, untouched.
   expect(await ids.of("home/Notes")).toBe("n0tesinvented001");
+});
+
+test("THE UID GOES IN AS ONE LINE UNDER name: — the agent's comments, quoting, order and a plugin's own keys kept byte for byte", async () => {
+  const root = vaultOf();
+  // Written the way an agent writes, and nothing like the way mount would:
+  // comments, a quoted name, the plugin first, and keys under `input:` that
+  // are the plugin's own and that the host never reads.
+  const written =
+    "# A page made in a chat — invented.\n" +
+    "plugin: html   # drawn by its own index.html\n" +
+    "name: 'Fresh, by hand'\n" +
+    "input:\n" +
+    "  # the plugin's own configuration\n" +
+    "  tone: {level: 3, words: [calm, plain]}\n" +
+    "  somethingNoHostKnows: yes please\n";
+  put(root, "home/Fresh", written);
+  const ids = makeIdentities(makeFiles(root), yaml);
+  const uid = await ids.of("home/Fresh");
+  await ids.written();
+  const lines = written.split("\n");
+  lines.splice(3, 0, `uid: ${uid}`);
+  expect(readFileSync(docPath(root, "home/Fresh"), "utf8")).toBe(lines.join("\n"));
+
+  // A file with Windows line endings takes the line in its own ending.
+  put(root, "home/Crlf", "name: Crlf\r\nplugin: biom-doc # made on Windows\r\ncontents: []\r\n");
+  const crlf = await ids.of("home/Crlf");
+  await ids.written();
+  expect(readFileSync(docPath(root, "home/Crlf"), "utf8")).toBe(`name: Crlf\r\nuid: ${crlf}\r\nplugin: biom-doc # made on Windows\r\ncontents: []\r\n`);
+
+  // A top-level key the format does not have is a page that will not open —
+  // the top level is closed by name — so it is given no identity and not
+  // one byte of it is written.
+  const unknown = "name: Odd\nplugin: biom-doc\nmood: invented\ncontents: []\n";
+  put(root, "home/Odd", unknown);
+  expect(await ids.of("home/Odd")).toBeNull();
+  await ids.written();
+  expect(readFileSync(docPath(root, "home/Odd"), "utf8")).toBe(unknown);
+});
+
+test("A LAYOUT THE LINE CANNOT GO INTO falls back to the way mount writes a document, and the page still gets its uid", async () => {
+  const root = vaultOf();
+  const ids = makeIdentities(makeFiles(root), yaml);
+  for (const [id, text, name] of [
+    // A name folded over lines: under its first line the uid would cut it.
+    ["home/Folded", "name: >-\n  Fresh\n  page\nplugin: biom-doc\ncontents: []\n", "Fresh page"],
+    // An empty `uid:` already there: a second would be a duplicate key.
+    ["home/Emptyuid", "name: Empty uid\nuid:\nplugin: biom-doc\ncontents: []\n", "Empty uid"],
+    // No `name:` line at all.
+    ["home/Nameless", "plugin: biom-doc\ncontents: []\n", "Nameless"],
+  ] as const) {
+    put(root, id, text);
+    const uid = await ids.of(id);
+    expect([id, typeof uid]).toEqual([id, "string"]);
+    await ids.written();
+    const back = parse(readFileSync(docPath(root, id), "utf8"));
+    expect([id, back.uid, back.name]).toEqual([id, uid, name]);
+  }
+  // And the insert alone, for the record: none of these is taken as it is.
+  expect(withUidLine("plugin: biom-doc\n", "u1nventedidentity")).toBeNull();
+  expect(withUidLine("name: Last", "u1nventedidentity")).toBe("name: Last\nuid: u1nventedidentity");
 });
 
 test("ASKED TWICE AT ONCE, one page is ONE uid — the history and the watcher never mint it two", async () => {

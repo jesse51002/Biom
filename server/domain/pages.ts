@@ -1935,8 +1935,9 @@ function htmlFileOf(part: PartValue): string | null {
 export interface Identities {
   /** THE `uid` OF THE PAGE AT `id`, giving it one where its document parses and
    *  has none — the one this session already knew for that page when no other
-   *  page holds it now, or a new one — and writing that into the file the way
-   *  mount does, behind a commit. Answers once the `uid` is decided, not once
+   *  page holds it now, or a new one — and writing that into the file behind a
+   *  commit, as one line where mount puts it and every other byte as it was.
+   *  Answers once the `uid` is decided, not once
    *  it is written: nothing that asks has to wait on git. Null for a page that
    *  is not there or will not parse, which is never rewritten. */
   of(id: PageId): Promise<string | null>;
@@ -2008,22 +2009,41 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
     return elsewhere;
   };
 
-  /** THE WAY MOUNT DOES IT: one commit ahead, then the document with its `uid`
-   *  — read again after the commit, so what an agent wrote meanwhile is what
-   *  gets the `uid` rather than what it replaced. */
+  /** ONE COMMIT AHEAD, as mount does, then ONE LINE: `uid:` put in under the
+   *  `name:` line, where mount writes it, and every other byte left as it was —
+   *  so an agent's comments, quoting, order and a plugin's own keys under
+   *  `input:` survive, and a document an agent may still be editing is not
+   *  rewritten under it. The text is read again after the commit, so what an
+   *  agent wrote meanwhile is what gets the `uid`. The insert is kept only if
+   *  it reads back as the same document plus that `uid` and nothing else; a
+   *  layout it cannot be put into — no `name:` line, a name spread over lines,
+   *  an empty `uid:` already there — is written the way mount writes one. */
   const writeBack = (id: PageId): void => {
     pending.add(id);
     const run = writing.then(async () => {
       try {
         await files.commit("Before a page was given its identity");
-        const now = await read(id);
+        const path = pageDocPath(id);
+        const text = await files.read(path);
         const uid = known.get(id);
-        if (now === null || uid === undefined) return;
+        if (text === null || uid === undefined) return;
+        let now: PageDoc;
+        try {
+          now = docOf(yaml.parse(text), segmentOf(id));
+        } catch {
+          // Broken since it was asked about: never rewritten, as ever.
+          return;
+        }
         if (typeof now.uid === "string") {
           learn(id, now.uid);
           return;
         }
-        await files.write(pageDocPath(id), yaml.format({ ...now, uid }));
+        const inserted = withUidLine(text, uid);
+        if (inserted !== null && onlyTheUid(yaml, text, inserted, uid)) {
+          await files.write(path, inserted);
+          return;
+        }
+        await files.write(path, yaml.format({ ...now, uid }));
       } finally {
         pending.delete(id);
       }
@@ -2088,4 +2108,51 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
       await writing;
     },
   };
+}
+
+/** THE TEXT WITH ONE `uid:` LINE PUT IN under the top-level `name:` line — the
+ *  first line that starts with `name:` at the left edge — in the line ending the
+ *  file already uses. Null where there is no such line. Whether the result is
+ *  still the same page is `onlyTheUid`'s to say, not this. */
+export function withUidLine(text: string, uid: string): string | null {
+  const found = /^name:[^\r\n]*(\r?\n|$)/m.exec(text);
+  if (found === null) return null;
+  const ending = found[1] ?? "";
+  const line = `uid: ${uid}`;
+  if (ending === "") return `${text}${text.includes("\r\n") ? "\r\n" : "\n"}${line}`;
+  const at = found.index + found[0].length;
+  return `${text.slice(0, at)}${line}${ending}${text.slice(at)}`;
+}
+
+/** Does `after` read back as `before` plus `uid: <uid>` at the top level, and
+ *  nothing else — every value, at every depth, the same? Read as plain YAML,
+ *  so nothing the page reader narrows away can hide a difference, and then as
+ *  a page, so the result is one the reader opens with that identity. */
+function onlyTheUid(yaml: YamlCodec, before: string, after: string, uid: string): boolean {
+  try {
+    const was = yaml.parseAny(before);
+    const now = yaml.parseAny(after);
+    if (!isPlainMap(was) || !isPlainMap(now)) return false;
+    if (Object.hasOwn(was, "uid") || now["uid"] !== uid) return false;
+    if (!sameShape(now, { ...was, uid })) return false;
+    return yaml.parse(after).uid === uid;
+  } catch {
+    return false;
+  }
+}
+
+const isPlainMap = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Two parsed values, the same at every depth: a list in order, a map key for
+ *  key whatever the order its keys came in. */
+function sameShape(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => sameShape(item, b[i]));
+  }
+  if (!isPlainMap(a) || !isPlainMap(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.hasOwn(b, key) && sameShape(a[key], b[key]));
 }
