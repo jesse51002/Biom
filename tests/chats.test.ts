@@ -371,6 +371,10 @@ only("every write is reported once — fs and the tool call that made it are one
 
   const log = git("log", "--format=%s").stdout.trim().split("\n");
   expect(log[0]).toBe("Before Fake Agent wrote in a chat");
+  // ONCE for the turn, before its first write — though it wrote through Biom
+  // twice (a.md, b.md).
+  expect(log.filter((m) => m === "Before Fake Agent wrote in a chat").length).toBe(1);
+  expect(log.length).toBe(2);
 });
 
 only("a switch mints a new agent id, and the new session is handed the chat so far", async () => {
