@@ -24,7 +24,7 @@
 
 import { test, expect, afterAll } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync, gzipSync } from "node:zlib";
@@ -810,4 +810,124 @@ test("A LOOK FOR NEW AGENTS DURING AN INSTALL leaves the install alone: the agen
   agents.list();
   await agents.settled();
   expect(r.probes.length).toBe(1);
+});
+
+/* ── one install at a time across workspaces (O29) ────────────────────── */
+
+const jsEntry = { id: "jsagent", name: "JS agent", version: "3.1.0", description: "Invented", distribution: { npx: { package: "@invented/js-agent@3.1.0" } } };
+
+/** A stand-in `npm` that marks the tree it is writing, waits until `held`
+ *  settles, and fails — as a real one does — when that tree was deleted
+ *  under it. Invented. */
+function heldNpm(tag: string, runs: string[], held: Promise<void>, fails = false): ProcessRunner {
+  return {
+    start(spec) {
+      runs.push(tag);
+      const prefix = spec.cmd[spec.cmd.indexOf("--prefix") + 1] as string;
+      const mark = join(prefix, "node_modules", `.${tag}-in-progress`);
+      mkdirSync(join(prefix, "node_modules"), { recursive: true });
+      writeFileSync(mark, "");
+      const done = held.then(() => {
+        if (fails || !existsSync(mark)) return { exit: 1, signal: null };
+        const pkg = join(prefix, "node_modules", "@invented", "js-agent");
+        mkdirSync(pkg, { recursive: true });
+        writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@invented/js-agent", bin: "index.js" }));
+        writeFileSync(join(pkg, "index.js"), "// invented");
+        return { exit: 0, signal: null };
+      });
+      return { pid: 7000 + runs.length, pgid: 7000 + runs.length, born: null, done };
+    },
+    async end() {},
+    killNow() {},
+    alive: () => false,
+  };
+}
+
+async function waitFor(what: string, ms: number, ok: () => boolean): Promise<void> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (ok()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+const lockTiming = { installLockPoll: 20, installLockBeat: 50, installLockStale: 5_000 };
+
+test("TWO WORKSPACES INSTALLING ONE AGENT take turns by a lock in the folder they share: the second waits, finds it installed, and deletes nothing of the first's", async () => {
+  const home = fresh();
+  const runs: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  const a = rig({ entries: [jsEntry], home });
+  const b = rig({ entries: [jsEntry], home });
+  a.deps.processes = heldNpm("A", runs, held);
+  b.deps.processes = heldNpm("B", runs, held);
+  a.deps.timing = { ...a.deps.timing, ...lockTiming };
+  b.deps.timing = { ...b.deps.timing, ...lockTiming };
+  const A = makeAgents(a.deps);
+  const B = makeAgents(b.deps);
+  A.install("jsagent");
+  await waitFor("the first workspace's npm to start", 3000, () => runs.length === 1);
+  B.install("jsagent");
+  await waitFor("the second to say it is waiting", 3000, () => B.list().find((x) => x.key === "jsagent")?.message === "It is being installed in another workspace.");
+  expect(B.list().find((x) => x.key === "jsagent")?.reason).toBe("installing");
+  await Bun.sleep(100);
+  expect(runs).toEqual(["A"]);
+  release();
+  await A.settled();
+  await B.settled();
+  expect(A.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+  expect(B.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+  // The second never ran npm: it found the first's install and used it.
+  expect(runs).toEqual(["A"]);
+  expect(existsSync(join(home, "jsagent", "3.1.0", "node_modules", "@invented", "js-agent", "index.js"))).toBe(true);
+  expect(readdirSync(join(home, "jsagent")).filter((n) => n.endsWith(".lock"))).toEqual([]);
+});
+
+test("a workspace that waited on another's install installs the agent itself when that one failed", async () => {
+  const home = fresh();
+  const runs: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  const a = rig({ entries: [jsEntry], home });
+  const b = rig({ entries: [jsEntry], home });
+  a.deps.processes = heldNpm("A", runs, held, true);
+  b.deps.processes = heldNpm("B", runs, Promise.resolve());
+  a.deps.timing = { ...a.deps.timing, ...lockTiming };
+  b.deps.timing = { ...b.deps.timing, ...lockTiming };
+  const A = makeAgents(a.deps);
+  const B = makeAgents(b.deps);
+  A.install("jsagent");
+  await waitFor("the first workspace's npm to start", 3000, () => runs.length === 1);
+  B.install("jsagent");
+  await waitFor("the second to say it is waiting", 3000, () => B.list().find((x) => x.key === "jsagent")?.message === "It is being installed in another workspace.");
+  release();
+  await A.settled();
+  await B.settled();
+  expect(A.list().find((x) => x.key === "jsagent")?.reason).toBe("failed");
+  expect(B.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+  expect(runs).toEqual(["A", "B"]);
+  expect(readdirSync(join(home, "jsagent")).filter((n) => n.endsWith(".lock"))).toEqual([]);
+});
+
+test("a lock left by a server that stopped mid-install goes stale, and the next install goes ahead", async () => {
+  const home = fresh();
+  mkdirSync(join(home, "jsagent"), { recursive: true });
+  const lock = join(home, "jsagent", ".install-3.1.0.lock");
+  writeFileSync(lock, "{}\n");
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(lock, old, old);
+  const runs: string[] = [];
+  const r = rig({ entries: [jsEntry], home });
+  r.deps.processes = heldNpm("A", runs, Promise.resolve());
+  r.deps.timing = { ...r.deps.timing, ...lockTiming };
+  const a = await installed(r, "jsagent");
+  expect(a.state).toBe("active");
+  expect(runs).toEqual(["A"]);
+  expect(existsSync(lock)).toBe(false);
 });

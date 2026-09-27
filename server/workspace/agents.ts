@@ -58,6 +58,10 @@
 // install log, and a later download of that same version with other bytes is
 // refused — so a changed file for a pinned version is never run. A new version
 // is a new first use, and a checksum the registry does list always decides.
+// EVERY WORKSPACE OPEN ON THIS MACHINE SHARES THAT FOLDER, so one install of
+// an agent and version runs at a time across all of them, by a lock file
+// beside its tree (O29): a second waits, says so, and then uses what the
+// first installed, or installs it itself where the first failed.
 //
 // NOTHING WAITS. A probe, an install, a sign-in and a Gateway start each answer
 // the agent as it stands and say the verdict to every subscriber when it
@@ -76,7 +80,7 @@
 // `claude-agent-acp`. No environment variable changes how anything here loads.
 
 import { createHash, randomBytes } from "node:crypto";
-import { appendFileSync, chmodSync, closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -159,6 +163,15 @@ export interface AgentsTiming {
   download: number;
   /** One `npm`, `uv` or `bzip2` run. */
   install: number;
+  /** How often an install waiting on another workspace's install of the
+   *  same agent and version looks at its lock again. */
+  installLockPoll: number;
+  /** How often an install in flight says it is still going, by its lock
+   *  file's time. */
+  installLockBeat: number;
+  /** A lock not said to be going for this long was left by a server that
+   *  stopped in the middle of an install, and is taken over. */
+  installLockStale: number;
   /** How long an unredeemed sign-in ticket lasts. */
   ticket: number;
   /** How long after a ticket is redeemed its command's end still re-probes
@@ -183,6 +196,9 @@ export const TIMING: AgentsTiming = {
   downloadIdle: 60_000,
   download: 30 * 60 * 1000,
   install: 15 * 60 * 1000,
+  installLockPoll: 1_000,
+  installLockBeat: 10_000,
+  installLockStale: 60_000,
   ticket: 5 * 60 * 1000,
   signInRun: 60 * 60 * 1000,
 };
@@ -1349,6 +1365,82 @@ export function makeAgents(deps: AgentsDeps): Agents {
     }
   }
 
+  /** THE LOCK ON ONE AGENT AND VERSION'S INSTALL, a file made with O_EXCL in
+   *  the folder every workspace shares — never a lock in this process, which
+   *  another workspace's server cannot see. Its holder touches it while it
+   *  works; one nobody has touched for `installLockStale` was left by a server
+   *  that stopped mid-install and is taken over. Waiting is bounded by the
+   *  longest one install can take, and says so on the agent meanwhile.
+   *  `waited`: another workspace held it first. */
+  async function lockInstall(slot: Slot, path: string): Promise<{ waited: boolean; release: () => void }> {
+    const until = Date.now() + t.download + t.install + t.installLockStale;
+    let waited = false;
+    for (;;) {
+      if (closed) throw new Said("Biom is stopping.");
+      let token: string | null = null;
+      try {
+        const fd = openSync(path, "wx", 0o600);
+        token = randomBytes(8).toString("hex");
+        try {
+          writeSync(fd, `${JSON.stringify({ pid: process.pid, token })}\n`);
+        } finally {
+          closeSync(fd);
+        }
+      } catch (e) {
+        if ((e as { code?: unknown }).code !== "EEXIST") throw e;
+      }
+      if (token !== null) {
+        const beat = setInterval(() => {
+          try {
+            const at = new Date();
+            utimesSync(path, at, at);
+          } catch {
+            // Taken over or gone: nothing to keep alive.
+          }
+        }, t.installLockBeat);
+        (beat as { unref?: () => void }).unref?.();
+        const mine = token;
+        return {
+          waited,
+          release: () => {
+            clearInterval(beat);
+            try {
+              // Only its own: a lock taken over after this one went stale is
+              // the new holder's.
+              if (readFileSync(path, "utf8").includes(mine)) rmSync(path, { force: true });
+            } catch {
+              // Gone already.
+            }
+          },
+        };
+      }
+      let held: { mtimeMs: number; text: string } | null = null;
+      try {
+        held = { mtimeMs: statSync(path).mtimeMs, text: readFileSync(path, "utf8") };
+      } catch {
+        held = null;
+      }
+      if (held === null) continue;
+      if (Date.now() - held.mtimeMs > t.installLockStale) {
+        // Left by a server that stopped: taken over, unless somebody else
+        // did that first.
+        try {
+          if (readFileSync(path, "utf8") === held.text) rmSync(path, { force: true });
+        } catch {
+          // Gone already.
+        }
+        continue;
+      }
+      if (!waited) {
+        waited = true;
+        slot.info.message = "It is being installed in another workspace.";
+        emit();
+      }
+      if (Date.now() > until) throw new Said("It is being installed in another workspace, and that has not finished.");
+      await sleep(t.installLockPoll);
+    }
+  }
+
   async function runInstall(slot: Slot): Promise<void> {
     // A probe that ran ahead of this in the queue may have said something
     // else since `install` answered.
@@ -1379,20 +1471,38 @@ export function makeAgents(deps: AgentsDeps): Agents {
       if (!inside(folder)) throw new Said("It cannot be installed under that name.");
       // Private: what npm, uv or a Gateway print into their logs is the person's.
       mkdirSync(folder, { recursive: true, mode: 0o700 });
-      // What a server that stopped in the middle of an install left behind —
-      // old enough that it is not another workspace's install in flight.
-      for (const name of readdirSync(folder)) {
-        if (!name.startsWith(".part-")) continue;
-        try {
-          if (lstatSync(join(folder, name)).mtimeMs < Date.now() - STALE_PART) rmSync(join(folder, name), { recursive: true, force: true });
-        } catch {
-          // Gone already.
+      // ONE INSTALL OF AN AGENT AND VERSION AT A TIME, ACROSS EVERY WORKSPACE
+      // open on this machine (O29): they share this folder, and an install
+      // deletes and rebuilds its version's tree — under another workspace's
+      // npm, or under an agent already running from it.
+      const lock = await lockInstall(slot, join(folder, `.install-${entry.version}.lock`));
+      try {
+        // What a server that stopped in the middle of an install left behind —
+        // old enough that it is not another workspace's install in flight.
+        for (const name of readdirSync(folder)) {
+          if (!name.startsWith(".part-")) continue;
+          try {
+            if (lstatSync(join(folder, name)).mtimeMs < Date.now() - STALE_PART) rmSync(join(folder, name), { recursive: true, force: true });
+          } catch {
+            // Gone already.
+          }
         }
+        // Installed by the workspace this one waited on: used as it stands,
+        // not rebuilt under an agent that workspace may be running from it.
+        const theirs = lock.waited ? await fromInstalled(slot.key, env) : null;
+        if (theirs === null || theirs.version !== entry.version) {
+          if (lock.waited) {
+            slot.info.message = `Installing ${entry.version} from the ACP Registry.`;
+            emit();
+          }
+          const rec = plan.via === "binary"
+            ? await installBinary(entry, plan.target, env)
+            : await installPackage(entry, plan.via, plan.dist, env);
+          writeManifest(rec);
+        }
+      } finally {
+        lock.release();
       }
-      const rec = plan.via === "binary"
-        ? await installBinary(entry, plan.target, env)
-        : await installPackage(entry, plan.via, plan.dist, env);
-      writeManifest(rec);
       slot.installing = false;
       await runProbe(slot);
     } catch (e) {
