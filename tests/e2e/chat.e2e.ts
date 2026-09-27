@@ -639,14 +639,14 @@ walk("2", "the start screen has the turning line, View chat history and Ask anyt
   }
   await until("the look drew the start screen's line", 10000, () => lookSays("What should we"));
   const f = await lookFrame();
-  const word = async () => (await f.locator("h1.line .swap > span").last().innerText()).trim();
+  const word = async () => ((await f.locator("h1.line .swap > span").last().textContent()) ?? "").trim();
   const first = await word();
   expect(["automate", "plan", "create", "visualize"]).toContain(first);
   // The word turns, on this window's clock.
   await page.clock.fastForward(2800);
   await until("the line's last word turned", 5000, async () => (await word()) !== first);
   expect(["automate", "plan", "create", "visualize"]).toContain(await word());
-  expect((await f.locator("button.histlink").innerText()).trim()).toMatch(/^View chat history/);
+  expect(((await f.locator("button.histlink").textContent()) ?? "").trim()).toMatch(/^View chat history/);
   const input = page.locator("#agentta");
   expect(await input.getAttribute("placeholder")).toBe("Ask anything");
   await until("the agent chip names the harness, lit", 15000, async () =>
@@ -691,7 +691,7 @@ bug("BUG-E2E-1", "the words of a reply that arrives with the end of its turn are
   // The fake streams its reply and ends the turn a moment later, so both
   // reach the look in one patch — as a short reply from a real agent does.
   await until("the look drew the reply's words", 5000, async () =>
-    inLook(async (f) => (await lastTurn(f).locator(".prose").innerText()).includes("echo: hello"), false));
+    inLook(async (f) => ((await lastTurn(f).locator(".prose").textContent()) ?? "").includes("echo: hello"), false));
 });
 
 walk("4b", "Jev's faces: the chat's name gets one, and the finished turn's message keeps the last one", async () => {
@@ -701,7 +701,7 @@ walk("4b", "Jev's faces: the chat's name gets one, and the finished turn's messa
   expect(src).toMatch(/^\/vendor\/noto\/[0-9a-f_]+\.webp$/);
   const name = (await summaryOf(turnChat))?.name ?? "";
   await until("the chat's row carries the name's face", 20000, () =>
-    inLook(async (f) => ((await f.locator(".tlist .trow", { hasText: name }).first().locator(".emo").innerText()).trim()) === "\u{1F9F9}", false));
+    inLook(async (f) => (((await f.locator(".tlist .trow", { hasText: name }).first().locator(".emo").textContent()) ?? "").trim()) === "\u{1F9F9}", false));
   // The key is in nothing the server said.
   expect(said.out + said.err).not.toContain(KEY);
 });
@@ -767,16 +767,19 @@ walk("7", "tool lines: an edit tool call opens to its diff, the pages changed na
   const f = await lookFrame();
   const act = lastTurn(f).locator(".acts button.act").first();
   await until("the tool line drew", 10000, async () => (await act.count()) === 1 && (await act.getAttribute("data-state")) === "done");
-  expect((await act.locator(".verb").innerText()).trim()).toBe("Edited");
-  expect((await act.locator(".obj").innerText()).trim()).toBe(path);
-  expect((await act.locator(".meta").innerText()).trim()).toBe("+1 −1");
+  // Read as written, not as laid out: a turn is `content-visibility: auto`,
+  // and one scrolled out of view for a frame has no rendered text.
+  const said = async (sel: string) => ((await act.locator(sel).textContent()) ?? "").trim();
+  expect(await said(".verb")).toBe("Edited");
+  expect(await said(".obj")).toBe(path);
+  expect(await said(".meta")).toBe("+1 −1");
   await act.click();
   const detail = lastTurn(f).locator(".acts .detail").first();
   await until("the line opened to its diff", 5000, async () => !(await detail.isHidden()));
   // The rows keep the file's own indentation; what they say is the line.
   const squeeze = (rows: string[]) => rows.map((r) => r.replace(/\s+/g, ""));
-  expect(squeeze(await detail.locator(".dl.del").allInnerTexts())).toEqual(["-invented-alpha-line"]);
-  expect(squeeze(await detail.locator(".dl.add").allInnerTexts())).toEqual(["+rewritten-alpha-line"]);
+  expect(squeeze(await detail.locator(".dl.del").allTextContents())).toEqual(["-invented-alpha-line"]);
+  expect(squeeze(await detail.locator(".dl.add").allTextContents())).toEqual(["+rewritten-alpha-line"]);
   // THE PAGES THE TURN CHANGED, named.
   const changes = lastTurn(f).locator(".changes");
   await until("the pages changed drew", 8000, async () => (await changes.locator(".crow").count()) === 1);
