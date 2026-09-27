@@ -2133,6 +2133,49 @@ test("a design doc that is not there is said in a sentence, not left at Opening�
   expect(g.ws.calls.filter((c) => c === "loadPage:@design")).toHaveLength(1);
 });
 
+test("a framework screen's id as a page route is refused as not found, and never read or drawn as a page", async () => {
+  // THE SERVER ANSWERS `page.read("@agent")` WITH THE BARE PLUGIN PAGE, as it
+  // does for `@map` and `@design`, so a route that asked for it would draw a
+  // second, unfed Agent screen in a page box (DECISIONS O24(d)).
+  const events = fakeEvents();
+  const g = harness(DOC, { view: "page", id: DOC.id }, false, events);
+  const plain = g.ws.loadPage.bind(g.ws);
+  g.ws.loadPage = async (id) => {
+    if (!id.startsWith("@")) return plain(id);
+    await null;
+    g.ws.calls.push("loadPage:" + id);
+    g.ws.state.page = { ...DOC, id, name: "Agent", plugin: "biom-agent" };
+    g.ws.emit();
+    return g.ws.state.page;
+  };
+  await tick();
+  const drawnBefore = g.drawn.page;
+  for (const id of ["@agent", "@map", "@design"]) {
+    g.ui.open("page", id);
+    await tick();
+    expect(flat(g.plate.firstChild)).toBe("There is no page called “" + id + "”.");
+  }
+  expect(g.ws.calls.filter((c) => c.startsWith("loadPage:@"))).toEqual([]);
+  expect(g.drawn.page).toBe(drawnBefore);
+  // A re-listed tree forgets every id it gave up on, and the refusal stands.
+  g.ws.state.pages = [...g.ws.state.pages];
+  g.ws.emit();
+  await tick();
+  expect(flat(g.plate.firstChild)).toBe("There is no page called “@design”.");
+  // And a change on disk re-reads the tree and not the framework's screen.
+  events.fire();
+  await tick();
+  await tick();
+  expect(g.ws.calls).toContain("loadTree");
+  expect(g.ws.calls.filter((c) => /^(load|reload)Page:@/.test(c))).toEqual([]);
+  expect(g.frameHost.kept).toEqual([]);
+  expect(flat(g.plate.firstChild)).toBe("There is no page called “@design”.");
+  // The screens themselves are where they always were.
+  g.ui.open("design", "");
+  await tick();
+  expect(g.ws.calls).toContain("loadPage:@design");
+});
+
 test("the Map is a route like Design, and it takes the canvas whole", async () => {
   const g = harness();
   await tick();

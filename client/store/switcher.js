@@ -179,11 +179,13 @@ export function screenName(a, pages) {
  * a screen the host draws itself. A touch reported from a box is the person's
  * touch on THIS screen only when it came from this box — one arriving from the
  * box of the screen that was just left, or from the chat's own box in the
- * panel, is not.
+ * panel, is not. A page route naming a framework screen's `@` id draws no box
+ * — the shell says there is no such page — so the chat's own box on `@agent`
+ * is never mistaken for it.
  * @param {Address} a @returns {PageId | null}
  */
 export function boxOf(a) {
-  if (a.view === "page") return a.id !== "" && a.screen === "page" ? a.id : null;
+  if (a.view === "page") return a.id !== "" && a.screen === "page" && !a.id.startsWith("@") ? a.id : null;
   if (a.view === "design") return DESIGN_PAGE;
   if (a.view === "map") return MAP_PAGE;
   if (a.view === "agent") return AGENT_PAGE;

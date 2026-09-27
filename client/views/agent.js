@@ -57,9 +57,10 @@ function signature(text) {
   return (a >>> 0).toString(36) + (b >>> 0).toString(36);
 }
 
-/** THE KEY THE BOX IS MOUNTED UNDER. Not `@agent` itself: a page routed to
- *  `#/page/@agent` is mounted under its id by the page view, and must be a box
- *  of its own that this view never feeds rather than this one taken over. */
+/** THE KEY THE BOX IS MOUNTED UNDER. Not `@agent` itself, which is the key
+ *  the page view would mount a page of that id under: the shell refuses
+ *  `#/page/@agent` as no page, and were a box ever mounted there it would be
+ *  one of its own that this view never feeds, not this one taken over. */
 export const LOOK_KEY = AGENT_PAGE + ":screen";
 
 /** THE DEFAULT LOOK'S STAGE, which Biom's input box sits over: the list of

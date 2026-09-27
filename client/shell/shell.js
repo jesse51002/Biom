@@ -415,7 +415,7 @@ export function makeShell(deps) {
     switch (route.view) {
       case "page": {
         if (!route.id) return h("p.hold", "Nothing open yet.");
-        if (missing.has(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
+        if (missing.has(route.id) || frameworkId(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
         const page = w.page;
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
         // THE THREE SCREENS OF A PAGE, in every build: the box, its
@@ -1187,7 +1187,7 @@ export function makeShell(deps) {
       // whatever the page is now. It is said here and nowhere else, so a page
       // navigated to starts at the top and only a redraw keeps its place.
       const reserved = route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
-      if (route.view === "page" && route.id) {
+      if (route.view === "page" && route.id && !frameworkId(route.id)) {
         frameHost.keep(route.id);
         await ws.reloadPage(route.id);
       } else if (reserved !== null) {
@@ -1247,7 +1247,9 @@ export function makeShell(deps) {
 
     // THE DESIGN DOC AND THE MAP ARE PAGES UNDER RESERVED IDS, fetched exactly
     // as a routed page is: the id is the route's, and the read is a page read.
-    const wanted = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
+    // Only through their own routes: a page route naming a reserved id reads
+    // nothing, and the body says there is no such page.
+    const wanted = route.view === "page" ? (frameworkId(route.id) ? "" : route.id) : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
     if (wanted && !missing.has(wanted)) {
       if (w.page && w.page.id === wanted) return;
       const key = "page:" + wanted;
@@ -1557,6 +1559,15 @@ export const parseHash = (hash) => parseAddress(hash);
 /** The url fragment for a route — `formatAddress`, for the same reason.
  *  @param {{ view: ViewName, id: string, screen?: PageScreen }} route @returns {string} */
 export const hashOf = (route) => formatAddress(route);
+
+/** A FRAMEWORK SCREEN'S ID — `@agent`, `@map`, `@design` — is no page. `@` is
+ *  outside a page segment's grammar, so no page anybody made starts with one,
+ *  and the server answers such an id with the screen's own bare plugin page:
+ *  routed as a page, `@agent` would draw a second Agent screen in a page box
+ *  that is never fed. So a page route naming one is not read and is said to
+ *  be no page at all, whatever the missing set holds.
+ *  @param {string} id */
+const frameworkId = (id) => id.startsWith("@");
 
 /** @param {unknown} err */
 const message = (err) =>

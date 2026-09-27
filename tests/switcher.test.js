@@ -122,6 +122,20 @@ test("a screen's box is its page's, and a host screen has none", () => {
   expect(boxOf({ view: "runs", id: "", screen: "page" })).toBe(null);
 });
 
+test("a page route naming a framework screen has no box, so the chat's own box beside it is nobody's touch of it", async () => {
+  expect(boxOf(page("@agent"))).toBe(null);
+  expect(boxOf(page("@map"))).toBe(null);
+  // `#/page/@agent`, with the chat in the panel beside it.
+  const w = windowOn(page("@agent"));
+  await w.switcher.start();
+  w.clock.advance(10 * MIN);
+  // Scrolling the chat in the panel is talking to the agent, not touching the
+  // screen — so it does not hold the screen against the chat's own write.
+  w.switcher.touched("@agent");
+  w.stream(w.server.edit("boards"));
+  expect(w.ui.get().route).toEqual(page("boards"));
+});
+
 /* ══ makeSwitcher(): end to end over the real stores ════════════════════════ */
 
 const PAGES = [
