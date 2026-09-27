@@ -574,6 +574,45 @@ test("A PATCH IS DRAWN WHERE IT LANDS: the nodes already drawn stay, words strea
   w.teardown();
 });
 
+/** THE LIVE CHAT, the summary moved to idle, and `updates` as one patch —
+ *  the way a server that coalesces a frame's worth of the stream sends the
+ *  last words of a reply and the turn's end together. */
+function endsWith(/** @type {any} */ w, /** @type {any[]} */ updates) {
+  const chats = chatState("live").chats.map((/** @type {any} */ c) => (c.id === cid("live") ? { ...c, phase: "idle", light: "done", stop: "end_turn" } : c));
+  w.hear({ kind: "look.patch", chat: cid("live"), updates, chats });
+}
+
+test("A REPLY THAT ARRIVES WITH ITS TURN'S END IS DRAWN, whichever of the two comes first in the patch", () => {
+  const now = Date.now();
+  const reply = { seq: 20, at: now, turn: 2, kind: "reply", text: "Done." };
+  const end = { seq: 21, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null };
+  for (const order of [[reply, end], [{ ...end, seq: 20 }, { ...reply, seq: 21 }]]) {
+    const w = mounted();
+    w.hear({ kind: "look.state", state: chatState("live") });
+    endsWith(w, order);
+    const second = byClass(w.root(), "turnw")[1];
+    const prose = byClass(second, "prose");
+    expect([order[0].kind, prose.map((p) => p.textContent)]).toEqual([order[0].kind, ["Done."]]);
+    expect(byClass(second, "caret").length).toBe(0);
+    w.teardown();
+  }
+});
+
+test("a reply's last words are drawn when they come a patch after the turn has ended, and when the summary moves first", () => {
+  const now = Date.now();
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  // The summary says idle before the stream has said anything more.
+  endsWith(w, []);
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 20, at: now, turn: 2, kind: "reply", text: "First " }] });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 21, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null }] });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 22, at: now, turn: 2, kind: "reply", text: "and **last**." }] });
+  const second = byClass(w.root(), "turnw")[1];
+  expect(byClass(second, "prose").map((p) => p.textContent).join("|")).toBe("First and last.");
+  expect(everything(second).some((e) => e.localName === "strong" && e.textContent === "last")).toBe(true);
+  w.teardown();
+});
+
 test("a long chat draws its latest forty turns, and forty more on asking, above the ones already there", () => {
   const w = mounted();
   const now = Date.now();

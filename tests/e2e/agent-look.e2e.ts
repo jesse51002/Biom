@@ -316,6 +316,23 @@ test("a patch draws only what it adds: the thread's nodes stay, the words stream
   } finally { await ctx.close(); }
 }, 60000);
 
+test("a reply that arrives in the same patch as its turn's end is drawn, in either order", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    const now = Date.now();
+    const idle = chatState("live").chats.map((c: any) => (c.id === cid("live") ? { ...c, phase: "idle", light: "done", stop: "end_turn" } : c));
+    const reply = { seq: 20, at: now, turn: 2, kind: "reply", text: "Done." };
+    const end = { seq: 21, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null };
+    for (const updates of [[reply, end], [{ ...end, seq: 20 }, { ...reply, seq: 21 }]]) {
+      await post(page, box, { kind: "look.state", state: lookState({ chat: null }) });
+      await post(page, box, { kind: "look.state", state: chatState("live") });
+      await post(page, box, { kind: "look.patch", chat: cid("live"), updates, chats: idle });
+      const words = await inLook<string>(box, `return [...root.querySelectorAll(".turnw")][1].querySelector(".prose")?.textContent ?? "";`);
+      expect([updates[0]!.kind, words]).toEqual([updates[0]!.kind, "Done."]);
+    }
+  } finally { await ctx.close(); }
+}, 60000);
+
 test("a turn that ended red says why, a handover is a line in the thread, and a held message waits in words", async () => {
   const { ctx, page, box } = await open();
   try {

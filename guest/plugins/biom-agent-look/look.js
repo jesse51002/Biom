@@ -737,11 +737,27 @@
       const el = h("div", "prose");
       const tail = h("div", "tail");
       const caret = h("span", "caret");
+      // TWO WAYS TO DRAW THE WORDS, and which is decided on every paint from
+      // what the block and its turn say now — never latched. A reply's last
+      // chunk and its turn's end often arrive in one patch, in either order,
+      // and the summary saying idle can come before either: a block first
+      // drawn "finished" while its text was still empty must still draw the
+      // words that follow. `whole` is how much of the text was last read
+      // whole, or -1 while it streams.
       const bv = {
-        kind: "prose", el: el, settled: 0, final: false,
+        kind: "prose", el: el, settled: 0, whole: -1,
         paint() {
-          if (bv.final) return;
-          if (b.end !== null || !liveOf(t)) { bv.finish(); return; }
+          if (b.end !== null || !liveOf(t)) {
+            if (bv.whole !== b.text.length) bv.finish();
+            return;
+          }
+          if (bv.whole >= 0) {
+            // Read whole while the turn looked over, and it is running after
+            // all: stream again from the top.
+            el.replaceChildren(tail);
+            bv.settled = 0;
+            bv.whole = -1;
+          }
           const end = M.settledEnd(b.text, bv.settled);
           if (end > bv.settled) {
             const frag = h("div");
@@ -757,9 +773,10 @@
           at.appendChild(caret);
         },
         /** The whole reply read once more as one, which puts right a list
-         *  or a link a cut had split, and the caret gone. */
+         *  or a link a cut had split, and the caret gone. Read again if more
+         *  words arrive after it. */
         finish() {
-          bv.final = true;
+          bv.whole = b.text.length;
           el.replaceChildren();
           build(M.mdTree(b.text), el);
         },

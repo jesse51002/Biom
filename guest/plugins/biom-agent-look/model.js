@@ -449,7 +449,7 @@
   /* ── a chat's stream, as turns ─────────────────────────────────────────── */
 
   /**
-   * @typedef {{ kind: "think" | "prose" | "acts" | "hand", text: string, ids: string[], at: number, end: number | null, n: number, from?: string }} Block
+   * @typedef {{ kind: "think" | "prose" | "acts" | "hand", text: string, ids: string[], at: number, end: number | null, n: number, from?: string, byEnd?: boolean }} Block
    * @typedef {{ id: string, seq: number, tool: any, turn: number, block: Block }} ToolEntry
    * @typedef {{ n: number, prompt: string | null, blocks: Block[], face: any, phase: string | null, stop: string | null,
    *   reason: string | null, changed: any[] | null, errors: string[], agent: string | null, at: number, end: number | null }} Turn
@@ -498,16 +498,22 @@
     }
 
     /** The block a turn is adding to is closed: another kind began, or the
-     *  turn ended. @param {Turn} t @param {number} at */
-    function close(t, at) {
+     *  turn ended — and which, because a block closed only by the turn's end
+     *  takes words of its own kind that arrive after it (see `blockOf`).
+     *  @param {Turn} t @param {number} at @param {boolean} [byEnd] */
+    function close(t, at, byEnd) {
       const last = t.blocks[t.blocks.length - 1];
-      if (last && last.end === null) { last.end = at; tell("close", t, last); }
+      if (last && last.end === null) { last.end = at; if (byEnd) last.byEnd = true; tell("close", t, last); }
     }
 
     /** @param {Turn} t @param {"think" | "prose" | "acts" | "hand"} kind @param {number} at @returns {Block} */
     function blockOf(t, kind, at) {
       const last = t.blocks[t.blocks.length - 1];
-      if (kind !== "hand" && last && last.kind === kind && last.end === null) return last;
+      // WORDS AFTER THE TURN'S END JOIN THE WORDS BEFORE IT. The stream says a
+      // turn's last chunk and its end in that order, but a patch may carry
+      // them the other way about; a reply is one reply either way, so a block
+      // closed only by the end is still the one its kind continues.
+      if (kind !== "hand" && last && last.kind === kind && (last.end === null || last.byEnd)) return last;
       close(t, at);
       /** @type {Block} */
       const b = { kind: kind, text: "", ids: [], at: at, end: null, n: t.blocks.length };
@@ -570,7 +576,7 @@
             t.stop = u.stop;
             t.reason = typeof u.reason === "string" ? u.reason : null;
             t.end = at;
-            close(t, at);
+            close(t, at, true);
           }
           tell("phase", t);
           return;
