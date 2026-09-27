@@ -148,11 +148,20 @@ export function sandbox(label: string): Sandbox {
   };
 }
 
+/** THE INSTALLED APPLICATION'S OWN CACHE, `<data>/cache` — `app/main.js`
+ *  points its Chromium and fontconfig there (see `app/data.js`). It is written
+ *  by the desktop app the person has open, whenever it likes: a shader cache, a
+ *  font scan, an image loader's cache, while a suite is half way through. It is
+ *  never the server's to write, and a process this suite starts writes its own
+ *  sandbox's, so it is left out of the comparison — or every suite fails
+ *  whenever the person's own window happens to draw something new. */
+const APP_CACHE = "cache";
+
 /** A directory as a comparable string: every path under it with its size. Used
  *  either side of a run against the REAL data directory, so "nothing was written
  *  outside the sandbox" is a measured statement and not a claim. An absent
  *  directory is the empty listing, which is the honest reading — it must still be
- *  absent afterwards. */
+ *  absent afterwards. The installed application's own cache is not read. */
 export function outside(at: string = realDataHome()): string {
   const seen: string[] = [];
   const walk = (dir: string, prefix: string): void => {
@@ -163,6 +172,7 @@ export function outside(at: string = realDataHome()): string {
       return;
     }
     for (const name of entries) {
+      if (prefix === "" && name === APP_CACHE) continue;
       const abs = join(dir, name);
       let st;
       try {
