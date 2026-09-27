@@ -232,6 +232,7 @@ e2e: browser
 E2E_SERVER = \
 	./tests/e2e/server.e2e.ts \
 	./tests/e2e/chat-server.e2e.ts \
+	./tests/e2e/chat.e2e.ts \
 	./tests/e2e/agent-look.e2e.ts \
 	./tests/e2e/agent-screen.e2e.ts \
 	./tests/e2e/startup.e2e.ts
