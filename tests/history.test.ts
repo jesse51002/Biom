@@ -236,6 +236,21 @@ test("coalescing never swallows somebody else's edit in between, nor another win
   expect((await w.history.edit({ path: null, place: { view: "table", id: "other" }, via: "app", burst: true, writer: you() }))?.seq).toBe(7);
 });
 
+test("a burst coalesces only into the SAME FILE: the same window typing in a page's document and then saving its hero is two edits", async () => {
+  // Both files are the one page, so they share its screen — the key — and the
+  // same writer, and both are keystroke saves inside two seconds: the path is
+  // the only thing that tells them apart.
+  const w = world();
+  expect((await w.history.edit({ path: doc("home"), via: "app", burst: true, writer: you() }))?.seq).toBe(1);
+  w.tick(300);
+  const hero = await w.history.edit({ path: `${pageDir("home")}/hero.html`, via: "app", burst: true, writer: you() });
+  expect(hero?.seq).toBe(2);
+  expect(hero?.kind === "edit" && hero.path).toBe(`${pageDir("home")}/hero.html`);
+  // And typing on in the hero is still that one burst.
+  w.tick(300);
+  expect(await w.history.edit({ path: `${pageDir("home")}/hero.html`, via: "app", burst: true, writer: you() })).toBeNull();
+});
+
 test("only a keystroke's save coalesces, and only INTO what came before: a page made and then removed is two edits", async () => {
   const w = world();
   const dir = pageDir("home/Specs");
