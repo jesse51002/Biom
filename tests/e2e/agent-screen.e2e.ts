@@ -204,9 +204,19 @@ beforeAll(async () => {
   });
 }, 120000);
 
+// THE TEARDOWN IS BOUNDED, EVERY PART OF IT, and the hook's own bound is past
+// the sum, as app.e2e.ts's is — bun's default for a hook is five seconds.
+// Closing the browser is raced against ten seconds because it was MEASURED not
+// to settle: in full `make e2e` runs, after every step of this walk had passed,
+// the page closed at once and `browser.close()` never returned, which failed
+// the file as a hook timeout. Why is not known — Playwright settles a close on
+// the browser's pipes closing, not on its exit — and a browser left running is
+// killed by Playwright's own handler when this process exits. The server is
+// waited on for twelve seconds, past its own graceful end of the agents
+// (`AGENTS_ENDING_MS`).
 afterAll(async () => {
   try {
-    await browser?.close();
+    await Promise.race([browser?.close(), new Promise((r) => setTimeout(r, 10000))]);
   } catch {
     /* a browser that already went is not a failure */
   }
@@ -219,7 +229,7 @@ afterAll(async () => {
     expect(outside()).toBe(before);
     box.clean();
   }
-});
+}, 30000);
 
 walk("1. a window with no hash opens on the Agent screen: the look in its box, Biom's own input over it, the agent's own pickers", "agent-1.png", async () => {
   await page.goto(at(""), { waitUntil: "domcontentloaded" });
