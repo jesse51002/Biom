@@ -115,7 +115,13 @@ function hostPage(theme: unknown): string {
 
 async function open(opts: { theme?: unknown; reduced?: boolean; width?: number; height?: number } = {}): Promise<{ ctx: BrowserContext; page: Page; box: Frame }> {
   if (!browser) throw new Error("no browser");
-  const ctx = await browser.newContext({ viewport: { width: opts.width ?? 1180, height: opts.height ?? 780 }, reducedMotion: opts.reduced ? "reduce" : "no-preference" });
+  // THE BROWSER'S TIME ZONE IS THIS PROCESS'S — bun's test runner is UTC — so
+  // the day the fixtures were built on is the day the look groups them by.
+  const ctx = await browser.newContext({
+    viewport: { width: opts.width ?? 1180, height: opts.height ?? 780 },
+    reducedMotion: opts.reduced ? "reduce" : "no-preference",
+    timezoneId: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   const page = await ctx.newPage();
   const theme = opts.theme ?? DOT_MATRIX;
   await page.route(`${ORIGIN}/**`, async (route) => {

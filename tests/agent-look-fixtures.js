@@ -28,12 +28,22 @@ export const FACES = {
   news: { emoji: "📰", art: null },
 };
 
-/** @param {number} now */
+/** THE LIST, ONE CHAT IN EACH OF THE LOOK'S GROUPS WHATEVER THE HOUR. The look
+ *  groups by this machine's calendar day (`groupOf` in the look's model), so a
+ *  chat an hour or a day old is in another group just after midnight: the two
+ *  of today are kept after today's midnight, and yesterday's is yesterday's
+ *  noon. Midnight is the local one of the realm that builds the fixture, which
+ *  is the realm the look reads it in — bun's for `tests/agent-look.test.js`, and
+ *  for the box in a browser the end-to-end test sets the browser's time zone to
+ *  the same one.
+ *  @param {number} now */
 export function chats(now) {
+  const today = new Date(now).setHours(0, 0, 0, 0);
+  const yesterday = today - 12 * 60 * MIN;
   return [
-    { id: cid("live"), name: "Tidy the Boards page", face: FACES.tidy, agent: "claude-acp", harness: "Claude Code", agentId: "agent-live-0001", page: null, phase: "running", turn: 2, light: "working", stop: null, reason: null, created: now - 30 * MIN, updated: now - 5000 },
-    { id: cid("done"), name: "Summarise what the Socials run did today", face: FACES.news, agent: "claude-acp", harness: "Claude Code", agentId: null, page: null, phase: "idle", turn: 1, light: "done", stop: "end_turn", reason: null, created: now - 60 * MIN, updated: now - 3 * MIN },
-    { id: cid("red"), name: "Weekly runs digest", face: { emoji: "🔎", art: null }, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "idle", turn: 1, light: "error", stop: "max_tokens", reason: null, created: now - 26 * 60 * MIN, updated: now - 25 * 60 * MIN },
+    { id: cid("live"), name: "Tidy the Boards page", face: FACES.tidy, agent: "claude-acp", harness: "Claude Code", agentId: "agent-live-0001", page: null, phase: "running", turn: 2, light: "working", stop: null, reason: null, created: now - 30 * MIN, updated: Math.max(now - 5000, today + 2000) },
+    { id: cid("done"), name: "Summarise what the Socials run did today", face: FACES.news, agent: "claude-acp", harness: "Claude Code", agentId: null, page: null, phase: "idle", turn: 1, light: "done", stop: "end_turn", reason: null, created: now - 60 * MIN, updated: Math.max(now - 3 * MIN, today + 1000) },
+    { id: cid("red"), name: "Weekly runs digest", face: { emoji: "🔎", art: null }, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "idle", turn: 1, light: "error", stop: "max_tokens", reason: null, created: yesterday - 60 * MIN, updated: yesterday },
     { id: cid("old"), name: "Why did the X Leads run stop early?", face: { emoji: "📊", art: null }, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "idle", turn: 1, light: "none", stop: "end_turn", reason: null, created: now - 3 * 24 * 60 * MIN, updated: now - 3 * 24 * 60 * MIN },
     { id: cid("older"), name: "Draft the pricing page", face: null, agent: "claude-acp", harness: "Claude Code", agentId: null, page: null, phase: "idle", turn: 1, light: "none", stop: "end_turn", reason: null, created: now - 20 * 24 * 60 * MIN, updated: now - 20 * 24 * 60 * MIN },
   ];
