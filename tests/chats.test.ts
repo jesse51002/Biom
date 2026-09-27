@@ -1026,6 +1026,27 @@ only("AN IDLE AGENT IS ENDED: no turn for thirty minutes and open in no window, 
   expect(said.at(-1)).toContain("What was the word?");
 });
 
+only("IDLE IS COUNTED FROM THE LATER of the last turn's end and the process's start: an old process whose turn ended ten minutes ago is not idle", async () => {
+  const w = world();
+  const made = await w.chats.create({ agent: "fake", text: "One." });
+  await settled(w.chats, made.id, 1);
+  const first = summaryOf(w.chats, made.id).agentId;
+  // Twenty-five minutes on, a second turn on the same process.
+  w.skewBy(25 * 60_000);
+  await w.chats.send(made.id, "Two.");
+  await settled(w.chats, made.id, 2);
+  expect(summaryOf(w.chats, made.id).agentId).toBe(first);
+  // The process is thirty-five minutes old, and its last turn ended ten
+  // minutes ago: not idle.
+  w.skewBy(10 * 60_000);
+  expect(w.chats.reap()).toBe(0);
+  expect(summaryOf(w.chats, made.id).agentId).toBe(first);
+  // Thirty minutes after that turn's end, it is.
+  w.skewBy(21 * 60_000);
+  expect(w.chats.reap()).toBe(1);
+  expect(summaryOf(w.chats, made.id).agentId).toBeNull();
+});
+
 only("an agent that can reload its session is reopened with it after an idle end, not handed the chat", async () => {
   const w = world({ scenarios: { fake: { agentCapabilities: { loadSession: true } } } });
   const made = await w.chats.create({ agent: "fake", text: "First." });
