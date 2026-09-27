@@ -626,6 +626,21 @@ only("green lasts ten minutes and then there is no light", async () => {
   expect(summaryOf(w.chats, s.id).light).toBe("none");
 });
 
+only("A GREEN LIGHT READ BACK AFTER A RESTART goes out when its ten minutes run out, with a push that says so", async () => {
+  const w = world();
+  const s = await w.chats.create({ agent: "fake", text: "hi" });
+  expect((await settled(w.chats, s.id, 1)).light).toBe("done");
+  await w.chats.endAll();
+  // The server comes back with less than half a second of the ten minutes left.
+  w.skewBy(GREEN_MS - 400);
+  const from = w.pushes.length;
+  const again = w.make();
+  await again.loaded;
+  expect(summaryOf(again, s.id).light).toBe("done");
+  await until("a push saying the light went out", 3000, () => w.pushes.slice(from).some((p) => p.chat.id === s.id && p.chat.light === "none"));
+  expect(summaryOf(again, s.id).light).toBe("none");
+});
+
 only("an agent that cannot be started, or answers the message with an error, ends the turn red with a sentence", async () => {
   const w = world({ agents: [info("fake", "Fake Agent"), info("ghost", "Ghost Agent")], scenarios: { fake: { turns: [[{ error: { code: -32603, message: "the model is\nbusy" } }]] } } });
   const a = await w.chats.create({ agent: "ghost", text: "hello?" });

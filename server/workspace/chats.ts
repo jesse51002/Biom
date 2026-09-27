@@ -687,6 +687,28 @@ export function makeChats(deps: ChatsDeps): Chats {
     return run;
   };
 
+  const clearGreen = (c: Chat): void => {
+    if (c.greenTimer !== null) clearTimeout(c.greenTimer);
+    c.greenTimer = null;
+  };
+
+  /** THE PUSH THAT SAYS GREEN IS OVER, when what is left of its ten minutes
+   *  runs out: after a turn that ended `end_turn`, and for a chat read back
+   *  green after a restart. A timer that fires a moment early waits out the
+   *  rest, so the push never still says green. */
+  const armGreen = (c: Chat): void => {
+    clearGreen(c);
+    if (c.stop !== "end_turn" || c.endedAt === null) return;
+    const left = GREEN_MS - (now() - c.endedAt);
+    if (left <= 0) return;
+    c.greenTimer = setTimeout(() => {
+      c.greenTimer = null;
+      if (lightOf(c) === "done") armGreen(c);
+      else touch(c, false);
+    }, left);
+    (c.greenTimer as { unref?: () => void }).unref?.();
+  };
+
   /* ── loading ─────────────────────────────────────────────────────── */
 
   const parseLines = (text: string): LogRecord[] => {
@@ -773,6 +795,8 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.endedAt = now();
         emit(c, { kind: "turn", phase: "idle", stop: c.stop, reason: c.reason });
       }
+      // Read back green, it goes out when the rest of its ten minutes do.
+      armGreen(c);
       touch(c, false);
     }
   })();
@@ -964,11 +988,6 @@ export function makeChats(deps: ChatsDeps): Chats {
     touch(c);
   };
 
-  const clearGreen = (c: Chat): void => {
-    if (c.greenTimer !== null) clearTimeout(c.greenTimer);
-    c.greenTimer = null;
-  };
-
   const combine = (prev: ChangedFile["op"] | null, next: ChangedFile["op"]): ChangedFile["op"] => {
     if (prev === null) return next;
     if (next === "deleted") return "deleted";
@@ -1038,14 +1057,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.stop = stop;
       c.reason = reason;
       c.endedAt = now();
-      clearGreen(c);
-      if (stop === "end_turn") {
-        c.greenTimer = setTimeout(() => {
-          c.greenTimer = null;
-          touch(c, false);
-        }, GREEN_MS);
-        (c.greenTimer as { unref?: () => void }).unref?.();
-      }
+      armGreen(c);
       emit(c, { kind: "turn", phase: "idle", stop, reason });
       touch(c);
       signal({ kind: "end", chat: c.id, turn });
