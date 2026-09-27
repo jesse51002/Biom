@@ -678,3 +678,21 @@ test("two writes of the open chat in one batch: the LATEST is followed, not the 
   expect(w.ui.get().route).toEqual(page("docs"));
   expect(w.moves.filter((m) => m.startsWith("switcher"))).toEqual(["switcher:docs"]);
 });
+
+test("Go back to reads only this window's views: a page another window opened since is not this one's work", async () => {
+  const w = windowOn();
+  await w.switcher.start();
+  w.ui.open("page", "log");
+  await settle();
+  // Another tab of the same workspace opened Specs after this one opened Log:
+  // its open and view, as the server appends them, on this window's stream.
+  const other = "window-0002-invented";
+  const theirs = await w.server.transport.call({ id: "r-other", kind: "window.report", window: other, context: { address: page("specs"), panel: false, chat: null, agent: null }, moved: { by: "you" } });
+  expect(theirs.value.map((/** @type {any} */ e) => [e.kind, e.window])).toEqual([["open", other], ["view", other]]);
+  w.stream(...theirs.value);
+  w.clock.advance(10 * MIN);
+  w.stream(w.server.edit("boards"));
+  await settle();
+  expect(w.ui.get().route.id).toBe("boards");
+  expect(w.switcher.get().back).toEqual({ to: page("log"), name: "Log" });
+});
