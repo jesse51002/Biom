@@ -365,6 +365,24 @@ walk("a directory written under children/ appears in the rail", async () => {
     const rail = await page.locator("nav.rack").innerText().catch(() => "");
     return rail.includes("Pantry");
   });
+
+  // AND THE SERVER GIVES BOTH PAGES THEIR IDENTITY, which is its own write
+  // into each file: Pantry arrived with none, and Kitchen lost its own when
+  // the step above wrote its document whole from outside. The structural
+  // change is when it does it, as one `uid:` line under `name:`. Waited for
+  // here, and the redraw that write brings, because a redraw landing on the
+  // next step's half-written file would read that file — which is not what
+  // the next step is about.
+  await until("the server gave Kitchen and Pantry a uid", BOUNDS.redraw, () =>
+    [madeDoc, join(child, "content.yaml")].every((f) => /^uid: \S+$/m.test(readFileSync(f, "utf8"))));
+  const words = "the agent wrote this from outside the window";
+  let steady = 0;
+  await until("the page stayed drawn for a second after the server's own writes", BOUNDS.redraw, async () => {
+    const body = await page.frameLocator("iframe.artifact").locator("body").innerText().catch(() => "");
+    if (!body.includes(words)) { steady = 0; return false; }
+    if (steady === 0) steady = Date.now();
+    return Date.now() - steady >= 1000;
+  });
 });
 
 walk("a half-written file does not break the page, and the finished save recovers it", async () => {
