@@ -27,7 +27,10 @@
 // IT IS THE PERSON'S, NOT A WORKSPACE'S: read once per server process —
 // `makeLoginEnv` is constructed once, in the composition root — and shared by
 // every vault's agents, by the sign-in terminal and by Jev's key: two
-// workspaces open at once are one person with one login.
+// workspaces open at once are one person with one login. It is read again only
+// when `forget` drops the reading, which one thing asks for: Check again on an
+// agent signed in by a variable the person has just set in their profile
+// (O37), which a reading taken at start would never see.
 //
 // NOTHING HERE IS EVER LOGGED, sent to a client or written to a file: it holds
 // the person's keys. A shell that fails, times out or prints nothing usable
@@ -87,8 +90,11 @@ export interface LoginEnvRead {
 /** The login environment, read once and kept. */
 export interface LoginEnv {
   /** The environment. The first call asks the shell; every call after it,
-   *  concurrent ones included, answers the same reading. */
+   *  concurrent ones included, answers the same reading — until `forget`. */
   read(): Promise<Record<string, string>>;
+  /** Drop the reading: the next `read` asks the shell again, bounded as the
+   *  first was, and every read after that answers the new one. */
+  forget(): void;
   /** Why the reading is the server's own environment, or null — null too
    *  while the first reading has not landed. */
   reason(): string | null;
@@ -247,6 +253,9 @@ export function makeLoginEnv(opts: LoginEnvOptions): LoginEnv {
         });
       }
       return reading.then((r) => r.env);
+    },
+    forget() {
+      reading = null;
     },
     reason: () => why,
   };

@@ -44,9 +44,11 @@
 // module resolved and never a command line a page wrote. A refusal is STICKY:
 // an agent that opens a session and then refuses the first message stays
 // signed out until somebody signs it in, rather than flipping back to Active on
-// the next probe. The one exception is an agent that offers NO way to sign in:
-// Biom cannot sign it in, so a `probe` the person asks for — Check again,
-// after signing in from its own command — is believed (O35).
+// the next probe. The exception is an agent Biom cannot sign in — one that
+// offers NO way (O35), or whose every way is a variable to set (O37): a `probe`
+// the person asks for — Check again, after signing in from its own command or
+// setting the variable in their profile — is believed, and for a variable the
+// login shell is read again first.
 //
 // INSTALLING reads the ACP Registry (`server/domain/agents-registry.ts`),
 // cached with a lifetime in memory and in Biom's own folder, and installs into
@@ -111,6 +113,10 @@ export interface AgentsDeps {
   connect: (launch: AgentLaunch, cwd: string) => AcpConnection;
   /** The person's login environment, read once per server — `makeLoginEnv`. */
   env: () => Promise<Record<string, string>>;
+  /** Drop that reading, so the next `env()` asks the login shell again —
+   *  `LoginEnv.forget`. Asked only by Check again on an agent whose every way
+   *  to sign in is a variable (O37). Absent: nothing is dropped. */
+  forgetEnv?: () => void;
   /** Where a command is on that environment's `PATH`, or null — `whichIn`. */
   which: (command: string, env: Record<string, string>) => Promise<string | null>;
   /** The network, for the registry, a binary's download and the local
@@ -226,7 +232,9 @@ export interface Agents {
    *  call starts finding them. */
   list(): AgentInfo[];
   /** Look again at one agent. Answers it as `checking`. For an agent that
-   *  offers no way to sign in, it lifts a sign-in refusal first (O35). */
+   *  offers no way to sign in, it lifts a sign-in refusal first (O35); for
+   *  one whose every way is a variable, it also has the login shell read
+   *  again, once, before the look (O37). */
   probe(key: AgentKey): AgentInfo;
   /** **Start Gateway**: OpenClaw's, on this machine. Answers it as `checking`. */
   start(key: AgentKey): AgentInfo;
@@ -1578,12 +1586,23 @@ export function makeAgents(deps: AgentsDeps): Agents {
       }
       // An install probes what it installed when it lands.
       if (slot.installing) return structuredClone(slot.info);
-      // AN AGENT THAT OFFERS NO WAY TO SIGN IN — no method to press, no
-      // variable to set — cannot be signed in by Biom: the person does it in a
-      // terminal of their own and asks for this look, so it is believed
-      // (O35). Only for such an agent: one that offers a way may open a
-      // session while signed out, and its refusal stays until a sign-in.
-      if (slot.refusedSignIn && slot.methods.length === 0) slot.refusedSignIn = false;
+      // AN AGENT BIOM CANNOT SIGN IN — one that offers no way at all (O35),
+      // or whose every way is a variable to set (O37) — is signed in by the
+      // person outside Biom, who then asks for this look, so it is believed.
+      // For a variable the login shell is read again first: the person set it
+      // in their profile, and the reading kept since the server started would
+      // never see it. Only for such an agent: one with a way Biom can run may
+      // open a session while signed out, and its refusal stays until a
+      // sign-in.
+      const byVariable = slot.methods.length > 0 && slot.methods.every((m) => m.type === "env_var");
+      if (byVariable) {
+        try {
+          deps.forgetEnv?.();
+        } catch {
+          // The reading kept stands.
+        }
+      }
+      if (slot.refusedSignIn && (slot.methods.length === 0 || byVariable)) slot.refusedSignIn = false;
       set(slot, "checking", null);
       emit();
       queueProbe(slot);

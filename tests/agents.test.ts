@@ -181,6 +181,10 @@ function machine(opts: {
   timing?: AgentsDeps["timing"];
   onSignedIn?: AgentsDeps["onSignedIn"];
   now?: () => number;
+  /** The login environment as the server keeps it — read once and kept — in
+   *  place of `env`, and the way to drop that reading. */
+  readEnv?: () => Promise<Record<string, string>>;
+  forgetEnv?: () => void;
 }): Machine {
   const { connect, calls } = agentsOnFake(opts.script ?? (() => healthy()));
   const fetched: string[] = [];
@@ -199,7 +203,8 @@ function machine(opts: {
   const home = opts.home ?? freshHome();
   const agents = makeAgents({
     connect,
-    env: async () => ({ ...(opts.env ?? LOGIN) }),
+    env: opts.readEnv ?? (async () => ({ ...(opts.env ?? LOGIN) })),
+    ...(opts.forgetEnv === undefined ? {} : { forgetEnv: opts.forgetEnv }),
     which: async (c) => opts.bins[c] ?? null,
     fetch: (async (input: string | URL | Request) => {
       const url = String(input instanceof Request ? input.url : input);
@@ -991,4 +996,89 @@ test("LOOK AGAIN LIFTS A SIGN-IN REFUSAL ONLY FOR AN AGENT THAT OFFERS NO WAY TO
   withWay.agents.probe("opencode");
   await withWay.agents.settled();
   expect(byKey(withWay.agents.list(), "opencode")?.reason).toBe("signin");
+});
+
+/** A login environment kept as the server keeps it: read once, and read
+ *  again only after it is dropped. `vars` is what the person's shell would
+ *  print now. Invented. */
+function keptLogin() {
+  const vars: Record<string, string> = { ...LOGIN };
+  let kept: Promise<Record<string, string>> | null = null;
+  let reads = 0;
+  return {
+    vars,
+    reads: () => reads,
+    read: (): Promise<Record<string, string>> => {
+      if (kept === null) {
+        reads++;
+        kept = Promise.resolve({ ...vars });
+      }
+      return kept;
+    },
+    forget: (): void => {
+      kept = null;
+    },
+  };
+}
+
+/** Opens a session only where its launch carries `INVENTED_AGENT_KEY`, and
+ *  lists these ways to sign in. */
+const keyed = (authMethods: unknown[]) => (launch: AgentLaunch): Script => ({
+  ...healthy(),
+  initialize: () => ({ protocolVersion: 1, agentInfo: { name: "invented", version: "1.0.0" }, authMethods }),
+  "session/new": (p, agent) => {
+    if (launch.env.INVENTED_AGENT_KEY === undefined) throw acpError(-32000, "Authentication required");
+    return (healthy()["session/new"] as Handler)(p, agent);
+  },
+});
+
+const envVarOnly = [{ id: "key", name: "An invented key", type: "env_var", vars: [{ name: "INVENTED_AGENT_KEY" }] }];
+
+test("CHECK AGAIN ON AN AGENT SIGNED IN BY A VARIABLE reads the login shell again — once — lifts the refusal, and finds it Active once the person set the variable (O37)", async () => {
+  const login = keptLogin();
+  const m = machine({ bins: { opencode: "/invented/bin/opencode" }, script: keyed(envVarOnly), readEnv: login.read, forgetEnv: login.forget });
+  m.agents.list();
+  await m.agents.settled();
+  const a = byKey(m.agents.list(), "opencode") as AgentInfo;
+  expect(a.reason).toBe("signin");
+  expect(a.auth.map((x) => x.type)).toEqual(["env_var"]);
+  // Looking needs no second reading: it is kept.
+  const before = login.reads();
+  expect(before).toBe(1);
+
+  // Pressed before the variable is set: read again, and still refused.
+  m.agents.probe("opencode");
+  await m.agents.settled();
+  expect(login.reads()).toBe(before + 1);
+  expect(byKey(m.agents.list(), "opencode")?.reason).toBe("signin");
+
+  // The person sets it in their login shell and presses Check again.
+  login.vars.INVENTED_AGENT_KEY = "invented-value";
+  expect(m.agents.probe("opencode").reason).toBe("checking");
+  await m.agents.settled();
+  expect(login.reads()).toBe(before + 2);
+  expect(byKey(m.agents.list(), "opencode")?.state).toBe("active");
+  expect(m.calls.at(-1)?.launch.env.INVENTED_AGENT_KEY).toBe("invented-value");
+  expect(m.calls.at(-1)?.methods).not.toContain("authenticate");
+  // Nothing reads it again unasked: a launch uses the reading kept.
+  await m.agents.launch("opencode");
+  expect(login.reads()).toBe(before + 2);
+});
+
+test("an agent with a way to sign in besides a variable — agent or terminal — keeps its refusal on Check again, and nothing re-reads the login shell for it (O37)", async () => {
+  for (const other of [{ id: "browser", name: "In a browser" }, { id: "tui", name: "In a terminal", type: "terminal", args: ["login"] }]) {
+    const login = keptLogin();
+    // It opens a session with the variable set, as one signed out may.
+    login.vars.INVENTED_AGENT_KEY = "invented-value";
+    const m = machine({ bins: { opencode: "/invented/bin/opencode" }, script: keyed([...envVarOnly, other]), readEnv: login.read, forgetEnv: login.forget });
+    m.agents.list();
+    await m.agents.settled();
+    expect(byKey(m.agents.list(), "opencode")?.state).toBe("active");
+    m.agents.refused("opencode");
+    const before = login.reads();
+    m.agents.probe("opencode");
+    await m.agents.settled();
+    expect(byKey(m.agents.list(), "opencode")?.reason).toBe("signin");
+    expect(login.reads()).toBe(before);
+  }
 });

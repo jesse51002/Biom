@@ -111,6 +111,25 @@ test("the reading is taken once per server, however many ask", async () => {
   expect(login.reason()).toBeNull();
 });
 
+test("A READING DROPPED IS TAKEN AGAIN on the next read — once, however many ask — and holds what the profile says now", async () => {
+  const count = join(dir, "count-forget");
+  const later = join(dir, "later-key");
+  // The profile exports a key once the person has put it there. Invented.
+  const sh = shell("forgets", `echo x >> "${count}"\n[ -f "${later}" ] && export INVENTED_AGENT_KEY="$(cat "${later}")"`);
+  const login = makeLoginEnv({ shell: sh, base, cwd: dir });
+  const first = await login.read();
+  expect(first.INVENTED_AGENT_KEY).toBeUndefined();
+  writeFileSync(later, "invented-value");
+  // Kept until it is dropped.
+  expect((await login.read()).INVENTED_AGENT_KEY).toBeUndefined();
+  login.forget();
+  const [a, b] = await Promise.all([login.read(), login.read()]);
+  expect(a).toBe(b);
+  expect(a.INVENTED_AGENT_KEY).toBe("invented-value");
+  expect(await login.read()).toBe(a);
+  expect(readFileSync(count, "utf8").trim().split("\n").length).toBe(2);
+});
+
 test("a missing shell, and Windows, answer the server's environment with a reason that names no value", async () => {
   const missing = await readLoginEnv({ shell: join(dir, "no-such-shell"), base, cwd: dir });
   expect(missing.from).toBe("server");
