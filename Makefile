@@ -215,10 +215,31 @@ test: install
 #
 #   make e2e                              both layers
 #   make app && make e2e     including the packaged one
+#   make e2e-server                       layer one alone, which is what CI runs
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/chat-server.e2e.ts ./tests/e2e/agent-look.e2e.ts ./tests/e2e/agent-screen.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
+	@cd "$(HERE)" && bun test $(E2E_SERVER) $(E2E_APP)
+
+## e2e-server: layer one alone — every end-to-end file but the packaged application's. CI runs this
+#
+# ONE LIST, AND BOTH `e2e` AND CI RUN IT. CI's e2e job used to name its files
+# one step each, and when the chats, the look and the Agent screen joined
+# layer one here they did not join it there: two lists of what proves the
+# program runs are two lists that disagree. A new layer-one file is ONE LINE
+# added to `E2E_SERVER`, with its `./`, and both run it from then on. CI runs
+# `app.e2e.ts` on its own, after it has built the bundle that file walks.
+E2E_SERVER = \
+	./tests/e2e/server.e2e.ts \
+	./tests/e2e/chat-server.e2e.ts \
+	./tests/e2e/agent-look.e2e.ts \
+	./tests/e2e/agent-screen.e2e.ts \
+	./tests/e2e/startup.e2e.ts
+E2E_APP = ./tests/e2e/app.e2e.ts
+
+e2e-server: browser
+	@echo "  screenshots        →  $(HERE)dist/e2e/"
+	@cd "$(HERE)" && bun test $(E2E_SERVER)
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #
@@ -236,4 +257,4 @@ clean:
 	@rm -rf "$(HERE)node_modules"
 	@echo "cleaned"
 
-.PHONY: help dev up down install browser app uninstall check layers graph manifest manifest-stub types parse test e2e fresh clean
+.PHONY: help dev up down install browser app uninstall check layers graph manifest manifest-stub types parse test e2e e2e-server fresh clean
