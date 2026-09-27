@@ -117,12 +117,16 @@ do not:
 2. **The launch token**, in the built application, as the API route takes it.
 3. **Loopback peer address** — the network is refused before a header is read.
 4. **Host is a loopback name on this port; Origin is that address** — defeats
-   DNS rebinding, a site in another tab, and the box (`Origin: null`).
+   DNS rebinding, a site in another tab, a page on another localhost port, and
+   the box (`Origin: null`). A socket must send an Origin; `ownOrigin` in
+   `server/main.ts` is the one comparison.
 5. **This machine's capability cookie** (`biom-local-<port>`) — minted per launch,
    `HttpOnly; SameSite=Strict`, set only on the composed document and only for a
    loopback request. The page proxy strips `set-cookie` on the way back and any
    `cookie` a page hands it on the way out. The same cookie guards the agent and
-   chat kinds and the live stream, through `localRefusal`.
+   chat kinds and the live stream, through `localRefusal` — which asks the same
+   Origin where one is sent, and `Sec-Fetch-Site` beside it, because a page on
+   another localhost port is sent this cookie too: a site ignores the port.
 
 The refusal is logged and never told to the socket. Past the gate, the ticket is
 the second wall: a caller that passed every check still runs only what the
