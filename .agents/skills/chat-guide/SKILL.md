@@ -6,7 +6,8 @@ description: >-
   Protocol, one agent process per chat. Covers the hand-written JSON-RPC
   connection and its process group (`server/platform/acp.ts`), the ONE reading
   of the protocol the chats and the probe share (`acp-wire.ts`), the person's
-  login-shell environment read once per server (`loginenv.ts`), finding,
+  login-shell environment read once per server and again only on Check again
+  for an agent signed in by a variable (`loginenv.ts`), finding,
   probing, installing and signing in an agent (`server/workspace/agents.ts` and
   the pure `server/domain/agents-*.ts`), a chat's lifetime, its light, its kept
   log and its reaping (`server/workspace/chats.ts`), which of an agent's
@@ -56,7 +57,7 @@ It owns the conversation. It does **not** own:
 |---|---|---|
 | the connection | `server/platform/acp.ts` (1) | JSON-RPC 2.0, one message per line, over a process's stdio; its process group; no method but the one it must refuse |
 | the protocol | `server/platform/acp-wire.ts` (1) | every ACP method and shape Biom speaks, read into Biom's own; what is believed of an agent, bounded |
-| the person's environment | `server/platform/loginenv.ts` (1) | the login shell's environment, read once per server |
+| the person's environment | `server/platform/loginenv.ts` (1) | the login shell's environment, read once per server, and again on Check again for an agent signed in by a variable |
 | the pure halves | `server/domain/agents-*.ts`, `edits.ts`, `shellwrites.ts`, `jev.ts` (2) | the known agents, their sign-in methods, the registry, a downloaded archive, what is an edit, Jev |
 | the agents | `server/workspace/agents.ts` (3) | what this machine has: finding, probing, installing, signing in, tickets |
 | the chats | `server/workspace/chats.ts` (3) | one agent process per chat, its turns, its light, its files, its kept log |
@@ -79,8 +80,12 @@ contracts edit).
 a connection already closed. Framing respects nothing the process does: a
 chunk can end mid-line or mid-character, a line that is not a JSON object is
 ignored (an agent that prints a banner is careless, not hostile), and a line
-longer than `MAX_LINE` — 32 MB, a whole file's diff in one update — fails the
-connection rather than holding whatever a runaway process writes.
+longer than `MAX_LINE` fails the connection rather than holding whatever a
+runaway process writes. **`MAX_LINE` is held above the largest message a
+handler here takes**: 6 × 32 Mi + 1 Mi characters, which is the chats' largest
+file (`FILE_MAX`, 32 Mi characters) escaped at JSON's worst, six characters
+each, with a mebibyte for its envelope. So a write too large is refused in
+words by the chats' handler, and never by ending the agent mid-turn.
 
 **Every request settles**: answered, past its own deadline where it named one,
 or rejected with `ACP_CLOSED` when the connection ends — one error for every
@@ -125,9 +130,12 @@ agent's own**: finding one means starting it with ACP arguments, and `goose`,
 those agents are found only once Biom installed them. OpenClaw is reached only
 through a Gateway on THIS machine, by a constant address, and **Start Gateway**
 is `agents.start`. The first `agents.list` starts the search; **a list read more
-than `TIMING.rediscover` (thirty seconds) after the last look looks again and
-probes only what is new**, so an agent installed while Biom runs is found
-without a restart and a busy picker is not a probe storm.
+than `TIMING.rediscover` (thirty seconds) after the last look looks again, and
+probes what is new and any agent still here whose last probe FAILED** — so an
+agent installed or mended while Biom runs is found without a restart, which is
+also why a failed agent carries no button. An agent that is Active, waiting for
+a sign-in, being installed or being checked is not probed unasked, so a busy
+picker is not a probe storm.
 
 **Active means a session opened, and nothing short of it**: the agent started,
 answered `initialize`, and answered `session/new`. Anything less is Inactive
@@ -155,7 +163,20 @@ the first version, and it left Cursor, Devin, Junie and six more unusable.
 answer the agent as it stands (`checking`, `installing`) and push the verdict
 on the stream when it lands. Every step is bounded (`TIMING`), one job runs per
 agent at a time, and `killAll` ends every probe and install process on the way
-out.
+out. **One install of an agent and version runs at a time across every
+workspace**, because they share the agents folder: a lock file beside its tree,
+`<key>/.install-<version>.lock`, made with `O_EXCL`, touched every ten seconds
+while the install works and taken over once nobody has touched it for a
+minute. A second install waits on it, saying *It is being installed in another
+workspace.*, and then uses what the first installed — or installs it itself
+where the first did not.
+
+**What the person is shown of an agent is Active or Inactive, and nothing
+else**: an Inactive one carries at most ONE button, **Sign in** or **Start
+Gateway**, and its reason's sentence as the line under it. Work in progress is
+a pulsing lamp, with its button held in More agents while it runs; a failed
+agent carries no button, because the list's own look probes it again. Install
+and its progress live in More agents.
 
 ## 4. Sign-in, which is the person's and not a folder's
 
@@ -164,6 +185,13 @@ session or message, refused with ACP's *authentication required*. The chats
 report theirs through `refused(key)`, which is **sticky**: an agent that opens a
 probe session and then refuses a chat's message stays at **Sign in** until
 somebody signs it in, rather than flipping back to Active on the next probe.
+**The one exception is an agent Biom cannot sign in**: one that offers no way
+at all, or whose every way is a variable to set. The person signs such an agent
+in outside Biom and then presses **Check again**, which is `agents.probe`, and
+for exactly that agent an explicit probe lifts the refusal before it looks —
+for a variable, after reading the login shell again. An agent with a way Biom
+can run keeps its refusal, because such agents can open a session while signed
+out.
 
 `agents.signIn{agent, method}` answers a `SignIn`, by the method's type:
 
@@ -178,7 +206,10 @@ somebody signs it in, rather than flipping back to Active on the next probe.
   route redeems through the agents of the vault it was addressed to, so a
   ticket minted in one workspace never runs in another.
 - **`env_var`** — refused in words naming the variables: a key the person sets
-  in their own environment, which Biom never holds.
+  in their login shell, which Biom never holds. They set it there and press
+  **Check again**, which reads the login shell again and looks.
+- **no method at all** — Biom cannot sign it in: the person is told to sign in
+  from its own command in a terminal, and **Check again** looks again.
 
 **`authenticate` is never sent unasked** — on an agent already signed in it can
 sign the person out, or open a browser for nothing. **Three agents are the
@@ -206,6 +237,10 @@ constructed ONCE per server in the composition root and read the first time an
 agent is looked for or started, never while the server comes up: **two
 workspaces open at once are one person with one login.** Every agent a chat or
 a probe starts, the sign-in pop-up's command, and Jev's key come out of it.
+**It is read again only when `forget` drops the reading**, and only one thing
+asks for that: Check again on an agent whose every way to sign in is a
+variable, which the person has just set in their profile and a reading taken
+at start would never see. Never automatically.
 
 **Nothing of it is ever logged, sent to a client or written to a file.**
 `AgentLaunch` — the command, its arguments and its complete environment — is
@@ -222,13 +257,18 @@ restarted, a switch of agent — because the history names a write by the agent
 process that made it.
 
 - **A held message.** `chat.new` may name no agent; its message is kept, its
-  summary says `held`, and the first agent to turn Active takes it. A message
-  refused for want of a sign-in is held too, and goes out once that agent has
-  been seen Inactive and then Active again — never on the list it was refused
-  against, and through at most two refusals.
+  summary says `held`, and the first agent to turn Active takes it. **A message
+  whose agent is not Active** — its Gateway down, installing, failed, being
+  checked — **and which has no session of the chat's own open is held too**,
+  and goes out when that agent turns Active; a session the chat has open is an
+  agent that answers, whatever the list says. A message refused for want of a
+  sign-in is held, and goes out once that agent has been seen Inactive and then
+  Active again — never on the list it was refused against, and through at most
+  two refusals.
 - **One message at a time.** `chat.send` while a turn is held, starting or
   running is refused `limit`. **Stop** is `session/cancel`; an agent that has
-  not answered within fifteen seconds is ended. Switching agent mid-turn is
+  not answered within fifteen seconds (`cancelGraceMs`, where a test gives
+  another) is ended. Switching agent mid-turn is
   refused — Stop first — and a switch on a held chat re-targets it and mints
   nothing.
 - **Permission is answered, never shown**: `allow_always`, else `allow_once`.
@@ -236,7 +276,11 @@ process that made it.
   after `end_turn` (`GREEN_MS`), none after `cancelled`, red after a refusal,
   `max_tokens`, `max_turn_requests` or a crash — **and red stays until the
   chat's next turn starts.** It is computed from the last turn's end, so it
-  survives a restart.
+  survives a restart, and a green read back after one goes out when the rest of
+  its ten minutes does.
+- **A chat is named once**, from the first line of its first message, and its
+  name's face picked once. An agent's `session_info_update` title does not
+  rename it.
 - **The / menu** is the agent's `available_commands_update` — the probe's until
   the chat's own session sends one — and then every workspace skill it did not
   list, read fresh from `.agents/skills/`. A message naming a skill the agent
@@ -303,7 +347,9 @@ replaces a tool line by its id.
 `session/resume`, else `session/load` (whose replay is not news and is
 dropped), where the agent offers them. Otherwise, and on every switch of
 agent, the new session's first message is handed the chat so far, oldest
-dropped past a bound.
+dropped past a bound — and a handoff a refused message was carrying stays owed
+to the session reopened for its retry. What is owed is kept in memory, so a
+server restart in between loses it.
 
 **An idle agent is ended.** `reap()` ends a chat's agent that is at rest — its
 session open, no turn held, starting, running or stopping — whose chat no
@@ -371,13 +417,17 @@ any open a client reads again — `chat.read` from the highest `seq` it holds,
 
 **Every one of these kinds, and the stream, answers only this machine's own
 window, in every build**: a loopback peer, a Host that is a loopback name on
-this server's port, and the per-launch `HttpOnly; SameSite=Strict` capability
-cookie — `localRefusal` in `server/main.ts`, spent by `route`'s gate for every
-`isLocalKind` kind and refused as `identity` in a sentence that names no check.
-**Talking to an agent is command execution**: an agent answered `allow_always`
-does what it is told, and in a source run the page proxy can forge Host and
-Origin from a loopback peer — it can never present the cookie.
-`tests/local-gate.test.ts` holds it on a real server.
+this server's port, an Origin that is this server's own where one is sent, a
+`Sec-Fetch-Site` of `same-origin` or `none` where one is sent, and the
+per-launch `HttpOnly; SameSite=Strict` capability cookie — `localRefusal` in
+`server/main.ts`, spent by `route`'s gate for every `isLocalKind` kind and
+refused as `identity` in a sentence that names no check. **Talking to an agent
+is command execution**: an agent answered `allow_always` does what it is told.
+In a source run the page proxy can forge Host and Origin from a loopback peer,
+and it can never present the cookie; a page on ANOTHER localhost port is sent
+the cookie — a site ignores the port — and is refused by its Origin or its
+`Sec-Fetch-Site`, which a browser never lets a page forge.
+`tests/local-gate.test.ts` holds both on a real server.
 
 ## 11. The Agent screen: the look in the box, the input box in the host
 
@@ -388,7 +438,9 @@ which is one node; `guest/plugins/biom-agent/agent.js` mounts into it the
 plugin its `look` variable names, `biom-agent-look` by default, and refuses in
 words a look it cannot mount. A workspace names a look of its own in
 `plugins/biom-agent/extensions.yaml`. Every write addressed to `@agent` is
-refused by `pageDir`, and no page may embed it.
+refused by `pageDir`, no page may embed it, and a page route naming it — or any
+`@` id — is refused by the shell, which never reads it and says *There is no
+page called …*.
 
 **What the look draws arrives, and it never fetches.** The host posts
 `look.state` whole and `look.patch` for what moved, ONLY through the Agent
@@ -438,8 +490,10 @@ slot, which the shell puts in the bed beside the canvas once; its three shapes �
 the whole screen on `#/agent`, the panel beside whatever else is on screen
 while `panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps
 running. The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent`
-itself, so a page routed to `#/page/@agent` is a box of its own that is never
-fed — with ONE context object, whose identity is what `answer` checks. The look is posted
+itself, the key a page of that id would be mounted under: the shell refuses
+`#/page/@agent`, and a box ever mounted there would be one of its own that is
+never fed — with ONE context object, whose identity is what `answer` checks.
+The look is posted
 `look.state` when its box says hello and whenever the shape moves — the mode,
 the list, the chat, the epoch — and `look.patch` for the rest, one a frame
 (a timer flushes a hidden window's), and a patch that would carry more than
@@ -493,7 +547,7 @@ Active agents.
 ```
 server/platform/acp.ts          one connection: framing, settling, stderr tail, the group, kill
 server/platform/acp-wire.ts     THE reading of ACP: handshake, session, pickers, commands, tools, WIRE_BOUNDS
-server/platform/loginenv.ts     the login shell's environment, once per server, never logged
+server/platform/loginenv.ts     the login shell's environment, once per server until forget(), never logged
 server/domain/agents-known.ts   KNOWN_AGENTS: which command is which agent, adapters, the Gateway
 server/domain/agents-auth.ts    an agent's sign-in methods, and what a pop-up would run
 server/domain/agents-registry.ts  the registry read as untrusted, and the install plans
@@ -501,7 +555,7 @@ server/domain/agents-archive.ts   an archive's table of contents judged before i
 server/domain/edits.ts          which action is an edit, vault paths, the bounded tool line
 server/domain/shellwrites.ts    a command line's writes, conservatively
 server/domain/jev.ts            STATUS_FACES, NAME_FACES, makeJev, makeJevTurn, makeJevStatus
-server/workspace/agents.ts      makeAgents: find, probe, install, sign in, tickets, AUTH_EVERY_PROCESS, TIMING
+server/workspace/agents.ts      makeAgents: find, probe, install and its lock, sign in, tickets, AUTH_EVERY_PROCESS, TIMING
 server/workspace/chats.ts       makeChats, readSkills: turns, light, files, onEdit, the kept log, reap
 server/api/routes.ts            chatAnswer, CHAT_SENTENCES, the gate and `own` on route
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring, events(),
