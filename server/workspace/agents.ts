@@ -12,9 +12,10 @@
 // bridge is started pointed at the local address, the check asks the local
 // address and nothing else, and **Start Gateway** is `start`. The first `list`
 // looks, and a `list` read once the last look is `TIMING.rediscover` old looks
-// again, probing only what it finds new — so an agent put on this machine while
-// Biom runs is found without a restart, and a list read often is not a probe
-// storm.
+// again, probing what it finds new and what it knew whose last probe FAILED
+// (O34) — so an agent put on this machine or mended while Biom runs is found
+// without a restart, and a list read often is not a probe storm. An agent
+// waiting for a sign-in is not looked at again unasked.
 //
 // ACTIVE MEANS THE SESSION OPENED, and nothing short of it: the agent started,
 // answered `initialize` and answered `session/new`. Anything less is Inactive
@@ -643,8 +644,12 @@ export function makeAgents(deps: AgentsDeps): Agents {
   }
 
   /** LOOK FOR EVERY AGENT BIOM KNOWS, and probe each one found. A slot for an
-   *  agent no longer here is dropped, unless something is running for it. */
-  async function lookAround(): Promise<void> {
+   *  agent no longer here is dropped, unless something is running for it.
+   *  `again`: the list's own half-minute look, which also probes again an
+   *  agent still here whose last probe FAILED (O34) — nothing on the screen
+   *  asks for that any more, and a failure is often a moment's. An agent
+   *  waiting for a sign-in is not: that refusal stands until a sign-in. */
+  async function lookAround(again: boolean): Promise<void> {
     const env = await deps.env();
     const keys = [...KNOWN_AGENTS.map((k) => k.key), ...installedKeys().filter((k) => knownAgent(k) === null)];
     const found = await Promise.all(keys.map(async (key) => [key, await find(key, env)] as const));
@@ -658,22 +663,26 @@ export function makeAgents(deps: AgentsDeps): Agents {
         }
         continue;
       }
-      if (!slots.has(key)) {
+      const known = slots.get(key);
+      if (known === undefined) {
         const slot = slotFor(key, f.source);
         slot.found = f;
         changed = true;
         queueProbe(slot);
+      } else if (again && known.info.reason === "failed" && !known.installing && !known.probeQueued) {
+        known.found = f;
+        queueProbe(known);
       }
     }
     if (changed) emit();
   }
 
   /** LOOK NOW, unless a look is already under way — then that one. Two
-   *  looks never run at once. */
-  function lookNow(): Promise<void> {
+   *  looks never run at once. `again` is `lookAround`'s. */
+  function lookNow(again = false): Promise<void> {
     if (looking !== null) return looking;
     lookedAt = deps.now();
-    const run: Promise<void> = track(lookAround()).finally(() => {
+    const run: Promise<void> = track(lookAround(again)).finally(() => {
       if (looking === run) looking = null;
     });
     looking = run;
@@ -689,12 +698,14 @@ export function makeAgents(deps: AgentsDeps): Agents {
 
   /** AN AGENT PUT ON THIS MACHINE SINCE THE LAST LOOK IS FOUND: a list looks
    *  again once the last look is `rediscover` old. What a look finds new is
-   *  probed and what it already knew is not — a known agent is looked at
-   *  again only when asked — so however often the list is read, it is one
-   *  look per half-minute and one probe per agent that arrived. */
+   *  probed, and so is one it knew whose last probe failed (O34); an Active
+   *  agent, one waiting for a sign-in, one being installed or checked is not
+   *  looked at again unasked — so however often the list is read, it is one
+   *  look per half-minute and at most one probe per agent that arrived or
+   *  had failed. */
   function rediscover(): void {
     const stale = lookedAt === null || (looking === null && deps.now() - lookedAt >= t.rediscover);
-    if (stale) lookNow().catch(() => {});
+    if (stale) lookNow(true).catch(() => {});
   }
 
   /* ── the probe ────────────────────────────────────────────────────── */

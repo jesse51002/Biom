@@ -910,3 +910,49 @@ test("AN AGENT THAT ARRIVES LATER IS FOUND: a list more than 30 s after the last
   expect(m.calls.length - before).toBe(1);
   expect(byKey(m.agents.list(), "kimi")?.state).toBe("active");
 });
+
+test("A FAILED AGENT IS LOOKED AT AGAIN by a list past the half-minute, and turns Active when it opens a session; one waiting for a sign-in is not (O34)", async () => {
+  let clock = 2_000_000;
+  // Gemini crashes on its first start and is well after; OpenCode opens a
+  // session and is then refused by a chat, so it waits for a sign-in.
+  let geminiBroken = true;
+  const m = machine({
+    bins: { gemini: "/invented/bin/gemini", opencode: "/invented/bin/opencode" },
+    now: () => clock,
+    script: (launch) => (launch.command.endsWith("gemini") && geminiBroken
+      ? { ...healthy(), "session/new": () => { throw acpError(-32603, "invented crash"); } }
+      : healthy()),
+  });
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "gemini")?.reason).toBe("failed");
+  m.agents.refused("opencode");
+  expect(byKey(m.agents.list(), "opencode")?.reason).toBe("signin");
+  const looks = (bin: string) => m.calls.filter((c) => c.launch.command === `/invented/bin/${bin}`).length;
+  const gemini0 = looks("gemini");
+  const opencode0 = looks("opencode");
+
+  // Mended — and within the half-minute nothing is looked at again.
+  geminiBroken = false;
+  clock += 5_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "gemini")?.reason).toBe("failed");
+  expect(looks("gemini")).toBe(gemini0);
+
+  // Past it, the failed one is probed again and turns Active; the one
+  // waiting for a sign-in is left alone.
+  clock += 31_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(byKey(m.agents.list(), "gemini")?.state).toBe("active");
+  expect(looks("gemini")).toBe(gemini0 + 1);
+  expect(byKey(m.agents.list(), "opencode")?.reason).toBe("signin");
+  expect(looks("opencode")).toBe(opencode0);
+
+  // Active now: not looked at again on the next half-minute.
+  clock += 31_000;
+  m.agents.list();
+  await m.agents.settled();
+  expect(looks("gemini")).toBe(gemini0 + 1);
+});
