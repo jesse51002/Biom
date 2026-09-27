@@ -714,3 +714,16 @@ test("a stream reopening after the server restarted says a screen the switcher b
   // So the history names it the agent's again, and Go back to survives a reload.
   expect(w.server.entries.at(-1)).toMatchObject({ kind: "view", writer: { kind: "agent", agent: AGENT, chat: CHAT } });
 });
+
+test("an offer the person opened themselves is spent: leaving the page does not bring Go to page back", async () => {
+  const w = windowOn();
+  await w.switcher.start();
+  w.ui.open("page", "log");
+  w.stream(w.server.edit("boards"));
+  expect(w.switcher.get().offer?.name).toBe("Boards");
+  // Opened from the tree, not through Go to page.
+  w.ui.open("page", "boards");
+  expect(w.switcher.get().offer).toBe(null);
+  w.ui.open("page", "log");
+  expect(w.switcher.get().offer).toBe(null);
+});
