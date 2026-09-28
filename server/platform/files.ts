@@ -23,7 +23,7 @@
 // written; tsc cannot see the module, so the import is suppressed and every
 // value that comes out of it is annotated by hand below.
 import { mkdir, open, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -105,6 +105,28 @@ function oneAtATime<T>(abs: string, run: () => Promise<T>): Promise<T> {
   tails.set(abs, tail);
   void tail.then(() => {
     if (tails.get(abs) === tail) tails.delete(abs);
+  });
+  return next;
+}
+
+/** ONE COMMIT AT A TIME PER REPOSITORY, whichever `Files` asks. A vault has
+ *  several — its own, the one identities write through, the one a chat's agent
+ *  writes through — and every commit is `git add -A` and then `git commit`,
+ *  each holding `.git/index.lock` while it runs: two at once over one
+ *  repository fail, and the one that loses is a warning and a lost commit.
+ *  Background work commits beside the person's own writes (identities given
+ *  after a sweep, the mirror's pass), so every commit over one root waits for
+ *  the one before it, in the order asked. Keyed by the root's real path, so two
+ *  spellings of one folder are one queue; a commit that fails does not hold up
+ *  the next. */
+const commitTails = new Map<string, Promise<void>>();
+function oneCommitAtATime(root: string, run: () => Promise<void>): Promise<void> {
+  const prev = commitTails.get(root) ?? Promise.resolve();
+  const next = prev.then(run);
+  const tail = next.then(() => undefined, () => undefined);
+  commitTails.set(root, tail);
+  void tail.then(() => {
+    if (commitTails.get(root) === tail) commitTails.delete(root);
   });
   return next;
 }
@@ -459,15 +481,23 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): DiskFiles {
       // `.git` on disk and never `git rev-parse`.
       if (!hasHistory(ROOT)) return;
 
-      const added = await git(["add", "-A"]);
-      if (added.code !== 0) return warn(added.err || "git add failed");
-
-      const done = await git(["commit", "-m", message]);
-      // Exit 1 with nothing staged is the ordinary case — two writes in a row
-      // where the second changed nothing. It is not a failure.
-      if (done.code !== 0 && !/nothing to commit|nothing added/i.test(done.out + done.err)) {
-        warn(done.err || done.out || "git commit failed");
+      let key = ROOT;
+      try {
+        key = realpathSync(ROOT);
+      } catch {
+        /* the root as given; a folder that is not there commits nothing anyway */
       }
+      await oneCommitAtATime(key, async () => {
+        const added = await git(["add", "-A"]);
+        if (added.code !== 0) return warn(added.err || "git add failed");
+
+        const done = await git(["commit", "-m", message]);
+        // Exit 1 with nothing staged is the ordinary case — two writes in a row
+        // where the second changed nothing. It is not a failure.
+        if (done.code !== 0 && !/nothing to commit|nothing added/i.test(done.out + done.err)) {
+          warn(done.err || done.out || "git commit failed");
+        }
+      });
     },
   };
 }
