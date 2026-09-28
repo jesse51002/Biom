@@ -354,6 +354,7 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
     presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
+  booted.push(deps.mirror);
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
@@ -375,6 +376,8 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   await ws.setSections(page.id, [{ name: "note" }, { name: "title" }]);
   expect(kinds[0]).toBe("section.order");
   expect(kinds).toContain("page.read");
+  // The mirror reads the tables for a page's children: drained first.
+  await deps.mirror.queue.idle();
   db.close();
 });
 
@@ -539,6 +542,7 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
     presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
+  booted.push(deps.mirror);
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
@@ -562,6 +566,8 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   await writeRaw({ ws, transport }, page.id, doc("Rates", "contents:\n" + prose("title", "# Rates")));
   expect(kinds[0]).toBe("doc.writeRaw");
   expect(kinds).toContain("page.read");
+  // The mirror reads the tables for a page's children: drained first.
+  await deps.mirror.queue.idle();
   db.close();
 });
 
