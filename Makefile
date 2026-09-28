@@ -213,13 +213,22 @@ test: install
 # `browser` rather than `install`, because layer one needs the Chromium as well
 # as the packages, and that target fetches it once per machine.
 #
+# `--isolate`: EACH FILE IN A FRESH GLOBAL OBJECT, because every file drives
+# its own Playwright in the one runner process, and what one long walk leaves
+# in the shared modules broke the next file's browser. Measured: the chat walk
+# then the Agent screen walk failed three runs in three ("Target page, context
+# or browser has been closed", a Stop that never ended), the other order
+# passed three in three, and with `--isolate` the failing order passed three
+# in three; a bare browser launched after the chat walk hung on its first
+# `evaluate` without it and answered with it.
+#
 #   make e2e                              both layers
 #   make app && make e2e     including the packaged one
 #   make e2e-server                       layer one alone, which is what CI runs
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test $(E2E_SERVER) $(E2E_APP)
+	@cd "$(HERE)" && bun test --isolate $(E2E_SERVER) $(E2E_APP)
 
 ## e2e-server: layer one alone — every end-to-end file but the packaged application's. CI runs this
 #
@@ -240,7 +249,7 @@ E2E_APP = ./tests/e2e/app.e2e.ts
 
 e2e-server: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test $(E2E_SERVER)
+	@cd "$(HERE)" && bun test --isolate $(E2E_SERVER)
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #
