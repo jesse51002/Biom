@@ -599,8 +599,9 @@ test("a page that moved is reached by its new id, and its old one is not forward
   const to = moved.ok ? (moved.value as PageId) : "";
   expect(to).toBe(`${clients.id}/Notes`);
 
-  // The store re-reads the tree and finds the new ids, and only those.
-  await ws.loadTree();
+  // The store re-reads the levels on the way down to the moved page and finds
+  // the new ids, and only those — the window lists a level at a time.
+  await ws.loadTree(`${to}/Ashgrove`);
   const ids = ws.get().pages.map((p: PageRef) => p.id);
   expect(ids).toContain(to);
   expect(ids).toContain(`${to}/Ashgrove`);
@@ -611,8 +612,9 @@ test("a page that moved is reached by its new id, and its old one is not forward
   // And the page is intact at the address it moved to, values and all.
   expect((await ws.loadPage(`${to}/Ashgrove`))?.variables["rate"]).toBe(62);
   // The root is where it always was — an id is a path, and only the moved
-  // subtree's paths changed.
-  expect(ids).toContain(ROOT_PAGE);
+  // subtree's paths changed. (It is no level's child, so the window knows it
+  // by reading it.)
+  expect((await ws.loadPage(ROOT_PAGE))?.id).toBe(ROOT_PAGE);
   db.close();
 });
 

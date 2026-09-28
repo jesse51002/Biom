@@ -406,7 +406,13 @@ test.if(unix)("AN AGENT'S NEW PAGE IS PLACED BY ITS UID AND FOLLOWED BY THE SWIT
     const ui = makeUi({ route: { view: "page", id: "home", screen: "page" }, panel: true, chat: null });
     const transport = { call: async (req: ApiRequest) => await handle(req, await host.deps(vault)) };
     const history = makeHistoryStore({ transport, now: Date.now });
-    const switcher = makeSwitcher({ ui, history, window: "window-invented-fresh-01", pages: () => tree, now: Date.now, timing: TIMING });
+    // The window's directory, over its copy of the page list: by id and by uid.
+    const switcher = makeSwitcher({
+      ui, history, window: "window-invented-fresh-01",
+      refOf: (id: string) => tree.find((p) => p.id === id) ?? null,
+      idOfUid: (uid: string) => tree.find((p) => p.uid === uid)?.id ?? null,
+      now: Date.now, timing: TIMING,
+    });
     await switcher.start();
     const live: HistoryEntry[] = [];
     const off = (await host.deps(vault)).history!.on((more) => { live.push(...more); });
