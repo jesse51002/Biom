@@ -751,17 +751,25 @@
     let settled = false;
 
     /** THE SWAP IS AS WIDE AS THE WORD ARRIVING, AS IT IS DRAWN, and the line
-     *  re-centres as its width moves there. Each word is its own width in the
+     *  re-centres as its width eases there. Each word is its own width in the
      *  swap, so the newest is watched rather than measured once: the sheet's
      *  face loading after it, or a stage that takes the line under 620 pixels,
-     *  changes its size, and the swap follows without waiting for the next
-     *  turn. Without an observer the swap is as wide as what it holds. */
+     *  changes its size, and the swap takes that at once — only a turn eases —
+     *  without waiting for the next turn. Without an observer the swap is as
+     *  wide as what it holds. */
     /** @type {any} */
     let fits = null;
+    /** @type {any} the word the swap was last fitted to */
+    let fitted = null;
     if (typeof win.ResizeObserver === "function") {
       fits = new win.ResizeObserver((/** @type {any[]} */ seen) => {
-        const w = seen[seen.length - 1].contentRect.width;
-        if (w > 0) swap.style.setProperty("width", w + "px");
+        const { target, contentRect } = seen[seen.length - 1];
+        if (!(contentRect.width > 0)) return;
+        const same = target === fitted;
+        fitted = target;
+        if (same) swap.style.setProperty("transition", "none");
+        swap.style.setProperty("width", contentRect.width + "px");
+        if (same) { void swap.offsetWidth; swap.style.removeProperty("transition"); }
       });
       fits.observe(swap.lastElementChild);
     }

@@ -286,15 +286,14 @@ test("THE TWO WORDS OF A TURN SHARE ONE CENTRE in every frame, the wider leaving
   } finally { await ctx.close(); }
 }, 60000);
 
-test("THE SWAP IS ITS WORD'S WIDTH, and follows the word's size between turns: narrower than 620 pixels and wide again, without waiting for the next word", async () => {
+test("THE SWAP IS ITS WORD'S WIDTH, and takes the word's new size at once between turns: narrower than 620 pixels and wide again, without waiting for the next word", async () => {
   const { ctx, page, box } = await open();
   try {
     await post(page, box, { kind: "look.state", state: lookState({}) });
-    /** The swap and the word in it once the swap has come to rest: two
-     *  frames for a change of size to be seen, then its width's transition. */
+    /** The swap and the word in it, two frames on: long enough for a change
+     *  of size to be seen, and too short for the width to ease there. */
     const fit = async () => {
       await box.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".swap")!.getAnimations().length === 0, null, { timeout: BOUND });
       return await inLook<any>(box, `
         const swap = root.querySelector(".swap");
         const r = document.createRange(); r.selectNodeContents(swap.lastElementChild);
@@ -304,6 +303,7 @@ test("THE SWAP IS ITS WORD'S WIDTH, and follows the word's size between turns: n
     // next, and holds the same word throughout: nothing here waits on a turn.
     for (const width of [560, 1180]) {
       await turnFrames(box);
+      await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".swap")!.getAnimations().length === 0, null, { timeout: BOUND });
       const before = await fit();
       expect(Math.abs(before.swap - before.text)).toBeLessThanOrEqual(1);
       await page.setViewportSize({ width, height: 780 });
