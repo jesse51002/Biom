@@ -80,10 +80,10 @@ export const NOT_TOUCH = "data-no-touch";
 export const TIMING = Object.freeze({ adopt: 5 * 60_000, idle: 2 * 60_000, settle: 5_000 });
 
 /** HOW LONG AN AGENT'S WRITE TO A PAGE THIS WINDOW'S TREE HAS NOT LISTED YET
- *  WAITS FOR IT (DECISIONS O39). A page an agent has just made reaches the
- *  history about 30 ms after the write, with its `uid`, and this window's tree
- *  lists it only after the watcher's settle and a `page.list` round trip — so
- *  the edit's place names nothing here yet. It is kept, and taken again each
+ *  WAITS FOR IT. A page an agent has just made reaches the history about 30 ms
+ *  after the write, with its `uid`, and this window's tree lists it only
+ *  after the watcher's settle and a `page.list` round trip — so the edit's
+ *  place names nothing here yet. It is kept, and taken again each
  *  time the tree changes, for this long after it arrived. Not one of the
  *  spec's times: it is how late the tree may be, not a rule of the switcher. */
 export const UNLISTED_MS = 5_000;
@@ -504,7 +504,7 @@ export function makeSwitcher(deps) {
    *  the agent has just made is in the history before it is in this window's
    *  tree. It is kept — the latest one, a newer write of the chat's replacing
    *  it — and decided by `listed` once the tree names it, as if it had been
-   *  named on arrival (DECISIONS O39).
+   *  named on arrival, so an agent's new page is followed like any other.
    *  @param {readonly Received[]} added */
   function heard(added) {
     const chat = ui.get().chat;

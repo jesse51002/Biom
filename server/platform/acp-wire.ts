@@ -86,7 +86,8 @@ export function readInitialize(result: unknown): AgentFacts {
 }
 
 /** `session/new`: the vault as `cwd`, and NO MCP servers — the door that will
- *  hand one to every agent is not built (DECISIONS §1). */
+ *  hand one to every agent is not built, and until it is, an agent's edits
+ *  reach the history only as the writes Biom sees (`edits.ts`). */
 export function newSessionParams(cwd: string): Obj {
   return { cwd, mcpServers: [] };
 }

@@ -13,8 +13,9 @@
 // address and nothing else, and **Start Gateway** is `start`. The first `list`
 // looks, and a `list` read once the last look is `TIMING.rediscover` old looks
 // again, probing what it finds new and what it knew whose last probe FAILED
-// (O34) — so an agent put on this machine or mended while Biom runs is found
-// without a restart, and a list read often is not a probe storm. An agent
+// — nothing on the screen asks for a failed agent to be looked at again — so
+// an agent put on this machine or mended while Biom runs is found without a
+// restart, and a list read often is not a probe storm. An agent
 // waiting for a sign-in is not looked at again unasked.
 //
 // ACTIVE MEANS THE SESSION OPENED, and nothing short of it: the agent started,
@@ -45,10 +46,10 @@
 // an agent that opens a session and then refuses the first message stays
 // signed out until somebody signs it in, rather than flipping back to Active on
 // the next probe. The exception is an agent Biom cannot sign in — one that
-// offers NO way (O35), or whose every way is a variable to set (O37): a `probe`
-// the person asks for — Check again, after signing in from its own command or
-// setting the variable in their profile — is believed, and for a variable the
-// login shell is read again first.
+// offers NO way, or whose every way is a variable to set: a `probe` the person
+// asks for — Check again, after signing in from its own command or setting the
+// variable in their profile — is believed, and for a variable the login shell
+// is read again first.
 //
 // INSTALLING reads the ACP Registry (`server/domain/agents-registry.ts`),
 // cached with a lifetime in memory and in Biom's own folder, and installs into
@@ -65,8 +66,9 @@
 // is a new first use, and a checksum the registry does list always decides.
 // EVERY WORKSPACE OPEN ON THIS MACHINE SHARES THAT FOLDER, so one install of
 // an agent and version runs at a time across all of them, by a lock file
-// beside its tree (O29): a second waits, says so, and then uses what the
-// first installed, or installs it itself where the first failed.
+// beside its tree, never a lock in one process, which another workspace's
+// server cannot see: a second waits, says so, and then uses what the first
+// installed, or installs it itself where the first failed.
 //
 // NOTHING WAITS. A probe, an install, a sign-in and a Gateway start each answer
 // the agent as it stands and say the verdict to every subscriber when it
@@ -115,7 +117,8 @@ export interface AgentsDeps {
   env: () => Promise<Record<string, string>>;
   /** Drop that reading, so the next `env()` asks the login shell again —
    *  `LoginEnv.forget`. Asked only by Check again on an agent whose every way
-   *  to sign in is a variable (O37). Absent: nothing is dropped. */
+   *  to sign in is a variable, which the person has just set in their
+   *  profile. Absent: nothing is dropped. */
   forgetEnv?: () => void;
   /** Where a command is on that environment's `PATH`, or null — `whichIn`. */
   which: (command: string, env: Record<string, string>) => Promise<string | null>;
@@ -232,9 +235,10 @@ export interface Agents {
    *  call starts finding them. */
   list(): AgentInfo[];
   /** Look again at one agent. Answers it as `checking`. For an agent that
-   *  offers no way to sign in, it lifts a sign-in refusal first (O35); for
-   *  one whose every way is a variable, it also has the login shell read
-   *  again, once, before the look (O37). */
+   *  offers no way to sign in, it lifts a sign-in refusal first — Biom cannot
+   *  sign such an agent in, so the person's asking is the only news of a
+   *  sign-in there will be; for one whose every way is a variable, it also
+   *  has the login shell read again, once, before the look. */
   probe(key: AgentKey): AgentInfo;
   /** **Start Gateway**: OpenClaw's, on this machine. Answers it as `checking`. */
   start(key: AgentKey): AgentInfo;
@@ -657,9 +661,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
   /** LOOK FOR EVERY AGENT BIOM KNOWS, and probe each one found. A slot for an
    *  agent no longer here is dropped, unless something is running for it.
    *  `again`: the list's own half-minute look, which also probes again an
-   *  agent still here whose last probe FAILED (O34) — nothing on the screen
-   *  asks for that any more, and a failure is often a moment's. An agent
-   *  waiting for a sign-in is not: that refusal stands until a sign-in. */
+   *  agent still here whose last probe FAILED — nothing on the screen asks
+   *  for that any more, and a failure is often a moment's. An agent waiting
+   *  for a sign-in is not: that refusal stands until a sign-in. */
   async function lookAround(again: boolean): Promise<void> {
     const env = await deps.env();
     const keys = [...KNOWN_AGENTS.map((k) => k.key), ...installedKeys().filter((k) => knownAgent(k) === null)];
@@ -709,8 +713,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
 
   /** AN AGENT PUT ON THIS MACHINE SINCE THE LAST LOOK IS FOUND: a list looks
    *  again once the last look is `rediscover` old. What a look finds new is
-   *  probed, and so is one it knew whose last probe failed (O34); an Active
-   *  agent, one waiting for a sign-in, one being installed or checked is not
+   *  probed, and so is one it knew whose last probe failed; an Active agent,
+   *  one waiting for a sign-in, one being installed or checked is not
    *  looked at again unasked — so however often the list is read, it is one
    *  look per half-minute and at most one probe per agent that arrived or
    *  had failed. */
@@ -1494,9 +1498,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
       // Private: what npm, uv or a Gateway print into their logs is the person's.
       mkdirSync(folder, { recursive: true, mode: 0o700 });
       // ONE INSTALL OF AN AGENT AND VERSION AT A TIME, ACROSS EVERY WORKSPACE
-      // open on this machine (O29): they share this folder, and an install
-      // deletes and rebuilds its version's tree — under another workspace's
-      // npm, or under an agent already running from it.
+      // open on this machine: they share this folder, and an install deletes
+      // and rebuilds its version's tree — under another workspace's npm, or
+      // under an agent already running from it.
       const lock = await lockInstall(slot, join(folder, `.install-${entry.version}.lock`));
       try {
         // What a server that stopped in the middle of an install left behind —
@@ -1586,9 +1590,9 @@ export function makeAgents(deps: AgentsDeps): Agents {
       }
       // An install probes what it installed when it lands.
       if (slot.installing) return structuredClone(slot.info);
-      // AN AGENT BIOM CANNOT SIGN IN — one that offers no way at all (O35),
-      // or whose every way is a variable to set (O37) — is signed in by the
-      // person outside Biom, who then asks for this look, so it is believed.
+      // AN AGENT BIOM CANNOT SIGN IN — one that offers no way at all, or
+      // whose every way is a variable to set — is signed in by the person
+      // outside Biom, who then asks for this look, so it is believed.
       // For a variable the login shell is read again first: the person set it
       // in their profile, and the reading kept since the server started would
       // never see it. Only for such an agent: one with a way Biom can run may

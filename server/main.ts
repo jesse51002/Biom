@@ -1152,7 +1152,8 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       connect,
       env: loginEnv,
       // Check again on an agent signed in by a variable reads the login shell
-      // again (O37); Jev's key then comes from that reading too.
+      // again, because the person has just set that variable in their
+      // profile; Jev's key then comes from that reading too.
       forgetEnv: () => LOGIN.forget(),
       which: async (command, env) => whichIn(command, env),
       fetch,

@@ -578,10 +578,10 @@ export function makeShell(deps) {
     return h("button.tool", { type: "button", onclick, "aria-pressed": String(pressed) }, text);
   }
 
-  /** A CHAT'S LAMP wherever the chrome names a chat, as the server keeps it
-   *  (DECISIONS §6): amber and pulsing while it works, green for ten minutes
-   *  after it finished, red from a stop on an error until its next turn, and
-   *  none otherwise. @param {string} light */
+  /** A CHAT'S LAMP wherever the chrome names a chat, as the server keeps it:
+   *  amber and pulsing while it works, green for ten minutes after it
+   *  finished, red from a stop on an error until its next turn, and none
+   *  otherwise. @param {string} light */
   const lamp = (light) =>
     h("span", { class: light === "working" ? "led lit pulse" : light === "done" ? "led green" : light === "error" ? "led red" : "led", "aria-hidden": "true" });
 

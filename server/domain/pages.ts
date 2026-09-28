@@ -1970,7 +1970,7 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
   const owner = new Map<string, PageId>();
   /** Pages whose `uid` is decided and not yet in the file. */
   const pending = new Set<PageId>();
-  /** DECISIONS ONE AT A TIME, so two asks about one page arriving together —
+  /** ONE DECISION AT A TIME, so two asks about one page arriving together —
    *  the history's and the watcher's — can never mint it two identities. */
   let deciding: Promise<unknown> = Promise.resolve();
   /** Write-backs one at a time, each behind its own commit. */

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Layer 2 — WHAT AN AGENT WROTE, as Biom saw it: the no-door interim of
-// *History and View Switcher*, `door`, and DECISIONS §1. Pure, and the one
-// place that says which of an agent's actions is an edit and to which file.
+// *History and View Switcher*, `door` — until an MCP server of Biom's is
+// handed to every agent, the history hears only the writes Biom can see
+// here. Pure, and the one place that says which of an agent's actions is an
+// edit and to which file.
 //
 // Three things a chat's agent does are edits, and nothing else is:
 //

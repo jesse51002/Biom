@@ -675,9 +675,10 @@ export function buttonOf(a) {
 }
 
 /** What the picker says under an agent's name: **Active** or **Inactive**
- *  and nothing else (*Chat*, `picker`; DECISIONS O28). Work under way — a look,
- *  an install — is the lamp pulsing beside it and, in More agents, the button
- *  held while it runs; why an agent is Inactive is its line.
+ *  and nothing else (*Chat*, `picker`: an agent is Active or Inactive, and an
+ *  Inactive one carries the one thing that makes it Active). Work under way —
+ *  a look, an install — is the lamp pulsing beside it and, in More agents, the
+ *  button held while it runs; why an agent is Inactive is its line.
  *  @param {AgentInfo} a @returns {"Active" | "Inactive"} */
 export function stateWords(a) {
   return a.state === "active" ? "Active" : "Inactive";

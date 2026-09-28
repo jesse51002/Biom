@@ -31,8 +31,9 @@
 // on it. The stop reason turns the light: amber while working, green for ten
 // minutes after `end_turn`, none after `cancelled`, red for `refusal`,
 // `max_tokens`, `max_turn_requests` and a crash — and red STAYS until the
-// next turn starts (DECISIONS §6). The light is computed from the last turn's
-// end, so it survives a restart, and a timer says when green lapses.
+// next turn starts, as the Chat spec's mockup has it. The light is computed
+// from the last turn's end, so it survives a restart, and a timer says when
+// green lapses.
 //
 // PERMISSION IS ANSWERED, NEVER SHOWN: `allow_always`, else `allow_once`.
 //
@@ -1516,7 +1517,7 @@ export function makeChats(deps: ChatsDeps): Chats {
         // `session_info_update` is the agent's own title for the session,
         // which does not rename the chat: a chat is named once, from its
         // first message, and its name's face is picked for that name (*Chat*,
-        // `acp`: it arrives and is not drawn yet; O27). Anything newer is not
+        // `acp`: it arrives and is not drawn yet). Anything newer is not
         // drawn yet either.
         return;
     }

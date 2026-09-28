@@ -29,8 +29,8 @@
 // every vault's agents, by the sign-in terminal and by Jev's key: two
 // workspaces open at once are one person with one login. It is read again only
 // when `forget` drops the reading, which one thing asks for: Check again on an
-// agent signed in by a variable the person has just set in their profile
-// (O37), which a reading taken at start would never see.
+// agent signed in by a variable the person has just set in their profile,
+// which a reading taken at start would never see.
 //
 // NOTHING HERE IS EVER LOGGED, sent to a client or written to a file: it holds
 // the person's keys. A shell that fails, times out or prints nothing usable
