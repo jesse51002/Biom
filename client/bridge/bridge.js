@@ -58,6 +58,7 @@
 import { isHostRequest, isRuntimeRequest } from "../../contracts/guards.js";
 import { weaveRuntime } from "../platform/document.js";
 import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, nextId } from "../../contracts/wire.js";
+import { ROOT_PAGE } from "../store/workspace.js";
 
 /** ONE OF THE LOOK'S SIX REQUESTS, as the Agent screen answers it.
  *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" }>} LookRequest */
@@ -407,10 +408,10 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
         }
         // A PAGE THIS WINDOW DOES NOT KNOW is asked for by id — it holds only
         // the pages on its screen — and refused as not there only once the
-        // server says so.
+        // server says so. The root is always there: the tree is its children.
         const there = t.kind === "table"
           ? ws.get().tables.some((x) => x.name === t.id)
-          : ws.refOf(t.id) !== null || (await ws.want({ ids: [t.id] }), ws.refOf(t.id) !== null);
+          : t.id === ROOT_PAGE || ws.refOf(t.id) !== null || (await ws.want({ ids: [t.id] }), ws.refOf(t.id) !== null);
         if (!there) return no(req.id, ERRORS.NOT_FOUND, "no such page or table");
         // A PAGE OPENED FROM THE CHAT KEEPS THE CHAT BESIDE IT: from the
         // Agent screen's look — a page a turn changed — the page comes up with

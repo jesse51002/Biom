@@ -1285,6 +1285,18 @@ test("the host decides: an id nothing holds is refused, not navigated to", async
   expect(ui.went).toEqual([]);
 });
 
+test("open of the root page asks for nothing: the root is always there, because the tree is its children", async () => {
+  const ui = uiSpy();
+  const { ws, transport, store, calls } = doubles();
+  store.pages = [];
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "home" } }), CTX);
+  expect(res.ok).toBe(true);
+  expect(calls.filter((c) => c.kind === "want")).toEqual([]);
+  expect(ui.went.length).toBe(1);
+});
+
 test("open of a page this window does not know asks for it by id, and goes there when the answer names it", async () => {
   const ui = uiSpy();
   const { ws, transport, store, calls } = doubles();
