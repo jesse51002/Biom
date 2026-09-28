@@ -931,3 +931,61 @@ test("a lock left by a server that stopped mid-install goes stale, and the next 
   expect(runs).toEqual(["A"]);
   expect(existsSync(lock)).toBe(false);
 });
+
+/** Whether the event loop stayed free for `ms`: a 10 ms timer's ticks. A
+ *  loop spun synchronously never wakes, and the runner's `timeout` ends it. */
+async function loopFree(ms: number): Promise<number> {
+  let ticks = 0;
+  const beat = setInterval(() => {
+    ticks++;
+  }, 10);
+  await Bun.sleep(ms);
+  clearInterval(beat);
+  return ticks;
+}
+
+test("A LOCK THAT CANNOT BE READ OR CLEARED NEVER FREEZES THE SERVER: a directory in its place is waited on, yielding every time, and the install gives up in words once its time is spent", async () => {
+  const home = fresh();
+  // Something that is not a lock file, where the lock goes: read fails with
+  // EISDIR, and it cannot be removed as a file when it goes stale.
+  const lock = join(home, "jsagent", ".install-3.1.0.lock");
+  mkdirSync(lock, { recursive: true });
+  const runs: string[] = [];
+  const r = rig({ entries: [jsEntry], home });
+  r.deps.processes = heldNpm("A", runs, Promise.resolve());
+  // Stale after 50 ms; the whole wait bounded at 50 + 100 + 100 ms.
+  r.deps.timing = { ...r.deps.timing, installLockPoll: 20, installLockBeat: 50, installLockStale: 50, download: 100, install: 100 };
+  const agents = makeAgents(r.deps);
+  agents.install("jsagent");
+  expect(await loopFree(120)).toBeGreaterThan(5);
+  expect(agents.list().find((x) => x.key === "jsagent")?.reason).toBe("installing");
+  await agents.settled();
+  const a = agents.list().find((x) => x.key === "jsagent");
+  expect(a?.reason).toBe("failed");
+  expect(a?.message).toBe("An earlier install left its lock where Biom could not clear it, so nothing was installed.");
+  expect(runs).toEqual([]);
+  // Not Biom's to delete: only a lock file is ever removed.
+  expect(statSync(lock).isDirectory()).toBe(true);
+});
+
+test("a lock file that cannot be read counts as held, judged stale by its time alone, and is then taken over", async () => {
+  if (process.getuid?.() === 0) return; // root reads a file of mode 000
+  const home = fresh();
+  mkdirSync(join(home, "jsagent"), { recursive: true });
+  const lock = join(home, "jsagent", ".install-3.1.0.lock");
+  writeFileSync(lock, "{}\n", { mode: 0o000 });
+  const runs: string[] = [];
+  const r = rig({ entries: [jsEntry], home });
+  r.deps.processes = heldNpm("A", runs, Promise.resolve());
+  r.deps.timing = { ...r.deps.timing, installLockPoll: 20, installLockBeat: 50, installLockStale: 200 };
+  const agents = makeAgents(r.deps);
+  agents.install("jsagent");
+  expect(await loopFree(100)).toBeGreaterThan(3);
+  // Held — somebody's install, for all Biom can tell — until it goes stale.
+  expect(agents.list().find((x) => x.key === "jsagent")?.message).toBe("It is being installed in another workspace.");
+  expect(runs).toEqual([]);
+  await agents.settled();
+  expect(agents.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+  expect(runs).toEqual(["A"]);
+  expect(existsSync(lock)).toBe(false);
+});

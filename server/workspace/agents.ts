@@ -1401,6 +1401,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
   async function lockInstall(slot: Slot, path: string): Promise<{ waited: boolean; release: () => void }> {
     const until = Date.now() + t.download + t.install + t.installLockStale;
     let waited = false;
+    /** A stale lock was found that could not be cleared. */
+    let stuck = false;
     for (;;) {
       if (closed) throw new Said("Biom is stopping.");
       let token: string | null = null;
@@ -1440,30 +1442,53 @@ export function makeAgents(deps: AgentsDeps): Agents {
           },
         };
       }
-      let held: { mtimeMs: number; text: string } | null = null;
+      // HELD — and EVERY WAY ROUND THIS LOOP YIELDS: a retry that does
+      // not await spins the one thread every workspace's server shares. A
+      // lock that cannot be read — a directory in its place, a file another
+      // user owns — is held all the same, judged stale by its time alone.
+      let mtimeMs: number | null = null;
       try {
-        held = { mtimeMs: statSync(path).mtimeMs, text: readFileSync(path, "utf8") };
+        mtimeMs = statSync(path).mtimeMs;
       } catch {
-        held = null;
+        mtimeMs = null;
       }
-      if (held === null) continue;
-      if (Date.now() - held.mtimeMs > t.installLockStale) {
+      let text: string | null = null;
+      try {
+        text = readFileSync(path, "utf8");
+      } catch {
+        text = null;
+      }
+      let cleared = false;
+      if (mtimeMs !== null && Date.now() - mtimeMs > t.installLockStale) {
         // Left by a server that stopped: taken over, unless somebody else
-        // did that first.
+        // did that first — and only ever a lock FILE is removed.
         try {
-          if (readFileSync(path, "utf8") === held.text) rmSync(path, { force: true });
+          const now = statSync(path);
+          const same = now.isFile() && now.mtimeMs === mtimeMs && (text === null || readFileSync(path, "utf8") === text);
+          if (same) {
+            rmSync(path);
+            cleared = true;
+          }
         } catch {
-          // Gone already.
+          cleared = false;
         }
-        continue;
+        if (!cleared) stuck = true;
+      } else if (mtimeMs !== null) {
+        // Somebody's install in flight, for all Biom can tell.
+        stuck = false;
+        if (!waited) {
+          waited = true;
+          slot.info.message = "It is being installed in another workspace.";
+          emit();
+        }
       }
-      if (!waited) {
-        waited = true;
-        slot.info.message = "It is being installed in another workspace.";
-        emit();
+      if (!cleared && Date.now() > until) {
+        throw new Said(stuck
+          ? "An earlier install left its lock where Biom could not clear it, so nothing was installed."
+          : "It is being installed in another workspace, and that has not finished.");
       }
-      if (Date.now() > until) throw new Said("It is being installed in another workspace, and that has not finished.");
-      await sleep(t.installLockPoll);
+      // Gone between two looks, or just cleared: at once, but still yielding.
+      await sleep(cleared || mtimeMs === null ? 0 : t.installLockPoll);
     }
   }
 
