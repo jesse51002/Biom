@@ -2212,6 +2212,28 @@ function inVault(rest: string, vault: string): string | null {
   return null;
 }
 
+/** WHAT A FILE SERVED OUT OF A WORKSPACE IS ALLOWED TO BE, wherever it ends up
+ *  being opened. The box takes these files as subresources — a picture, a
+ *  stylesheet, a font, the loader's script — and a document's policy does not
+ *  reach a subresource, so none of that changes. What it changes is a file
+ *  OPENED as a document, in a tab or in a frame: it runs at an OPAQUE origin,
+ *  the one the box already gives every page's own code, so its requests say
+ *  `Origin: null`, the browser sends it no `SameSite` cookie, and the local
+ *  gate and the route refuse it. `allow-scripts`, because an HTML file a page
+ *  links to may be somebody's own chart with its own script, and in the box it
+ *  always ran; never `allow-same-origin`, which would hand the origin back.
+ *  No `frame-ancestors`: a page may frame its own asset, and the opaque origin
+ *  is what closes the hole. `nosniff`, so a file is only ever the type its name
+ *  says — a `.txt` is never read as a page. */
+export const VAULT_FILE_POLICY = "sandbox allow-scripts";
+
+/** The two headers every vault-served response carries. */
+function fromVault(res: Response): Response {
+  res.headers.set("content-security-policy", VAULT_FILE_POLICY);
+  res.headers.set("x-content-type-options", "nosniff");
+  return res;
+}
+
 /** ONE PLUGIN FILE, the vault's if it has it and the framework's if not.
  *  Answered as text through the read-only root rather than as a path, because
  *  a carried file has no path a route may hand out and a plugin is text.
@@ -3339,14 +3361,23 @@ if (import.meta.main) {
         // framework's own files keep one url whichever folder you are looking at,
         // so a module is fetched and cached once rather than once per vault.
         const rel = decodeURIComponent(named.rest);
-        // THE FOLDER, BEFORE ANY FILE IN IT. `/plugin/` with nothing after it is
-        // the loader's answer — every plugin this vault has, as one script — and
-        // it has to be caught here, because `under()` resolves it to the folder
-        // itself and `deliver` cannot read a directory.
-        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path, host.pluginRoot);
-        if (rel.startsWith(PLUGIN_DIR_ROUTE)) return await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot);
         const inside = inVault(rel, named.path);
-        if (inside !== null) return await deliver(inside);
+        if (rel === PLUGIN_DIR_ROUTE || rel.startsWith(PLUGIN_DIR_ROUTE) || inside !== null) {
+          // ONLY A WORKSPACE THIS SERVER HAS OPEN. The prefix names any absolute
+          // folder, and a file served from one is served at this server's own
+          // origin: an attacker's page left in some folder's `assets/` would
+          // otherwise be "this server's own page" to the local gate. Nothing
+          // asks for a folder's files before it is open — the box is drawn from
+          // a page the API has already read, and that read opened the folder.
+          if (!host.open().includes(resolve(named.path))) return new Response("Not found", { status: 404 });
+          // THE FOLDER, BEFORE ANY FILE IN IT. `/plugin/` with nothing after it
+          // is the loader's answer — every plugin this vault has, as one script
+          // — and it has to be caught here, because `under()` resolves it to
+          // the folder itself and `deliver` cannot read a directory.
+          if (rel === PLUGIN_DIR_ROUTE) return fromVault(await pluginBundle(named.path, host.pluginRoot));
+          if (rel.startsWith(PLUGIN_DIR_ROUTE)) return fromVault(await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot));
+          return fromVault(await deliver(inside));
+        }
         // Anything else under the prefix is the client itself: a deep link like
         // /v/<vault>/ is somebody opening a tab, and it must answer with the app
         // rather than a 404 they cannot navigate out of — and `serveStatic` is

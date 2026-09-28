@@ -9,17 +9,21 @@
 // request routed through the inner ring's `fetch` proxy can never carry the
 // cookie, even when the page knows it; a page on ANOTHER LOCALHOST PORT, which
 // the browser does hand the cookie, is refused by its Origin, its
-// `Sec-Fetch-Site` and a content type that is JSON only by its essence; and
-// this server's own page, with the cookie, is let through.
+// `Sec-Fetch-Site` and a content type that is JSON only by its essence; a
+// file this server serves out of a folder is no page of its own — a folder it
+// has not opened is served nothing, and one it has is served sandboxed, so a
+// script in it runs at an opaque origin the gate refuses; and this server's
+// own page, with the cookie, is let through.
 // The vault here is a temporary folder and every id in it is invented.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { LOCAL_KIND_NAMES, CHAT_KIND_NAMES, isLocalKind } from "../contracts/guards.js";
 import { localRefusal } from "../server/main.ts";
+import { chromium } from "playwright";
 
 const HERE = join(import.meta.dir, "..");
 
@@ -311,6 +315,126 @@ test("THE STREAM REFUSES A PAGE ON ANOTHER PORT that carries the cookie, and sti
   expect(first).toContain(": open");
   ctl.abort();
 });
+
+/* ── a file this server serves is not this server's own page ───────────── */
+
+/** AN SVG WITH A SCRIPT, as an attacker would leave one in some folder's
+ *  `assets/`: it says what origin it runs at, fetches `/` for the cookie, and
+ *  asks a local kind — `chat.list`, which reads and starts nothing. Invented. */
+const evilSvg = (target: string) => `<svg xmlns="http://www.w3.org/2000/svg"><script><![CDATA[
+  document.documentElement.setAttribute("data-origin", String(self.origin));
+  (async () => {
+    try { await fetch("/"); } catch (e) {}
+    try {
+      const r = await fetch(${JSON.stringify(target)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify({ id: "x", g: 1, kind: "chat.list" }))} });
+      return r.status + " " + (await r.text()).slice(0, 200);
+    } catch (e) { return "ERR " + e; }
+  })().then((t) => document.documentElement.setAttribute("data-result", t));
+]]></script></svg>`;
+
+/** A folder that is not a workspace this server has open, with the SVG and a
+ *  plugin in it. */
+function strangerFolder(): string {
+  const at = realpathSync(mkdtempSync(join(tmpdir(), "biom-gate-stranger-")));
+  mkdirSync(join(at, "assets"), { recursive: true });
+  mkdirSync(join(at, "plugins", "invented"), { recursive: true });
+  writeFileSync(join(at, "assets", "evil.svg"), evilSvg(api()));
+  writeFileSync(join(at, "plugins", "invented", "invented.js"), "/* an invented plugin */\n");
+  return at;
+}
+
+test("A FOLDER THIS SERVER HAS NOT OPENED IS SERVED NOTHING: its assets, its plugin files and its plugin bundle are 404", async () => {
+  const stranger = strangerFolder();
+  try {
+    const at = `${base}/v/${encodeURIComponent(stranger)}`;
+    for (const path of ["/asset/evil.svg", "/plugin/invented/invented.js", "/plugin/", "/plugin/biom-doc/index.html"]) {
+      const res = await fetch(at + path);
+      expect([path, res.status]).toEqual([path, 404]);
+      await res.text();
+    }
+  } finally {
+    rmSync(stranger, { recursive: true, force: true });
+  }
+});
+
+test("EVERY FILE SERVED OUT OF A WORKSPACE IS SANDBOXED AND NEVER SNIFFED: an opaque origin wherever it is opened, and no allow-same-origin", async () => {
+  mkdirSync(join(vault, "assets"), { recursive: true });
+  mkdirSync(join(vault, "plugins", "invented"), { recursive: true });
+  writeFileSync(join(vault, "assets", "evil.svg"), evilSvg(api()));
+  writeFileSync(join(vault, "plugins", "invented", "invented.js"), "/* an invented plugin */\n");
+  const at = `${base}/v/${encodeURIComponent(vault)}`;
+  // The workspace's own asset and plugin, the loader's bundle, and a
+  // framework plugin file answered under the workspace's prefix.
+  for (const path of ["/asset/evil.svg", "/plugin/invented/invented.js", "/plugin/", "/plugin/biom-doc/index.html"]) {
+    const res = await fetch(at + path);
+    await res.text();
+    expect([path, res.status]).toEqual([path, 200]);
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect([path, /(^|;)\s*sandbox(\s|;|$)/.test(csp)]).toEqual([path, true]);
+    expect([path, csp.includes("allow-same-origin")]).toEqual([path, false]);
+    expect([path, res.headers.get("x-content-type-options")]).toEqual([path, "nosniff"]);
+  }
+});
+
+/** Chromium, where `make browser` has fetched it: the one way to show what
+ *  origin a served document really gets. */
+const browserHere = (() => {
+  try {
+    return existsSync(chromium.executablePath());
+  } catch {
+    return false;
+  }
+})();
+
+/** THE BROWSER RUNS IN A PROCESS OF ITS OWN. A browser launched inside this
+ *  test process shares it with every other file `bun test` runs — the agents
+ *  the chat tests spawn included — and a browser and a spawned agent in one
+ *  process are an interference this suite has already met. So this script is
+ *  handed the addresses, drives Chromium, and prints what it saw. */
+const ATTACK = `
+import { chromium } from ${JSON.stringify(join(HERE, "node_modules", "playwright", "index.mjs"))};
+const [strangerSvg, strangerNothing, ownSvg] = process.argv.slice(2);
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage();
+  // The person's window has been here: the browser holds the cookie. Only
+  // \`/\` is fetched; the client itself never runs, so no agent is looked for.
+  await page.goto(strangerNothing);
+  await page.evaluate(() => fetch("/").then((r) => r.text()));
+  const gone = (await page.goto(strangerSvg))?.status() ?? 0;
+  const opened = (await page.goto(ownSvg))?.status() ?? 0;
+  await page.waitForFunction(() => document.documentElement.hasAttribute("data-result"), null, { timeout: 15000 });
+  const origin = await page.evaluate(() => document.documentElement.getAttribute("data-origin"));
+  const result = await page.evaluate(() => document.documentElement.getAttribute("data-result"));
+  console.log(JSON.stringify({ gone, opened, origin, result }));
+} finally {
+  await browser.close();
+}
+`;
+
+test.if(browserHere)("THE ATTACK, IN A REAL BROWSER: an SVG with a script, opened from a workspace's assets, runs at an opaque origin and the gate refuses it; from a folder not open it is not there at all", async () => {
+  // The workspace's own `assets/`, as the test above wrote it, and a stranger.
+  mkdirSync(join(vault, "assets"), { recursive: true });
+  writeFileSync(join(vault, "assets", "evil.svg"), evilSvg(api()));
+  const stranger = strangerFolder();
+  const script = join(stranger, "attack.ts");
+  writeFileSync(script, ATTACK);
+  try {
+    const at = (folder: string, file: string) => `http://localhost:${port}/v/${encodeURIComponent(folder)}/asset/${file}`;
+    const run = Bun.spawn([process.execPath, "run", script, at(stranger, "evil.svg"), at(stranger, "nothing-here.txt"), at(vault, "evil.svg")], { stdout: "pipe", stderr: "pipe" });
+    const [out, err] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text()]);
+    await run.exited;
+    const line = out.trim().split("\n").at(-1) ?? "";
+    expect([line === "" ? err.slice(0, 500) : "", run.exitCode]).toEqual(["", 0]);
+    const saw = JSON.parse(line) as { gone: number; opened: number; origin: string | null; result: string | null };
+    expect(saw.gone).toBe(404);
+    expect(saw.opened).toBe(200);
+    expect(saw.origin).toBe("null");
+    expect((saw.result ?? "").includes('"ok":true')).toBe(false);
+  } finally {
+    rmSync(stranger, { recursive: true, force: true });
+  }
+}, 60000);
 
 test("the list of local kinds is every agent and chat kind and a window's report, and a new chat kind is local by its name", () => {
   expect([...LOCAL_KIND_NAMES].sort()).toEqual([...CHAT_KIND_NAMES, "window.report"].sort());
