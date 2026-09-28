@@ -7,10 +7,16 @@
 // TWO KINDS OF EVENT RIDE IT, and they are told apart by name (`STREAM` in
 // `contracts/wire.js`).
 //
-//   `change` and `run` CARRY NOTHING, AND THAT IS THEIR DESIGN. The event says
-//   *something under this vault changed*; the answer is to reread disk, which
-//   is the work Reload already does. A payload naming files would be a second,
-//   faster description of the workspace that can disagree with the first.
+//   `change` NAMES WHAT CHANGED — the pages whose own files did and the pages
+//   whose children did, ids only (the twelfth contracts edit). The answer is
+//   still to reread disk; the names say which reads to repeat, so a write to
+//   one page is not the whole tree reread in every window. Ids are not a
+//   second description of the workspace: every word is still read from the
+//   server. This module hands the data text up and decodes nothing; the one
+//   decoder is `changeOf` in `chat.js` beside it.
+//
+//   `run` CARRIES NOTHING: a run started or ended, and the answer is to
+//   reread `run.list`.
 //
 //   `history`, `chat` and `agents` CARRY JSON, because none of what they say is
 //   on disk to be reread: the history lives in memory, a chat's words arrive as
@@ -21,7 +27,8 @@
 // RECONNECTION CATCHES UP BY REREADING, NOT BY REPLAYING. `EventSource`
 // reconnects on its own, and a reconnect is itself a reason to reread: the
 // server was away, the disk may have moved, and the current state of it is the
-// whole of the answer. So there are no event ids, no backlog and nothing to
+// whole of the answer — so a reconnect hands `null` to the `change` listeners,
+// which names nothing and so rereads everything the window holds. So there are no event ids, no backlog and nothing to
 // replay — which is also why killing the server and bringing it back cannot
 // start a redraw loop: one reconnect, one reread, done. The JSON events catch
 // up the same way: `onOpen` fires on every open, the first included, and what
@@ -37,8 +44,10 @@ import { EVENTS_ROUTE } from "../../contracts/wire.js";
 
 /**
  * @typedef {object} Events
- * @property {(hear: () => void) => () => void} on Subscribe. Answers the
- *   unsubscribe, which also closes the stream when it was the last one.
+ * @property {(hear: (data: string | null) => void) => () => void} on A change
+ *   on disk: each `change` event's data text, what it names, and null for a
+ *   reconnect, which names nothing and rereads all. Answers the unsubscribe,
+ *   which also closes the stream when it was the last one.
  * @property {(hear: () => void) => () => void} onRun The stream's second
  *   named event: a run started or ended under this folder. A reason to reread
  *   `run.list`, never to redraw a page.
@@ -67,7 +76,7 @@ import { EVENTS_ROUTE } from "../../contracts/wire.js";
  * @returns {Events}
  */
 export function makeEvents(baseUrl, query = "") {
-  /** @type {Set<() => void>} */
+  /** @type {Set<(data: string | null) => void>} */
   const hears = new Set();
   /** A run started or ended: the stream's second named event, which is a
    *  reason to reread `run.list` and never to redraw a page.
@@ -101,7 +110,8 @@ export function makeEvents(baseUrl, query = "") {
     }
   };
 
-  const tell = () => each(hears, undefined, "a live-change");
+  /** @param {string | null} data */
+  const tell = (data) => each(hears, data, "a live-change");
 
   /** One named event onto the current source, once. @param {string} name */
   function wire(name) {
@@ -128,12 +138,15 @@ export function makeEvents(baseUrl, query = "") {
     source.addEventListener("open", () => {
       opens++;
       each(openHears, undefined, "a stream-open");
-      if (opens > 1) tell();
+      if (opens > 1) tell(null);
     });
     // NAMED, not the default `message`. The server sends comment frames to keep
     // the connection alive and those are not events at all; a named event is the
     // only thing that means a file moved.
-    source.addEventListener("change", () => tell());
+    source.addEventListener("change", (ev) => {
+      const data = /** @type {MessageEvent} */ (ev).data;
+      tell(typeof data === "string" ? data : "");
+    });
     source.addEventListener("run", () => each(runHears, undefined, "a run"));
     for (const name of named.keys()) wire(name);
     // No handler for `error`. `EventSource` reconnects on its own, and a console

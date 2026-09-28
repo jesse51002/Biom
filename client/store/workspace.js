@@ -408,15 +408,22 @@ export function makeWorkspace(transport) {
     knowChildren(list);
   }
 
-  /** A level wanted once: nothing if it is held, the same ask if it is on its
-   *  way. @param {PageId} id @returns {Promise<void>} */
-  function listOnce(id) {
-    if (levels.has(id)) return Promise.resolve();
+  /** A level read now, or the read of it already on its way — so a boot and
+   *  the rail asking for the same level at once is one ask.
+   *  @param {PageId} id @returns {Promise<void>} */
+  function listNow(id) {
     const out = listing.get(id);
     if (out) return out;
     const p = readLevel(id).finally(() => { if (listing.get(id) === p) listing.delete(id); });
     listing.set(id, p);
     return p;
+  }
+
+  /** A level wanted once: nothing if it is held, the same ask if it is on its
+   *  way. @param {PageId} id @returns {Promise<void>} */
+  function listOnce(id) {
+    if (levels.has(id)) return Promise.resolve();
+    return listNow(id);
   }
 
   /** The levels a write moved, read again — only those this window holds,
@@ -703,7 +710,7 @@ export function makeWorkspace(transport) {
       const [t, th] = await Promise.all([
         ask({ ...env(), kind: "table.list" }),
         ask({ ...env(), kind: "theme.get" }),
-        ...down.map((id) => readLevel(id)),
+        ...down.map((id) => listNow(id)),
       ]);
       tables = /** @type {TableRef[]} */ (t);
       theme = /** @type {Theme} */ (th);

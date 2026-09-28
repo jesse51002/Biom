@@ -128,6 +128,18 @@ test("onOpen hears every open, the first included; the change listeners hear onl
   expect([opens, changes]).toEqual([2, 1]);
 });
 
+test("a change hands its listeners the data it named, and a reconnect hands them null, which names nothing", () => {
+  const made = fakeSources();
+  const events = makeEvents("/v/x");
+  /** @type {(string | null)[]} */
+  const heard = [];
+  events.on((d) => heard.push(d));
+  made[0].fire("open");
+  made[0].fire("change", '{"pages":["home/Notes"],"levels":[]}');
+  made[0].fire("open");
+  expect(heard).toEqual(['{"pages":["home/Notes"],"levels":[]}', null]);
+});
+
 test("the stream closes when the last listener of any kind lets go", () => {
   const made = fakeSources();
   const events = makeEvents("/v/x");

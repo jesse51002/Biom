@@ -9,10 +9,14 @@
 //
 // Every page, name and uid here is invented.
 
-import { test, expect, afterEach } from "bun:test";
+import { test, expect, afterEach, beforeEach, afterAll } from "bun:test";
 
 import { spyTransport, wholeTreeReads } from "./scale-helpers.ts";
 import { makeWorkspace, ROOT_PAGE, WANT_BATCH, ancestorsOf, parentOf } from "../client/store/workspace.js";
+import { makeUi } from "../client/store/ui.js";
+import { makeTreeView } from "../client/views/tree.js";
+import { makeShell, FIND_AFTER } from "../client/shell/shell.js";
+import { closePopover } from "../client/widgets/popover.js";
 
 /* ── the invented tree ────────────────────────────────────────────────── */
 
@@ -214,6 +218,14 @@ test("the ancestors of a page are the levels that hold it, root first", () => {
 
 /* ── navigation ───────────────────────────────────────────────────────── */
 
+test("a boot and the rail asking for the same levels at once list each level once", async () => {
+  const { ws, spy } = standUp();
+  await Promise.all([ws.reveal("home/Automations/Group_3/Run_7"), ws.loadTree("home/Automations/Group_3/Run_7")]);
+  expect(asked(spy.calls).filter((k) => k.startsWith("children")).sort()).toEqual([
+    "children:home", "children:home/Automations", "children:home/Automations/Group_3",
+  ]);
+});
+
 test("going to a deep page lists only the levels on the way that are missing", async () => {
   const { ws, spy } = standUp();
   await ws.loadTree("home/Automations/Group_3/Run_7");
@@ -367,4 +379,285 @@ test("search asks the server by name and learns what it found", async () => {
   expect(asked(spy.calls)).toEqual(["page.search"]);
   expect(found.hits.map((h) => h.id)).toContain("home/Historic/Day_22");
   expect(ws.refOf("home/Historic/Day_22")?.name).toBe("Invented day 22");
+});
+
+/* ── the window, assembled: the real store, the real rail, the real shell ── */
+
+// A recording element factory, the one `tests/shell.test.js` builds the shell
+// against, so the shell's own paths — the crumbs, the root's name, the finder,
+// the redraw on a change — are asked what they send through the real store.
+class El {}
+
+/** Take a node out of whatever holds it, the way every real insert does. The
+ *  count it keeps is the point: an iframe taken out and put back is an iframe
+ *  that reloaded, and no assertion about element identity alone can see it. */
+function detach(node) {
+  const p = node.parent;
+  if (!p) return;
+  const i = p.children.indexOf(node);
+  if (i >= 0) p.children.splice(i, 1);
+  node.parent = null;
+}
+
+function element(tag) {
+  const classes = new Set();
+  const el = Object.assign(new El(), {
+    tagName: String(tag).toUpperCase(),
+    attrs: {},
+    // `setProperty` is what the rack writes its width with; a plain key is what
+    // the tree writes its depth with, so both spellings land in the one map.
+    style: { setProperty(/** @type {string} */ k, /** @type {string} */ v) { this[k] = v; } },
+    dataset: {},
+    children: [],
+    parent: /** @type {any} */ (null),
+    listeners: {},
+    disabled: false,
+    value: "",
+    id: "",
+    textContent: "",
+    contentEditable: "",
+    draggable: false,
+    /** how many times this node has been put into a parent */
+    moved: 0,
+    setAttribute: (k, v) => { el.attrs[k] = v; },
+    removeAttribute: (k) => { delete el.attrs[k]; },
+    toggleAttribute: (k, on) => { if (on) el.attrs[k] = ""; else delete el.attrs[k]; },
+    addEventListener: (name, fn) => { (el.listeners[name] ||= []).push(fn); },
+    append: (...nodes) => {
+      for (const n of nodes) {
+        if (n instanceof El) { detach(n); n.parent = el; n.moved++; }
+        el.children.push(n);
+      }
+    },
+    insertBefore: (node, ref) => {
+      detach(node);
+      const at = ref ? el.children.indexOf(ref) : -1;
+      el.children.splice(at < 0 ? el.children.length : at, 0, node);
+      node.parent = el;
+      node.moved++;
+      return node;
+    },
+    replaceChildren: (...nodes) => {
+      for (const n of [...el.children]) if (n instanceof El) n.parent = null;
+      el.children.length = 0;
+      el.append(...nodes);
+    },
+    remove: () => detach(el),
+    contains: () => false,
+    // `preventDefault` and `stopPropagation` are on every event a browser
+    // dispatches, so they are on every event this dispatches — a handler that
+    // has to feel for them before calling them is defending against the fake
+    // rather than against anything real. `defaulted` is what a caller checks
+    // when the point of the handler is that it took the navigation itself.
+    fire: (name, ev) => {
+      const e = { defaulted: false, preventDefault() { e.defaulted = true; }, stopPropagation() {}, ...(ev ?? {}) };
+      for (const fn of el.listeners[name] || []) fn(e);
+      return e;
+    },
+    focus: () => { el.focused = true; },
+    blur: () => { el.focused = false; },
+    classList: {
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      contains: (c) => classes.has(c),
+    },
+  });
+  Object.defineProperty(el, "className", {
+    get: () => [...classes].join(" "),
+    set: (v) => { classes.clear(); for (const c of String(v).split(" ")) if (c) classes.add(c); },
+  });
+  Object.defineProperty(el, "firstChild", { get: () => el.children[0] ?? null });
+  Object.defineProperty(el, "parentNode", { get: () => el.parent });
+  Object.defineProperty(el, "nextElementSibling", {
+    get: () => {
+      const p = el.parent;
+      if (!p) return null;
+      const i = p.children.indexOf(el);
+      return i < 0 ? null : p.children[i + 1] ?? null;
+    },
+  });
+  return el;
+}
+
+function h(spec, props, ...children) {
+  const [head, ...classes] = String(spec).split(".");
+  const el = element(head.split("#")[0] || "div");
+  if (classes.length) el.className = classes.join(" ");
+  if (props && props.constructor === Object) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+      else if (k === "style") Object.assign(el.style, v);
+      else if (k === "class") el.className = el.className + " " + v;
+      else if (k === "disabled") el.disabled = true;
+      else if (k === "value") el.value = String(v);
+      else if (k === "id") el.id = String(v);
+      else el.setAttribute(k, v === true ? "" : String(v));
+    }
+  } else if (props !== undefined && props !== null) {
+    children.unshift(props);
+  }
+  add(el, children);
+  return el;
+}
+
+function add(el, list) {
+  for (const c of list) {
+    if (c == null || c === false) continue;
+    if (Array.isArray(c)) add(el, c);
+    else el.append(c);
+  }
+}
+
+function fill(el, ...content) {
+  el.replaceChildren();
+  add(el, content);
+  return el;
+}
+
+/** Depth-first, so a test can ask "is there an Edit content button anywhere in
+ *  the rail" without knowing how the rail is laid out. */
+function find(root, ok) {
+  if (!(root instanceof El)) return null;
+  if (ok(root)) return root;
+  for (const kid of root.children) {
+    const hit = find(kid, ok);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Every match, in document order. The rail is a list, so most questions about
+ *  it are about what is in it and in what order. */
+function findAll(root, ok) {
+  const out = [];
+  (function walk(el) {
+    if (!(el instanceof El)) return;
+    if (ok(el)) out.push(el);
+    for (const kid of el.children) walk(kid);
+  })(root);
+  return out;
+}
+
+const byText = (root, text) => find(root, (el) => flat(el) === text);
+/** A BUTTON BY ITS WORDS. `byText` is depth-first, so a container whose only
+ *  child says the words is handed back before the button inside it — which is
+ *  what the bar became once Reload was the one action on it. */
+const byButton = (root, text) => find(root, (el) => el.tagName === "BUTTON" && flat(el) === text);
+/** Class-exact, because a container's flattened text starts with its first
+ *  child's and a depth-first search would hand back the box rather than the
+ *  button inside it. */
+const has = (el, cls) => String(el.className).split(" ").includes(cls);
+const flat = (el) => el.children.map((c) => (c instanceof El ? flat(c) : String(c))).join("");
+
+
+beforeEach(() => {
+  globalThis.document = /** @type {any} */ ({ addEventListener() {}, removeEventListener() {} });
+  globalThis.window = /** @type {any} */ ({ addEventListener() {}, removeEventListener() {} });
+  try { closePopover(); } catch { /* somebody else's menu, and now it is shut */ }
+});
+afterAll(() => { delete globalThis.document; delete globalThis.window; });
+
+/** The events a stream would hand the shell: a change's data text, or null. */
+function streamOf() {
+  /** @type {Set<(data: string | null) => void>} */
+  const hears = new Set();
+  return {
+    on(/** @type {(data: string | null) => void} */ hear) { hears.add(hear); return () => { hears.delete(hear); }; },
+    /** @param {unknown} data */
+    fire(data) { for (const hear of [...hears]) hear(data === null ? null : JSON.stringify(data)); },
+  };
+}
+
+/** A window on the invented workspace, on `route`, booted the way boot.js
+ *  boots it: the route first, the tree beside it. */
+async function windowOn(route) {
+  const s = standUp();
+  const ui = makeUi({ route: { view: "page", id: route, screen: "page" } });
+  const events = streamOf();
+  const kept = [];
+  const frameHost = {
+    setShim() {}, for() { throw new Error("no frame here"); }, drop() {},
+    broadcast() {}, compliance() { return null; }, keep(/** @type {string} */ k) { kept.push(k); },
+  };
+  const pageBody = (/** @type {any} */ p) => h("div.pagebody", p.id);
+  const views = {
+    tree: makeTreeView({ h, ws: s.ws, ui }),
+    page: pageBody, table: () => h("div"), vault: () => h("div"), design: pageBody, map: pageBody,
+    runs: () => h("div"), instructions: { vault: () => h("div"), page: pageBody }, automation: pageBody,
+  };
+  const shell = makeShell({ h, fill, ws: s.ws, ui, frameHost: /** @type {any} */ (frameHost), views, production: false, events, search: "" });
+  s.ws.on(() => shell.repaint());
+  ui.on(() => shell.repaint());
+  const root = element("div");
+  shell.mount(root);
+  await s.ws.loadTree(route);
+  for (let i = 0; i < 6; i++) await tick();
+  return { ...s, ui, events, shell, root, kept };
+}
+
+test("the window assembled boots on a deep page without asking for every page, and drawing it again asks nothing", async () => {
+  const w = await windowOn("home/Automations/Group_3/Run_7");
+  const kinds = asked(w.spy.calls);
+  expect(kinds.filter((k) => k.startsWith("children")).sort()).toEqual(["children:home", "children:home/Automations", "children:home/Automations/Group_3"]);
+  expect(kinds).toContain("page.read");
+  expect(kinds).toContain("table.list");
+  expect(kinds).toContain("theme.get");
+  expect(wholeTreeReads(w.spy.calls)).toEqual([]);
+  // The crumbs are named from the levels on the way down, and the root's own
+  // name was asked for by id.
+  expect(findAll(w.root, (el) => has(el, "crumb")).map(flat)).toEqual(["Invented workspace", "Automations", "Invented group 3", "Invented run 3.7"]);
+  // TEN REPAINTS ASK NOTHING: drawing reads only what is held.
+  const before = w.spy.calls.length;
+  for (let i = 0; i < 10; i++) { w.shell.repaint(); await tick(); }
+  expect(w.spy.calls.length).toBe(before);
+});
+
+test("a change naming another page reads no page and no level; naming the open page reads it once; levels read only those held; all reads the page and every held level; a reconnect is all", async () => {
+  const w = await windowOn("home/Specs/Spec_3");
+  const reads = () => asked(w.spy.calls).filter((k) => k === "page.read").length;
+  const levels = () => asked(w.spy.calls).filter((k) => k.startsWith("children"));
+
+  w.spy.clear();
+  w.events.fire({ pages: ["home/Notes/Note_2"], levels: [] });
+  for (let i = 0; i < 4; i++) await tick();
+  expect(reads()).toBe(0);
+  expect(levels()).toEqual([]);
+
+  w.spy.clear();
+  w.events.fire({ pages: ["home/Specs/Spec_3"], levels: [] });
+  for (let i = 0; i < 4; i++) await tick();
+  expect(reads()).toBe(1);
+  expect(levels()).toEqual([]);
+
+  w.spy.clear();
+  w.events.fire({ pages: [], levels: ["home/Specs", "home/Historic"] });
+  for (let i = 0; i < 4; i++) await tick();
+  expect(reads()).toBe(0);
+  expect(levels()).toEqual(["children:home/Specs"]);
+
+  w.spy.clear();
+  w.events.fire({ pages: [], levels: [], all: true });
+  for (let i = 0; i < 4; i++) await tick();
+  expect(reads()).toBe(1);
+  expect(levels().sort()).toEqual(["children:home", "children:home/Specs"]);
+
+  w.spy.clear();
+  w.events.fire(null);
+  for (let i = 0; i < 4; i++) await tick();
+  expect(reads()).toBe(1);
+  expect(levels().sort()).toEqual(["children:home", "children:home/Specs"]);
+});
+
+test("the rail's finder is one page.search after the typing pauses, through the real store", async () => {
+  const w = await windowOn("home/Specs/Spec_3");
+  w.spy.clear();
+  const finder = find(w.root, (el) => has(el, "railfind"));
+  for (const v of ["i", "in", "inv", "invented day 22"]) finder.fire("input", { currentTarget: { value: v } });
+  await tick();
+  expect(asked(w.spy.calls)).toEqual([]);
+  await Bun.sleep(FIND_AFTER + 30);
+  for (let i = 0; i < 3; i++) await tick();
+  expect(asked(w.spy.calls)).toEqual(["page.search"]);
+  expect(findAll(w.root, (el) => has(el, "foundrow")).map((r) => flat(find(r, (el) => has(el, "nm"))))).toContain("Invented day 22");
 });

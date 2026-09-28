@@ -20,7 +20,7 @@
 import { test, expect, beforeEach, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS } from "../client/shell/shell.js";
+import { makeShell, parseHash, CLOSE_WORDS, hashOf, VIEWS, FIND_AFTER, touches, merged, EVERYTHING } from "../client/shell/shell.js";
 import {
   makeRack, rackWidth, autoCeiling,
   RACK_MIN, RACK_BASE, RACK_SHARE, RACK_KEY, RACK_STEP,
@@ -248,6 +248,7 @@ function fakeWs(page = DOC) {
     theme: THEME,
     page,
     table: null,
+    version: 1,
   };
 
   const emit = () => { for (const fn of [...subs]) fn(); };
@@ -257,6 +258,28 @@ function fakeWs(page = DOC) {
     emit,
     calls: [],
     get: () => state,
+    // THE DIRECTORY, over the pages this fake knows — which is every page it
+    // has, because it is small. `want`, `reveal` and `refresh` record what they
+    // were asked; `version` moves when a test says the tree was re-listed.
+    refOf: (id) => state.pages.find((p) => p.id === id) ?? null,
+    idOfUid: (uid) => state.pages.find((p) => p.uid === uid)?.id ?? null,
+    async want(q) { this.calls.push("want:" + [...(q.ids ?? []), ...(q.uids ?? [])].join(",")); },
+    held: () => true,
+    async expand(id) { this.calls.push("expand:" + id); },
+    async reveal(id) { this.calls.push("reveal:" + id); },
+    version: () => state.version,
+    async refresh(change) {
+      await null;
+      this.calls.push("refresh:" + (change.all ? "all" : JSON.stringify({ pages: change.pages, levels: change.levels })));
+      emit();
+    },
+    async search(query) {
+      await null;
+      this.calls.push("search:" + query);
+      const q = query.toLowerCase();
+      const hits = state.pages.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q));
+      return { hits, more: false, complete: true };
+    },
     children: (id) => (id === "home" ? [
       { kind: "page", id: "notes", name: "Notes" },
       { kind: "page", id: "board", name: "Job board" },
@@ -372,8 +395,9 @@ function fakeEvents() {
   const hears = new Set();
   return {
     on(hear) { hears.add(hear); return () => hears.delete(hear); },
-    /** A file changed on disk, as far as the shell is concerned. */
-    fire() { for (const hear of [...hears]) hear(); },
+    /** A file changed on disk, as far as the shell is concerned: the event's
+     *  data text, or null for a reconnect, which names nothing. */
+    fire(data = null) { for (const hear of [...hears]) hear(data); },
     get listeners() { return hears.size; },
   };
 }
@@ -805,7 +829,7 @@ test("the box does not restart itself when the page it is drawing saves", async 
 
 /* ── reload, which is the whole change loop ────────────────────────────── */
 
-test("reload re-reads the page and re-lists the tree", async () => {
+test("reload re-reads the page and every level the window holds", async () => {
   const g = harness();
   byButton(g.rail, "Reload").fire("click");
   await tick();
@@ -813,8 +837,10 @@ test("reload re-reads the page and re-lists the tree", async () => {
 
   expect(g.ws.calls).toContain("reloadPage:notes");
   // The tree matters as much as the page: a page Claude Code has just CREATED
-  // has to turn up without refreshing the browser.
-  expect(g.ws.calls).toContain("loadTree");
+  // has to turn up without refreshing the browser. The button names
+  // everything, and the store rereads every level it holds — never every page.
+  expect(g.ws.calls).toContain("refresh:all");
+  expect(g.ws.calls).not.toContain("loadTree");
   expect(byButton(g.rail, "Reload")).not.toBeNull();
   // AND THE READER'S PLACE IS KEPT THROUGH IT. `keep` is said for the page on
   // the route, and it is said BEFORE the teardown — the realm that reported
@@ -847,12 +873,12 @@ test("keeping the reader's place is a redraw's alone: a navigation never says ke
 // stale text land over the agent's a moment later. That failure is invisible
 // until it happens, which is why it is a test and not a comment.
 
-test("an external change re-runs Reload, and the redraw goes through reloadPage", async () => {
+test("an external change naming the open page re-runs Reload for it, and the redraw goes through reloadPage", async () => {
   const events = fakeEvents();
   const g = harness(DOC, { view: "page", id: "notes" }, false, events);
   expect(events.listeners).toBe(1);
 
-  events.fire();
+  events.fire(JSON.stringify({ pages: ["notes"], levels: ["home"] }));
   await tick();
   await tick();
 
@@ -861,14 +887,37 @@ test("an external change re-runs Reload, and the redraw goes through reloadPage"
   // The watcher's redraw keeps the reader's place exactly as the button does:
   // one path, one `keep`, for the page on the route.
   expect(g.frameHost.kept).toEqual(["notes"]);
-  // The tree as well: a page an agent has just CREATED has to turn up in the
-  // rail without anybody refreshing the browser.
-  expect(g.ws.calls).toContain("loadTree");
+  // The levels the change named, and only those: a page an agent has just
+  // CREATED turns up in the rail without anybody refreshing the browser.
+  expect(g.ws.calls).toContain(`refresh:${JSON.stringify({ pages: ["notes"], levels: ["home"] })}`);
+  expect(g.ws.calls).not.toContain("loadTree");
   // AND NOTHING OF WHAT WAS TYPED GOES TO DISK. A redraw reads; it never writes,
   // so there is no path by which the box's pending text can reach a file.
   expect(g.ws.calls.filter((c) => /^(write|createPage|movechild|patch)/i.test(c))).toEqual([]);
   // The button is still there and still says what it does.
   expect(byButton(g.rail, "Reload")).not.toBeNull();
+});
+
+test("A WRITE TO ANOTHER PAGE NEVER TEARS DOWN THE OPEN PAGE'S BOX: only the levels it names are listed again", async () => {
+  const events = fakeEvents();
+  const g = harness(DOC, { view: "page", id: "notes" }, false, events);
+  await tick();
+  const drawn = g.plate.firstChild;
+
+  events.fire(JSON.stringify({ pages: ["board"], levels: ["home"] }));
+  for (let i = 0; i < 4; i++) await tick();
+
+  expect(g.ws.calls.filter((c) => c.startsWith("reloadPage"))).toEqual([]);
+  expect(g.frameHost.kept).toEqual([]);
+  expect(g.ws.calls).toContain(`refresh:${JSON.stringify({ pages: ["board"], levels: ["home"] })}`);
+  // The very node on the plate, untouched.
+  expect(g.plate.firstChild).toBe(drawn);
+
+  // A reconnect names nothing it can trust, and rereads the open page too.
+  events.fire(null);
+  for (let i = 0; i < 4; i++) await tick();
+  expect(g.ws.calls).toContain("reloadPage:notes");
+  expect(g.ws.calls).toContain("refresh:all");
 });
 
 test("a change landing mid-reload is read once more, not queued up", async () => {
@@ -2175,7 +2224,7 @@ test("a framework screen's id as a page route is refused as not found, and never
   expect(g.ws.calls.filter((c) => c.startsWith("loadPage:@"))).toEqual([]);
   expect(g.drawn.page).toBe(drawnBefore);
   // A re-listed tree forgets every id it gave up on, and the refusal stands.
-  g.ws.state.pages = [...g.ws.state.pages];
+  g.ws.state.version++;
   g.ws.emit();
   await tick();
   expect(flat(g.plate.firstChild)).toBe("There is no page called “@design”.");
@@ -2183,7 +2232,7 @@ test("a framework screen's id as a page route is refused as not found, and never
   events.fire();
   await tick();
   await tick();
-  expect(g.ws.calls).toContain("loadTree");
+  expect(g.ws.calls).toContain("refresh:all");
   expect(g.ws.calls.filter((c) => /^(load|reload)Page:@/.test(c))).toEqual([]);
   expect(g.frameHost.kept).toEqual([]);
   expect(flat(g.plate.firstChild)).toBe("There is no page called “@design”.");
@@ -2851,10 +2900,68 @@ test("a search hit is the person's open", async () => {
   const g = harness(DOC, { view: "page", id: "notes" });
   const finder = find(g.rack, (el) => has(el, "railfind"));
   finder.fire("input", { currentTarget: { value: "board" } });
+  await Bun.sleep(FIND_AFTER + 20);
   await tick();
   find(g.rack, (el) => has(el, "foundrow")).fire("click");
   expect(g.ui.get().route).toEqual({ view: "page", id: "board", screen: "page" });
   expect(moverOf(g.ui)).toBe("you");
+});
+
+test("THE FINDER ASKS THE SERVER: a burst of keystrokes is one page.search, FIND_AFTER after the last, and nothing is searched in the window", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  const finder = find(g.rack, (el) => has(el, "railfind"));
+  for (const v of ["b", "bo", "boa", "board"]) finder.fire("input", { currentTarget: { value: v } });
+  await tick();
+  expect(g.ws.calls.filter((c) => c.startsWith("search:"))).toEqual([]);
+  // Until the answer lands the rail says it is looking, not that nothing matched.
+  expect(flat(g.rack)).toContain("Looking…");
+  await Bun.sleep(FIND_AFTER + 30);
+  await tick();
+  expect(g.ws.calls.filter((c) => c.startsWith("search:"))).toEqual(["search:board"]);
+  expect(findAll(g.rack, (el) => has(el, "foundrow")).map((r) => flat(find(r, (el) => has(el, "nm"))))).toEqual(["Job board"]);
+});
+
+test("the finder draws the last query's answer only, and says when there are more and when the workspace is still being read", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  /** @type {Map<string, (v: any) => void>} */
+  const answers = new Map();
+  g.ws.search = (q) => new Promise((r) => answers.set(q, r));
+  const finder = find(g.rack, (el) => has(el, "railfind"));
+  finder.fire("input", { currentTarget: { value: "not" } });
+  await Bun.sleep(FIND_AFTER + 20);
+  finder.fire("input", { currentTarget: { value: "notes" } });
+  await Bun.sleep(FIND_AFTER + 20);
+  expect([...answers.keys()]).toEqual(["not", "notes"]);
+  // THE NEWER ANSWER FIRST, then the older one late: the older is dropped.
+  answers.get("notes")?.({ hits: [{ id: "notes", name: "Notes" }], more: true, complete: false });
+  await tick();
+  answers.get("not")?.({ hits: [{ id: "home/Nothing", name: "Nothing" }], more: false, complete: true });
+  await tick();
+  const rows = findAll(g.rack, (el) => has(el, "foundrow")).map((r) => flat(find(r, (el) => has(el, "nm"))));
+  expect(rows).toEqual(["Notes"]);
+  expect(flat(g.rack)).toContain("More pages match. Type more of the name.");
+  expect(flat(g.rack)).toContain("Still reading the workspace, so more may turn up.");
+});
+
+test("going to a page lists the way down to it once, and a crumb the directory does not know is asked for by name", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  g.ui.open("page", "home/Deep/Leaf");
+  for (let i = 0; i < 3; i++) { g.ws.emit(); await tick(); }
+  expect(g.ws.calls.filter((c) => c.startsWith("reveal:"))).toEqual(["reveal:notes", "reveal:home/Deep/Leaf"]);
+  expect(g.ws.calls).toContain("want:home/Deep,home/Deep/Leaf");
+  // Until it is known, a crumb reads as its segment.
+  expect(findAll(g.rail, (el) => has(el, "crumb")).map(flat)).toEqual(["Everything", "Deep", "Leaf"]);
+});
+
+test("a change names what to redraw: the open page only when named, the map for any change, and everything when it says all", () => {
+  expect(touches({ pages: ["home/A"], levels: [] }, "home/A")).toBe(true);
+  expect(touches({ pages: ["home/B"], levels: ["home"] }, "home/A")).toBe(false);
+  expect(touches({ pages: [], levels: [], all: true }, "home/A")).toBe(true);
+  expect(touches({ pages: ["home/B"], levels: [] }, "@map")).toBe(true);
+  expect(touches({ pages: ["home/B"], levels: [] }, "@design")).toBe(false);
+  expect(touches({ pages: [], levels: [] }, "@design")).toBe(true);
+  expect(merged({ pages: ["a"], levels: ["x"] }, { pages: ["b", "a"], levels: [] })).toEqual({ pages: ["a", "b"], levels: ["x"] });
+  expect(merged({ pages: ["a"], levels: [] }, EVERYTHING)).toBe(EVERYTHING);
 });
 
 test("a page or a table just made is opened as the person's", async () => {

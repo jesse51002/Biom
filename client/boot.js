@@ -24,7 +24,7 @@ import { makeHttp, TOKEN_PARAM } from "./transport/http.js";
 import { makeEvents } from "./transport/events.js";
 import { makeChatStream } from "./transport/chat.js";
 import { openTerminalSocket, terminalUrl } from "./transport/terminal.js";
-import { makeWorkspace } from "./store/workspace.js";
+import { makeWorkspace, ROOT_PAGE } from "./store/workspace.js";
 import { applyTheme, paperOf } from "./theme/theme.js";
 import { faceCss } from "./theme/faces.js";
 import { makeUi } from "./store/ui.js";
@@ -529,25 +529,29 @@ else console.error("no #root in the document — nothing was mounted");
 if (vault === null && startupTrouble !== "") shell.trouble(new Error(startupTrouble), true);
 
 if (vault !== null) {
+  // COLD START OPENS ON THE AGENT SCREEN (*Chat*: "Biom opens on the Agent
+  // screen"), the first screen every launch — ROUTED AND DRAWN FIRST, before
+  // the tree is read, because nothing on that screen waits for the rail. A
+  // hash that already names a screen wins over this; where there is no Agent
+  // screen, the root page, because a tool for building tools has an empty
+  // empty-state and the first screen is never one.
+  const route = ui.get().route;
+  if (route.view === "page" && !route.id) {
+    if (agentView !== null) ui.go("agent", "");
+    else ui.go("page", ROOT_PAGE);
+  }
+  // The chats and the agents, read once whether or not the stream opens;
+  // every open of it reads them again.
+  void chats?.resync();
   try {
-    await ws.loadTree();
-    // COLD START OPENS ON THE AGENT SCREEN (*Chat*: "Biom opens on the Agent
-    // screen"), the first screen every launch. A hash that already names a
-    // screen wins over this; where there is no Agent screen, the first page,
-    // because a tool for building tools has an empty empty-state and the first
-    // screen is never one.
-    const route = ui.get().route;
-    const first = ws.get().pages[0];
-    if (route.view === "page" && !route.id) {
-      if (agentView !== null) ui.go("agent", "");
-      else if (first) ui.go("page", first.id);
-    }
-    // The tree is in hand, so a page's uid can be read: the switcher reads the
-    // history and takes from it whose the screen was before this load.
+    // THE RAIL'S TOP LEVEL, AND THE WAY DOWN TO THE PAGE ON THE ROUTE, beside
+    // the screen rather than in front of it: the root's level, the levels that
+    // hold the route's page, the tables and the theme — never every page.
+    const at = ui.get().route;
+    await ws.loadTree(at.view === "page" && at.id && !at.id.startsWith("@") ? at.id : undefined);
+    // The switcher reads the history and takes from it whose the screen was
+    // before this load; a page the tree has not listed is asked for by name.
     void switcher?.start();
-    // The chats and the agents, read once whether or not the stream opens;
-    // every open of it reads them again.
-    void chats?.resync();
   } catch (err) {
     // WHICH FAILURE THIS IS DECIDES WHERE THE TAB LANDS, and the two are not the
     // same screen. A folder that cannot be opened at all — gone, a file now,

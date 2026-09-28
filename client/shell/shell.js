@@ -48,7 +48,7 @@
 // been dragged. That is what keeps a drag from repainting the workspace and a
 // repaint from arguing with a drag.
 
-/** @import { Address, FrameHost, Page, PageId, PageScreen, TableView,
+/** @import { Address, ChangeEvent, FrameHost, Page, PageId, PageScreen, TableView,
  *            UiState, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
 /** @import { Ui } from "../store/ui.js" */
@@ -61,6 +61,7 @@ import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 import { NOT_TOUCH } from "../store/switcher.js";
 import { agentMode } from "../store/chats.js";
+import { changeOf } from "../transport/chat.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
 // directions of one move — into a folder and out of it — and an address built
@@ -143,12 +144,14 @@ import { makeRack } from "./rack.js";
  *   failure screen may name `make dev`. Every screen and every row is in every
  *   build — the owner decided on 2026-09-17 that the built application hides no
  *   screen — so nothing here is a second code path. Absent means development.
- * @property {{ on: (hear: () => void) => () => void }} [events] THE VAULT
- *   CHANGING ON DISK, as a subscription rather than an import: data ascends
- *   through a callback a higher layer registered, and nothing below the shell
- *   holds a reference to anything above it. Optional, because a tab that has
- *   chosen no folder has no stream and because most tests that build a shell
- *   are not about this.
+ * @property {{ on: (hear: (data: string | null) => void) => () => void }} [events]
+ *   THE VAULT CHANGING ON DISK, as a subscription rather than an import: data
+ *   ascends through a callback a higher layer registered, and nothing below
+ *   the shell holds a reference to anything above it. Each `change` hands up
+ *   its data — the pages and levels it names, decoded here by `changeOf` —
+ *   and a reconnect hands up null, which rereads everything the window holds.
+ *   Optional, because a tab that has chosen no folder has no stream and
+ *   because most tests that build a shell are not about this.
  * @property {string} [search] THE QUERY THIS WINDOW WAS OPENED WITH, which the
  *   rail's `Close workspace` row carries forward minus the folder. Defaults to
  *   the real one, and to "" where there is no window at all.
@@ -276,10 +279,13 @@ export function makeShell(deps) {
   /** How many times Reload has been pressed. The only screen that reads it is
    *  Design, whose doc is not in the snapshot and so cannot be seen to move. */
   let reloads = 0;
-  /** A change that landed while a reload was already running. It is a flag and
-   *  not a queue: what a redraw reads is the current state of disk, so two
-   *  pending changes and one are the same amount of work. */
-  let again = false;
+  /** What changed while a reload was already running, merged: one more pass
+   *  rereads all of it, so two pending changes and one are one pass.
+   *  @type {ChangeEvent | null} */
+  let again = null;
+  /** The page whose way down the rail has listed, so a repaint does not ask
+   *  again — and a level that would not list is not asked for on every one. */
+  let revealed = "";
   /** Set by boot when the workspace could not be read at all. @type {string} */
   let troubled = "";
   /** HOW MANY RUNS THE WINDOW WAS ASKED TO CLOSE OVER, or 0 when it was not.
@@ -291,13 +297,13 @@ export function makeShell(deps) {
    *  frozen and does not carry it, so it is read on its own.
    *  @type {VaultInfo | null} */
   let vault = null;
-  /** The page list the name above was read against. Re-reading on a re-listed
-   *  tree is what keeps it honest without a signal the contract does not have:
-   *  opening a vault replaces every page in the snapshot at once, so a `pages`
-   *  array that is a different object is the cheapest true test for "the folder
-   *  may have moved". It costs one small request per create, move or install.
-   *  @type {unknown} */
-  let vaultFrom = Symbol("nothing");
+  /** The tree's version the name above was read against. Re-reading on a
+   *  re-listed tree is what keeps it honest without a signal the contract does
+   *  not have: the store moves its version whenever a level is listed, so a
+   *  different number is the cheapest true test for "the folder may have
+   *  moved". It costs one small request per level listed, create, move or
+   *  install. @type {number} */
+  let vaultFrom = -1;
   let vaultBusy = false;
   /** Ids the server answered "no such page" for. Without this, a route to a
    *  deleted page refetches it on every emit for as long as the tab is open. */
@@ -464,6 +470,15 @@ export function makeShell(deps) {
     }
   }
 
+  /** THE ROOT PAGE'S OWN REF, from the directory — its name is what the bar
+   *  and the rail call the workspace — asked for once where it is not there
+   *  yet, and the answer is one repaint. @returns {import("../../contracts/types.ts").PageRef | null} */
+  function rootRef() {
+    const ref = ws.refOf(ROOT_PAGE);
+    if (ref === null) void ws.want({ ids: [ROOT_PAGE] });
+    return ref;
+  }
+
   /**
    * The page on screen, or null. "On screen" is stricter than "in the store":
    * the route may have moved on while the read is still in flight — and Map
@@ -526,8 +541,7 @@ export function makeShell(deps) {
    */
   function titleParts() {
     const wc = bridge.windowControls;
-    const w = ws.get();
-    const home = w.pages.find((p) => p.id === ROOT_PAGE);
+    const home = rootRef();
     // The name the rack calls the workspace, which is the root page's own — it
     // is the user's to change. The folder's name is the fallback, and the
     // product's the last resort while nothing has been read yet.
@@ -690,10 +704,15 @@ export function makeShell(deps) {
    * @returns {HTMLElement[]}
    */
   function trail(route, w, page) {
+    /** Names the directory does not have yet, asked for once the trail is
+     *  built. @type {PageId[]} */
+    const unknown = [];
     /** @param {PageId} id */
     const nameOf = (id) => {
-      const ref = w.pages.find((p) => p.id === id);
-      return ref ? ref.name : id.slice(id.lastIndexOf("/") + 1);
+      const ref = ws.refOf(id);
+      if (ref) return ref.name;
+      unknown.push(id);
+      return id.slice(id.lastIndexOf("/") + 1);
     };
     /** @param {string} text @param {(() => void) | null} go @param {boolean} last @param {string} [light] */
     const crumb = (text, go, last, light) =>
@@ -742,6 +761,11 @@ export function makeShell(deps) {
     // name the open folder, which was Settings — the picker with the chrome
     // around it — and that screen is gone.
 
+    // A crumb the directory could not name reads as its segment until the
+    // answer lands, and the answer is one repaint. Asking is safe from a draw:
+    // what is asked, known or absent is never asked again.
+    if (unknown.length) void ws.want({ ids: unknown });
+
     /** @type {HTMLElement[]} */
     const out = [];
     items.forEach((it, i) => {
@@ -766,6 +790,15 @@ export function makeShell(deps) {
   // filtered is a rail that looks like it has lost most of the workspace.
   let query = "";
 
+  /** THE SERVER'S ANSWER FOR THE LAST QUERY ASKED, which is the only one drawn:
+   *  a slower answer to an older query arriving after it is dropped.
+   *  @type {{ query: string, hits: import("../../contracts/types.ts").PageRef[], more: boolean, complete: boolean, failed?: boolean } | null} */
+  let found = null;
+  /** Which ask is the latest. */
+  let asking = 0;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let findTimer = null;
+
   /** Where the tree draws, or the hits when there is a query. Held so a
    *  keystroke repaints THIS and nothing above it. */
   const results = h("div.railresults");
@@ -774,7 +807,7 @@ export function makeShell(deps) {
     type: "search",
     placeholder: "Find a page",
     "aria-label": "Find a page or table",
-    oninput: (/** @type {any} */ e) => { query = e.currentTarget.value; drawResults(); },
+    oninput: (/** @type {any} */ e) => { query = e.currentTarget.value; drawResults(); findSoon(); },
     // Escape clears without reaching for the mouse, and leaves the caret where
     // it is so the next thing typed is a fresh query rather than an edit.
     onkeydown: (/** @type {KeyboardEvent} */ e) => {
@@ -782,19 +815,35 @@ export function makeShell(deps) {
       e.preventDefault();
       query = "";
       /** @type {HTMLInputElement} */ (finder).value = "";
+      findSoon();
       drawResults();
     },
   });
 
-  /** How many hits are drawn. A one-letter query matches most of a workspace of
-   *  a few hundred pages, and a list nobody can scan is the same as no answer —
-   *  so the rest are counted rather than drawn, and the count says what to do. */
-  const SHOWN = 50;
+  /** ASK THE SERVER, once the typing pauses: no window holds every page's
+   *  name to search them, so a burst of keystrokes is one `page.search`,
+   *  `FIND_AFTER` after the last of them, and the last query wins. */
+  function findSoon() {
+    if (findTimer !== null) { clearTimeout(findTimer); findTimer = null; }
+    const q = query.trim();
+    const my = ++asking;
+    if (!q) { found = null; return; }
+    findTimer = setTimeout(() => {
+      findTimer = null;
+      ws.search(q).then(
+        (res) => { if (my !== asking) return; found = { query: q, hits: res.hits, more: res.more, complete: res.complete }; drawResults(); },
+        () => { if (my !== asking) return; found = { query: q, hits: [], more: false, complete: true, failed: true }; drawResults(); },
+      );
+    }, FIND_AFTER);
+  }
 
-  /** Every page and table whose name or path carries the query, best first: a
-   *  name that STARTS with it, then one that contains it, then a path that
-   *  does. Pages and tables are ranked together because the rail lists them
-   *  together — a table is a child like a page and sits where it was put. */
+  /** Every page the server found and every table whose name carries the
+   *  query, best first: a name that STARTS with it, then one that contains
+   *  it, then a path that does — the server's own ranking, kept in its order
+   *  within a rank. Pages and tables are ranked together because the rail
+   *  lists them together — a table is a child like a page and sits where it
+   *  was put. The tables are filtered here: the rack holds them all, and there
+   *  are few. */
   function hits() {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -802,10 +851,10 @@ export function makeShell(deps) {
     /** @type {{ score: number, kind: string, view: ViewName, id: string, name: string, where: string }[]} */
     const out = [];
 
-    for (const p of w.pages) {
+    const pages = found !== null && found.query.toLowerCase() === q ? found.hits : [];
+    for (const p of pages) {
       const name = p.name.toLowerCase();
-      const score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : p.id.toLowerCase().includes(q) ? 2 : -1;
-      if (score < 0) continue;
+      const score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : 2;
       const cut = p.id.lastIndexOf("/");
       out.push({
         score, kind: "doc", view: "page", id: p.id, name: p.name,
@@ -826,15 +875,19 @@ export function makeShell(deps) {
   /** The tree when there is no query, the hits when there is. Called by a
    *  keystroke and by every repaint, so the list is never stale. */
   function drawResults() {
-    if (!query.trim()) { fill(results, views.tree()); return; }
+    const q = query.trim();
+    if (!q) { fill(results, views.tree()); return; }
 
-    const found = hits();
-    if (!found.length) {
-      fill(results, h("p.railnone", "No page or table is called that."));
+    const answered = found !== null && found.query.toLowerCase() === q.toLowerCase() ? found : null;
+    const list = hits();
+    if (!list.length) {
+      fill(results, h("p.railnone", answered === null ? "Looking…"
+        : answered.failed ? "The workspace could not be searched just now."
+        : "No page or table is called that."));
       return;
     }
 
-    const rows = found.slice(0, SHOWN).map((r) =>
+    const rows = list.map((r) =>
       h("li.treerow", h("a.foundrow", {
         href: "#",
         onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.open(r.view, r.id); },
@@ -847,9 +900,14 @@ export function makeShell(deps) {
       r.where ? h("span.foundwhere", r.where) : null)));
 
     fill(results, h("ul.tree", ...rows),
-      found.length > SHOWN
-        ? h("p.railnone", `${found.length - SHOWN} more. Type more of the name.`)
-        : null);
+      // THE SERVER DRAWS AT MOST A PAGEFUL, and says when there were more — a
+      // one-letter query matches most of a workspace, and a list nobody can
+      // scan is the same as no answer, so the line says what to do.
+      answered !== null && answered.more ? h("p.railnone", "More pages match. Type more of the name.") : null,
+      // AND WHETHER IT HAS READ EVERY PAGE YET: just after a workspace opens
+      // the server is still reading it, and a hit may yet turn up.
+      answered !== null && !answered.complete ? h("p.railnone", "Still reading the workspace, so more may turn up.") : null,
+      answered === null ? h("p.railnone", "Looking…") : null);
   }
 
   /* ── the rack ──────────────────────────────────────────────────────────── */
@@ -874,7 +932,7 @@ export function makeShell(deps) {
     // beside the page that uses it. The heading is the root page's own name
     // rather than the word "Pages", because the top level IS a page — its name
     // is the user's to change and clicking it opens it like any other.
-    const home = w.pages.find((p) => p.id === ROOT_PAGE);
+    const home = rootRef();
 
     // WHICH WAY THE RAIL READS, beside the heading of the list it sorts. One
     // button and not a menu: the only question anybody has about a folder of
@@ -1077,22 +1135,29 @@ export function makeShell(deps) {
 
   /* ── the two things the chrome does ────────────────────────────────────── */
 
-  /** AN OUTSIDE CHANGE, and it re-runs exactly what the button runs.
+  /** AN OUTSIDE CHANGE, and it re-runs what the button runs — for what it
+   *  names and nothing else. The event says which pages' own files changed
+   *  and which levels' children did; the open page is redrawn only when it is
+   *  one of them, and only the levels this window holds are listed again. A
+   *  write to another page never tears down the box somebody is reading or
+   *  typing in. A reconnect names nothing it can trust, and rereads all.
    *
-   *  IT MUST GO THROUGH `doReload` AND THEREFORE THROUGH `ws.reloadPage`, and
-   *  that is the one rule in this file worth reading twice. A frame is REUSED
-   *  while its html is unchanged, so a cheaper redraw written to stop the
-   *  flicker would leave the box alive with its 350 ms save timer armed — and
-   *  the person's stale text would land over the agent's a moment later, which
-   *  is the precise opposite of the rule this feature ships. `reloadPage` sets
-   *  the page to null and emits, the frame is torn down, and a timer in a realm
-   *  that has gone does not fire. See `SAVE_AFTER` in `guest/runtime/edit.js`.
+   *  THE OPEN PAGE, WHEN NAMED, MUST GO THROUGH `doReload` AND THEREFORE
+   *  THROUGH `ws.reloadPage`, and that is the one rule in this file worth
+   *  reading twice. A frame is REUSED while its html is unchanged, so a
+   *  cheaper redraw written to stop the flicker would leave the box alive with
+   *  its 350 ms save timer armed — and the person's stale text would land over
+   *  the agent's a moment later, which is the precise opposite of the rule
+   *  this feature ships. `reloadPage` sets the page to null and emits, the
+   *  frame is torn down, and a timer in a realm that has gone does not fire.
+   *  See `SAVE_AFTER` in `guest/runtime/edit.js`.
    *
-   *  ONE GUARD, AND IT IS `doReload`'s. An event landing mid-reload asks for one
-   *  more pass after this one, which is the same answer the button pressed twice
-   *  gets — so this is a call and nothing else, and the two cannot drift. */
-  function heard() {
-    void doReload();
+   *  ONE GUARD, AND IT IS `doReload`'s. An event landing mid-reload is merged
+   *  into one more pass after this one, which is the same answer the button
+   *  pressed twice gets — so this is a call and nothing else.
+   *  @param {string | null} data */
+  function heard(data) {
+    void doReload(data === null ? EVERYTHING : changeOf(data));
   }
 
   /** Why the share did not happen, in words somebody can act on. The same
@@ -1169,11 +1234,16 @@ export function makeShell(deps) {
     }, { center: true, width: "26rem" });
   }
 
-  async function doReload() {
+  /** THE BUTTON, and a change on disk: reread what `change` names — the open
+   *  page when it is one of the pages, the held levels among the levels, and
+   *  everything the window holds for `all`, which is what the button asks.
+   *  @param {ChangeEvent} [change] */
+  async function doReload(change = EVERYTHING) {
     if (reloading) {
-      // The button, pressed twice. Same answer as an event: one more pass after
-      // this one, because the disk may have moved since this pass read it.
-      again = true;
+      // The button pressed twice, or a change landing mid-pass: merged into
+      // one more pass after this one, because the disk may have moved since
+      // this pass read it.
+      again = again === null ? change : merged(again, change);
       return;
     }
     const { route } = ui.get();
@@ -1181,36 +1251,40 @@ export function makeShell(deps) {
     reloads++;
     troubled = "";
     missing.clear();
+    // What was listed on the way down is listed again where the change says;
+    // a route whose way down would not list is asked once more.
+    revealed = "";
     paint();
     try {
-      // The tree first is wrong and the page first is right: `reloadPage` drops
-      // the cached page and emits, which is what tears every frame on it down.
+      // The page first and the levels beside it: `reloadPage` drops the cached
+      // page and emits, which is what tears every frame on it down.
       //
       // AND THE READER'S PLACE SURVIVES THE TEARDOWN. `keep` goes first, while
       // the realm that reported where it was scrolled to is still the one on
       // the mount; the new realm is put back there on its `ready`, clamped to
       // whatever the page is now. It is said here and nowhere else, so a page
       // navigated to starts at the top and only a redraw keeps its place.
-      const reserved = route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
-      if (route.view === "page" && route.id && !frameworkId(route.id)) {
-        frameHost.keep(route.id);
-        await ws.reloadPage(route.id);
-      } else if (reserved !== null) {
+      const open = route.view === "page" && route.id && !frameworkId(route.id) ? route.id
+        : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
+      /** @type {Promise<unknown>[]} */
+      const work = [ws.refresh(change)];
+      if (open !== null && touches(change, open)) {
         // The design doc and the map are pages read under reserved ids, and a
         // reload of either is a page reload: the box torn down, the read taken
         // again from disk, the reader's place kept.
-        frameHost.keep(reserved);
-        await ws.reloadPage(reserved);
-      } else if (route.view === "table" && route.id) await ws.loadTable(route.id);
-      await ws.loadTree();
+        frameHost.keep(open);
+        work.push(ws.reloadPage(open));
+      } else if (route.view === "table" && route.id) work.push(ws.loadTable(route.id));
+      await Promise.all(work);
     } catch (err) {
       troubled = message(err);
     } finally {
       reloading = false;
       paint();
-      if (again) {
-        again = false;
-        void doReload();
+      if (again !== null) {
+        const next = again;
+        again = null;
+        void doReload(next);
       }
     }
   }
@@ -1223,9 +1297,9 @@ export function makeShell(deps) {
   /**
    * The folder's name, and the ids the router gave up on.
    *
-   * Both hang off the same fact and that is why they are one function: a `pages`
-   * array that is a different object means the tree was re-listed, and opening a
-   * vault is the extreme case of that — every page replaced at once. So the name
+   * Both hang off the same fact and that is why they are one function: a tree
+   * version that moved means a level was listed again, and opening a vault is
+   * the extreme case of that — every level read afresh. So the name
    * is re-read, and an id remembered as missing is forgiven, because the page
    * that was not there a moment ago may be there now. A genuinely deleted page
    * costs one refetch and goes straight back into the set.
@@ -1234,7 +1308,7 @@ export function makeShell(deps) {
    * not open, and a rail that cannot name the folder is no use on that screen.
    */
   function ensureVault() {
-    const now = ws.get().pages;
+    const now = ws.version();
     if (now === vaultFrom || vaultBusy) return;
     vaultFrom = now;
     vaultBusy = true;
@@ -1255,6 +1329,14 @@ export function makeShell(deps) {
     // Only through their own routes: a page route naming a reserved id reads
     // nothing, and the body says there is no such page.
     const wanted = route.view === "page" ? (frameworkId(route.id) ? "" : route.id) : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
+    // THE WAY DOWN TO A PAGE, listed once per page gone to: the levels that
+    // hold it, which name its crumbs and are there when the rail is opened to
+    // it. Only the missing ones are asked for, and a level that would not list
+    // is not asked again on every repaint.
+    if (route.view === "page" && wanted && revealed !== wanted) {
+      revealed = wanted;
+      ws.reveal(wanted).catch((err) => console.warn("[biom] the way down to that page could not be listed", err));
+    }
     if (wanted && !missing.has(wanted)) {
       if (w.page && w.page.id === wanted) return;
       const key = "page:" + wanted;
@@ -1573,6 +1655,37 @@ export const hashOf = (route) => formatAddress(route);
  *  be no page at all, whatever the missing set holds.
  *  @param {string} id */
 const frameworkId = (id) => id.startsWith("@");
+
+/** HOW LONG THE FINDER WAITS AFTER THE LAST KEYSTROKE BEFORE IT ASKS THE
+ *  SERVER, in ms: long enough that a word typed is one `page.search`, short
+ *  enough to read as instant. */
+export const FIND_AFTER = 120;
+
+/** THE CHANGE THAT NAMES EVERYTHING: the Reload button, and a reconnect,
+ *  which cannot know what it missed. It rereads the open page and every level
+ *  the window holds — still bounded by what is on the window's screen.
+ *  @type {ChangeEvent} */
+export const EVERYTHING = { pages: [], levels: [], all: true };
+
+/** Two changes as one pass: everything either names.
+ *  @param {ChangeEvent} a @param {ChangeEvent} b @returns {ChangeEvent} */
+export function merged(a, b) {
+  if (a.all === true || b.all === true) return EVERYTHING;
+  return { pages: [...new Set([...a.pages, ...b.pages])], levels: [...new Set([...a.levels, ...b.levels])] };
+}
+
+/** WHETHER A CHANGE REDRAWS THE SCREEN SHOWING `open` — a page, the design
+ *  doc or the map. A page only when the change names it, or names everything:
+ *  a write to another page never tears down the box somebody is reading. The
+ *  map draws every page, so any change is its change. The design doc lives
+ *  outside `pages/`, so a change naming no page at all may be its own.
+ *  @param {ChangeEvent} change @param {PageId} open @returns {boolean} */
+export function touches(change, open) {
+  if (change.all === true) return true;
+  if (open === MAP_PAGE) return true;
+  if (open === DESIGN_PAGE) return change.pages.includes(DESIGN_PAGE) || (change.pages.length === 0 && change.levels.length === 0);
+  return change.pages.includes(open);
+}
 
 /** @param {unknown} err */
 const message = (err) =>
