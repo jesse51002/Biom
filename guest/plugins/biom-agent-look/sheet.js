@@ -50,6 +50,7 @@
   --l-col: 720px;
   --l-head: 46px;
   --l-in: 0px;
+  --l-mid: 0px;
   --l-m: var(--motion, 1);
   --l-ease: cubic-bezier(.16, 1, .3, 1);
   position: absolute; inset: 0;
@@ -158,8 +159,8 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .fx canvas.gone { opacity: 0; }
 .g-look[data-state=live] .fx { opacity: 0; }
 .hero { position: absolute; z-index: 1; left: 50%; width: min(var(--l-col), calc(100% - 48px)); transform: translateX(-50%); }
-.hero-top { bottom: calc(50% + var(--l-in) / 2 + 40px); }
-.hero-bot { top: calc(50% + var(--l-in) / 2 + 22px); }
+.hero-top { bottom: calc(50% + var(--l-mid) / 2 + 40px); }
+.hero-bot { top: calc(50% + var(--l-mid) / 2 + 22px); }
 .g-look[data-state=live] .hero:not(.leaving) { display: none; }
 .hero.leaving { pointer-events: none; opacity: 0; transform: translate(-50%, -14px); filter: blur(2px); transition: opacity calc(.34s * var(--l-m)) var(--l-ease), transform calc(.5s * var(--l-m)) var(--l-ease), filter calc(.34s * var(--l-m)); }
 .hero.arriving { animation: heroin calc(.7s * var(--l-m)) var(--l-ease) both; animation-delay: calc(.12s * var(--l-m)); }

@@ -15,14 +15,15 @@
 // WHAT IT HOLDS: the start screen, and its line frame by frame — the word
 // turning as one word on one centre, the swap as wide as its word at any size,
 // nothing restarted by the start screen handed over again and again, and its
-// two lines fading as they lift away into a chat every time; a chat mid-turn,
-// a finished one, a red one and the panel draw; a patch appends where it
-// belongs and leaves the rest of the thread's nodes alone, and a stale one is
-// dropped; the chat's ⋯ and its View menu, worked from the keyboard, fit on a
-// desktop, at the panel's narrowest and at a phone's width; an agent's words
-// never become markup; the look asks for nothing but its own kinds and `open`;
-// reduced motion rests still with faces as text; and a pagehide leaves nothing
-// behind. Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
+// two lines holding their place as the input goes to the foot and fading as
+// they lift away into a chat every time; a chat mid-turn, a finished one, a
+// red one and the panel draw; a patch appends where it belongs and leaves the
+// rest of the thread's nodes alone, and a stale one is dropped; the chat's ⋯
+// and its View menu, worked from the keyboard, fit on a desktop, at the
+// panel's narrowest and at a phone's width; an agent's words never become
+// markup; the look asks for nothing but its own kinds and `open`; reduced
+// motion rests still with faces as text; and a pagehide leaves nothing behind.
+// Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -346,6 +347,19 @@ test("INTO A CHAT THE START SCREEN'S LINES FADE AS THEY LIFT AWAY, the second ti
     for (const [which, was] of [["first", first], ["second", second]] as const) {
       expect([which, was.some((o) => o > 0.05 && o < 0.95)]).toEqual([which, true]);
     }
+  } finally { await ctx.close(); }
+}, 60000);
+
+test("THE START SCREEN'S LINES HOLD THEIR PLACE while the input goes to the foot ahead of the chat", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    await post(page, box, { kind: "look.state", state: lookState({ input: { at: "center", height: 118 } }) });
+    const where = () => inLook<number[]>(box, `return [".hero-top", ".hero-bot"].map((s) => Math.round(root.querySelector(s).getBoundingClientRect().top));`);
+    const before = await where();
+    // The host moves the input to the foot the moment a chat is picked, and
+    // hands the chat over once its stream is read: the start screen is still up.
+    await post(page, box, { kind: "look.patch", chat: null, input: { at: "bottom", height: 300 } });
+    expect(await where()).toEqual(before);
   } finally { await ctx.close(); }
 }, 60000);
 

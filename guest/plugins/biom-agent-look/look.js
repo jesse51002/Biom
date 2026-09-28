@@ -725,10 +725,16 @@
       if (pinned && S && S.chat !== null) { pin(); frame(pin); }
     }
 
-    /** Biom's input box sits over this box; the look leaves it `height`. @param {any} input */
+    /** Biom's input box sits over this box; the look leaves it `height` —
+     *  the thread above it at the foot, and the start screen's two lines either
+     *  side of it in the middle. The lines follow only a centred input: the
+     *  host moves the input to the foot as soon as a chat is picked, ahead of
+     *  the chat, and the lines stay where they stood and leave from there.
+     *  @param {any} input */
     function setInput(input) {
       const px = input && typeof input.height === "number" && isFinite(input.height) && input.height > 0 ? Math.min(Math.round(input.height), 2000) : 0;
       root.style.setProperty("--l-in", px + "px");
+      if (input && input.at === "center") root.style.setProperty("--l-mid", px + "px");
     }
 
     /* ── the start screen ───────────────────────────────────────────────── */

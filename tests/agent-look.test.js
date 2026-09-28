@@ -685,6 +685,20 @@ test("INTO A CHAT THE START SCREEN'S TWO LINES LEAVE, every time: going takes th
   w.teardown();
 });
 
+test("THE START SCREEN'S LINES HOLD THEIR PLACE WHILE THE INPUT GOES TO THE FOOT: they sit either side of a centred input, and one at the foot moves only the thread's end", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: lookState({ input: { at: "center", height: 118 } }) });
+  const look = one(w.root(), "g-look");
+  expect([look.props.get("--l-mid"), look.props.get("--l-in")]).toEqual(["118px", "118px"]);
+  // A chat picked: the host moves the input to the foot as soon as it is
+  // asked, and hands the chat over once its stream is read.
+  w.hear({ kind: "look.patch", chat: null, input: { at: "bottom", height: 300 } });
+  expect([look.props.get("--l-mid"), look.props.get("--l-in")]).toEqual(["118px", "300px"]);
+  w.hear({ kind: "look.state", state: lookState({ input: { at: "center", height: 140 } }) });
+  expect([look.props.get("--l-mid"), look.props.get("--l-in")]).toEqual(["140px", "140px"]);
+  w.teardown();
+});
+
 test("the look draws a chat: the list, each turn in order, the loader on the running message and the face on the finished one", () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
