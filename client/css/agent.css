@@ -264,6 +264,15 @@
 .amodal .awayrow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; font:13px var(--sheet-face); color:var(--ink-2)}
 .amodal .anone{padding:22px 18px; font:14px var(--sheet-face); color:var(--ink-3); display:flex; align-items:center; gap:12px; flex-wrap:wrap}
 
+/* ---------- Biom's own question: asked once, Cancel holding the caret ---------- */
+.amodal .cdialog{width:min(400px, calc(100vw - 48px)); height:auto; padding:20px 20px 16px; gap:8px}
+.amodal .cdialog b{font:600 17px var(--sheet-face); color:var(--ink)}
+.amodal .cdialog p{margin:0; font:14.5px/1.5 var(--sheet-face); color:var(--ink-2)}
+.amodal .cbtns{display:flex; justify-content:flex-end; gap:8px; margin-top:10px}
+.amodal .cbtns .abtn{font-size:12.5px; padding:7px 14px}
+.amodal .abtn.danger{background:var(--led-red); color:var(--on-spot); border-color:var(--led-red)}
+.amodal .abtn.danger:hover{background:color-mix(in srgb, var(--led-red) 86%, var(--ink))}
+
 /* A NARROW STAGE — the panel — packs the chips closer, as the mockup does, so
    the agent's own words fit before they are cut. */
 @container (max-width: 560px){

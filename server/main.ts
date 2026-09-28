@@ -1292,6 +1292,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         jevStatus.close(chat);
         return now;
       },
+      delete: async (chat) => {
+        await chats.delete(chat);
+        jevStatus.close(chat);
+      },
     };
     return {
       path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus, identities,
@@ -2830,6 +2834,9 @@ const frame = (event: string, data: unknown): string => `event: ${event}\ndata: 
  *  and every update since, in order — a tool line's newer state taking the
  *  place of its older one, as the chats module keeps its own. */
 export function gatherPush(had: ChatPush | undefined, push: ChatPush): ChatPush {
+  // A CHAT DELETED IS THE LAST WORD on it: whatever it said before is moot.
+  if (push.deleted === true) return { chat: push.chat, updates: [], deleted: true };
+  if (had?.deleted === true) return had;
   if (had === undefined) return { chat: push.chat, updates: [...push.updates] };
   const updates: ChatUpdate[] = [...had.updates];
   for (const u of push.updates) {

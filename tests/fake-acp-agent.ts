@@ -394,6 +394,17 @@ function run(scenario: Scenario): void {
       case "session/set_mode":
         reply(id, {});
         return;
+      case "session/delete": {
+        // Only where `initialize` offered it, as a real agent's is.
+        const caps = (scenario.agentCapabilities ?? {}) as Json;
+        const sc = (caps.sessionCapabilities ?? {}) as Json;
+        if (typeof sc.delete !== "object" || sc.delete === null) {
+          if (id !== undefined) fail(id, -32601, "the fake does not offer session/delete");
+          return;
+        }
+        reply(id, {});
+        return;
+      }
       default:
         if (id !== undefined) fail(id, -32601, `the fake does not offer ${method}`);
     }

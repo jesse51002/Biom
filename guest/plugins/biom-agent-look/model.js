@@ -698,7 +698,7 @@
   const CHAT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
   /** THE ONLY THINGS THE LOOK EVER ASKS THE HOST, rebuilt field by field so
-   *  nothing rides along: the four `look.*` kinds and `open` for a page or a
+   *  nothing rides along: the six `look.*` kinds and `open` for a page or a
    *  table. Each carries an id or a word from a closed list, never text — the
    *  input box is Biom's, and only the person's typing reaches an agent. Null
    *  for anything else, and the look sends nothing.
@@ -709,6 +709,10 @@
     if (kind === "look.new") return { kind: kind, params: {} };
     if (kind === "look.list") return typeof q.open === "boolean" ? { kind: kind, params: { open: q.open } } : null;
     if (kind === "look.panel") return q.to === "screen" || q.to === "beside" || q.to === "closed" ? { kind: kind, params: { to: q.to } } : null;
+    if (kind === "look.delete") return typeof q.chat === "string" && CHAT_ID.test(q.chat) ? { kind: kind, params: { chat: q.chat } } : null;
+    if (kind === "look.unqueue") {
+      return typeof q.chat === "string" && CHAT_ID.test(q.chat) && typeof q.id === "string" && CHAT_ID.test(q.id) ? { kind: kind, params: { chat: q.chat, id: q.id } } : null;
+    }
     if (kind === "open") {
       const t = q.target;
       if (!t || (t.kind !== "page" && t.kind !== "table") || typeof t.id !== "string" || t.id === "" || t.id.charAt(0) === "@") return null;

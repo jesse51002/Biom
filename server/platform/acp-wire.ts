@@ -63,6 +63,9 @@ export interface AgentFacts {
   loadSession: boolean;
   /** `session/resume`: the agent reopens a session without replaying it. */
   resume: boolean;
+  /** `session/delete`: the agent deletes a session of its own, so a chat
+   *  deleted in Biom is gone from the agent's own history too. */
+  deleteSession: boolean;
   /** As the agent sent them — the agents module reads them. */
   authMethods: unknown[];
   agentInfo: { name: string; title: string | null; version: string | null } | null;
@@ -78,6 +81,7 @@ export function readInitialize(result: unknown): AgentFacts {
     loadSession: caps.loadSession === true,
     // `{}` is support; absent or null is none.
     resume: isObj(session.resume),
+    deleteSession: isObj(session.delete),
     authMethods: arr(r.authMethods),
     agentInfo: info && typeof info.name === "string"
       ? { name: info.name, title: str(info.title), version: str(info.version) }

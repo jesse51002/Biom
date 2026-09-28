@@ -1005,6 +1005,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.switchAgent":
       case "chat.close":
       case "chat.commands":
+      case "chat.delete":
       case "settings.read":
       case "settings.set":
         return await chatAnswer(id, req, deps);
@@ -1118,6 +1119,11 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
         if (req.agent !== undefined) q.agent = req.agent;
         return ok(id, await chats.commands(q));
       }
+      case "chat.delete":
+        // Said only after the person's Delete in Biom's own dialog: the look
+        // can ask for that dialog and never for this.
+        await chats.delete(req.chat);
+        return ok(id, null);
     }
   } catch (e) {
     const code = codeOf(e, "internal");

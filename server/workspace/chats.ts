@@ -111,9 +111,19 @@
 // chat open. Its chat is untouched; the next message starts it again exactly
 // as a reopening does.
 //
+// A CHAT CAN BE DELETED (*Chat*, `history`), once the person has said yes in
+// Biom's own dialog: its turn is ended, its agent ended as `close` ends it,
+// its kept log removed, and every window told with a push saying `deleted`.
+// Where the agent offers `session/delete`, it is asked to delete its own
+// record of the session too, so the chat is gone from the agent's own history
+// — best effort, in the background and bounded, over the chat's own process
+// where it is at rest with its session open, else over one started for it;
+// a failure is said in the log and undoes nothing of Biom's.
+//
 // NO AGENT OUTLIVES ITS CHAT OR THE SERVER: `close` ends a chat's, `endAll`
 // every one with the TERM–grace–KILL ladder, and `killAll` KILLs them all at
-// once for the exit handler.
+// once for the exit handler — a deleted chat's agent still on its way out,
+// and a process started to delete a session, among them.
 
 import { randomBytes, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
@@ -280,6 +290,10 @@ export interface Chats {
   /** End the chat's agent. The chat stays, and its next message starts one
    *  again. */
   close(chat: ChatId): Promise<ChatSummary>;
+  /** DELETE THE CHAT: its turn ended, its agent ended, its kept log removed,
+   *  and a push saying `deleted`. The agent's own record of its session is
+   *  deleted too where the agent offers it, in the background. */
+  delete(chat: ChatId): Promise<void>;
   /** The / menu, merged. */
   commands(q: { chat?: ChatId; agent?: AgentKey }): Promise<SlashCommand[]>;
   /** The chat, harness and turn an agent id is running for — the history names
@@ -322,6 +336,10 @@ export const GREEN_MS = 10 * 60 * 1000;
  *  an agent run through `npx` may be fetching it. There is no deadline on a
  *  turn. */
 const START_MS = 120_000;
+/** How long each step of deleting an agent's own record of a deleted chat's
+ *  session may take — starting the agent, `initialize`, `session/delete`. It
+ *  is best effort, and a step past this is given up in words. */
+const FORGET_MS = 20_000;
 const CONFIG_MS = 30_000;
 /** After Stop, how long the agent has to answer `cancelled` before it is
  *  ended, unless `ChatsDeps.cancelGraceMs` says otherwise. */
@@ -382,6 +400,8 @@ interface Live {
   /** When it was started, by the server's clock — idle from here when no
    *  turn has ended since. */
   since: number;
+  /** `initialize` offered `session/delete`. */
+  canDelete: boolean;
 }
 
 /** One tool call of this chat's agent, merged whole. */
@@ -468,6 +488,8 @@ interface Chat {
   /** The last agent this chat ended, still going: a new start waits for it,
    *  so two processes never hold one session. */
   ending: Promise<unknown> | null;
+  /** Deleted: nothing of it is published or written again. */
+  removed: boolean;
   log: LogWriter;
 }
 
@@ -487,6 +509,9 @@ interface LogWriter {
   rewrite(records: LogRecord[]): void;
   /** Settles when everything asked of it so far is on disk, or has failed. */
   flushed(): Promise<void>;
+  /** Remove the file once everything asked before has landed, and write
+   *  nothing after: a late append would make the file again. */
+  remove(): Promise<void>;
 }
 
 function makeLog(path: string, torn: boolean, say: (line: string) => void): LogWriter {
@@ -494,6 +519,7 @@ function makeLog(path: string, torn: boolean, say: (line: string) => void): LogW
   let made = false;
   let needsBreak = torn;
   let failing = false;
+  let removed = false;
   const fail = (e: unknown) => {
     if (failing) return;
     failing = true;
@@ -506,7 +532,7 @@ function makeLog(path: string, torn: boolean, say: (line: string) => void): LogW
   };
   return {
     append(records) {
-      if (records.length === 0) return;
+      if (records.length === 0 || removed) return;
       const text = `${records.map((r) => JSON.stringify(r)).join("\n")}\n`;
       chain = chain.then(async () => {
         await ready();
@@ -517,6 +543,7 @@ function makeLog(path: string, torn: boolean, say: (line: string) => void): LogW
       }).catch(fail);
     },
     rewrite(records) {
+      if (removed) return;
       const text = `${records.map((r) => JSON.stringify(r)).join("\n")}\n`;
       chain = chain.then(async () => {
         await ready();
@@ -532,6 +559,11 @@ function makeLog(path: string, torn: boolean, say: (line: string) => void): LogW
       }).catch(fail);
     },
     flushed() {
+      return chain;
+    },
+    remove() {
+      removed = true;
+      chain = chain.then(() => rm(path, { force: true })).catch(fail);
       return chain;
     },
   };
@@ -621,14 +653,14 @@ export function makeChats(deps: ChatsDeps): Chats {
     pendingConfig: new Map(), seed: false, options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
-    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null,
+    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false,
     log: makeLog(join(logDir, `${id}.jsonl`), torn, say),
   });
 
   /* ── publishing ──────────────────────────────────────────────────── */
 
   const schedule = (c: Chat): void => {
-    if (c.flushTimer !== null) return;
+    if (c.flushTimer !== null || c.removed) return;
     c.flushTimer = setTimeout(() => flush(c), PUSH_MS);
   };
 
@@ -638,7 +670,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       clearTimeout(c.flushTimer);
       c.flushTimer = null;
     }
-    if (c.batch.length === 0 && !c.dirty) return;
+    if ((c.batch.length === 0 && !c.dirty) || c.removed) return;
     const updates = c.batch;
     c.batch = [];
     c.open = null;
@@ -1351,6 +1383,67 @@ export function makeChats(deps: ChatsDeps): Chats {
     return ending;
   };
 
+  /** Every process that belongs to no chat any more and has not gone: a
+   *  deleted chat's agent on its way out, and one started to delete a
+   *  session. `endAll` waits for them and `killAll` KILLs them. */
+  const leaving = new Set<AcpConnection>();
+  /** A connection kept track of until it has gone. */
+  const track = (conn: AcpConnection | null): void => {
+    if (!conn) return;
+    leaving.add(conn);
+    void conn.closed.then(() => leaving.delete(conn), () => leaving.delete(conn));
+  };
+
+  /** A step of deleting a session, bounded: past `FORGET_MS` it is given up.
+   *  @template T */
+  const step = <T>(what: string, p: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const late = new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${what} took longer than ${FORGET_MS / 1000} s`)), FORGET_MS);
+    });
+    return Promise.race([p, late]).finally(() => {
+      if (timer !== null) clearTimeout(timer);
+    });
+  };
+
+  /** THE AGENT'S OWN RECORD OF A DELETED CHAT'S SESSION, deleted where the
+   *  agent offers `session/delete` — over the chat's own process where it is
+   *  at rest with that session open, else over one started for this and
+   *  ended after. Best effort: a failure is said in the log, in words, and
+   *  undoes nothing of Biom's own delete. */
+  const forgetSession = async (key: AgentKey, sessionId: string, live: Live | null): Promise<void> => {
+    const harness = harnessOf(key);
+    let conn: AcpConnection | null = null;
+    let own = false;
+    try {
+      if (live !== null) {
+        if (!live.canDelete || !live.conn) return;
+        conn = live.conn;
+      } else {
+        const launch = await step("starting it", deps.launch(key).catch(() => null));
+        if (!launch) {
+          say(`chats: ${harness}'s own record of a deleted chat was left: it could not be started to delete it`);
+          return;
+        }
+        conn = deps.connect(launch, root);
+        own = true;
+        track(conn);
+        const init = readInitialize(await conn.request("initialize", initializeParams(), { timeoutMs: FORGET_MS }));
+        // An agent that offers no way to delete a session keeps its record,
+        // and that is the agent's to keep.
+        if (!init.deleteSession || init.protocolVersion !== ACP_PROTOCOL_VERSION) return;
+        const method = methodFor(key);
+        if (method !== null) await conn.request("authenticate", { methodId: method }, { timeoutMs: FORGET_MS });
+      }
+      await conn.request("session/delete", { sessionId }, { timeoutMs: FORGET_MS });
+    } catch (e) {
+      // The agent's own words are not repeated: what failed, and that it did.
+      say(`chats: ${harness}'s own record of a deleted chat was left: ${isClosed(e) ? "it stopped before it answered" : e instanceof AcpRpcError ? "it refused to delete it" : e instanceof Error && /took longer/.test(e.message) ? e.message : "it did not answer"}`);
+    } finally {
+      if (own && conn) void conn.close();
+    }
+  };
+
   /** A start that failed: the message it was for ends red, with a sentence. */
   const failStart = (c: Chat, live: Live, reason: string): void => {
     void endLive(c, live);
@@ -1395,7 +1488,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     const live: Live = {
       agentId: randomUUID(), key, harness: harnessOf(key), conn: null, sessionId: null, ready: Promise.resolve(false),
       opened: false, gone: false, ending: false, replaying: false, early: [], rawConfig: null, rawModes: null, legacyMode: null,
-      cancelTimer: null, since: now(),
+      cancelTimer: null, since: now(), canDelete: false,
     };
     c.live = live;
     c.harness = live.harness;
@@ -1440,6 +1533,7 @@ export function makeChats(deps: ChatsDeps): Chats {
 
     try {
       const init = readInitialize(await conn.request("initialize", initializeParams(), { timeoutMs: START_MS }));
+      live.canDelete = init.deleteSession;
       if (init.protocolVersion !== ACP_PROTOCOL_VERSION) {
         failStart(c, live, `${live.harness} speaks ACP version ${init.protocolVersion ?? "unknown"}, and Biom speaks ${ACP_PROTOCOL_VERSION}`);
         return false;
@@ -2012,6 +2106,49 @@ export function makeChats(deps: ChatsDeps): Chats {
       return summary(c);
     },
 
+    async delete(id) {
+      const c = await must(id);
+      // GONE AT ONCE from every list and every call: nothing below waits on
+      // an agent, and nothing of the chat is published or written again.
+      chats.delete(c.id);
+      c.removed = true;
+      c.held = null;
+      c.gen++;
+      c.batch = [];
+      if (c.flushTimer !== null) clearTimeout(c.flushTimer);
+      c.flushTimer = null;
+      clearGreen(c);
+      const live = c.live;
+      const session = c.session;
+      // The agent's own record, where there is a session to delete. The
+      // chat's own process is used where it is at rest with that session open;
+      // otherwise it is ended first — a turn it was running with it — and one
+      // is started for this once it has gone, so two never hold the session.
+      const atRest = live !== null && live.opened && !live.gone && c.phase === "idle" && session !== null && live.key === session.agent && live.sessionId === session.id;
+      if (live !== null) {
+        track(live.conn);
+        if (atRest && session !== null) {
+          void forgetSession(session.agent, session.id, live).finally(() => void endLive(c, live));
+        } else {
+          if (c.phase === "running" && live.conn && live.sessionId !== null) live.conn.notify("session/cancel", { sessionId: live.sessionId });
+          const ended = endLive(c, live);
+          if (session !== null) void ended.catch(() => null).then(() => forgetSession(session.agent, session.id, null));
+        }
+      } else if (session !== null) {
+        const before = c.ending ?? Promise.resolve(null);
+        void before.catch(() => null).then(() => forgetSession(session.agent, session.id, null));
+      }
+      await c.log.remove();
+      const push: ChatPush = { chat: { ...summary(c), agentId: null, phase: "idle" }, updates: [], deleted: true };
+      for (const fn of [...listeners]) {
+        try {
+          fn(push);
+        } catch (e) {
+          say(`chats: a listener threw: ${said(e)}`);
+        }
+      }
+    },
+
     async commands(q) {
       if (typeof q.chat === "string") {
         const c = await must(q.chat);
@@ -2067,6 +2204,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       await Promise.all(ends);
       const closes: Promise<unknown>[] = [];
       for (const c of chats.values()) if (c.live) closes.push(endLive(c, c.live));
+      for (const conn of leaving) closes.push(conn.close());
       await Promise.all(closes);
       const logs: Promise<unknown>[] = [];
       for (const c of chats.values()) {
@@ -2115,6 +2253,7 @@ export function makeChats(deps: ChatsDeps): Chats {
         live.gone = true;
         live.conn?.kill();
       }
+      for (const conn of leaving) conn.kill();
     },
   };
 }

@@ -26,7 +26,12 @@
 // offers no way at all from here is signed in from its own command in a
 // terminal, and **Check again** asks the server to look at it again.
 //
-// Both pop-ups sit on the document, over the workspace, and under the sign-in
+// BIOM'S OWN QUESTION is the third: asked once before anything that cannot be
+// undone — deleting a chat — in a dialog of the host's, never the look's, with
+// Cancel holding the caret. Only its confirming button answers yes, so a look
+// that asks for a deletion, however often, gets a question and deletes nothing.
+//
+// All three sit on the document, over the workspace, and under the sign-in
 // terminal, which is the one thing above them. Nothing here reaches an agent:
 // every act is an `agents.*` kind or a choice handed back to the input box.
 
@@ -55,8 +60,19 @@ import { buttonOf, groupedChoices, machineAgents, stateWords } from "../store/ch
  */
 
 /**
+ * @typedef {object} Question
+ * @property {string} title What is asked, as the dialog's heading.
+ * @property {string} line What it costs, under it.
+ * @property {string} yes The confirming button's words.
+ * @property {string} no The other button's words; it holds the caret.
+ */
+
+/**
  * @typedef {object} AgentDialogs
  * @property {(opts: AgentsOpts) => void} agents Open More agents.
+ * @property {(q: Question) => Promise<boolean>} confirm Ask once: true only
+ *   for the confirming button; the other button, Escape, a press outside and
+ *   another question asked over it are all no.
  * @property {(opts: ModelsOpts) => void} models Open More models.
  * @property {(a: AgentInfo) => void} signIn Open More agents and sign this
  *   agent in — at once where it has one way to, or with its ways shown.
@@ -508,7 +524,52 @@ export function makeAgentDialogs(deps) {
     if (back && back.isConnected) back.focus({ preventScroll: true });
   }
 
+  /* ── Biom's own question ───────────────────────────────────────────── */
+
+  /** @type {{ done: (yes: boolean) => void } | null} */
+  let asking = null;
+
+  /** @param {Question} q @returns {Promise<boolean>} */
+  function confirm(q) {
+    // One question at a time: one asked over another answers that one no.
+    asking?.done(false);
+    return new Promise((resolve) => {
+      const at = doc.activeElement;
+      const back = at instanceof HTMLElement ? at : null;
+      let settled = false;
+      /** @param {boolean} yes */
+      const done = (yes) => {
+        if (settled) return;
+        settled = true;
+        if (asking === mine) asking = null;
+        el.remove();
+        if (back && back.isConnected) back.focus({ preventScroll: true });
+        resolve(yes);
+      };
+      const mine = { done };
+      const no = h("button.abtn", { type: "button", "data-answer": "no", onclick: () => done(false) }, q.no);
+      const yes = h("button.abtn.danger", { type: "button", "data-answer": "yes", onclick: () => done(true) }, q.yes);
+      const dialog = h("div.adialog.cdialog", {
+        role: "alertdialog", "aria-modal": "true", "aria-labelledby": "agentasktitle", "aria-describedby": "agentaskline",
+        onkeydown: (/** @type {KeyboardEvent} */ e) => {
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); return; }
+          // Tab stays inside, between the two answers: it is modal.
+          if (e.key === "Tab") {
+            e.preventDefault();
+            (doc.activeElement === no ? yes : no).focus();
+          }
+        },
+      }, h("b#agentasktitle", q.title), h("p#agentaskline", q.line), h("div.cbtns", no, yes));
+      const el = h("div.amodal.aask", h("div.ascrim", { onpointerdown: () => done(false) }), dialog);
+      doc.body.append(el);
+      asking = mine;
+      no.focus({ preventScroll: true });
+    });
+  }
+
   return {
+    confirm,
+
     agents(opts) {
       show({ kind: "agents", opts });
       void readRegistry();

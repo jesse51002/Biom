@@ -21,6 +21,11 @@
 // one before it, because only the last of each is ever read. Only the open
 // chat's stream is held at all — a chat in the background is its summary.
 //
+// A CHAT DELETED — here, or in another window, which the stream says with a
+// push saying `deleted`, or while this window's stream was shut, which the
+// list read on its reopening says by leaving it out — is dropped from the list
+// and never taken back, and `gone` says so for the view that has it open.
+//
 // THE CHAT'S KEPT CHOICES are the workspace's (`settings.read`), read on
 // every open of the stream as the rest is, and again after this window makes
 // a chat, sets a picker or switches agent — each of which the server keeps.
@@ -79,6 +84,9 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {(chat: ChatId, option: string, value: ConfigValue) => Promise<ChatSummary>} config
  * @property {(chat: ChatId, agent: AgentKey) => Promise<ChatSummary>} switchAgent
  * @property {(chat: ChatId) => Promise<ChatSummary>} close
+ * @property {(chat: ChatId) => Promise<void>} remove Delete the chat — said
+ *   only after the person's yes in Biom's own dialog.
+ * @property {(chat: ChatId) => boolean} gone Whether the chat was deleted.
  * @property {(q: { chat?: ChatId, agent?: AgentKey }) => Promise<SlashCommand[]>} commands
  * @property {(agent: AgentKey) => Promise<AgentInfo>} probe
  * @property {(agent: AgentKey) => Promise<AgentInfo>} start
@@ -233,6 +241,10 @@ export function makeChatStore(deps) {
   const sent = new Map();
   /** @type {ChatSettings | null} */
   let settings = null;
+  /** Every chat this window has seen deleted: dropped, and never taken back
+   *  from an answer or a push that was on its way when it went.
+   *  @type {Set<ChatId>} */
+  const deleted = new Set();
   /** Bumped by every view picked here, so a read that lands after a pick
    *  never puts the old view back. */
   let viewGen = 0;
@@ -277,7 +289,7 @@ export function makeChatStore(deps) {
    *  call can land after a stream event that already said something newer.
    *  Answers whether the list moved. @param {unknown} s */
   function takeSummary(s) {
-    if (!isSummary(s)) return false;
+    if (!isSummary(s) || deleted.has(s.id)) return false;
     const at = chats.findIndex((c) => c.id === s.id);
     if (at >= 0) {
       const was = /** @type {ChatSummary} */ (chats[at]);
@@ -285,6 +297,25 @@ export function makeChatStore(deps) {
       if (JSON.stringify(was) === JSON.stringify(s)) return false;
     }
     chats = [...chats.filter((c) => c.id !== s.id), s].sort(newest);
+    return true;
+  }
+
+  /** A CHAT GONE: out of the list, and out of the store if it was the one
+   *  open. Answers whether anything moved. @param {ChatId} chat */
+  function drop(chat) {
+    const had = chats.some((c) => c.id === chat) || open === chat;
+    deleted.add(chat);
+    if (!had) return false;
+    chats = chats.filter((c) => c.id !== chat);
+    if (open === chat) {
+      gen++;
+      open = null;
+      h = held();
+      epoch++;
+      early = null;
+      catchAfter = false;
+      loading = false;
+    }
     return true;
   }
 
@@ -376,12 +407,20 @@ export function makeChatStore(deps) {
   }
 
   async function readList() {
+    // What was held when the list was asked for: a chat among it that the
+    // list leaves out was deleted while this window was not listening.
+    const before = new Set(chats.map((c) => c.id));
     /** @type {ChatSummary[]} */
     const list = await ask({ kind: "chat.list" });
-    // A chat is never deleted, so the list is a union: a chat made since the
-    // list was taken stays, and a summary newer than the list's stays.
+    // Otherwise the list is a union: a chat made since the list was taken
+    // stays, and a summary newer than the list's stays.
     let moved = false;
-    for (const s of Array.isArray(list) ? list : []) moved = takeSummary(s) || moved;
+    const listed = new Set();
+    for (const s of Array.isArray(list) ? list : []) {
+      if (isSummary(s)) listed.add(s.id);
+      moved = takeSummary(s) || moved;
+    }
+    for (const id of before) if (!listed.has(id)) moved = drop(id) || moved;
     if (moved) emit();
   }
 
@@ -431,6 +470,10 @@ export function makeChatStore(deps) {
 
     takeChat(push) {
       if (!isObj(push) || !isSummary(push.chat)) return;
+      if (push.deleted === true) {
+        if (drop(push.chat.id)) emit();
+        return;
+      }
       let moved = takeSummary(push.chat);
       const updates = Array.isArray(push.updates) ? push.updates : [];
       /** @type {ChatUpdate[]} */
@@ -511,6 +554,15 @@ export function makeChatStore(deps) {
 
     async close(chat) {
       return summarised(await ask({ kind: "chat.close", chat }));
+    },
+
+    async remove(chat) {
+      await ask({ kind: "chat.delete", chat });
+      if (drop(chat)) emit();
+    },
+
+    gone(chat) {
+      return deleted.has(chat);
     },
 
     async commands(q) {

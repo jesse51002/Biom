@@ -54,6 +54,7 @@ function world(over: { throwWith?: unknown } = {}) {
     switchAgent: later("chat.switchAgent", { id: CHAT }),
     close: later("chat.close", { id: CHAT }),
     commands: later("chat.commands", [{ name: "review" }]),
+    delete: later("chat.delete", undefined),
   };
   const settings = {
     read: answer("settings.read", { view: "tools", agent: null, agents: {} }),
@@ -101,6 +102,7 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.commands", chat: CHAT }, ["chat.commands", { chat: CHAT }]],
     [{ kind: "chat.commands", agent: AGENT }, ["chat.commands", { agent: AGENT }]],
     [{ kind: "chat.commands" }, ["chat.commands", {}]],
+    [{ kind: "chat.delete", chat: CHAT, confirmed: true }, ["chat.delete", CHAT]],
     [{ kind: "settings.read" }, ["settings.read"]],
     [{ kind: "settings.set", view: "plain", agent: "smuggled-agent" }, ["settings.set", { view: "plain" }]],
     [{ kind: "settings.set" }, ["settings.set", {}]],
@@ -135,6 +137,8 @@ test("A MALFORMED AGENT OR CHAT REQUEST IS REFUSED before any module hears of it
     { kind: "chat.cancel" },
     { kind: "chat.commands", chat: 7 },
     { kind: "settings.set", view: "fancy" },
+    { kind: "chat.delete" },
+    { kind: "chat.delete", chat: "short" },
   ];
   for (const req of bad) {
     const w = world();

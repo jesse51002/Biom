@@ -399,6 +399,7 @@ const agentView = chats === null || agentInput === null ? null : makeAgentView({
   input: agentInput,
   vault: vault ?? "",
   events: { on: (hear) => events.on(hear) },
+  confirm: (q) => agentDialogs === null ? Promise.resolve(false) : agentDialogs.confirm(q),
 });
 if (agentView !== null) bridge.answerLook((req, ctx) => agentView.answer(req, ctx));
 

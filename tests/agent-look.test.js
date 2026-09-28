@@ -914,7 +914,70 @@ test("an agent's words are words: nothing in the hostile chat becomes an element
   w.teardown();
 });
 
-test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of its five kinds with ids and closed words only", () => {
+test("A CHAT'S THREE DOTS: a button beside every row, in the history and in the panel's list, opening a menu whose Delete ASKS with the chat's id and nothing else", async () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  const root = w.root();
+  const boxes = byClass(root, "trowbox");
+  expect(boxes.length).toBe(5);
+  for (const b of boxes) {
+    const [rowEl, dots] = b.childNodes;
+    expect(rowEl.classList.contains("trow")).toBe(true);
+    // Beside the row and never inside it: a control inside the row's own
+    // option is one no key could reach.
+    expect(dots.localName).toBe("button");
+    expect(dots.classList.contains("tmore")).toBe(true);
+    expect(dots.getAttribute("aria-haspopup")).toBe("menu");
+    expect(dots.getAttribute("aria-expanded")).toBe("false");
+    expect(byClass(rowEl, "tmore").length).toBe(0);
+  }
+  const dots = boxes[1].childNodes[1];
+  expect(dots.getAttribute("aria-label")).toBe("More for Summarise what the Socials run did today");
+  dots.fire("click");
+  expect(dots.getAttribute("aria-expanded")).toBe("true");
+  const menuEl = one(root, "rowmenu");
+  expect(menuEl.getAttribute("role")).toBe("menu");
+  const items = byClass(menuEl, "mi");
+  expect(items.map((i) => [i.localName, i.getAttribute("role"), i.textContent])).toEqual([["button", "menuitem", "Delete"]]);
+  // Opening the menu picked nothing, and asked for nothing.
+  await Promise.resolve();
+  expect(w.calls).toEqual([]);
+  items[0].fire("click");
+  await Promise.resolve();
+  expect(w.calls).toEqual([{ kind: "look.delete", chat: cid("done") }]);
+  expect(byClass(root, "rowmenu").length).toBe(0);
+  expect(dots.getAttribute("aria-expanded")).toBe("false");
+  // Escape shuts it and asks nothing; so do the dots pressed again.
+  dots.fire("click");
+  one(root, "rowmenu").fire("keydown", { key: "Escape" });
+  expect(byClass(root, "rowmenu").length).toBe(0);
+  dots.fire("click");
+  dots.fire("click");
+  expect(byClass(root, "rowmenu").length).toBe(0);
+  expect(w.calls.length).toBe(1);
+  // In the panel, the list is a dropdown, and each of its chats has its own.
+  w.hear({ kind: "look.state", state: chatState("done", { mode: "panel", list: true }) });
+  const pairs = byClass(w.root(), "mirow");
+  expect(pairs.length).toBe(5);
+  const [item, more] = pairs[0].childNodes;
+  expect(item.classList.contains("mi")).toBe(true);
+  expect(more.classList.contains("tmore")).toBe(true);
+  more.fire("click");
+  one(one(w.root(), "rowmenu"), "del").fire("click");
+  await Promise.resolve();
+  expect(w.calls.at(-1)).toEqual({ kind: "look.delete", chat: cid("live") });
+  w.teardown();
+});
+
+test("the look asks to delete a chat only by an id of the grammar, and never with anything riding along", () => {
+  expect(M.request("look.delete", { chat: cid("done") })).toEqual({ kind: "look.delete", params: { chat: cid("done") } });
+  expect(M.request("look.delete", { chat: cid("done"), confirmed: true })).toEqual({ kind: "look.delete", params: { chat: cid("done") } });
+  expect(M.request("look.delete", { chat: "short" })).toBe(null);
+  expect(M.request("look.delete", {})).toBe(null);
+  expect(M.request("chat.delete", { chat: cid("done") })).toBe(null);
+});
+
+test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of its kinds with ids and closed words only", () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
   const press = () => {
@@ -929,12 +992,12 @@ test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of 
   w.hear({ kind: "look.state", state: chatState("evil") });
   press();
   expect(w.calls.length).toBeGreaterThan(8);
-  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], open: ["target"] };
+  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], open: ["target"] };
   for (const c of w.calls) {
     const { kind, ...rest } = c;
     expect(Object.keys(allowed)).toContain(kind);
     expect(Object.keys(rest).every((k) => /** @type {any} */ (allowed)[kind].includes(k))).toBe(true);
-    if (kind === "look.open") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    if (kind === "look.open" || kind === "look.delete") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
     if (kind === "look.panel") expect(["screen", "beside", "closed"]).toContain(rest.to);
     if (kind === "look.list") expect(typeof rest.open).toBe("boolean");
     if (kind === "open") expect(Object.keys(rest.target).sort()).toEqual(["id", "kind"]);

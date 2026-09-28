@@ -12,10 +12,12 @@
  *
  * WHAT IT HEARS AND WHAT IT SAYS. It hears the chats through `biom.onLook`,
  * which the shim feeds from the host's `look.state` and `look.patch` with the
- * patches already folded in. It says four things and one more — `look.open`,
- * `look.new`, `look.list`, `look.panel`, and `open` for a page a turn changed
- * — every one of them built by `request` in the model from an id or a word on
- * a closed list. IT NEVER SENDS TEXT: the input box is Biom's, in the host,
+ * patches already folded in. It says six things and one more — `look.open`,
+ * `look.new`, `look.list`, `look.panel`, `look.delete` from a row's three
+ * dots, `look.unqueue` from a queued message's ×, and `open` for a page a turn
+ * changed — every one of them built by `request` in the model from an id or a
+ * word on a closed list. `look.delete` deletes nothing: Biom asks the person
+ * in a dialog of its own, and only their answer there deletes. IT NEVER SENDS TEXT: the input box is Biom's, in the host,
  * over this box, so only the person's typing ever reaches an agent, and the
  * guards refuse anything else from here anyway.
  *
@@ -65,6 +67,7 @@
     down: ["M8 3v9.5M4 8.5l4 4 4-4"],
     page: ["M4 1.75h5.2l2.8 2.8v9.7H4Z", "M9 1.9v2.85h2.85"],
     check: ["m3.25 8.5 3 3 6.5-7"],
+    dots: ["M3.6 8h.01", "M8 8h.01", "M12.4 8h.01"],
   };
   /** The start screen's last word, in turn. */
   const WORDS = ["automate", "plan", "create", "visualize"];
@@ -145,7 +148,7 @@
       s.setAttribute("viewBox", "0 0 16 16");
       s.setAttribute("fill", "none");
       s.setAttribute("stroke", "currentColor");
-      s.setAttribute("stroke-width", name === "check" ? "1.7" : "1.5");
+      s.setAttribute("stroke-width", name === "check" ? "1.7" : name === "dots" ? "2.6" : "1.5");
       s.setAttribute("stroke-linecap", "round");
       s.setAttribute("stroke-linejoin", "round");
       s.setAttribute("aria-hidden", "true");
@@ -358,11 +361,89 @@
       if ((e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === "n") { e.preventDefault(); fresh(); }
     });
     listen(doc, "pointerdown", (/** @type {any} */ e) => {
-      if (!menu || !listOpen || mode !== "panel") return;
       const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+      // A press anywhere but a row's open menu, or the dots that opened it,
+      // shuts that menu.
+      if (rowMenu && path.indexOf(rowMenu.el) < 0 && path.indexOf(rowMenu.anchor) < 0) closeRowMenu(false);
+      if (!menu || !listOpen || mode !== "panel") return;
       if (path.indexOf(menu) >= 0 || path.indexOf(tswitch) >= 0) return;
       setList(false);
     });
+
+    /* ── a chat's three dots ─────────────────────────────────────────────── */
+
+    /** @type {{ chat: string, el: any, anchor: any } | null} the open menu of a row's three dots */
+    let rowMenu = null;
+
+    /** @param {boolean} back put the caret back on the dots */
+    function closeRowMenu(back) {
+      if (!rowMenu) return;
+      const m = rowMenu;
+      rowMenu = null;
+      m.el.remove();
+      m.anchor.setAttribute("aria-expanded", "false");
+      if (back && typeof m.anchor.focus === "function") m.anchor.focus();
+    }
+
+    /** Whether a node is still in the look, rather than drawn over. @param {any} n */
+    function attached(n) {
+      for (let at = n; at; at = at.parentNode) if (at === shadow) return true;
+      return false;
+    }
+
+    /** THE MENU OF A ROW'S THREE DOTS: one thing, Delete, which ASKS — the
+     *  look deletes nothing, and Biom asks the person in a dialog of its own.
+     *  @param {string} chat @param {any} anchor */
+    function toggleRowMenu(chat, anchor) {
+      const same = rowMenu !== null && rowMenu.chat === chat && rowMenu.anchor === anchor;
+      closeRowMenu(false);
+      if (same) return;
+      const el = h("div", "rowmenu");
+      el.setAttribute("role", "menu");
+      const del = h("button", "mi del", "Delete");
+      del.type = "button";
+      del.setAttribute("role", "menuitem");
+      del.addEventListener("click", () => { closeRowMenu(false); ask("look.delete", { chat: chat }); });
+      el.appendChild(del);
+      el.addEventListener("keydown", (/** @type {any} */ e) => {
+        if (e.key === "Escape") { e.preventDefault(); closeRowMenu(true); }
+      });
+      root.appendChild(el);
+      const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+      const at = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+      if (r && at) {
+        el.style.setProperty("top", Math.round(r.bottom - at.top + 4) + "px");
+        el.style.setProperty("left", Math.round(Math.max(6, r.right - at.left - 150)) + "px");
+      }
+      anchor.setAttribute("aria-expanded", "true");
+      rowMenu = { chat: chat, el: el, anchor: anchor };
+      if (typeof del.focus === "function") del.focus();
+    }
+
+    /** THE THREE DOTS ON A CHAT'S ROW: a button of its own beside the row —
+     *  never inside it, where no key could reach it — shown on hover and on
+     *  focus, and always reached by Tab. @param {any} c */
+    function dotsFor(c) {
+      const b = button("button", "tmore", "More for " + (c.name || "this chat"));
+      b.setAttribute("aria-haspopup", "menu");
+      b.setAttribute("aria-expanded", "false");
+      b.appendChild(icon("dots"));
+      b.addEventListener("click", (/** @type {any} */ e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        toggleRowMenu(c.id, b);
+      });
+      if (rowMenu !== null && rowMenu.chat === c.id && !attached(rowMenu.anchor)) {
+        // Drawn again under an open menu: the menu follows the new dots.
+        rowMenu.anchor = b;
+        b.setAttribute("aria-expanded", "true");
+      }
+      return b;
+    }
+
+    /** After a redraw: a menu whose chat is no longer drawn goes with it. */
+    function keepRowMenu() {
+      if (rowMenu !== null && !attached(rowMenu.anchor)) closeRowMenu(false);
+    }
 
     /* ── the list of chats ──────────────────────────────────────────────── */
 
@@ -427,8 +508,14 @@
       if (!groups.length) tlist.appendChild(h("div", "tnone", "No chats yet. What you ask starts one."));
       for (const g of groups) {
         tlist.appendChild(h("div", "tgroup", g.label));
-        for (const c of g.chats) tlist.appendChild(row(c, now));
+        for (const c of g.chats) {
+          const box = h("div", "trowbox");
+          box.appendChild(row(c, now));
+          box.appendChild(dotsFor(c));
+          tlist.appendChild(box);
+        }
       }
+      keepRowMenu();
       for (const g of groups) for (const c of g.chats) listed.add(c.id);
       listedOnce = true;
       newthread.setAttribute("aria-current", String(S.chat === null));
@@ -438,7 +525,7 @@
     function drawMenu() {
       const want = !!S && mode === "panel" && listOpen;
       tswitch.setAttribute("aria-expanded", String(want));
-      if (!want) { if (menu) { menu.remove(); menu = null; menuSig = ""; } return; }
+      if (!want) { if (menu) { menu.remove(); menu = null; menuSig = ""; keepRowMenu(); } return; }
       const now = Date.now();
       const groups = M.grouped(S.chats, now);
       const sig = groups.map((/** @type {any} */ g) => g.label + "\u0002" + g.chats.map((/** @type {any} */ c) => rowSig(c, now)).join("\u0003")).join("\u0004");
@@ -474,9 +561,13 @@
           it.appendChild(lamp);
           if (c.id === S.chat) it.appendChild(icon("check", "check"));
           it.addEventListener("click", () => pick(c.id));
-          menu.appendChild(it);
+          const pair = h("div", "mirow");
+          pair.appendChild(it);
+          pair.appendChild(dotsFor(c));
+          menu.appendChild(pair);
         }
       }
+      keepRowMenu();
     }
 
     /** THE PANEL'S HEAD: the open chat's face, light and name. */

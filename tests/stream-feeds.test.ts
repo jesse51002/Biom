@@ -145,6 +145,16 @@ test("gathering a chat's pushes keeps every update in order, with a tool line's 
   expect((p.updates[1] as Extract<ChatUpdate, { kind: "tool" }>).tool.status).toBe("completed");
 });
 
+test("a chat deleted is the last word the stream gathers for it: what it said before is dropped, and nothing after it is said", () => {
+  let p = gatherPush(undefined, { chat: summary(CHAT, 1), updates: [reply(1, "a"), tool(2, "t1", "pending")] });
+  p = gatherPush(p, { chat: summary(CHAT, 2), updates: [], deleted: true });
+  expect(p).toEqual({ chat: summary(CHAT, 2), updates: [], deleted: true });
+  p = gatherPush(p, { chat: summary(CHAT, 3), updates: [reply(3, "late")] });
+  expect(p).toEqual({ chat: summary(CHAT, 2), updates: [], deleted: true });
+  // A push that deletes nothing never says `deleted`.
+  expect("deleted" in gatherPush(undefined, { chat: summary(CHAT, 1), updates: [] })).toBe(false);
+});
+
 test("A STORM IS GATHERED: the history, every chat's pushes and the agents list each go out as a frame or two, not one event per chunk", async () => {
   const f = fakeHost();
   const s = reading(events(f.host, "/vault", WINDOW).body!);

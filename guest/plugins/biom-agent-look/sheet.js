@@ -102,6 +102,17 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .trow .s .w { color: var(--ink-2); }
 .trow .led { margin: 0 4px 0 0; align-self: center; }
 .trow.enter { animation: rowin calc(.5s * var(--l-m)) var(--l-ease); }
+
+/* a chat's three dots, beside its row: shown on hover and on focus */
+.trowbox, .mirow { position: relative; }
+.tmore { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink-3); opacity: 0; transition: opacity calc(.12s * var(--l-m)), background calc(.12s * var(--l-m)), color calc(.12s * var(--l-m)); }
+.tmore .ico { width: 15px; height: 15px; }
+.trowbox:hover .tmore, .trowbox:focus-within .tmore, .mirow:hover .tmore, .mirow:focus-within .tmore, .tmore[aria-expanded=true] { opacity: 1; }
+.tmore:hover, .tmore[aria-expanded=true] { background: var(--l-field-3); color: var(--ink); }
+.trow > .led, .mi > .led, .mi > .check { transition: opacity calc(.12s * var(--l-m)); }
+.trowbox:hover .trow > .led, .trowbox:focus-within .trow > .led, .mirow:hover .mi > .led, .mirow:focus-within .mi > .led, .mirow:hover .mi > .check, .mirow:focus-within .mi > .check { opacity: 0; }
+.rowmenu { position: absolute; z-index: 70; min-width: 150px; background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top right; }
+.rowmenu .del { color: color-mix(in srgb, var(--l-red) 70%, var(--ink)); }
 @keyframes rowin { from { opacity: 0; transform: translateY(-6px); } }
 .emo { flex: none; width: 20px; overflow: hidden; display: inline-flex; justify-content: center; font-size: 15px; line-height: 1; font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; transform-origin: 50% 50%; }
 .emo .dm { transform: scale(.8); }

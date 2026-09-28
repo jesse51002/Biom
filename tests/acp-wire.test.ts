@@ -26,10 +26,10 @@ test("initialize offers fs both ways, no terminal, and terminal sign-in both way
   expect(newSessionParams("/v")).toEqual({ cwd: "/v", mcpServers: [] });
 });
 
-test("an initialize answer: the version, load and resume, the sign-in methods as sent", () => {
+test("an initialize answer: the version, load, resume and delete, the sign-in methods as sent", () => {
   const facts = readInitialize({
     protocolVersion: 1,
-    agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
+    agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {}, delete: {} } },
     authMethods: [{ id: "login", name: "Log in", type: "terminal", args: ["--login"] }],
     agentInfo: { name: "fake", version: "1.2.3" },
   });
@@ -37,11 +37,16 @@ test("an initialize answer: the version, load and resume, the sign-in methods as
     protocolVersion: 1,
     loadSession: true,
     resume: true,
+    deleteSession: true,
     authMethods: [{ id: "login", name: "Log in", type: "terminal", args: ["--login"] }],
     agentInfo: { name: "fake", title: null, version: "1.2.3" },
   });
   expect(readInitialize({ protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: null } } }).resume).toBe(false);
-  expect(readInitialize(null)).toEqual({ protocolVersion: null, loadSession: false, resume: false, authMethods: [], agentInfo: null });
+  // `{}` is support; absent, null or anything but an object is none.
+  for (const del of [undefined, null, true, "yes"]) {
+    expect(readInitialize({ protocolVersion: 1, agentCapabilities: { sessionCapabilities: { delete: del } } }).deleteSession).toBe(false);
+  }
+  expect(readInitialize(null)).toEqual({ protocolVersion: null, loadSession: false, resume: false, deleteSession: false, authMethods: [], agentInfo: null });
 });
 
 test("config options: select, grouped select with display names in the agent's order, boolean, and the unknown left out", () => {

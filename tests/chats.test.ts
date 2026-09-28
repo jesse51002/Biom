@@ -1279,3 +1279,100 @@ only("AN AGENT THAT DOES NOT ANSWER STOP within its grace is ended, the turn end
   expect(next.stop).toBe("end_turn");
   expect(startedPids(w.heard()).length).toBe(2);
 });
+
+/* ── a chat deleted ───────────────────────────────────────────────────── */
+
+const OFFERS_DELETE = { loadSession: false, sessionCapabilities: { delete: {} } };
+const deletes = (heard: Record<string, unknown>[]): unknown[] => heard.filter((h) => h.method === "session/delete").map((h) => (h.params as { sessionId: string }).sessionId);
+
+only("A CHAT DELETED AT REST is gone: from the list, from disk and from every window's stream, its agent ended, and the agent asked to delete its own record of the session where it offers to", async () => {
+  const w = world({ scenarios: { fake: { agentCapabilities: OFFERS_DELETE } } });
+  const s = await w.chats.create({ agent: "fake", text: "Remember the word heron." });
+  await settled(w.chats, s.id, 1);
+  const [pid] = startedPids(w.heard());
+  const file = join(w.root, ".biom", "chats", `${s.id}.jsonl`);
+  expect(existsSync(file)).toBe(true);
+  const other = await w.chats.create({ agent: "fake" });
+  w.pushes.length = 0;
+
+  await w.chats.delete(s.id);
+  expect(w.chats.list().map((c) => c.id)).toEqual([other.id]);
+  expect(existsSync(file)).toBe(false);
+  // Every window is told once, and nothing after it says the chat again.
+  const said = w.pushes.filter((p) => p.chat.id === s.id);
+  expect(said.map((p) => [p.deleted, p.updates.length])).toEqual([[true, 0]]);
+  // The agent's own record of the session: deleted over the chat's own
+  // process, which then goes.
+  await until("the agent to delete its record", 5000, () => deletes(w.heard()).length === 1);
+  const opened = w.heard().find((h) => h.method === "session/prompt") as { params: { sessionId: string } };
+  expect(deletes(w.heard())).toEqual([opened.params.sessionId]);
+  await until("the agent to be gone", 5000, () => !alivePid(pid as number));
+  expect(startedPids(w.heard()).length).toBe(1);
+  await wait(100);
+  expect(w.pushes.filter((p) => p.chat.id === s.id).length).toBe(1);
+  expect(existsSync(file)).toBe(false);
+  // Asked for again, there is no such chat.
+  for (const call of [() => w.chats.read(s.id), () => w.chats.send(s.id, "again"), () => w.chats.delete(s.id)]) {
+    expect(((await call().catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
+  }
+  // And a restart does not bring it back.
+  const again = w.make();
+  await again.loaded;
+  expect(again.list().map((c) => c.id)).toEqual([other.id]);
+});
+
+only("a chat deleted mid-turn: its turn ends with it, its agent is ended, and a process is started to delete the session once that one has gone", async () => {
+  const w = world({ scenarios: { fake: { agentCapabilities: OFFERS_DELETE, turns: [[{ thought: "busy" }, { sleep: 20_000 }, { reply: "late" }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "a long one" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id)?.phase === "running");
+  await until("a thought", 5000, async () => (await w.chats.read(s.id)).updates.some((u) => u.kind === "thought"));
+  const [first] = startedPids(w.heard());
+  const sessionId = (w.heard().find((h) => h.method === "session/prompt") as { params: { sessionId: string } }).params.sessionId;
+  await w.chats.delete(s.id);
+  expect(w.chats.list()).toEqual([]);
+  expect(existsSync(join(w.root, ".biom", "chats", `${s.id}.jsonl`))).toBe(false);
+  await until("the running agent to be gone", 5000, () => !alivePid(first as number));
+  await until("a second process to delete the session", 10_000, () => deletes(w.heard()).length === 1);
+  expect(deletes(w.heard())).toEqual([sessionId]);
+  const pids = startedPids(w.heard());
+  expect(pids.length).toBe(2);
+  await until("the process started to delete it to be gone", 5000, () => !alivePid(pids[1] as number));
+  // Nothing of the deleted turn reached a window after the push that said so.
+  const after = w.pushes.findIndex((p) => p.chat.id === s.id && p.deleted === true);
+  expect(after).toBeGreaterThan(-1);
+  expect(w.pushes.slice(after + 1).filter((p) => p.chat.id === s.id)).toEqual([]);
+});
+
+only("an agent that does not offer session/delete is never asked, and a chat that never started an agent starts none to be deleted", async () => {
+  const w = world();
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  await settled(w.chats, s.id, 1);
+  const [pid] = startedPids(w.heard());
+  await w.chats.delete(s.id);
+  await until("the agent to be gone", 5000, () => !alivePid(pid as number));
+  await wait(200);
+  expect(deletes(w.heard())).toEqual([]);
+  expect(w.heard().filter((h) => h.method === "session/delete").length).toBe(0);
+  expect(w.said.some((l) => l.includes("own record"))).toBe(false);
+  // A chat with no session at all.
+  const bare = await w.chats.create({ agent: "fake" });
+  await w.chats.delete(bare.id);
+  await wait(200);
+  expect(startedPids(w.heard()).length).toBe(1);
+  expect(w.chats.list()).toEqual([]);
+});
+
+only("deleting a chat nobody has is refused not_found, and a failed session/delete is said in words and undoes nothing of Biom's", async () => {
+  const w = world({ scenarios: { fake: { agentCapabilities: OFFERS_DELETE } } });
+  expect(((await w.chats.delete("c1nvented-no-such-chat").catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  await settled(w.chats, s.id, 1);
+  // The agent went while idle: a process is started to delete the session,
+  // and this one cannot start at all.
+  await w.chats.close(s.id);
+  delete w.scenarios.fake;
+  await w.chats.delete(s.id);
+  expect(w.chats.list()).toEqual([]);
+  await until("the failure to be said", 5000, () => w.said.some((l) => l.includes("own record")));
+  expect(w.said.find((l) => l.includes("own record"))).toBe("chats: Fake Agent's own record of a deleted chat was left: it could not be started to delete it");
+});

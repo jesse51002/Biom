@@ -380,11 +380,28 @@ end and its process's start. The composition root asks once a minute. The chat
 is untouched; its summary's `agentId` is null until the next message starts a
 new one.
 
+**A chat can be deleted** (`chat.delete`, *Chat*, `history`), and only after
+the person's yes in Biom's own dialog. `delete` takes it out of every list and
+every call at once, ends its turn and its agent as `close` does, removes its
+kept log — after every write already asked of it, and writing nothing after —
+and tells every window with a push saying `deleted`, which the stream's
+gathering keeps as the last word on that chat. **Where the agent offers
+`session/delete`** (`AgentFacts.deleteSession` in the one reading of the
+protocol, which the probe reads too), it is asked to delete its own record of
+the chat's session, so the chat is gone from the agent's own history as well:
+over the chat's own process where it is at rest with that session open, else
+— after that process has gone, so two never hold one session — over a process
+started for it and ended after. It is best effort, in the background and
+bounded (`FORGET_MS` a step), and a failure is said in the log in words of
+Biom's own and undoes nothing. The kept choices and the history are left
+alone: the history is history.
+
 **No agent outlives its chat or the server.** `close` ends a chat's agent;
 `endAll` ends every one TERM–grace–KILL, each turn in flight ended `crashed`
 and its log flushed, and runs on `SIGINT`, `SIGTERM` and the shell's stdin pipe
 closing, bounded at ten seconds (`AGENTS_ENDING_MS` in `main.ts`); `killAll`
-is the synchronous KILL for the `exit` handler. **The composition root also
+is the synchronous KILL for the `exit` handler — a deleted chat's agent still
+on its way out, and a process started to delete a session, among them. **The composition root also
 keeps its own set of every connection it opened and has not seen close**, and
 the exit handler KILLs those too: an agent still on its way out after a switch
 is no longer any chat's, and only that set reaches it.
@@ -492,13 +509,16 @@ and the default look's sheet shows each by the root's `data-view`, so the
 reader at the end of the chat stays there and nothing is drawn again
 (`runWords` and `viewOf` in `model.js`).
 
-**What the look may say is five things, and none of them is text**:
+**What the look may say is seven things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
-screen, beside the page or closed — each strictly guarded, ids and words from
-a closed list — and `open` for a page a turn changed. **Every one is honoured
-only just after a touch from that same box**, as any box's `open` is: the four
-`look.*` kinds move what is on screen or redraw the look whole, so a look on a
-loop can do none of them. The bridge refuses the four `identity` unless the
+screen, beside the page or closed, `look.delete` from a row's three dots —
+which asks for Biom's own dialog and deletes nothing — and `look.unqueue`
+from a queued message's × — each strictly guarded, ids and words from a closed
+list — and `open` for a page a turn changed. **Every one is honoured
+only just after a touch from that same box**, as any box's `open` is: the
+`look.*` kinds move what is on screen, redraw the look whole or put a question
+to the person, so a look on a loop can do none of them. The bridge refuses the
+six `identity` unless the
 asking box is on `@agent` and the Agent screen has registered its answer
 (`answerLook`), and the answer refuses every box but the one it mounted, by the
 identity of that box's context. A page opened from the look comes up with the
@@ -510,7 +530,10 @@ states in full.
 ## 12. The host side: one box, and Biom's input box over it
 
 **The window's copy of the chats, `client/store/chats.js`**, is the list of
-chats — a union, because a chat is never deleted — what agents this machine
+chats — a union, but for a chat deleted, which is dropped and never taken
+back: by a push saying `deleted`, by this window's own delete, or by the list
+read on the stream's reopening leaving out a chat held before it was asked
+for — what agents this machine
 has, and **only the open chat's stream**, folded by the contract's rule and
 held small: a tool line replaced where it first stood, a reply or a thought
 arriving a few characters at a time held as one update per run, and a
@@ -565,6 +588,17 @@ the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same
 and held by the server; More agents opens over it, saying so, when it was this
 window that sent it a moment ago.
+
+**Deleting a chat is asked in Biom's own dialog, never the look's.** Every
+chat's row, in the history and in the panel's list, carries three dots — a
+button beside the row, shown on hover and on focus and always reached by Tab —
+whose one item, Delete, says `look.delete`. The Agent view answers it with
+`confirm` — *Delete this chat? It can’t be undone.*, Cancel holding the caret,
+Escape, a press outside and another question over it each no — and only the
+Delete there says `chat.delete`. So a replaced look can never delete by
+itself: asked on a loop, it raises questions. A window whose open chat is
+deleted, here or elsewhere, goes to the start screen on the full screen and
+shuts the panel beside a page.
 
 **More agents and More models are `client/views/agent-dialogs.js`**: this
 machine's agents then the registry's, filtered as the person types, each
@@ -624,7 +658,7 @@ walk's `send()` waits for Send; the Agent screen walk's step 10 does the same.
 - **The door**: no MCP server is handed to an agent; runs and agents outside
   Biom are not in the history; a write the watcher sees from no nameable writer
   is not an edit.
-- Deleting a chat. Drawing `plan` and `usage` updates, which are kept and sent.
+- Drawing `plan` and `usage` updates, which are kept and sent.
 - A permission asked of the person: every request is answered.
 - An agent reached anywhere but this machine: OpenClaw's Gateway on this
   machine only, and the local gate on every kind.
@@ -655,7 +689,7 @@ guest/biom.js                   the look.state / look.patch fold and biom.onLook
 client/store/chats.js           makeChatStore, fold, agentMode, showChat, freshThread, the pickers' rules
 client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer
 client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, NOT_TOUCH
-client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in
+client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
 client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
 client/bridge/bridge.js         answerLook, and the look.* case: @agent only, touch-gated
 client/boot.js                  the chat store, the Agent screen, the context kept per session, the cold start

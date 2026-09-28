@@ -522,3 +522,57 @@ test("a kept agent no longer on this machine is passed over, and a pick in this 
   await settle();
   expect(/** @type {El} */ (t.chip.querySelector(".nm")).textContent).toBe("Codex");
 });
+
+/* ── Biom's own question ───────────────────────────────────────────────── */
+
+const QUESTION = { title: "Delete this chat?", line: "It can’t be undone.", yes: "Delete", no: "Cancel" };
+
+test("BIOM'S OWN QUESTION: the heading and the line, Cancel holding the caret, and only Delete answering yes", async () => {
+  const s = stand(AGENTS);
+  const dialogs = makeAgentDialogs({ h, chats: s.chats, signInTerminal: null, doc });
+  const before = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  before.focus();
+  const asked = dialogs.confirm(QUESTION);
+  const dialog = /** @type {El} */ (doc.body.querySelector(".cdialog"));
+  expect(dialog.getAttribute("role")).toBe("alertdialog");
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  expect(/** @type {El} */ (dialog.querySelector("b")).text).toBe("Delete this chat?");
+  expect(/** @type {El} */ (dialog.querySelector("p")).text).toBe("It can’t be undone.");
+  const [no, yes] = /** @type {El[]} */ (dialog.querySelectorAll("button"));
+  expect([no?.text, yes?.text]).toEqual(["Cancel", "Delete"]);
+  expect(doc.activeElement).toBe(no);
+  // Tab stays between the two answers.
+  dialog.fire("keydown", { key: "Tab" });
+  expect(doc.activeElement).toBe(yes);
+  dialog.fire("keydown", { key: "Tab" });
+  expect(doc.activeElement).toBe(no);
+  /** @type {El} */ (yes).fire("click");
+  expect(await asked).toBe(true);
+  expect(doc.body.querySelector(".cdialog")).toBe(null);
+  // The caret goes back where it was.
+  expect(doc.activeElement).toBe(before);
+});
+
+test("Cancel, Escape, a press outside and a second question are each no", async () => {
+  const s = stand(AGENTS);
+  const dialogs = makeAgentDialogs({ h, chats: s.chats, signInTerminal: null, doc });
+  const answers = [];
+  const one = dialogs.confirm(QUESTION);
+  // The first answer is Cancel.
+  /** @type {El} */ (doc.body.querySelector("button[data-answer]")).fire("click");
+  answers.push(await one);
+  const two = dialogs.confirm(QUESTION);
+  /** @type {El} */ (doc.body.querySelector(".cdialog")).fire("keydown", { key: "Escape" });
+  answers.push(await two);
+  const three = dialogs.confirm(QUESTION);
+  /** @type {El} */ (doc.body.querySelector(".ascrim")).fire("pointerdown");
+  answers.push(await three);
+  const four = dialogs.confirm(QUESTION);
+  const five = dialogs.confirm(QUESTION);
+  answers.push(await four);
+  expect(doc.body.querySelectorAll(".cdialog").length).toBe(1);
+  /** @type {El} */ (/** @type {El} */ (doc.body.querySelector(".cdialog")).querySelectorAll("button").find((b) => b.text === "Delete")).fire("click");
+  answers.push(await five);
+  expect(answers).toEqual([false, false, false, false, true]);
+  expect(doc.body.querySelector(".aask")).toBe(null);
+});

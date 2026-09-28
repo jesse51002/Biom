@@ -125,6 +125,8 @@ const REREAD_AFTER = 600;
  * @param {AgentInput} deps.input
  * @param {string} deps.vault
  * @param {{ on: (hear: () => void) => () => void }} [deps.events]
+ * @param {(q: { title: string, line: string, yes: string, no: string }) => Promise<boolean>} [deps.confirm]
+ *   Biom's own question, asked before a chat is deleted. Absent, nothing is.
  * @param {Window} [deps.win]
  * @returns {AgentView}
  */
@@ -437,6 +439,14 @@ export function makeAgentView(deps) {
   let shownMode = "";
   function sync() {
     const u = ui.get();
+    // THE CHAT THIS WINDOW HAS OPEN WAS DELETED — here or in another window:
+    // the full screen goes to the start screen, and the panel shuts. The ui
+    // moving calls this again.
+    if (u.chat !== null && chats.gone(u.chat)) {
+      if (u.route.view === "agent") ui.go("agent", "");
+      else ui.set({ chat: null, panel: false });
+      return;
+    }
     if (u.route.view === "page" && u.route.id !== "") lastRoute = u.route;
     const mode = agentMode(u);
     if (mode !== shownMode) { shownMode = mode; slot.setAttribute("data-mode", mode); }
@@ -561,6 +571,26 @@ export function makeAgentView(deps) {
     if (frame !== null && at === frame.el) input.focus();
   }
 
+  /** DELETING A CHAT IS ASKED IN BIOM'S OWN DIALOG, never the look's, and
+   *  only the person's Delete there deletes it: the look's `look.delete` is a
+   *  request for the question, so a look that asks on a loop gets questions.
+   *  @param {ChatId} chat */
+  async function askDelete(chat) {
+    if (deps.confirm === undefined) return;
+    let yes = false;
+    try {
+      yes = await deps.confirm({ title: "Delete this chat?", line: "It can’t be undone.", yes: "Delete", no: "Cancel" });
+    } catch {
+      yes = false;
+    }
+    if (!yes || chats.gone(chat)) return;
+    try {
+      await chats.remove(chat);
+    } catch (e) {
+      console.warn("[biom] the chat could not be deleted", e);
+    }
+  }
+
   /** The full Agent screen, with the chat this window has open: the panel
    *  shuts first, so the window never says it is beside a page it left.
    *  @param {boolean} [fromLook] */
@@ -598,6 +628,12 @@ export function makeAgentView(deps) {
         }
         case "look.list": {
           if (u.chatList !== req.open) ui.set({ chatList: req.open });
+          return null;
+        }
+        case "look.delete": {
+          if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
+          if (deps.confirm === undefined) return { code: "unsupported", message: "chats are not deleted here" };
+          void askDelete(req.chat);
           return null;
         }
         case "look.panel": {

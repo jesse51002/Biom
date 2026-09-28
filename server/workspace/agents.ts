@@ -378,14 +378,6 @@ const seconds = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_00
 const SIGN_IN = "It needs you to sign in.";
 const GATEWAY_DOWN = "OpenClaw's Gateway is not running on this machine.";
 
-/** Does `initialize` offer `session/delete`? */
-function offersDelete(init: unknown): boolean {
-  const caps = typeof init === "object" && init !== null ? (init as { agentCapabilities?: unknown }).agentCapabilities : null;
-  const sessions = typeof caps === "object" && caps !== null ? (caps as { sessionCapabilities?: unknown }).sessionCapabilities : null;
-  const del = typeof sessions === "object" && sessions !== null ? (sessions as { delete?: unknown }).delete : null;
-  return typeof del === "object" && del !== null;
-}
-
 /** The installed-agent record Biom writes beside what it installed. */
 interface Installed {
   key: AgentKey;
@@ -782,7 +774,8 @@ export function makeAgents(deps: AgentsDeps): Agents {
       methods = readAuthMethods(facts.authMethods);
       version = facts.agentInfo?.version ?? null;
       if (version !== null && version.length > 64) version = version.slice(0, 64);
-      deletable = offersDelete(init);
+      // The one reading of the protocol says it, as it does for a chat.
+      deletable = facts.deleteSession;
       // A chat refuses an agent answering another major, so the probe does too.
       if (facts.protocolVersion !== ACP_PROTOCOL_VERSION) {
         return { state: "inactive", reason: "failed", message: `It speaks ACP version ${facts.protocolVersion ?? "unknown"}, and Biom speaks ${ACP_PROTOCOL_VERSION}.`, version, methods };

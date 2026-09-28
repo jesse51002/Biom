@@ -175,7 +175,8 @@ test("reopening the stream reads what was missed: the list, the agents, and the 
         ? { chat: summary(), updates: [up(1, "prompt", { text: "a" }), tool(6, "t1", "completed"), up(4, "reply", { text: "b" })] }
         : { chat: summary({ updated: 50 }), updates: [up(7, "reply", { text: "c" })] };
     },
-    "chat.list": () => [summary({ id: OTHER, updated: 5 })],
+    // The server lists every chat it has, the open one among them.
+    "chat.list": () => [summary(), summary({ id: OTHER, updated: 5 })],
     "agents.list": () => [agent()],
   });
   const store = makeChatStore({ transport });
@@ -201,7 +202,7 @@ test("A STREAM REOPENED MID-TURN LOSES NO WORDS: what the stream brings while th
       if (first) { first = false; return { chat: summary(), updates: [up(1, "prompt", { text: "a" }), up(10, "reply", { text: "b" })] }; }
       return new Promise((r) => { answer = r; });
     },
-    "chat.list": () => [], "agents.list": () => [],
+    "chat.list": () => [summary()], "agents.list": () => [],
   });
   const store = makeChatStore({ transport });
   await store.open(CHAT);
@@ -371,6 +372,43 @@ test("the start screen's pickers show an agent's kept values its list still offe
   expect(keptFor(null, "claude-acp")).toBeUndefined();
 });
 
+test("A CHAT DELETED IS DROPPED AND NEVER TAKEN BACK: by a push saying so, by this window's own delete, and by a list read on reopening that leaves it out", async () => {
+  let listed = [summary({ id: OTHER, updated: 5 })];
+  const { transport } = transportOf({
+    "chat.read": () => ({ chat: summary(), updates: [up(1, "prompt", { text: "a" })] }),
+    "chat.list": () => listed,
+    "agents.list": () => [],
+    "chat.delete": () => null,
+  });
+  const store = makeChatStore({ transport });
+  store.takeChat({ chat: summary(), updates: [] });
+  store.takeChat({ chat: summary({ id: OTHER, updated: 5 }), updates: [] });
+  await store.open(CHAT);
+  expect(store.get().open).toBe(CHAT);
+  const epoch = store.get().epoch;
+  // A push saying the open chat is gone: out of the list and out of the store.
+  store.takeChat({ chat: summary(), updates: [], deleted: true });
+  expect(store.get().chats.map((c) => c.id)).toEqual([OTHER]);
+  expect(store.get().open).toBe(null);
+  expect(store.get().updates).toEqual([]);
+  expect(store.get().epoch).toBeGreaterThan(epoch);
+  expect(store.gone(CHAT)).toBe(true);
+  // A push or an answer that was on its way when it went brings nothing back.
+  store.takeChat({ chat: summary({ updated: 99 }), updates: [up(2, "reply", { text: "late" })] });
+  expect(store.get().chats.map((c) => c.id)).toEqual([OTHER]);
+  // This window's own delete.
+  await store.remove(OTHER);
+  expect(store.get().chats).toEqual([]);
+  expect(store.gone(OTHER)).toBe(true);
+  // A chat deleted while the stream was shut: the list on reopening leaves it out.
+  const third = "c1nvented-chat-0003";
+  store.takeChat({ chat: summary({ id: third, updated: 7 }), updates: [] });
+  listed = [];
+  await store.resync();
+  expect(store.get().chats).toEqual([]);
+  expect(store.gone(third)).toBe(true);
+});
+
 test("THE KEPT CHOICES ARE READ on every open of the stream, and again after this window makes a chat, sets a picker or switches agent", async () => {
   let reads = 0;
   const { transport } = transportOf({
@@ -481,7 +519,7 @@ test("THE LOOK'S KINDS ARE ANSWERED FOR THE @agent BOX ALONE: another page's box
   /** @type {any[]} */
   const asked = [];
   bridge.answerLook((req, ctx) => { asked.push([req.kind, ctx]); return null; });
-  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }]])) {
+  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }], ["look.delete", { chat: CHAT }]])) {
     expect(await bridge.resolve(look(kind, body), pageCtx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   }
   expect(asked).toEqual([]);
@@ -508,6 +546,10 @@ test("the look is answered only just after a touch from its box, the list includ
   expect(await bridge.resolve(look("look.open", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.NOT_FOUND, message: "there is no such chat" } });
   t = 5000;
   expect(await bridge.resolve(look("look.panel", { to: "beside" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  expect(asked).toEqual(["look.list", "look.new", "look.open"]);
+  // Asking for a chat to be deleted is gated the same way: with no touch
+  // from the box, the host is not even asked to put the question.
+  expect(await bridge.resolve(look("look.delete", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   expect(asked).toEqual(["look.list", "look.new", "look.open"]);
   // A field the guard does not name never gets as far as the answer.
   expect(await bridge.resolve(look("look.new", { text: "Invented instruction" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.UNKNOWN_KIND } });
@@ -572,7 +614,7 @@ function h(spec, props, ...kids) {
 const PAGES = [{ id: "home", name: "Home", uid: "u1nvented-home" }, { id: "home/Specs", name: "Specs", uid: "u1nvented-specs" }];
 
 /** The Agent screen, stood up against doubles. */
-async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | null, chatList?: boolean }} */ at = {}) {
+async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | null, chatList?: boolean, confirm?: (q: any) => Promise<boolean>, answers?: Record<string, (req: any) => any> }} */ at = {}) {
   /** @type {any[]} */
   const frames = [];
   /** @type {any[]} */
@@ -592,6 +634,7 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
   const { transport, calls } = transportOf({
     "page.read": (req) => ({ id: req.page, name: "Agent", plugin: "biom-agent", html: "<!doctype html><html><head></head><body><main id=\"g-agent\"></main></body></html>", input: {} }),
     "chat.read": (req) => ({ chat: summary({ id: req.chat }), updates: [up(1, "prompt", { text: "Invented" })] }),
+    ...(at.answers ?? {}),
   });
   const chats = makeChatStore({ transport });
   chats.takeChat({ chat: summary(), updates: [] });
@@ -615,6 +658,7 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
   const view = makeAgentView({
     h, frameHost: /** @type {any} */ (frameHost), ui, ws: /** @type {any} */ ({ get: () => ({ pages: PAGES }), on: () => () => {} }),
     chats, switcher: null, history: /** @type {any} */ (history), window: "w1nvented-window", input, vault: "/invented/vault", win,
+    ...(at.confirm ? { confirm: at.confirm } : {}),
   });
   // The look's document is read, and the box mounted.
   for (let i = 0; i < 20 && mounts.length === 0; i++) await Promise.resolve();
@@ -695,6 +739,70 @@ test("THE LOOK IS TOLD THE VIEW: whole with the state, and as a patch when the p
   // A state handed whole again carries the view picked.
   s.hello();
   expect(s.posted.filter((p) => p.kind === "look.state").at(-1).state.view).toBe("thinking");
+});
+
+test("A LOOK ASKING TO DELETE A CHAT GETS BIOM'S OWN QUESTION, and only the person's Delete there deletes it: Cancel, and no answer at all, delete nothing", async () => {
+  /** @type {any[]} */
+  const asked = [];
+  /** @type {((yes: boolean) => void)[]} */
+  const answers = [];
+  const s = await stand({
+    confirm: (q) => { asked.push(q); return new Promise((r) => answers.push(r)); },
+    answers: { "chat.delete": () => null },
+  });
+  s.hello();
+  const ctx = s.mounts[0].ctx;
+  const deletes = () => s.calls.filter((c) => c.kind === "chat.delete");
+  // Asked: the question, and nothing deleted while it is unanswered.
+  expect(s.view.answer(/** @type {any} */ (look("look.delete", { chat: OTHER })), ctx)).toBe(null);
+  expect(asked).toEqual([{ title: "Delete this chat?", line: "It can’t be undone.", yes: "Delete", no: "Cancel" }]);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(deletes()).toEqual([]);
+  // Cancel: nothing.
+  answers.shift()?.(false);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(deletes()).toEqual([]);
+  expect(s.chats.get().chats.map((c) => c.id)).toEqual([CHAT, OTHER]);
+  // A look asking again and again gets a question each time, and no deletion.
+  for (let i = 0; i < 3; i++) s.view.answer(/** @type {any} */ (look("look.delete", { chat: OTHER })), ctx);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(asked.length).toBe(4);
+  expect(deletes()).toEqual([]);
+  // Delete: the chat, by its id, once.
+  answers.pop()?.(true);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(deletes().map((c) => c.chat)).toEqual([OTHER]);
+  expect(s.chats.get().chats.map((c) => c.id)).toEqual([CHAT]);
+  // A chat nobody has is refused, and asks nothing.
+  expect(s.view.answer(/** @type {any} */ (look("look.delete", { chat: "c1nvented-no-such-chat" })), ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
+  expect(asked.length).toBe(4);
+});
+
+test("a look.delete from anything but the Agent screen's own box is refused, and one with no question to ask deletes nothing", async () => {
+  const s = await stand({ answers: { "chat.delete": () => null } });
+  expect(s.view.answer(/** @type {any} */ (look("look.delete", { chat: CHAT })), { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.view.answer(/** @type {any} */ (look("look.delete", { chat: CHAT })), s.mounts[0].ctx)).toMatchObject({ code: "unsupported" });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "chat.delete")).toEqual([]);
+});
+
+test("THE CHAT ON SCREEN DELETED — here or in another window — sends the full screen to the start screen and shuts the panel", async () => {
+  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT });
+  await new Promise((r) => setTimeout(r, 0));
+  s.chats.takeChat({ chat: summary(), updates: [], deleted: true });
+  expect(s.ui.get().route).toEqual({ view: "agent", id: "", screen: "page" });
+  expect(s.ui.get().chat).toBe(null);
+  expect(s.chats.get().chats.map((c) => c.id)).toEqual([OTHER]);
+  // Beside a page.
+  const p = await stand({ route: { view: "page", id: "home/Specs", screen: "page" }, panel: true, chat: OTHER });
+  await new Promise((r) => setTimeout(r, 0));
+  p.chats.takeChat({ chat: summary({ id: OTHER }), updates: [], deleted: true });
+  expect(p.ui.get()).toMatchObject({ chat: null, panel: false, route: { view: "page", id: "home/Specs", screen: "page" } });
+  // Another chat deleted elsewhere moves nothing.
+  const q = await stand({ route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT });
+  await new Promise((r) => setTimeout(r, 0));
+  q.chats.takeChat({ chat: summary({ id: OTHER }), updates: [], deleted: true });
+  expect(q.ui.get().route.id).toBe(CHAT);
 });
 
 test("a flood too big for a patch is handed over whole instead", async () => {
