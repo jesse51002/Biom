@@ -18,7 +18,8 @@ import { connectAcp } from "../server/platform/acp.ts";
 import { initializeParams } from "../server/platform/acp-wire.ts";
 import { makeFiles } from "../server/platform/files.ts";
 import { GREEN_MS, makeChats, readSkills } from "../server/workspace/chats.ts";
-import type { Chats, Skill } from "../server/workspace/chats.ts";
+import type { Chats, ChatsDeps, Skill } from "../server/workspace/chats.ts";
+import { makeSettings } from "../server/workspace/settings.ts";
 import type { TurnSignal } from "../server/domain/jev.ts";
 import type { Scenario } from "./fake-acp-agent.ts";
 
@@ -64,6 +65,8 @@ function world(opts: {
   openIn?: () => string[];
   /** After Stop, how long an agent has to answer before it is ended. */
   cancelGraceMs?: number;
+  /** Where the chosen agent and pickers are kept, and read back. */
+  keep?: Pick<ChatsDeps, "saved" | "picked" | "chose">;
 } = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
@@ -105,6 +108,7 @@ function world(opts: {
       now: () => Date.now() + skew,
       log: (l) => void said.push(l),
       ...(opts.cancelGraceMs === undefined ? {} : { cancelGraceMs: opts.cancelGraceMs }),
+      ...(opts.keep ?? {}),
     });
     chats.on((p) => void pushes.push(p));
     live.push(chats);
@@ -817,6 +821,142 @@ only("config: a value picked before the agent starts is shown at once and applie
   // call does not wait for the agent to answer.
   await w.chats.config(s.id, "model", "m1");
   await until("the second change to reach the agent", 5000, () => w.heard().filter((h) => h.method === "session/set_config_option").length === 2);
+});
+
+/* ── the kept choices ─────────────────────────────────────────────────── */
+
+/** The fake's session options, as ACP sends them, and as the probe keeps them. */
+const RAW_MODEL = {
+  id: "model", name: "Model", category: "model", type: "select", currentValue: "m1",
+  options: [{ value: "m1", name: "Model One" }, { value: "m2", name: "Model Two" }],
+};
+const RAW_MODE = {
+  id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "ask",
+  options: [{ value: "ask", name: "Ask" }, { value: "code", name: "Code" }],
+};
+const RAW_STYLE = { id: "style", name: "Style", category: "other", type: "select", currentValue: "plain", options: [{ value: "plain", name: "Plain" }, { value: "fancy", name: "Fancy" }] };
+const probeOf = (raw: Record<string, unknown>[]) =>
+  raw.map((o) => ({
+    id: String(o.id), name: String(o.name), category: o.category as "model" | "mode" | "other", type: "select" as const, value: String(o.currentValue),
+    choices: (o.options as { value: string; name: string }[]).map((c) => ({ value: c.value, name: c.name, description: null, group: null })),
+  }));
+
+/** The config set on the agent before its first prompt, in order. */
+const setBeforePrompt = (heard: Record<string, unknown>[]): unknown[] => {
+  const prompt = heard.findIndex((h) => h.method === "session/prompt");
+  return heard.slice(0, prompt < 0 ? heard.length : prompt).filter((h) => h.method === "session/set_config_option").map((h) => h.params);
+};
+const lastConfig = (updates: ChatUpdate[]) => updates.filter((u): u is ChatUpdate & { kind: "config" } => u.kind === "config").pop()?.options ?? [];
+
+only("THE CHOICES ARE KEPT: the agent a chat is made with or switched to, and each picker set, and nothing that is no picker", async () => {
+  const kept: unknown[][] = [];
+  const probe = probeOf([RAW_MODEL, RAW_MODE, RAW_STYLE]);
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probe }), info("other", "Other Agent", { options: probe })],
+    scenarios: { fake: { session: { configOptions: [RAW_MODEL, RAW_MODE, RAW_STYLE] } }, other: {} },
+    keep: { saved: () => ({}), picked: (key) => void kept.push(["picked", key]), chose: (key, cat, value) => void kept.push(["chose", key, cat, value]) },
+  });
+  // A chat made from the start screen: its agent, and the pickers it was set
+  // to there — one the list does not offer is not kept.
+  const s = await w.chats.create({ agent: "fake", config: { mode: "code", style: "fancy", model: "m9" } });
+  expect(kept).toEqual([["picked", "fake"], ["chose", "fake", "mode", "code"]]);
+  kept.length = 0;
+  // A picker set in the chat is kept; an option that is no picker is not.
+  await w.chats.config(s.id, "model", "m2");
+  await w.chats.config(s.id, "style", "plain");
+  expect(kept).toEqual([["chose", "fake", "model", "m2"]]);
+  kept.length = 0;
+  // A switch keeps the agent switched to; a switch to the same one is none.
+  await w.chats.switchAgent(s.id, "fake");
+  expect(kept).toEqual([]);
+  await w.chats.switchAgent(s.id, "other");
+  expect(kept).toEqual([["picked", "other"]]);
+  // A chat nobody named an agent for, which took the first Active one, kept
+  // nothing: that was no pick.
+  kept.length = 0;
+  await w.chats.create({});
+  expect(kept).toEqual([]);
+});
+
+only("A NEW CHAT STARTS ON THE KEPT CHOICES AFTER A RESTART: shown at once, and set on the agent before its first message", async () => {
+  const biom = realpathSync(mkdtempSync(join(tmpdir(), "biom-kept-")));
+  const keeper = () => {
+    const settings = makeSettings({ files: makeFiles(biom), log: () => {} });
+    return { settings, keep: { saved: (k: string) => settings.saved(k), picked: (k: string) => settings.picked(k), chose: settings.chose } };
+  };
+  const probe = probeOf([RAW_MODEL, RAW_MODE]);
+  const agents = [info("fake", "Fake Agent", { options: probe })];
+  const scenarios = { fake: { session: { configOptions: [RAW_MODEL, RAW_MODE] } } };
+
+  const first = keeper();
+  await first.settings.loaded;
+  const w = world({ agents, scenarios, keep: first.keep });
+  const a = await w.chats.create({ agent: "fake" });
+  await w.chats.config(a.id, "model", "m2");
+  await w.chats.config(a.id, "mode", "code");
+  await first.settings.flushed();
+  await w.chats.endAll();
+
+  // THE SERVER STARTS AGAIN: new settings read from the same file, new chats.
+  const second = keeper();
+  await second.settings.loaded;
+  expect(second.settings.read()).toMatchObject({ agent: "fake", agents: { fake: { model: "m2", mode: "code" } } });
+  const w2 = world({ root: w.root, agents, scenarios: { fake: { session: { configOptions: [{ ...RAW_MODEL }, { ...RAW_MODE }] } } }, keep: second.keep });
+  const b = await w2.chats.create({ agent: "fake", text: "hello" });
+  const shown = lastConfig((await w2.chats.read(b.id)).updates);
+  expect(shown.map((o) => [o.id, o.value])).toEqual([["model", "m2"], ["mode", "code"]]);
+  await settled(w2.chats, b.id, 1);
+  expect(setBeforePrompt(w2.heard())).toEqual([{ sessionId: expect.any(String), configId: "model", value: "m2" }, { sessionId: expect.any(String), configId: "mode", value: "code" }]);
+  // What the person sets for a new chat wins over what was kept.
+  const c = await w2.chats.create({ agent: "fake", config: { model: "m1" } });
+  expect(lastConfig((await w2.chats.read(c.id)).updates).map((o) => [o.id, o.value])).toEqual([["model", "m1"], ["mode", "code"]]);
+});
+
+only("a kept value the agent no longer offers is skipped without a word, and the rest still apply", async () => {
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probeOf([RAW_MODEL, RAW_MODE]) })],
+    scenarios: { fake: { session: { configOptions: [RAW_MODEL, RAW_MODE] } } },
+    keep: { saved: () => ({ model: "retired-model", mode: "code", thought_level: "high" }) },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  await settled(w.chats, s.id, 1);
+  const { updates } = await w.chats.read(s.id);
+  expect(lastConfig(updates).map((o) => [o.id, o.value])).toEqual([["model", "m1"], ["mode", "code"]]);
+  expect(setBeforePrompt(w.heard())).toEqual([{ sessionId: expect.any(String), configId: "mode", value: "code" }]);
+  expect(updates.some((u) => u.kind === "error")).toBe(false);
+});
+
+only("an agent whose list was not known when the chat was made starts on its kept choices once its own session says what it offers", async () => {
+  const w = world({
+    // The probe has not said what the agent offers yet.
+    agents: [info("fake", "Fake Agent", { options: [] })],
+    scenarios: { fake: { session: { configOptions: [RAW_MODEL, RAW_MODE] } } },
+    keep: { saved: () => ({ model: "m2", mode: "no-such-mode" }) },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  await settled(w.chats, s.id, 1);
+  expect(setBeforePrompt(w.heard())).toEqual([{ sessionId: expect.any(String), configId: "model", value: "m2" }]);
+  expect(lastConfig((await w.chats.read(s.id)).updates).map((o) => [o.id, o.value])).toEqual([["model", "m2"], ["mode", "ask"]]);
+  // Owed once: the next message sets nothing again.
+  await w.chats.send(s.id, "again");
+  await settled(w.chats, s.id, 2);
+  expect(w.heard().filter((h) => h.method === "session/set_config_option").length).toBe(1);
+});
+
+only("a switch to another agent starts it on that agent's kept choices", async () => {
+  const probe = probeOf([RAW_MODEL]);
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probe }), info("other", "Other Agent", { options: probe })],
+    scenarios: { fake: {}, other: { session: { configOptions: [RAW_MODEL] } } },
+    keep: { saved: (key) => (key === "other" ? { model: "m2" } : {}) },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.switchAgent(s.id, "other");
+  expect(lastConfig((await w.chats.read(s.id)).updates).map((o) => [o.id, o.value])).toEqual([["model", "m2"]]);
+  await w.chats.send(s.id, "second");
+  await settled(w.chats, s.id, 2);
+  expect(setBeforePrompt(w.heard("other"))).toEqual([{ sessionId: expect.any(String), configId: "model", value: "m2" }]);
 });
 
 only("the / menu: the probe's commands, then the session's, and every workspace skill the agent did not list; a skill it did not list goes out as a pointer", async () => {

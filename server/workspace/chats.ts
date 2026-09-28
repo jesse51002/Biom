@@ -68,6 +68,15 @@
 // picked with no agent running, or mid-turn, is kept and applied before the
 // next message: the spec promises the next message and no sooner.
 //
+// THE CHOICES ARE KEPT (*Chat*, `picker`). The agent a chat is made with or
+// switched to, and every model, mode and effort the person sets, are handed up
+// through `picked` and `chose` to be kept in the workspace's settings. A new
+// chat, and a chat switched to another agent, start on that agent's kept
+// values: laid under whatever the person set for this chat, on each picker
+// the agent's list still offers them on — the probe's list at once, so the
+// pickers show them, and the session's own when it first opens, for an agent
+// whose list was not known yet. A value the list no longer offers is skipped.
+//
 // THE KEPT LOG. Every chat's stream is appended, as it arrives, to
 // `<logDir>/chats/<id>.jsonl` — under `.biom/`, which ignores itself in git
 // and which the watcher skips — one record per line: a header, the chat's
@@ -113,7 +122,7 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import type {
   AgentId, AgentInfo, AgentKey, AgentLaunch, ChangedFile, ChatId, ChatLight, ChatPush, ChatRead, ChatSummary, ChatUpdate, ConfigOption,
-  ConfigValue, EditVia, Face, Files, HostErrorCode, PageId, Place, SlashCommand, TurnEnd, TurnPhase, Writer,
+  ConfigValue, EditVia, Face, Files, HostErrorCode, PageId, PickerCategory, Place, SlashCommand, TurnEnd, TurnPhase, Writer,
 } from "../../contracts/types.ts";
 import type { AcpConnection, AcpExit } from "../platform/acp.ts";
 import { AcpRpcError, INTERNAL_ERROR, INVALID_PARAMS, RESOURCE_NOT_FOUND, isAuthRequired, isClosed } from "../platform/acp.ts";
@@ -124,6 +133,7 @@ import {
 } from "../platform/acp-wire.ts";
 import { within } from "../platform/files.ts";
 import { parseAny } from "../platform/yaml.ts";
+import { offeredChoices, offers, pickerCategoryOf } from "../domain/choices.ts";
 import type { Edit, EditEvent, VaultRoots } from "../domain/edits.ts";
 import { TOOL_EDIT_KINDS, editsOf, toolLineOf, toolPaths } from "../domain/edits.ts";
 import type { TurnSignal } from "../domain/jev.ts";
@@ -237,6 +247,16 @@ export interface ChatsDeps {
   /** Every turn's signals — its start, thinking, reply, tool titles, end —
    *  for Jev's schedule. */
   onTurn: (signal: TurnSignal) => void;
+  /** THE CHOICES KEPT FOR AN AGENT, by picker category — the workspace's
+   *  settings: what a new chat with it, and a switch to it, start on where the
+   *  agent's list still offers them. Nothing is kept where none is given. */
+  saved?: (key: AgentKey) => Partial<Record<PickerCategory, ConfigValue>>;
+  /** THE AGENT PICKED, to be kept: one a chat was made with or switched to. */
+  picked?: (key: AgentKey) => void;
+  /** ONE OF AN AGENT'S PICKERS SET by the person — in a chat, or for the chat
+   *  a first message makes — to be kept. Only a picker's, by its category;
+   *  an option that is no picker is not kept. */
+  chose?: (key: AgentKey, category: PickerCategory, value: ConfigValue) => void;
   /** The server's clock, for `at`, the light's ten minutes and the kept log. */
   now: () => number;
   /** Where a diagnostic line goes — the server's log, never a client.
@@ -417,6 +437,9 @@ interface Chat {
   gen: number;
   cancelling: boolean;
   pendingConfig: Map<string, ConfigValue>;
+  /** The kept choices are owed to this chat's next session: it is new, or
+   *  switched to another agent, and no session of it has opened since. */
+  seed: boolean;
   options: ConfigOption[] | null;
   agentCommands: SlashCommand[] | null;
   sentConfig: string | null;
@@ -456,6 +479,7 @@ type LogRecord =
   | { t: "target"; agent: AgentKey | null; harness: string | null }
   | { t: "session"; agent: AgentKey; id: string }
   | { t: "config"; values: Record<string, ConfigValue> }
+  | { t: "seed"; on: boolean }
   | { t: "u"; u: ChatUpdate };
 
 interface LogWriter {
@@ -594,7 +618,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     id, name: "", face: null, agent: null, harness: null, page, created, updated: created,
     phase: "idle", turn: 0, stop: null, reason: null, endedAt: null,
     live: null, session: null, handoff: false, held: null, gen: 0, cancelling: false,
-    pendingConfig: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
+    pendingConfig: new Map(), seed: false, options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
     tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null,
@@ -756,6 +780,7 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.harness = r.harness;
       } else if (r.t === "session") c.session = { agent: r.agent, id: r.id };
       else if (r.t === "config") c.pendingConfig = new Map(Object.entries(isObj(r.values) ? r.values : {}));
+      else if (r.t === "seed") c.seed = r.on === true;
       else if (r.t === "u" && isObj(r.u)) {
         const u = r.u;
         if (typeof u.seq === "number") c.seq = Math.max(c.seq, u.seq);
@@ -863,6 +888,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     out.push({ t: "target", agent: c.agent, harness: c.harness });
     if (c.session) out.push({ t: "session", agent: c.session.agent, id: c.session.id });
     if (c.pendingConfig.size > 0) out.push({ t: "config", values: Object.fromEntries(c.pendingConfig) });
+    if (c.seed) out.push({ t: "seed", on: true });
     for (const u of c.updates ?? []) out.push({ t: "u", u });
     return out;
   };
@@ -903,6 +929,9 @@ export function makeChats(deps: ChatsDeps): Chats {
     const first = agentList().find((a) => a.state === "active");
     if (!first) return false;
     target(c, first.key);
+    // A held chat taken by the first agent Active starts on that agent's
+    // kept choices, as one made with it would.
+    if (c.seed) seedFrom(c, first.options);
     return true;
   };
 
@@ -912,6 +941,70 @@ export function makeChats(deps: ChatsDeps): Chats {
     const base = c.options ?? infoOf(c.agent)?.options ?? [];
     if (c.pendingConfig.size === 0) return base;
     return base.map((o) => (c.pendingConfig.has(o.id) ? { ...o, value: c.pendingConfig.get(o.id) as ConfigValue } : o));
+  };
+
+  /* ── the kept choices ────────────────────────────────────────────── */
+
+  /** Hand a choice up to be kept. A keeper that throws keeps nothing, and the
+   *  chat goes on: a choice not kept is a default next time, not a failure. */
+  const keep = (what: string, fn: () => void): void => {
+    try {
+      fn();
+    } catch (e) {
+      say(`chats: keeping ${what} failed: ${said(e)}`);
+    }
+  };
+  const keepAgent = (key: AgentKey): void => {
+    if (deps.picked) keep("the agent picked", () => deps.picked?.(key));
+  };
+  /** Keep a value set on one of an agent's options, where that option is one
+   *  of the three pickers and offers it. */
+  const keepChoice = (key: AgentKey, options: readonly ConfigOption[], option: string, value: ConfigValue): void => {
+    if (!deps.chose) return;
+    const category = pickerCategoryOf(options, option);
+    const o = options.find((x) => x.id === option);
+    if (category === null || !o || !offers(o, value)) return;
+    keep("a choice", () => deps.chose?.(key, category, value));
+  };
+  const savedFor = (key: AgentKey): Partial<Record<PickerCategory, ConfigValue>> => {
+    try {
+      return deps.saved ? deps.saved(key) : {};
+    } catch (e) {
+      say(`chats: the kept choices could not be read: ${said(e)}`);
+      return {};
+    }
+  };
+
+  /** THE KEPT CHOICES, LAID UNDER THE CHAT'S OWN: every value kept for the
+   *  chat's agent that these options offer, on each option the person has not
+   *  set for this chat. */
+  const seedFrom = (c: Chat, options: readonly ConfigOption[]): void => {
+    if (c.agent === null) return;
+    let moved = false;
+    for (const [id, value] of offeredChoices(options, savedFor(c.agent))) {
+      if (c.pendingConfig.has(id)) continue;
+      c.pendingConfig.set(id, value);
+      moved = true;
+    }
+    if (moved) c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+  };
+
+  /** A new chat, or one switched to another agent: the kept choices are owed
+   *  to its next session, and laid on at once where the agent's list is
+   *  known, so the pickers show them before anything starts. */
+  const owe = (c: Chat): void => {
+    c.seed = true;
+    c.log.append([{ t: "seed", on: true }]);
+    seedFrom(c, infoOf(c.agent)?.options ?? []);
+  };
+
+  /** THE FIRST SESSION OPENED SINCE: its own list is the truth, and a value
+   *  kept that the probe's list could not say yet is laid on now. */
+  const repay = (c: Chat): void => {
+    if (!c.seed) return;
+    seedFrom(c, c.options ?? []);
+    c.seed = false;
+    c.log.append([{ t: "seed", on: false }]);
   };
 
   const emitConfig = (c: Chat): void => {
@@ -1384,6 +1477,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     const early = live.early;
     live.early = [];
     for (const n of early) if (n.sessionId === live.sessionId) apply(c, live, n.update);
+    repay(c);
     await applyConfig(c, live);
     emitConfig(c);
     touch(c);
@@ -1787,8 +1881,15 @@ export function makeChats(deps: ChatsDeps): Chats {
         for (const [k, v] of Object.entries(init.config)) if (typeof v === "string" || typeof v === "boolean") c.pendingConfig.set(k, v);
         if (c.pendingConfig.size > 0) c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
       }
-      if (typeof init.agent === "string" && init.agent !== "") target(c, init.agent);
-      else adoptIfAny(c);
+      if (typeof init.agent === "string" && init.agent !== "") {
+        target(c, init.agent);
+        // THE PERSON'S PICKS ARE KEPT: the agent, and what they set the
+        // start screen's pickers to, for that agent.
+        keepAgent(init.agent);
+        const offered = infoOf(init.agent)?.options ?? [];
+        for (const [option, value] of c.pendingConfig) keepChoice(init.agent, offered, option, value);
+      } else adoptIfAny(c);
+      owe(c);
       emitConfig(c);
       await emitCommands(c);
       if (typeof init.text === "string" && init.text.trim() !== "") beginTurn(c, init.text);
@@ -1859,6 +1960,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
       c.pendingConfig.set(option, value);
       c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+      if (c.agent !== null) keepChoice(c.agent, known, option, value);
       emitConfig(c);
       const live = c.live;
       // Mid-turn it waits for the next message; with no agent, for its start;
@@ -1884,6 +1986,8 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.pendingConfig.clear();
       c.log.append([{ t: "config", values: {} }]);
       target(c, key);
+      keepAgent(key);
+      owe(c);
       emitConfig(c);
       await emitCommands(c);
       if (c.held) {

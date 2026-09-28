@@ -12,7 +12,9 @@ description: >-
   the pure `server/domain/agents-*.ts`), a chat's lifetime, its light, its kept
   log and its reaping (`server/workspace/chats.ts`), which of an agent's
   actions is an edit and how it reaches the history (`edits.ts`,
-  `shellwrites.ts`), Jev's faces (`jev.ts`), the agent and chat kinds on the
+  `shellwrites.ts`), Jev's faces (`jev.ts`), the chat's kept choices
+  (`server/workspace/settings.ts`, `server/domain/choices.ts`,
+  `.biom/settings.json`), the agent, chat and settings kinds on the
   route, the live stream's `chat` and `agents` events and their bounds, the
   gate that answers them only to this machine's own window, and the split
   between the Agent screen's look in the box and the input box in the host.
@@ -58,9 +60,10 @@ It owns the conversation. It does **not** own:
 | the connection | `server/platform/acp.ts` (1) | JSON-RPC 2.0, one message per line, over a process's stdio; its process group; no method but the one it must refuse |
 | the protocol | `server/platform/acp-wire.ts` (1) | every ACP method and shape Biom speaks, read into Biom's own; what is believed of an agent, bounded |
 | the person's environment | `server/platform/loginenv.ts` (1) | the login shell's environment, read once per server, and again on Check again for an agent signed in by a variable |
-| the pure halves | `server/domain/agents-*.ts`, `edits.ts`, `shellwrites.ts`, `jev.ts` (2) | the known agents, their sign-in methods, the registry, a downloaded archive, what is an edit, Jev |
+| the pure halves | `server/domain/agents-*.ts`, `edits.ts`, `shellwrites.ts`, `jev.ts`, `choices.ts` (2) | the known agents, their sign-in methods, the registry, a downloaded archive, what is an edit, Jev, the kept choices' shape and what an agent still offers |
 | the agents | `server/workspace/agents.ts` (3) | what this machine has: finding, probing, installing, signing in, tickets |
 | the chats | `server/workspace/chats.ts` (3) | one agent process per chat, its turns, its light, its files, its kept log |
+| the kept choices | `server/workspace/settings.ts` (3) | `.biom/settings.json`: the view, the agent last picked, each agent's last model, mode and effort |
 | the route | `server/api/routes.ts` (4) | each `agents.*` and `chat.*` kind, narrowed by `isChatRequest`, one module call each |
 | the root | `server/main.ts` (5) | per server: the login environment, Jev, every connection, the idle timer; per folder: the agents, the chats, Jev's schedule; the gate, the stream, the exit |
 | the look | `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/` | the Agent screen as drawn in its box |
@@ -289,6 +292,23 @@ process that made it.
 - **Config** is the session's config options, an older agent's `modes` read as
   one `mode` option. A value picked with no agent running, or mid-turn, is kept
   and applied before the next message.
+- **The choices are kept**, in the workspace's `.biom/settings.json`
+  (`settings.ts`), by the server when they are made — so they hold whichever
+  window made them, and across a restart. `chat.new` with an agent and
+  `chat.switchAgent` keep the agent (`picked`); a picker set in a chat, or on
+  the start screen for the chat a first message makes, keeps that agent's
+  value BY CATEGORY (`chose`) — never an option that is no picker, and never a
+  value the list does not offer. A new chat, and a switch, start on the
+  agent's kept values (`saved`), laid under whatever the person set for that
+  chat, on each picker the agent's list STILL offers them on — a model the
+  agent has dropped is skipped without a word (`offeredChoices` in
+  `choices.ts`). They are laid on at once against the probe's list, so the
+  pickers show them before anything starts, and owed (`seed`, in the kept
+  log) to the chat's first session, which lays on what the probe's list could
+  not say yet. The view is the one choice a window keeps itself, through
+  `settings.set`. A file that will not read is said once in the log, put aside
+  as `settings.json.bad`, and the defaults are used: Tool calls, no agent,
+  nothing kept.
 
 ## 7. The files, and every write reported once
 
@@ -329,7 +349,8 @@ Runs and agents outside Biom are not recorded: they wait for the door.
 
 **Every chat's stream is appended as it arrives to `.biom/chats/<id>.jsonl`**
 — under `.biom/`, which ignores itself in git and which the watcher skips: a
-header, the chat's agent, its session, the config kept for the next start, and
+header, the chat's agent, its session, the config kept for the next start,
+whether the workspace's kept choices are still owed to its next session, and
 every update. At construction every log is scanned for its summary
 (`Chats.loaded`; `chat.list` awaits it), and a chat's updates are read into
 memory only when somebody reads or writes it. A turn the server died in is
@@ -395,8 +416,8 @@ is the loop between them.
 
 ## 10. The wire, the stream, and who may say any of it
 
-**Every `agents.*` and `chat.*` kind is outer ring** (`ChatRequest`, narrowed by
-`isChatRequest`) and answered only on a vault's own route. `chatAnswer` in
+**Every `agents.*`, `chat.*` and `settings.*` kind is outer ring** (`ChatRequest`,
+narrowed by `isChatRequest`) and answered only on a vault's own route. `chatAnswer` in
 `routes.ts` reads no field the guard did not check and makes one module call
 per kind. A refusal a module throws with one of the closed codes is said in its
 own sentence — written for a person, naming an agent or a chat and never a
@@ -591,8 +612,10 @@ server/domain/agents-archive.ts   an archive's table of contents judged before i
 server/domain/edits.ts          which action is an edit, vault paths, the bounded tool line
 server/domain/shellwrites.ts    a command line's writes, conservatively
 server/domain/jev.ts            STATUS_FACES, NAME_FACES, makeJev, makeJevTurn, makeJevStatus
+server/domain/choices.ts        the kept choices read and written, PICKERS, offeredChoices, pickerCategoryOf
 server/workspace/agents.ts      makeAgents: find, probe, install and its lock, sign in, tickets, AUTH_EVERY_PROCESS, TIMING
-server/workspace/chats.ts       makeChats, readSkills: turns, light, files, onEdit, the kept log, reap
+server/workspace/chats.ts       makeChats, readSkills: turns, light, files, onEdit, the kept log, reap, the kept choices laid on
+server/workspace/settings.ts    makeSettings: `.biom/settings.json`, read once, written whole, a broken one put aside
 server/api/routes.ts            chatAnswer, CHAT_SENTENCES, the gate and `own` on route
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring, events(),
                                 localRefusal, the exit handler, endAgentsWithin
@@ -611,6 +634,7 @@ tests/acp.test.ts  acp-wire.test.ts  agents-wire.test.ts  agents.test.ts  agents
 tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.test.ts
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
+tests/settings.test.ts          the kept choices: the shape, the bounds, the file, a broken one put aside
 tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the view against a double
 tests/agent-input.test.js       the agent menu and More agents: two states, one button, Check again
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled

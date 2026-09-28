@@ -55,13 +55,17 @@ function world(over: { throwWith?: unknown } = {}) {
     close: later("chat.close", { id: CHAT }),
     commands: later("chat.commands", [{ name: "review" }]),
   };
+  const settings = {
+    read: answer("settings.read", { view: "tools", agent: null, agents: {} }),
+    set: later("settings.set", { view: "plain", agent: null, agents: {} }),
+  };
   const history = {
     report: later("history.report", [{ kind: "view", seq: 1 }]),
     windows: answer("history.windows", [{ window: WINDOW }]),
     read: answer("history.read", { entries: [], head: 7 }),
     edit: later("history.edit", null),
   };
-  const deps = { agents, chats, history } as unknown as Deps;
+  const deps = { agents, chats, history, settings } as unknown as Deps;
   let n = 0;
   const call = (o: Record<string, unknown>): Promise<ApiResponse> => handle({ id: `r${++n}`, g: PROTOCOL, ...o } as ApiRequest, deps);
   return { calls, call, deps };
@@ -97,6 +101,9 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.commands", chat: CHAT }, ["chat.commands", { chat: CHAT }]],
     [{ kind: "chat.commands", agent: AGENT }, ["chat.commands", { agent: AGENT }]],
     [{ kind: "chat.commands" }, ["chat.commands", {}]],
+    [{ kind: "settings.read" }, ["settings.read"]],
+    [{ kind: "settings.set", view: "plain", agent: "smuggled-agent" }, ["settings.set", { view: "plain" }]],
+    [{ kind: "settings.set" }, ["settings.set", {}]],
   ];
   const seen = new Set<string>();
   for (const [req, want] of cases) {
@@ -127,6 +134,7 @@ test("A MALFORMED AGENT OR CHAT REQUEST IS REFUSED before any module hears of it
     { kind: "chat.switchAgent", chat: CHAT },
     { kind: "chat.cancel" },
     { kind: "chat.commands", chat: 7 },
+    { kind: "settings.set", view: "fancy" },
   ];
   for (const req of bad) {
     const w = world();
@@ -171,6 +179,8 @@ test("A BUILD WITH NO AGENTS answers every agent and chat kind `unsupported`, an
   const call = (o: Record<string, unknown>) => handle({ id: `r${++n}`, g: PROTOCOL, ...o } as ApiRequest, deps);
   expect(code(await call({ kind: "agents.list" }))).toBe("unsupported");
   expect(code(await call({ kind: "chat.new", text: "hi" }))).toBe("unsupported");
+  expect(code(await call({ kind: "settings.read" }))).toBe("unsupported");
+  expect(code(await call({ kind: "settings.set", view: "plain" }))).toBe("unsupported");
   expect(value(await call({ kind: "window.list" }))).toEqual([]);
   expect(value(await call({ kind: "history.read" }))).toEqual({ entries: [], head: 0 });
   expect(code(await call({ kind: "window.report", window: WINDOW, context: HERE }))).toBe("unsupported");

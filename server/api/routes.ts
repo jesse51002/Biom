@@ -35,6 +35,7 @@ import type { Sharer } from "../domain/share.ts";
 import type { EditReport, History } from "../domain/history.ts";
 import type { Agents } from "../workspace/agents.ts";
 import type { Chats } from "../workspace/chats.ts";
+import type { Settings } from "../workspace/settings.ts";
 import { follow } from "../domain/mirror.ts";
 import { PAGE_DOC, pageDir } from "../domain/pages.ts";
 import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
@@ -136,6 +137,9 @@ export interface Deps {
    *  stream. Built against a vault like `pages`. Optional for the reason
    *  `agents` is. */
   chats?: Chats;
+  /** THE CHAT'S KEPT CHOICES — `.biom/settings.json`. Optional, and absent
+   *  answers `settings.*` `unsupported`: every caller from before them. */
+  settings?: Settings;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -1001,6 +1005,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.switchAgent":
       case "chat.close":
       case "chat.commands":
+      case "settings.read":
+      case "settings.set":
         return await chatAnswer(id, req, deps);
 
       /* ── what each window has open, and the history ─────────────────── */
@@ -1055,6 +1061,14 @@ const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
  *  own sentence; anything else is the host failing, and is logged. */
 async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   if (!isChatRequest(req)) return err(id, "bad_request", CHAT_SENTENCES.bad_request as string);
+  // THE KEPT CHOICES need neither the agents nor the chats: what the next
+  // chat starts on is read and the view set with no agent anywhere.
+  if (req.kind === "settings.read" || req.kind === "settings.set") {
+    const settings = deps.settings;
+    if (settings === undefined) return refused(id, "the chat's kept choices");
+    if (req.kind === "settings.read") return ok(id, settings.read());
+    return ok(id, await settings.set(req.view === undefined ? {} : { view: req.view }));
+  }
   const agents = deps.agents;
   const chats = deps.chats;
   if (agents === undefined || chats === undefined) return refused(id, "agents or chats");

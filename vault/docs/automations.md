@@ -110,9 +110,12 @@ environment, the names it asked for, and the floor every process needs (`PATH`,
 tables through the API at `BIOM_API`, never by opening `workspace.db`.
 
 **`.biom/` is the framework's folder inside your workspace and it ignores
-itself**: the registry `runs.db`, every run directory, and each chat's own record
-of what was said in it (`chats/<id>.jsonl`, one record per line) are this
-machine's, and never in git.
+itself**: the registry `runs.db`, every run directory, each chat's own record
+of what was said in it (`chats/<id>.jsonl`, one record per line), and
+`settings.json` — the chat's choices kept for the next chat: the agent last
+picked, each agent's last model, mode and effort, and the view — are this
+machine's, and never in git. A `settings.json` that will not read is put aside
+as `settings.json.bad` and the defaults are used.
 
 ## What a row says
 

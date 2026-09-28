@@ -82,6 +82,8 @@ import { makeAgents } from "./workspace/agents.ts";
 import type { Agents } from "./workspace/agents.ts";
 import { makeChats, readSkills } from "./workspace/chats.ts";
 import type { Chats } from "./workspace/chats.ts";
+import { makeSettings } from "./workspace/settings.ts";
+import type { Settings } from "./workspace/settings.ts";
 import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
 import type { Attachment } from "./workspace/terminals.ts";
 import type { Tickets } from "./workspace/terminals.ts";
@@ -687,6 +689,9 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   history: refuses<History>(why, code),
   agents: refuses<Agents>(why, code),
   chats: refuses<Chats>(why, code),
+  // And the twelfth's: the kept choices of a folder that will not open are
+  // not somebody else's.
+  settings: refuses<Settings>(why, code),
 });
 
 /** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
@@ -1186,6 +1191,11 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // history hears of it through `onEdit` and NOTHING ELSE: never the API
     // route's stamping, which is the person's.
     const agentFiles = makeFiles(path);
+    // THE CHAT'S KEPT CHOICES, in `.biom/settings.json`: a `Files` rooted at
+    // the framework's own folder, with no baseline — the watcher skips
+    // `.biom` by name, and git ignores it — read before any chat is made.
+    const settings = makeSettings({ files: makeFiles(join(path, BIOM_DIR)) });
+    await settings.loaded;
     const chats = makeChats({
       launch: (key) => agents.launch(key),
       agents: () => agents.list(),
@@ -1212,6 +1222,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         history.edit({ path: p, via, writer }).catch((e: unknown) => console.warn("the history", e));
       },
       onTurn: (signal) => jevStatus.signal(signal),
+      // What a new chat starts on, and every choice the person makes, kept.
+      saved: (key) => settings.saved(key),
+      picked: (key) => settings.picked(key),
+      chose: (key, category, value) => settings.chose(key, category, value),
       now: Date.now,
     });
     chatsNow = chats;
@@ -1281,7 +1295,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     };
     return {
       path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus, identities,
-      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed },
+      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings },
       settled: Promise.resolve(), files,
     };
   }
