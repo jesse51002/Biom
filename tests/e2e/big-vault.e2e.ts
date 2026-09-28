@@ -340,10 +340,11 @@ walk("4. five pages opened from the rail, one after another, are each drawn with
   const five = [0, 45, 95, 150, 220].map((i) => notes[i] as InventedPage);
   const times: number[] = [];
   for (const p of five) {
-    const row = rowFor(p.name);
-    await row.scrollIntoViewIfNeeded();
+    // THE CLICK SCROLLS THE ROW INTO VIEW ITSELF, and finds it again when a
+    // repaint has replaced it: the rail is rebuilt on every repaint, and an
+    // element held across one is gone.
     const t0 = performance.now();
-    await row.click();
+    await rowFor(p.name).click();
     try {
       await page.waitForFunction(drawnAt, routeOf(p.id), { polling: "raf", timeout: NEVER });
     } catch {
