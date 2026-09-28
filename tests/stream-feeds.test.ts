@@ -218,7 +218,7 @@ test("A TAB THAT GOES WHILE THE MODULES ARE BEING FETCHED leaves nothing subscri
   expect(f.attached).toEqual([]);
 });
 
-/* ── the bound on one stream (O18) ────────────────────────────────────── */
+/* ── the bound on one stream ──────────────────────────────────────────── */
 
 test("A STREAM THAT HAS WRITTEN 32 MB IS CLOSED — every subscription let go, every frame whole — so a reader that stopped reading costs the server no more than that", async () => {
   // Bun buffers a streamed response without bound for a reader that has

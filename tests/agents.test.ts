@@ -916,7 +916,7 @@ test("AN AGENT THAT ARRIVES LATER IS FOUND: a list more than 30 s after the last
   expect(byKey(m.agents.list(), "kimi")?.state).toBe("active");
 });
 
-test("A FAILED AGENT IS LOOKED AT AGAIN by a list past the half-minute, and turns Active when it opens a session; one waiting for a sign-in is not (O34)", async () => {
+test("A FAILED AGENT IS LOOKED AT AGAIN by a list past the half-minute, and turns Active when it opens a session; one waiting for a sign-in is not", async () => {
   let clock = 2_000_000;
   // Gemini crashes on its first start and is well after; OpenCode opens a
   // session and is then refused by a chat, so it waits for a sign-in.
@@ -962,7 +962,7 @@ test("A FAILED AGENT IS LOOKED AT AGAIN by a list past the half-minute, and turn
   expect(looks("gemini")).toBe(gemini0 + 1);
 });
 
-test("LOOK AGAIN LIFTS A SIGN-IN REFUSAL ONLY FOR AN AGENT THAT OFFERS NO WAY TO SIGN IN: signed in from its own command, it is Active again; one with a way stays at Sign in (O35)", async () => {
+test("LOOK AGAIN LIFTS A SIGN-IN REFUSAL ONLY FOR AN AGENT THAT OFFERS NO WAY TO SIGN IN: signed in from its own command, it is Active again; one with a way stays at Sign in", async () => {
   // Lists no sign-in method at all: Biom cannot sign it in, so the person
   // does it in a terminal of their own and presses Check again.
   const bare = machine({ bins: { opencode: "/invented/bin/opencode" }, script: () => ({ ...healthy(), initialize: () => ({ protocolVersion: 1, authMethods: [] }) }) });
@@ -1034,7 +1034,7 @@ const keyed = (authMethods: unknown[]) => (launch: AgentLaunch): Script => ({
 
 const envVarOnly = [{ id: "key", name: "An invented key", type: "env_var", vars: [{ name: "INVENTED_AGENT_KEY" }] }];
 
-test("CHECK AGAIN ON AN AGENT SIGNED IN BY A VARIABLE reads the login shell again — once — lifts the refusal, and finds it Active once the person set the variable (O37)", async () => {
+test("CHECK AGAIN ON AN AGENT SIGNED IN BY A VARIABLE reads the login shell again — once — lifts the refusal, and finds it Active once the person set the variable", async () => {
   const login = keptLogin();
   const m = machine({ bins: { opencode: "/invented/bin/opencode" }, script: keyed(envVarOnly), readEnv: login.read, forgetEnv: login.forget });
   m.agents.list();
@@ -1065,7 +1065,7 @@ test("CHECK AGAIN ON AN AGENT SIGNED IN BY A VARIABLE reads the login shell agai
   expect(login.reads()).toBe(before + 2);
 });
 
-test("an agent with a way to sign in besides a variable — agent or terminal — keeps its refusal on Check again, and nothing re-reads the login shell for it (O37)", async () => {
+test("an agent with a way to sign in besides a variable — agent or terminal — keeps its refusal on Check again, and nothing re-reads the login shell for it", async () => {
   for (const other of [{ id: "browser", name: "In a browser" }, { id: "tui", name: "In a terminal", type: "terminal", args: ["login"] }]) {
     const login = keptLogin();
     // It opens a session with the variable set, as one signed out may.

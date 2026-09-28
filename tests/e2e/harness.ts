@@ -108,20 +108,6 @@ export interface Sandbox {
  *  `VAULT` and `VAULTS` are DELETED rather than set: an inherited `VAULT` would
  *  mount a folder on boot and there would be no picker to walk, which is the
  *  first thing this suite looks at. */
-/** A SERVER'S ENVIRONMENT WITH NO AGENT IN IT: this run's sandbox, a `PATH` of
- *  bun, `/usr/bin` and `/bin` and nothing of the person's, and `/bin/sh` for the
- *  login shell the server asks for the agents' environment. A window opens on
- *  the Agent screen, and its first `agents.list` looks for every agent this
- *  machine has, on the login shell's `PATH` — so a server started with the
- *  person's own found their real Claude Code, Codex and OpenCode, fetched
- *  adapters with npx, probed them, and left processes running after it had
- *  gone. A walk that wants an agent puts the scripted one first on its own
- *  `PATH`, as `chat-server.e2e.ts` and `agent-screen.e2e.ts` do.
- *  @param env what `sandbox()` built */
-export function withoutAgents(env: Record<string, string>): Record<string, string> {
-  return { ...env, PATH: [dirname(process.execPath), "/usr/bin", "/bin"].join(":"), SHELL: "/bin/sh" };
-}
-
 export function sandbox(label: string): Sandbox {
   const root = mkdtempSync(join(tmpdir(), `biom-e2e-${label}-`));
   const home = join(root, "home");
@@ -146,6 +132,20 @@ export function sandbox(label: string): Sandbox {
     env,
     clean: () => rmSync(root, { recursive: true, force: true }),
   };
+}
+
+/** A SERVER'S ENVIRONMENT WITH NO AGENT IN IT: this run's sandbox, a `PATH` of
+ *  bun, `/usr/bin` and `/bin` and nothing of the person's, and `/bin/sh` for the
+ *  login shell the server asks for the agents' environment. A window opens on
+ *  the Agent screen, and its first `agents.list` looks for every agent this
+ *  machine has, on the login shell's `PATH` — so a server started with the
+ *  person's own found their real Claude Code, Codex and OpenCode, fetched
+ *  adapters with npx, probed them, and left processes running after it had
+ *  gone. A walk that wants an agent puts the scripted one first on its own
+ *  `PATH`, ahead of this one or of a PATH like it.
+ *  @param env what `sandbox()` built */
+export function withoutAgents(env: Record<string, string>): Record<string, string> {
+  return { ...env, PATH: [dirname(process.execPath), "/usr/bin", "/bin"].join(":"), SHELL: "/bin/sh" };
 }
 
 /** THE INSTALLED APPLICATION'S OWN CACHE, `<data>/cache` — `app/main.js`

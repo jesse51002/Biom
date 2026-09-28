@@ -812,7 +812,7 @@ test("A LOOK FOR NEW AGENTS DURING AN INSTALL leaves the install alone: the agen
   expect(r.probes.length).toBe(1);
 });
 
-/* ── one install at a time across workspaces (O29) ────────────────────── */
+/* ── one install at a time across workspaces ──────────────────────────── */
 
 const jsEntry = { id: "jsagent", name: "JS agent", version: "3.1.0", description: "Invented", distribution: { npx: { package: "@invented/js-agent@3.1.0" } } };
 

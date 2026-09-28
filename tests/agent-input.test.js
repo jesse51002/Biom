@@ -283,7 +283,7 @@ test("the row of an Inactive agent opens More agents and runs nothing; the row o
   expect(s.calls).toEqual([]);
 });
 
-/* ── Active or Inactive, and nothing else (DECISIONS O28) ──────────────── */
+/* ── Active or Inactive, and nothing else ──────────────────────────────── */
 
 const BUSY = [
   agent(),
@@ -324,7 +324,7 @@ test("More agents says Active or Inactive and nothing else; a failed agent carri
   expect(buttons("claude-acp")).toEqual(["Sign in"]);
 });
 
-/* ── an agent Biom cannot sign in (DECISIONS O35) ──────────────────────── */
+/* ── an agent Biom cannot sign in ──────────────────────────────────────── */
 
 test("an agent refusing for a sign-in with no way to sign in from here says to sign in from its own command, and Check again asks the server to look again", async () => {
   const bare = agent({ key: "claude-acp", name: "Claude Code", state: "inactive", reason: "signin", message: "Sign in to use it.", auth: [] });
@@ -354,8 +354,8 @@ test("an agent refusing for a sign-in with no way to sign in from here says to s
   await Promise.resolve();
   expect(s.calls.filter((c) => c.kind === "agents.probe").map((c) => c.agent)).toEqual(["claude-acp"]);
 
-  // A failed agent is looked at again by the server on its own (O34): nothing
-  // here offers to.
+  // A failed agent is looked at again by the server on its own, on the list's
+  // half-minute look: nothing here offers to.
   expect(button(row("droid"), "Check again")).toBe(null);
   expect(ways("droid")).toBe(null);
 });

@@ -357,7 +357,7 @@ walk("6. Edit opens a new chat beside the page with its location typed in, and t
     return text.length > 0;
   });
   // Home from the full Agent screen brings the open chat along, in the panel
-  // beside the page (DECISIONS O24(b)).
+  // beside the page, rather than dropping it.
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   await page.locator("button.tool.edit").click();
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");

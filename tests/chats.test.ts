@@ -942,7 +942,7 @@ only("a tool line updated many times is one line in memory, and the log is rewri
   expect((await again.read(s.id)).updates).toEqual(updates);
 });
 
-/* ── an agent that wants `authenticate` in every process (O14) ─────────── */
+/* ── an agent that wants `authenticate` in every process ───────────────── */
 
 only("AN AGENT THAT WANTS AUTHENTICATE IN EVERY PROCESS is authenticated before its session, with the method that signed it in, and its chat works", async () => {
   // Grok Build, Cursor and Junie refuse a session in any process that has not
@@ -980,7 +980,7 @@ only("an authenticate the agent refuses is a sign-in refusal, and the message wa
   expect(summaryOf(w.chats, made.id).phase).toBe("held");
 });
 
-/* ── an idle agent is ended (O17) ─────────────────────────────────────── */
+/* ── an idle agent is ended ───────────────────────────────────────────── */
 
 const alivePid = (pid: number): boolean => {
   try {
@@ -1084,7 +1084,7 @@ only("A REAP RACING A SEND never ends an agent a turn is using: the send wins ei
   expect(replyOf((await w.chats.read(made.id)).updates, 3)).toContain("echo: Three.");
 });
 
-/* ── Stop that is not answered (O12) ──────────────────────────────────── */
+/* ── Stop that is not answered ────────────────────────────────────────── */
 
 only("AN AGENT THAT DOES NOT ANSWER STOP within its grace is ended, the turn ends cancelled with no light, and the next message starts a new one", async () => {
   // A `sleep` step never looks at the cancel: this agent hears Stop and

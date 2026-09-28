@@ -297,7 +297,7 @@ walk("3", "one short turn creates a page file: it is on disk, and the history ha
 
 // A STEP OF ITS OWN, so a failure here says the switcher and nothing else:
 // following a page the agent CREATES is the case the fake-agent walk once
-// found broken (BUG-E2E-4 in the P4 hand-back; `chat.e2e.ts` 17b now).
+// found broken (`chat.e2e.ts` 17b holds it now).
 walk("3b", "the switcher brings the new page up with the chat still beside it", async () => {
   await until("the screen moved to the new page", 20000, async () => (await hash()) === `#/page/${encodeURIComponent(SMOKE_ID)}`);
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");

@@ -2136,7 +2136,7 @@ test("a design doc that is not there is said in a sentence, not left at Openingâ
 test("a framework screen's id as a page route is refused as not found, and never read or drawn as a page", async () => {
   // THE SERVER ANSWERS `page.read("@agent")` WITH THE BARE PLUGIN PAGE, as it
   // does for `@map` and `@design`, so a route that asked for it would draw a
-  // second, unfed Agent screen in a page box (DECISIONS O24(d)).
+  // second, unfed Agent screen in a page box.
   const events = fakeEvents();
   const g = harness(DOC, { view: "page", id: DOC.id }, false, events);
   const plain = g.ws.loadPage.bind(g.ws);

@@ -85,8 +85,8 @@ for (const [name, patch, kind, until] of ROWS) {
     expect(v.kind).toBe(kind);
     if (v.kind === "wait") expect(v.until).toBe(/** @type {number} */ (until));
     if (v.kind === "move") {
-      // EVERY MOVE BRINGS THE CHAT BESIDE THE PAGE (DECISIONS §7), and names
-      // the agent and the chat it followed.
+      // EVERY MOVE BRINGS THE CHAT BESIDE THE PAGE — never a bare page with
+      // the chat gone — and names the agent and the chat it followed.
       expect(v.panel).toBe(true);
       expect(v.agent).toBe(AGENT);
       expect(v.chat).toBe(CHAT);
@@ -728,7 +728,7 @@ test("an offer the person opened themselves is spent: leaving the page does not 
   expect(w.switcher.get().offer).toBe(null);
 });
 
-/* ══ a page the agent has just made (DECISIONS O39) ═════════════════════════ */
+/* ══ a page the agent has just made, before the tree lists it ═══════════════ */
 
 const FRESH = { id: "fresh", name: "Fresh", uid: "u-fresh" };
 

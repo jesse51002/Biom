@@ -99,7 +99,7 @@ test("an open off the full Agent screen brings the open chat along in the panel;
   expect(ui.get().panel).toBe(false);
 
   // A page from the tree, the crumbs, search or Home — no caller asks for the
-  // panel, and the chat comes along all the same (DECISIONS O24(b)).
+  // panel, and the chat comes along all the same.
   ui.open("page", "board");
   expect(ui.get()).toMatchObject({ route: { view: "page", id: "board", screen: "page" }, panel: true, chat: CHAT });
   expect(ui.cause().mover).toEqual({ by: "you" });
