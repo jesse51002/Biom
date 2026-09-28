@@ -36,7 +36,7 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
-import { DOC_PLUGIN } from "../contracts/types.ts";
+import { DOC_PLUGIN, parentOf } from "../contracts/types.ts";
 import { SKILL_PREFIX, keepHarness, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
@@ -108,7 +108,8 @@ import type { ChatPush } from "../contracts/types.ts";
 import type { ChatUpdate } from "../contracts/types.ts";
 import type { HistoryEntry } from "../contracts/types.ts";
 import type { WindowId } from "../contracts/types.ts";
-import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import type { ChangeEvent } from "../contracts/types.ts";
+import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, LOCATE_MAX, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { isLocalKind, isWindowId } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -530,7 +531,7 @@ export interface Host {
    *  folder, which is a reason to reread `run.list` and never to redraw.
    *
    *  Answers the function that unsubscribes. Calling it twice is harmless. */
-  watch(path: string, hear: () => void, hearRun?: () => void): Promise<() => void>;
+  watch(path: string, hear: (change: ChangeEvent) => void, hearRun?: () => void): Promise<() => void>;
   /** The vaults with a live watcher on them right now, absolute, and the
    *  directories each one holds open. The tests read it; nothing else does. */
   watching(): { path: string; handles: string[] }[];
@@ -1541,7 +1542,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  somebody can actually observe. */
   interface Live {
     watcher: Watcher;
-    hears: Set<() => void>;
+    hears: Set<(change: ChangeEvent) => void>;
     /** Told when a run starts or ends, on the same stream as a second, named
      *  event — so a page is NOT redrawn for it. A file changing is a reason to
      *  reread the page; a run's row moving is a reason to reread `run.list`,
@@ -1640,7 +1641,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const fresh = !held.seen.known(abs);
     // REPORTED, from here on: the same bytes notified again are nothing new.
     held.seen.note(abs, text);
-    return { structural: fresh || (page !== null && page.rest === "") };
+    // AN ARRIVAL IS A PAGE'S DOCUMENT THAT NOTHING KNEW. Never seen by this
+    // process's baseline is most pages now — nothing reads every page through
+    // it at mount any more — so the page index is asked too: a document of a
+    // page it already had is that page changing, not arriving. Any other file
+    // inside a page is that page's own.
+    if (page === null || page.rest !== PAGE_DOC || !fresh) return { structural: false };
+    let had: string | null = null;
+    try {
+      had = await held.index.uidWas(page.id);
+    } catch {
+      had = null;
+    }
+    return { structural: had === null };
   }
 
   /** The burst has stopped. Read what it named, refresh the mirror for whatever
@@ -1666,14 +1679,24 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // of one page is one projection rather than three.
       const touched = new Map<PageId, { structural: boolean; dir: string }>();
       let moved = false;
+      /** Something changed that is no page's — the theme, the design doc, a
+       *  plugin the whole vault loads, an asset: no window can tell which of
+       *  its pages that touches, so it rereads what it shows. */
+      let beyond = false;
+      /** Every watched path the burst named, vault-relative, for the index. */
+      const rels: string[] = [];
       for (const abs of burst) {
         const rel = insideOf(held.path, abs);
         if (rel === null || rel === "" || !watched(rel)) continue;
+        rels.push(rel);
         const verdict = await consider(held, abs, rel);
         if (verdict === null) continue;
         moved = true;
         const page = pageAt(rel);
-        if (page === null) continue;
+        if (page === null) {
+          beyond = true;
+          continue;
+        }
         // THE PAGE'S OWN DIRECTORY, taken off the path that named it rather than
         // rebuilt from the id: `rest` is what `pageAt` left over, so cutting it
         // off is the inverse of that walk without a second spelling of how the
@@ -1704,33 +1727,87 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         // AWAITED: the projection follows in the background.
         held.deps.mirror.queue.follow(id, what.structural || gone);
       }
-      if (!moved) return;
-      // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
-      // re-pointed by identity once per structural settle, not once per list.
-      // AND A PAGE THAT ARRIVED WITHOUT AN IDENTITY GETS ONE, from the same
-      // list — after every verdict above, so the page's arrival has already
-      // been read as one, and through files with no baseline, so the `uid`
-      // written back is one more change the watcher reports rather than one
-      // it silences.
-      if ([...touched.values()].some((t) => t.structural)) {
-        let refs: PageRef[] | null = null;
+      // THE INDEX HEARS EVERY PATH THE BURST NAMED — the app's own writes as
+      // well as an outside one, so its rows stay current — and says what it
+      // learned: pages that arrived with no identity, identities whose folder
+      // moved. What it re-reads is those paths' pages and the levels they
+      // name, never the vault.
+      // WHAT A PAGE'S PARENT SHOWS OF IT — its name, its plugin, its `uid` —
+      // and the order it gives its own children, as the index held them before
+      // the burst: a page renamed from outside is a change to the level above
+      // it as well as to itself, and only the rows can say it was renamed. A
+      // burst too big to name is `all` anyway, and asks nothing.
+      const before = touched.size <= LOCATE_MAX ? headsOf(held, [...touched.keys()]) : new Map<PageId, HeadRow>();
+      let news: IndexNews = { noUid: [], moved: [], gone: [] };
+      if (rels.length > 0) {
         try {
-          refs = await held.deps.pages.list();
-          held.runs.relocateAll(refs);
+          news = await held.index.invalidate(rels);
+          news.moved.push(...(await movedFromNowhere(held, touched, news)));
         } catch (e) {
-          console.warn("runs could not be re-pointed at their pages", e);
-        }
-        if (refs !== null) {
-          try {
-            await held.identities.arrived(refs);
-          } catch (e) {
-            console.warn("pages that arrived could not be given an identity", e);
-          }
+          console.warn("the page index could not take in a change", e instanceof Error ? e.message : e);
         }
       }
+      // A PAGE THAT ARRIVED WITHOUT AN IDENTITY GETS ONE — after its arrival
+      // was read as one above, and before the windows are told, so the level
+      // they reread already carries it. What is written back is the server's
+      // own, and the next settle says nothing of it (`ownPages`).
+      // ARRIVALS ONLY: a page in this burst that arrived, or one inside a folder
+      // that did. A page edited without a `uid` is given one where it is first
+      // named in the history, as it always was — writing into a page somebody
+      // is editing, on every edit, would make their next save a change of ours.
+      // The index's own news is not the whole of it: a page made while the
+      // mount's sweep was still running was met by the sweep, which gave no
+      // identity to a page newer than the mount, and the index then has
+      // nothing new to say when the watcher names it. So each page the watcher
+      // saw arrive is asked of the index too.
+      const arrivals = new Set(news.noUid.filter((id) => touched.get(id)?.structural ?? true));
+      for (const [id, what] of touched) {
+        if (!what.structural || arrivals.has(id)) continue;
+        try {
+          const head = await held.index.head(id);
+          if (head !== null && head.uid === null) arrivals.add(id);
+        } catch {
+          // Given one where the history first names it.
+        }
+      }
+      if (arrivals.size > 0) {
+        try {
+          for (const id of arrivals) {
+            held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
+            await held.identities.of(id);
+          }
+          await held.identities.written();
+        } catch (e) {
+          console.warn("pages that arrived could not be given an identity", e instanceof Error ? e.message : e);
+        }
+      }
+      // A PAGE MOVED FROM OUTSIDE takes its runs with it, by identity: only
+      // the identities the index saw move.
+      for (const m of news.moved) {
+        try {
+          held.runs.relocate(m.from, m.to);
+        } catch (e) {
+          console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
+        }
+      }
+      if (!moved && news.moved.length === 0) return;
+      const relisted: PageId[] = [];
+      if (before.size > 0) {
+        const after = headsOf(held, [...before.keys()]);
+        for (const [id, was] of before) {
+          const now = after.get(id);
+          if (now === undefined) continue;
+          if (now.name !== was.name || now.plugin !== was.plugin || now.uid !== was.uid) {
+            const parent = parentOf(id);
+            if (parent !== null) relisted.push(parent);
+          }
+          if (now.order_json !== was.order_json) relisted.push(id);
+        }
+      }
+      const change = changeOf(touched, news.moved, beyond, relisted);
       for (const hear of [...now.hears]) {
         try {
-          hear();
+          hear(change);
         } catch (e) {
           console.warn("a live-change subscriber threw", e);
         }
@@ -1742,6 +1819,59 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
   }
 
+  /** THE INDEX'S ROWS FOR THESE PAGES, as they stand, read straight off its
+   *  table: `head` would read a page whose stat moved, and what is wanted here
+   *  is what the index held before it heard. Nothing where the table cannot
+   *  be asked. */
+  function headsOf(held: Mounted, ids: readonly PageId[]): Map<PageId, HeadRow> {
+    const out = new Map<PageId, HeadRow>();
+    try {
+      for (const id of ids) {
+        const row = held.pagesDb.all<HeadRow>("SELECT name, plugin, uid, order_json FROM pages WHERE id = ?", [id])[0];
+        if (row !== undefined) out.set(id, row);
+      }
+    } catch {
+      // A cache thrown away and made again: nothing to compare against.
+    }
+    return out;
+  }
+
+  /** A FOLDER MOVED IN A FILE MANAGER ARRIVES FROM NOWHERE. Bun's watcher
+   *  reports a directory arriving in a watched folder and never one leaving
+   *  one, so the index hears the page at its new place and nothing about the
+   *  old: no departure to match, no move. Where it came from is still in the
+   *  index's rows — the row that held its `uid` before, whose folder is gone —
+   *  so each page that arrived carrying a `uid` is looked up there, and a row
+   *  found that way is let go by the index and answered as the move it was. */
+  async function movedFromNowhere(
+    held: Mounted,
+    touched: ReadonlyMap<PageId, { structural: boolean }>,
+    news: IndexNews,
+  ): Promise<IndexNews["moved"]> {
+    const found: IndexNews["moved"] = [];
+    const gone: string[] = [];
+    for (const [id, what] of touched) {
+      if (!what.structural || news.moved.some((m) => m.to === id)) continue;
+      const head = await held.index.head(id);
+      if (head === null || head.uid === null) continue;
+      // A cache that was thrown away and made again is a handle this does not
+      // hold: then there is simply no earlier row to find.
+      let rows: { id: string; dir: string }[] = [];
+      try {
+        rows = held.pagesDb.all<{ id: string; dir: string }>("SELECT id, dir FROM pages WHERE uid = ? AND id != ?", [head.uid, id]);
+      } catch {
+        rows = [];
+      }
+      for (const row of rows) {
+        if ((await held.files.stat(`${row.dir}/${PAGE_DOC}`)) !== null) continue;
+        found.push({ uid: head.uid, from: row.id, to: id });
+        gone.push(row.dir);
+      }
+    }
+    if (gone.length > 0) await held.index.invalidate(gone);
+    return found;
+  }
+
   function arm(held: Mounted, now: Live): void {
     if (now.timer !== null) clearTimeout(now.timer);
     now.timer = setTimeout(() => {
@@ -1750,7 +1880,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }, SETTLE);
   }
 
-  async function subscribe(where: string, hear: () => void, hearRun?: () => void): Promise<() => void> {
+  async function subscribe(where: string, hear: (change: ChangeEvent) => void, hearRun?: () => void): Promise<() => void> {
     const held = await acquire(where);
     let now = live.get(held.path);
     if (now === undefined) {
@@ -2065,6 +2195,42 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   }
 }
 
+/**
+ * WHAT A SETTLE SAYS ON THE STREAM: the pages whose own files changed, and the
+ * levels — parents — whose children changed: the parent of a page that arrived
+ * or departed, both parents of one that moved, the parent of one whose name,
+ * plugin or `uid` changed, and a page itself where the order it gives its
+ * children did (`relisted`). Ids only; the window reads
+ * every word from the server. Past `LOCATE_MAX` names, or where something that
+ * is no page's changed, it says `all` and names nothing, and the window rereads
+ * what it shows.
+ */
+export function changeOf(
+  touched: ReadonlyMap<PageId, { structural: boolean }>,
+  moved: readonly { from: PageId; to: PageId }[],
+  beyond: boolean,
+  relisted: readonly PageId[] = [],
+): ChangeEvent {
+  const pages = new Set<PageId>();
+  const levels = new Set<PageId>(relisted);
+  for (const [id, what] of touched) {
+    pages.add(id);
+    if (!what.structural) continue;
+    const parent = parentOf(id);
+    if (parent !== null) levels.add(parent);
+  }
+  for (const m of moved) {
+    pages.add(m.from);
+    pages.add(m.to);
+    for (const id of [m.from, m.to]) {
+      const parent = parentOf(id);
+      if (parent !== null) levels.add(parent);
+    }
+  }
+  if (beyond || pages.size + levels.size > LOCATE_MAX) return { pages: [], levels: [], all: true };
+  return { pages: [...pages], levels: [...levels] };
+}
+
 /** How many of the server's own write-backs are remembered at once. */
 const OWN_WRITES_MAX = 4096;
 
@@ -2079,6 +2245,15 @@ export function readOnly(files: DiskFiles): DiskFiles {
       return Reflect.get(target, key, receiver);
     },
   });
+}
+
+/** What a level shows of a page, and the order it gives its children, as the
+ *  index's table holds them. */
+interface HeadRow {
+  name: string;
+  plugin: string | null;
+  uid: string | null;
+  order_json: string | null;
 }
 
 /** One write-back: what was in the file just before it, and what it wrote. */
@@ -3213,7 +3388,7 @@ export function events(host: Host, path: string, window: WindowId | null = null,
 
       let got: () => void;
       try {
-        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"), () => send("event: run\ndata: 1\n\n"));
+        got = await host.watch(path, (change) => send(`event: change\ndata: ${JSON.stringify(change)}\n\n`), () => send("event: run\ndata: 1\n\n"));
       } catch {
         // A folder that cannot be a workspace. The stream ends rather than
         // hanging, and the tab's own reconnect will keep asking — which is
