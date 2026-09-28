@@ -14,7 +14,7 @@
 
 import { test, expect } from "bun:test";
 
-import { decide, makeSwitcher, screenName, boxOf, TIMING, UNLISTED_MS, UNLISTED_LISTS, UNLISTED_CAP_MS } from "../client/store/switcher.js";
+import { decide, makeSwitcher, screenName, boxOf, TIMING, UNLISTED_CAP_MS } from "../client/store/switcher.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeHistoryStore } from "../client/store/history.js";
 import { placeOf } from "../contracts/address.js";
@@ -108,11 +108,12 @@ test("the spec's three numbers are the defaults", () => {
 
 test("a screen is named as the rail names it; a page by its name now", () => {
   const pages = [{ id: "home/log", name: "Log", uid: "u1" }];
-  expect(screenName(page("home/log"), pages)).toBe("Log");
-  expect(screenName(page("home/log", "instructions"), pages)).toBe("Log · Instructions");
-  expect(screenName(page("home/gone"), pages)).toBe("gone");
-  expect(screenName({ view: "design", id: "", screen: "page" }, pages)).toBe("Design");
-  expect(screenName({ view: "table", id: "jobs", screen: "page" }, pages)).toBe("jobs");
+  const refOf = (/** @type {string} */ id) => pages.find((p) => p.id === id) ?? null;
+  expect(screenName(page("home/log"), refOf)).toBe("Log");
+  expect(screenName(page("home/log", "instructions"), refOf)).toBe("Log · Instructions");
+  expect(screenName(page("home/gone"), refOf)).toBe("gone");
+  expect(screenName({ view: "design", id: "", screen: "page" }, refOf)).toBe("Design");
+  expect(screenName({ view: "table", id: "jobs", screen: "page" }, refOf)).toBe("jobs");
 });
 
 test("a screen's box is its page's, and a host screen has none", () => {
@@ -258,6 +259,51 @@ function fakeServer(pages = PAGES) {
 
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0)); };
 
+/** THE DIRECTORY AS THE SWITCHER READS IT, over a list that may change under
+ *  it: the pages this window knows, by id and by uid.
+ *  @param {() => readonly any[]} list */
+const over = (list) => ({
+  refOf: (/** @type {string} */ id) => list().find((p) => p.id === id) ?? null,
+  idOfUid: (/** @type {string} */ uid) => list().find((p) => p.uid === uid)?.id ?? null,
+});
+
+/** THE WORKSPACE STORE'S DIRECTORY, as far as the switcher can tell: the
+ *  pages this window knows, `want` asking a server that knows `server()` —
+ *  one answer a microtask later, what it did not find remembered as absent
+ *  until `changed()` (a change on disk) — and the store's emit after each
+ *  answer, heard through `onPages`.
+ *  @param {readonly any[]} knows @param {() => readonly any[]} server */
+function directory(knows, server) {
+  const list = [...knows];
+  /** @type {Set<() => void>} */
+  const hears = new Set();
+  /** @type {Set<string>} */
+  const absent = new Set();
+  /** Every uid and id the switcher asked for, in order. @type {string[]} */
+  const asked = [];
+  const emit = () => { for (const hear of [...hears]) hear(); };
+  const d = over(() => list);
+  return {
+    ...d,
+    list,
+    asked,
+    async want(/** @type {{ ids?: string[], uids?: string[] }} */ q) {
+      const uids = (q.uids ?? []).filter((u) => d.idOfUid(u) === null && !absent.has(u));
+      const ids = (q.ids ?? []).filter((i) => d.refOf(i) === null && !absent.has(i));
+      if (!uids.length && !ids.length) return;
+      asked.push(...uids, ...ids);
+      await null;
+      for (const u of uids) { const r = server().find((p) => p.uid === u); if (r) list.push(r); else absent.add(u); }
+      for (const i of ids) { const r = server().find((p) => p.id === i); if (r) list.push(r); else absent.add(i); }
+      emit();
+    },
+    onPages(/** @type {() => void} */ hear) { hears.add(hear); return () => { hears.delete(hear); }; },
+    /** A change on disk: what was absent may be there now, and the store emits. */
+    changed() { absent.clear(); emit(); },
+    repaint: emit,
+  };
+}
+
 /** A window: the real ui and history stores, the switcher over them, a fake
  *  clock and the fake server. */
 function windowOn(route = page("log"), opts = {}, serverPages = PAGES) {
@@ -267,7 +313,7 @@ function windowOn(route = page("log"), opts = {}, serverPages = PAGES) {
   const history = makeHistoryStore({ transport: server.transport, now: clock.now });
   let sent = /** @type {number | null} */ (null);
   const switcher = makeSwitcher({
-    ui, history, window: WINDOW, pages: () => PAGES,
+    ui, history, window: WINDOW, ...over(() => PAGES),
     lastSent: () => sent,
     now: clock.now, timing: T, after: clock.after,
     ...opts,
@@ -483,7 +529,7 @@ test("a claim that is due lands before a write is decided on it, however late it
 
 test("a system move to the same page under a new id keeps whose it was; to another page makes it the person's", async () => {
   const pages = [...PAGES];
-  const w = windowOn(page("log"), { pages: () => pages });
+  const w = windowOn(page("log"), over(() => pages));
   await w.switcher.start();
   w.clock.advance(10 * MIN);
   w.stream(w.server.edit("boards"));
@@ -573,7 +619,7 @@ test("start after a reload in the middle of an agent's screen keeps it the agent
   // THE RELOAD: a new ui and a new switcher on the same window id and server.
   const ui = makeUi({ route: page("boards") });
   const history = makeHistoryStore({ transport: first.server.transport, now: first.clock.now });
-  const again = makeSwitcher({ ui, history, window: WINDOW, pages: () => PAGES, now: first.clock.now, timing: T, after: first.clock.after });
+  const again = makeSwitcher({ ui, history, window: WINDOW, ...over(() => PAGES), now: first.clock.now, timing: T, after: first.clock.after });
   await again.start();
   expect(again.get().back).toEqual({ to: page("log"), name: "Log" });
 });
@@ -631,7 +677,7 @@ test("the view's listeners hear a change and not every repaint", async () => {
 
 test("a page deleted since is skipped: a write to it moves nothing, and Go back to names the work before it", async () => {
   const pages = [...PAGES];
-  const w = windowOn(page("specs"), { pages: () => pages });
+  const w = windowOn(page("specs"), over(() => pages));
   await w.switcher.start();
   w.ui.open("page", "log");
   await settle();
@@ -728,91 +774,100 @@ test("an offer the person opened themselves is spent: leaving the page does not 
   expect(w.switcher.get().offer).toBe(null);
 });
 
-/* ══ a page the agent has just made, before the tree lists it ═══════════════ */
+/* ══ a page the agent has just made, which this window has not heard of ══════ */
 
 const FRESH = { id: "fresh", name: "Fresh", uid: "u-fresh" };
 
-/** A window whose tree has not listed Fresh yet, though the server — and so
- *  the history — has it with its uid; `list()` is the tree re-listed with it,
- *  heard as the workspace store's change is, and `without()` re-listed still
- *  without it. */
-function beforeTheTree(route = page("log")) {
-  let tree = [...PAGES];
-  /** @type {Set<() => void>} */
-  const hears = new Set();
-  const w = windowOn(route, {
-    pages: () => tree,
-    onPages: (/** @type {() => void} */ hear) => { hears.add(hear); return () => { hears.delete(hear); }; },
-  }, [...PAGES, FRESH]);
-  const hearAll = () => { for (const hear of [...hears]) hear(); };
-  return { ...w, list() { tree = [...PAGES, FRESH]; hearAll(); }, without() { tree = [...PAGES]; hearAll(); }, repaint: hearAll };
+/** A window that does not know Fresh, though the history names it with its
+ *  uid. `onServer()` is whether the server has it yet — a page made on disk a
+ *  moment ago that the index has not met — and `arrive()` is it arriving
+ *  there, with the change on disk that clears what was remembered absent.
+ *  @param {boolean} [there] */
+function beforeTheWindow(there = true) {
+  let onServer = there;
+  const dir = directory(PAGES, () => (onServer ? [...PAGES, FRESH] : PAGES));
+  const w = windowOn(page("log"), dir, [...PAGES, FRESH]);
+  return { ...w, dir, arrive() { onServer = true; dir.changed(); } };
 }
 
-test("a page the agent has just made is brought up once this window's tree lists it, a moment after the history named it", async () => {
-  const w = beforeTheTree();
+test("A PAGE THE AGENT HAS JUST MADE IS LOOKED UP BY ITS UID AND FOLLOWED AT ONCE, without waiting for any tree", async () => {
+  const w = beforeTheWindow();
   await w.switcher.start();
   w.clock.advance(10 * MIN);
   w.stream(w.server.edit("fresh"));
-  // The history has it; the tree does not yet, so nothing names the screen.
-  expect(w.ui.get().route).toEqual(page("log"));
-  w.clock.advance(200);
-  w.list();
+  // Asked for by name the moment the history named it, not when a tree lists it.
+  expect(w.dir.asked).toEqual(["u-fresh"]);
+  await settle();
   expect(w.ui.get().route).toEqual(page("fresh"));
   expect(w.ui.get().panel).toBe(true);
   expect(w.ui.cause().mover).toEqual({ by: "switcher", agent: AGENT, chat: CHAT });
-  await settle();
   expect(w.switcher.get().back?.name).toBe("Log");
 });
 
-test("a page the tree lists later than UNLISTED_MS is still brought up, however many repaints come first", async () => {
-  expect(UNLISTED_MS).toBe(5_000);
-  // Measured on a workspace of 1870 pages: the edit arrived 40 ms after the
-  // write, and the window's tree named the page twelve seconds after that.
-  const late = beforeTheTree();
+test("a page the server does not know yet is followed once a change on disk brings it, however late within the cap", async () => {
+  // Measured on a workspace of 1870 pages: the history named the page a
+  // moment after the write, and the page reached the rest of the window about
+  // twelve seconds later. Asked for, answered absent, and asked again after
+  // the next change on disk — never waiting for a tree.
+  const late = beforeTheWindow(false);
   await late.switcher.start();
   late.clock.advance(10 * MIN);
   late.stream(late.server.edit("fresh"));
-  late.clock.advance(12_000);
-  late.repaint();
-  late.repaint();
+  await settle();
   expect(late.ui.get().route).toEqual(page("log"));
-  late.list();
+  late.clock.advance(12_000);
+  late.dir.repaint();
+  late.dir.repaint();
+  await settle();
+  // A repaint asks nothing more: the store remembered it absent.
+  expect(late.dir.asked).toEqual(["u-fresh"]);
+  late.arrive();
+  await settle();
   expect(late.ui.get().route).toEqual(page("fresh"));
-  expect(late.ui.get().panel).toBe(true);
+  expect(late.dir.asked).toEqual(["u-fresh", "u-fresh"]);
 });
 
-test("a write waiting for the tree is dropped only once UNLISTED_MS has passed AND the tree has come back UNLISTED_LISTS times without it; past UNLISTED_CAP_MS it is dropped whatever", async () => {
-  expect(UNLISTED_LISTS).toBe(2);
+test("a write whose page never turns up is let go past UNLISTED_CAP_MS; exactly at it, the page is still brought up", async () => {
   expect(UNLISTED_CAP_MS).toBe(60_000);
-  /** A window with Fresh's write waiting, and `steps` done to its tree in order. @param {(w: ReturnType<typeof beforeTheTree>) => void} steps */
-  const after = async (steps) => {
-    const w = beforeTheTree();
+  /** A window with Fresh's write waiting, `ms` later the page arriving. @param {number} ms */
+  const arriving = async (ms) => {
+    const w = beforeTheWindow(false);
     await w.switcher.start();
     w.clock.advance(10 * MIN);
     w.stream(w.server.edit("fresh"));
-    steps(w);
-    w.list();
+    await settle();
+    w.clock.advance(ms);
+    w.arrive();
+    await settle();
     return w.ui.get().route;
   };
-
-  // Twice without it, but inside UNLISTED_MS: kept, and brought up when the
-  // tree names it later.
-  expect(await after((w) => { w.without(); w.without(); w.clock.advance(6_000); })).toEqual(page("fresh"));
-  // Once without it after UNLISTED_MS — that listing may have been asked for
-  // before the page was on disk — and a repaint is not a listing: kept.
-  expect(await after((w) => { w.clock.advance(6_000); w.without(); w.repaint(); w.repaint(); })).toEqual(page("fresh"));
-  // Twice without it, the second after UNLISTED_MS: dropped, so the listing
-  // that names it brings nothing up.
-  expect(await after((w) => { w.without(); w.clock.advance(6_000); w.without(); })).toEqual(page("log"));
-  expect(await after((w) => { w.clock.advance(6_000); w.without(); w.repaint(); w.without(); })).toEqual(page("log"));
-  // Past the ceiling, even the first listing that names it brings nothing up;
-  // exactly at it, it still does.
-  expect(await after((w) => { w.clock.advance(UNLISTED_CAP_MS + 1); })).toEqual(page("log"));
-  expect(await after((w) => { w.clock.advance(UNLISTED_CAP_MS); })).toEqual(page("fresh"));
+  expect(await arriving(UNLISTED_CAP_MS + 1)).toEqual(page("log"));
+  expect(await arriving(UNLISTED_CAP_MS)).toEqual(page("fresh"));
 });
 
-test("a newer write of the chat takes the place of one waiting for the tree", async () => {
-  const w = beforeTheTree();
+test("a reload onto a page this window has not heard of looks up the route and its latest view before deciding whose the screen is, and Go back to names work it had to ask for", async () => {
+  const first = windowOn();
+  await first.switcher.start();
+  first.clock.advance(10 * MIN);
+  first.stream(first.server.edit("boards"));
+  await settle();
+
+  // THE RELOAD, with a directory that knows nothing yet: every name is asked for.
+  const dir = directory([], () => PAGES);
+  const ui = makeUi({ route: page("boards") });
+  const history = makeHistoryStore({ transport: first.server.transport, now: first.clock.now });
+  const again = makeSwitcher({ ui, history, window: WINDOW, ...dir, now: first.clock.now, timing: T, after: first.clock.after });
+  await again.start();
+  await settle();
+  expect(dir.asked).toContain("boards");
+  expect(dir.asked).toContain("u-boards");
+  // Still the agent's screen, so Go back to shows — naming Log, asked for too.
+  expect(again.get().back).toEqual({ to: page("log"), name: "Log" });
+  expect(dir.asked).toContain("u-log");
+});
+
+test("a newer write of the chat takes the place of one waiting for its page", async () => {
+  const w = beforeTheWindow(false);
   await w.switcher.start();
   w.clock.advance(10 * MIN);
   w.stream(w.server.edit("fresh"));
@@ -820,20 +875,22 @@ test("a newer write of the chat takes the place of one waiting for the tree", as
   w.stream(w.server.edit("boards"));
   expect(w.ui.get().route).toEqual(page("boards"));
   w.clock.advance(100);
-  w.list();
+  w.arrive();
+  await settle();
   w.clock.advance(10_000);
   expect(w.moves.filter((m) => m.startsWith("switcher"))).toEqual(["switcher:boards"]);
 });
 
-test("a write waiting for the tree is decided by every rule when it lands: a touch since holds the screen, and it is offered", async () => {
-  const w = beforeTheTree();
+test("a write waiting for its page is decided by every rule when it lands: a touch since holds the screen, and it is offered", async () => {
+  const w = beforeTheWindow(false);
   await w.switcher.start();
   w.clock.advance(10 * MIN);
   w.stream(w.server.edit("fresh"));
   w.clock.advance(100);
   w.switcher.touched("log");
   w.clock.advance(100);
-  w.list();
+  w.arrive();
+  await settle();
   expect(w.ui.get().route).toEqual(page("log"));
   expect(w.switcher.get().offer).toEqual({ to: page("fresh"), name: "Fresh" });
 });

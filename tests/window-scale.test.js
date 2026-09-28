@@ -16,6 +16,8 @@ import { makeWorkspace, ROOT_PAGE, WANT_BATCH, ancestorsOf, parentOf } from "../
 import { makeUi } from "../client/store/ui.js";
 import { makeTreeView } from "../client/views/tree.js";
 import { makeShell, FIND_AFTER } from "../client/shell/shell.js";
+import { makeSwitcher, TIMING } from "../client/store/switcher.js";
+import { makeHistoryStore } from "../client/store/history.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── the invented tree ────────────────────────────────────────────────── */
@@ -92,6 +94,8 @@ function inventServer() {
       case "children": return level(req.page ?? ROOT_PAGE);
       case "table.list": return t.tables;
       case "theme.get": return THEME;
+      case "history.read": return { entries: [], head: 0 };
+      case "window.report": return [];
       case "page.read": {
         const r = ref(req.page);
         return r ? { ...r, variables: {}, sections: [], page: [], ports: null, html: "", plugin: "biom-doc", input: {} } : null;
@@ -660,4 +664,30 @@ test("the rail's finder is one page.search after the typing pauses, through the 
   for (let i = 0; i < 3; i++) await tick();
   expect(asked(w.spy.calls)).toEqual(["page.search"]);
   expect(findAll(w.root, (el) => has(el, "foundrow")).map((r) => flat(find(r, (el) => has(el, "nm"))))).toContain("Invented day 22");
+});
+
+/* ── the switcher: a page it has never heard of ───────────────────────── */
+
+test("an agent's write to a page this window never listed is looked up by uid and followed, with no level listed for it", async () => {
+  const { ws, spy } = standUp();
+  await ws.loadTree();
+  const ui = makeUi({ route: { view: "agent", id: "c1nvented-chat", screen: "page" } });
+  const history = makeHistoryStore({ transport: spy, now: Date.now });
+  const switcher = makeSwitcher({
+    ui, history, window: "w1nvented-window",
+    refOf: (id) => ws.refOf(id), idOfUid: (uid) => ws.idOfUid(uid), want: (q) => ws.want(q), onPages: (hear) => ws.on(hear),
+    now: Date.now, timing: TIMING,
+  });
+  await switcher.start();
+  spy.clear();
+  const uid = uidFor("home/Historic/Day_9");
+  history.take([{
+    kind: "edit", seq: 1, at: 0, place: { view: "page", uid, screen: "page" }, path: "pages/home/children/Historic/children/Day_9/content.yaml",
+    via: "fs", snapshot: null, writer: { kind: "agent", agent: "a1nvented-agent", chat: "c1nvented-chat", harness: "Invented agent", turn: 1 },
+  }], true);
+  for (let i = 0; i < 6; i++) await tick();
+  expect(ui.get().route).toEqual({ view: "page", id: "home/Historic/Day_9", screen: "page" });
+  expect(ui.get().panel).toBe(true);
+  expect(asked(spy.calls).filter((k) => k === "page.locate")).toEqual(["page.locate"]);
+  expect(asked(spy.calls).filter((k) => k.startsWith("children"))).toEqual([]);
 });

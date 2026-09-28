@@ -79,26 +79,20 @@ export const NOT_TOUCH = "data-no-touch";
  *  @type {Readonly<SwitcherTiming>} */
 export const TIMING = Object.freeze({ adopt: 5 * 60_000, idle: 2 * 60_000, settle: 5_000 });
 
-/** HOW LONG, AT LEAST, AN AGENT'S WRITE TO A PAGE THIS WINDOW'S TREE HAS NOT
- *  LISTED YET WAITS FOR IT. A page an agent has just made reaches the history
- *  about 30 ms after the write, with its `uid`, and this window's tree lists it
- *  only after the watcher's settle and a re-list — and both grow with the
- *  workspace: on one of eighteen hundred pages the tree named the page twelve
- *  seconds after the history did. So the wait is not counted on the clock
- *  alone: the write is dropped only once this has passed AND the tree has been
- *  re-listed `UNLISTED_LISTS` times since without it. Not one of the spec's
- *  times: it is how late the tree may be. */
-export const UNLISTED_MS = 5_000;
-
-/** HOW MANY RE-LISTS WITHOUT IT a kept write outlives. The first to come back
- *  may have been asked for before the page was on disk; the window asks for
- *  the next only once that one is in, so the second is the tree's answer. */
-export const UNLISTED_LISTS = 2;
-
-/** AND THE CEILING, however slow the tree or however few its re-lists: a
- *  page that turns up later than this is not brought up for a write that long
- *  ago. */
+/** HOW LONG AN AGENT'S WRITE TO A PAGE THIS WINDOW DOES NOT KNOW IS KEPT. A
+ *  page an agent has just made reaches the history with its `uid` before this
+ *  window has heard of it, so the write is not dropped: its uid is asked for
+ *  by name at once (`want`, which is `page.locate`), and the write is decided
+ *  the moment the answer names the page — it never waits for the tree. A uid
+ *  the server answers absent is asked again after the next change on disk,
+ *  and a write whose page has not turned up within this is let go: a page
+ *  that arrives later than this is not brought up for a write that long ago.
+ *  Not one of the spec's times. */
 export const UNLISTED_CAP_MS = 60_000;
+
+/** How many of the person's newer views, whose pages this window does not
+ *  know yet, one look for **Go back to** asks for by name. */
+const WORK_ASKS = 16;
 
 /**
  * One write, as the switcher looks at it: whose chat, which agent, and the
@@ -171,17 +165,17 @@ export function decide(facts, timing) {
 
 /**
  * WHAT A SCREEN IS CALLED, for **Go back to** and **Go to page**: a page by its
- * name as the tree holds it now — the last segment of its id where the tree
- * has not got it — with its own screen after it; every other screen by the
- * word the rail gives it.
+ * name as the window knows it now — the last segment of its id where it does
+ * not yet — with its own screen after it; every other screen by the word the
+ * rail gives it.
  * @param {Address} a
- * @param {readonly PageRef[]} pages
+ * @param {(id: PageId) => PageRef | null} refOf the directory's lookup
  * @returns {string}
  */
-export function screenName(a, pages) {
+export function screenName(a, refOf) {
   switch (a.view) {
     case "page": {
-      const ref = pages.find((p) => p.id === a.id);
+      const ref = refOf(a.id);
       const name = ref ? ref.name : a.id.slice(a.id.lastIndexOf("/") + 1);
       return a.screen === "instructions" ? name + " · Instructions" : a.screen === "automation" ? name + " · Automations" : name;
     }
@@ -250,13 +244,17 @@ export function boxOf(a) {
  * @property {HistoryStore} history
  * @property {WindowId} window This window's own id: its views are the ones
  *   **Go back to** reads.
- * @property {() => readonly PageRef[]} pages The tree the workspace store
- *   holds, for a page's `uid`, its id now and its name — a new array each time
- *   the tree is re-listed and the same one on a repaint, which is how a re-list
- *   is told from a repaint.
- * @property {(hear: () => void) => () => void} [onPages] Hear the tree
- *   change — the workspace store's `on` — so a write to a page the tree had
- *   not listed yet is taken again once it has. Absent, it is never retried.
+ * @property {(id: PageId) => PageRef | null} refOf THE PAGES THIS WINDOW
+ *   KNOWS, by id — the workspace store's directory: a page's uid and its name.
+ * @property {(uid: string) => PageId | null} idOfUid The same, by uid: where a
+ *   page the history names by identity sits now.
+ * @property {(q: { ids?: readonly PageId[], uids?: readonly string[] }) => Promise<void>} [want]
+ *   ASK FOR PAGES THE DIRECTORY MISSES, by id or uid — batched, deduplicated
+ *   and remembered as absent by the store — resolving once the answer is in.
+ *   Absent, a miss is simply a miss.
+ * @property {(hear: () => void) => () => void} [onPages] Hear the directory
+ *   change — the workspace store's `on` — so a write to a page it had not
+ *   named is decided once it does, and a name asked for is drawn once known.
  * @property {(chat: ChatId) => number | null} [lastSent] When the person last
  *   sent a message in that chat, BY THIS WINDOW'S CLOCK, or null. The chat
  *   store's; absent, no message has ever been sent.
@@ -300,10 +298,14 @@ export function makeSwitcher(deps) {
   const hears = new Set();
   let front = deps.front !== false;
 
-  /** THE TREE, FOR A UID: a page's id now, and a page's uid. @param {string} uid */
-  const idOf = (uid) => deps.pages().find((p) => p.uid === uid)?.id ?? null;
+  /** THE DIRECTORY, FOR A UID: a page's id now, and a page's uid — map
+   *  lookups in the store, never a walk of every page, so a history loop over
+   *  thousands of entries stays a loop over entries. @param {string} uid */
+  const idOf = (uid) => deps.idOfUid(uid);
   /** @param {PageId} id */
-  const uidOf = (id) => deps.pages().find((p) => p.id === id)?.uid ?? null;
+  const uidOf = (id) => deps.refOf(id)?.uid ?? null;
+  /** Ask for what the directory misses; never throws. @param {{ ids?: PageId[], uids?: string[] }} q */
+  const want = (q) => (deps.want ? deps.want(q).catch(() => {}) : Promise.resolve());
 
   /** @param {Address} address @param {boolean} mine @param {Screen["by"]} by @returns {Screen} */
   const fresh = (address, mine, by) => ({ address, place: placeOf(address, uidOf), mine, by, shown: 0, since: front ? now() : null });
@@ -324,13 +326,9 @@ export function makeSwitcher(deps) {
   let offer = null;
   /** An edit waiting out the settle. @type {(() => void) | null} */
   let waiting = null;
-  /** The open chat's latest write to a page this window's tree has not listed
-   *  yet, when this window got it, and how many re-lists have come back
-   *  without it since. @type {{ chat: ChatId, agent: AgentId, place: Place, got: number, lists: number } | null} */
+  /** The open chat's latest write to a page this window does not know yet,
+   *  and when this window got it. @type {{ chat: ChatId, agent: AgentId, place: Place, got: number } | null} */
   let unlisted = null;
-  /** The tree as last heard, so a re-list — a new array — is told from a
-   *  repaint. @type {readonly PageRef[]} */
-  let tree = deps.pages();
   /** The adopt timer. @type {(() => void) | null} */
   let adopting = null;
   /** The context the server was last told. @type {WindowReport | null} */
@@ -518,11 +516,12 @@ export function makeSwitcher(deps) {
    *  and only the open chat's, so a background chat writing in the same batch
    *  can never stand in front of it.
    *
-   *  A WRITE TO A PAGE THE TREE HAS NOT LISTED YET is still that write: a page
-   *  the agent has just made is in the history before it is in this window's
-   *  tree. It is kept — the latest one, a newer write of the chat's replacing
-   *  it — and decided by `listed` once the tree names it, as if it had been
-   *  named on arrival, so an agent's new page is followed like any other.
+   *  A WRITE TO A PAGE THIS WINDOW DOES NOT KNOW is still that write: a page
+   *  the agent has just made is in the history, uid and all, before this
+   *  window has heard of it. Its uid is asked for by name at once, and the
+   *  write is kept — the latest one, a newer write of the chat's replacing
+   *  it — and decided by `listed` the moment the answer names the page, as if
+   *  it had been named on arrival. It never waits for the tree.
    *  @param {readonly Received[]} added */
   function heard(added) {
     const chat = ui.get().chat;
@@ -534,7 +533,8 @@ export function makeSwitcher(deps) {
         if (e.writer.chat !== chat) continue;
         const to = addressOfPlace(e.place, idOf);
         if (to === null) {
-          unlisted = { chat: e.writer.chat, agent: e.writer.agent, place: e.place, got: r.got, lists: 0 };
+          unlisted = { chat: e.writer.chat, agent: e.writer.agent, place: e.place, got: r.got };
+          if (e.place.view === "page") void want({ uids: [e.place.uid] });
           break;
         }
         unlisted = null;
@@ -545,28 +545,24 @@ export function makeSwitcher(deps) {
     tell();
   }
 
-  /** THE TREE CHANGED: a write kept for a page it had not listed is decided
-   *  now that it does, with every rule as it stands — a touch since, a held
-   *  screen, the settle — or dropped once `UNLISTED_MS` has passed AND the tree
-   *  has come back `UNLISTED_LISTS` times without it, because a page the tree
-   *  has answered for twice is not coming; and dropped past `UNLISTED_CAP_MS`
-   *  whatever the tree has done. */
+  /** THE DIRECTORY CHANGED: a write kept for a page it did not name is
+   *  decided the moment it does, with every rule as it stands — a touch since,
+   *  a held screen, the settle — or asked for again (the store asks nothing
+   *  for a uid it was just told is absent, until a change on disk), and let go
+   *  past `UNLISTED_CAP_MS`. And the names on Go back to and Go to page are
+   *  drawn again, since a name asked for may have landed. */
   function listed() {
-    const listing = deps.pages();
-    const relisted = listing !== tree;
-    tree = listing;
-    if (unlisted === null) return;
-    const u = unlisted;
-    const waited = now() - u.got;
-    if (waited > UNLISTED_CAP_MS) { unlisted = null; return; }
-    const to = addressOfPlace(u.place, idOf);
-    if (to === null) {
-      if (relisted) u.lists++;
-      if (waited > UNLISTED_MS && u.lists >= UNLISTED_LISTS) unlisted = null;
-      return;
+    if (unlisted !== null) {
+      const u = unlisted;
+      if (now() - u.got > UNLISTED_CAP_MS) unlisted = null;
+      else {
+        const to = addressOfPlace(u.place, idOf);
+        if (to !== null) {
+          unlisted = null;
+          consider({ chat: u.chat, agent: u.agent, to });
+        } else if (u.place.view === "page") void want({ uids: [u.place.uid] });
+      }
     }
-    unlisted = null;
-    consider({ chat: u.chat, agent: u.agent, to });
     tell();
   }
 
@@ -598,27 +594,51 @@ export function makeSwitcher(deps) {
       return sameAddress(f.context.address, here) ? null : f.context.address;
     }
     const all = history.get();
+    /** Newer views of the person's whose pages this window does not know yet:
+     *  asked for by uid, and the answer is one more look. @type {string[]} */
+    const unknown = [];
+    /** @type {Address | null} */
+    let found = null;
     for (let i = all.length - 1; i >= 0; i--) {
       const e = /** @type {Received} */ (all[i]).entry;
       if (e.kind !== "view" || e.window !== deps.window || e.writer.kind !== "you") continue;
       const a = addressOfPlace(e.place, idOf);
-      if (a === null) continue;
-      return sameAddress(a, here) ? null : a;
+      if (a === null) {
+        if (e.place.view === "page" && unknown.length < WORK_ASKS) unknown.push(e.place.uid);
+        continue;
+      }
+      found = a;
+      break;
     }
-    return null;
+    if (unknown.length) void want({ uids: unknown });
+    return found === null || sameAddress(found, here) ? null : found;
   }
 
   /** @returns {SwitcherView} */
   function view() {
-    const pages = deps.pages();
     const back = work();
     const u = ui.get();
     const offered = offer !== null && offer.chat === u.chat && (u.route.view === "agent" || u.panel) && !sameAddress(offer.to, u.route)
       ? offer.to : null;
+    // A NAME THE DIRECTORY LACKS reads as its segment until it is asked for
+    // and lands — one more look, through `listed`.
+    const nameless = [back, offered].filter((a) => a !== null && a.view === "page" && deps.refOf(a.id) === null).map((a) => /** @type {Address} */ (a).id);
+    if (nameless.length) void want({ ids: nameless });
     return {
-      back: back === null ? null : { to: back, name: screenName(back, pages) },
-      offer: offered === null ? null : { to: offered, name: screenName(offered, pages) },
+      back: back === null ? null : { to: back, name: screenName(back, deps.refOf) },
+      offer: offered === null ? null : { to: offered, name: screenName(offered, deps.refOf) },
     };
+  }
+
+  /** THE PAGES A DECISION ABOUT THE SCREEN READS, asked for where this window
+   *  does not know them — the route's own page and the history's latest view
+   *  of this window — and waited for, so a reload decides against the page it
+   *  is on and not against a miss. @param {Place | null | undefined} place */
+  async function learn(place) {
+    const route = ui.get().route;
+    const ids = route.view === "page" && route.id !== "" && deps.refOf(route.id) === null ? [route.id] : [];
+    const uids = place && place.view === "page" && idOf(place.uid) === null ? [place.uid] : [];
+    if (ids.length || uids.length) await want({ ids, uids });
   }
 
   /* ── wiring ──────────────────────────────────────────────────────────── */
@@ -675,7 +695,9 @@ export function makeSwitcher(deps) {
       if (started) return;
       await history.catchUp();
       started = true;
-      // The tree is read by now; a screen that went up before it has its uid.
+      // The route's page and this window's latest view, known before anything
+      // is decided from them; a screen that went up before either has its uid.
+      await learn(latestView()?.place);
       if (screen.place === null) screen.place = placeOf(screen.address, uidOf);
       // ONLY IF NOTHING HAS HAPPENED SINCE THE WINDOW LOADED. A move or a
       // touch since then said whose the screen is, and it is newer than
@@ -711,6 +733,7 @@ export function makeSwitcher(deps) {
       // said again whatever else is true — and where the history no longer
       // has this screen as this window has it (a server that restarted, a
       // report lost on the way), whose it is is said again too.
+      await learn(latestView()?.place);
       const v = latestView();
       const here = ui.get().route;
       const at = v === null ? null : addressOfPlace(v.place, idOf);
