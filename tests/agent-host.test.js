@@ -537,7 +537,9 @@ test("a new thread on the full screen is the start screen with the list opened, 
 function bridgeDoubles() {
   /** @type {any[]} */
   const calls = [];
-  const ws = { get: () => ({ pages: [{ id: "home", name: "Home" }], tables: [] }) };
+  const pages = [{ id: "home", name: "Home" }];
+  // The window's directory: the page it knows, and nothing more to ask for.
+  const ws = { get: () => ({ pages, tables: [] }), refOf: (/** @type {string} */ id) => pages.find((p) => p.id === id) ?? null, want: async () => {} };
   const transport = { call: async (/** @type {any} */ req) => { calls.push(req); return { id: req.id, g: PROTOCOL, ok: true, value: null }; } };
   /** @type {any[]} */
   const opened = [];

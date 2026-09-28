@@ -236,7 +236,9 @@ function bridgeWith(/** @type {number} */ start = 0) {
   const went = [];
   /** @type {number[]} */
   const waited = [];
-  const ws = /** @type {any} */ ({ get: () => ({ pages: [{ id: "notes", name: "Notes" }], tables: [] }) });
+  const pages = [{ id: "notes", name: "Notes" }];
+  // The window's directory: the page it knows, and nothing more to ask for.
+  const ws = /** @type {any} */ ({ get: () => ({ pages, tables: [] }), refOf: (/** @type {string} */ id) => pages.find((p) => p.id === id) ?? null, want: async () => {} });
   const transport = /** @type {any} */ ({ call: async () => ({ ok: true, value: null }) });
   /** @type {(() => void) | null} */
   let during = null;
