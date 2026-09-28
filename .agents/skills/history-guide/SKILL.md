@@ -266,10 +266,16 @@ so a background chat writing in the same batch never stands in front of it,
 and a write read back after a reload is never followed. **A write to a page
 this window's tree has not listed yet is kept**: a page an agent has just made
 reaches the history about 30 ms after the write, and the tree only after the
-watcher's settle and a `page.list` round trip. The latest such write is held —
-a newer write of the chat's, listed or not, replacing it — and decided every
-time the tree changes, as if it had been named on arrival, for at most
-`UNLISTED_MS` (five seconds) after it came.
+watcher's settle and a re-list, which grow with the workspace — on one of
+eighteen hundred pages the tree named the page twelve seconds after the
+history did. The latest such write is held — a newer write of the chat's,
+listed or not, replacing it — and decided every time the tree changes, as if it
+had been named on arrival. **It is dropped only once `UNLISTED_MS` (five
+seconds) has passed AND the tree has been re-listed `UNLISTED_LISTS` (two)
+times since without it**, because the first re-list may have been asked for
+before the page was on disk and the second is the tree's answer; a re-list is
+a new `pages` array, so a repaint does not count. `UNLISTED_CAP_MS` (a minute)
+drops it however slow the tree.
 
 **It is also what reports the context**: every change of address, panel or
 chat goes out as `window.report`, with `moved` saying who. On start it reads the
@@ -335,8 +341,9 @@ beside the page. A move by the switcher clears it.
 - A duplicated tab shares its window id, because it copies `sessionStorage`.
 - A write seen only in a catch-up read is never followed — by design, since it
   is the past.
-- A write to a page this window's tree does not list within `UNLISTED_MS` is
-  never followed.
+- A write to a page this window's tree has come back without twice, once
+  `UNLISTED_MS` has passed, is never followed; nor is one the tree lists more
+  than `UNLISTED_CAP_MS` after it came.
 - On the Agent screen only the open itself holds the screen against a move.
 
 ## Key files
@@ -354,7 +361,7 @@ client/transport/events.js     onNamed, onOpen, the stream's query
 client/transport/chat.js       isHistoryEntry, isPlace: the history event, checked whole
 client/store/ui.js             open, follow, go, cause, the Mover and Cause typedefs
 client/store/history.js        makeHistoryStore: take, catchUp, report, unanswered
-client/store/switcher.js       decide, TIMING, UNLISTED_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
+client/store/switcher.js       decide, TIMING, UNLISTED_MS, UNLISTED_LISTS, UNLISTED_CAP_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
 client/bridge/bridge.js        OPEN_AFTER_TOUCH, OPEN_GRACE, touched, the `open` case
 client/frame/frame.js          the `touch` branch of fromGuest, a session's `top`, the `hear` argument
 client/shell/shell.js          syncHash, the hashchange handler, the canvas's touches, the backslot

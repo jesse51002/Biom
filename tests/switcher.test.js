@@ -14,7 +14,7 @@
 
 import { test, expect } from "bun:test";
 
-import { decide, makeSwitcher, screenName, boxOf, TIMING, UNLISTED_MS } from "../client/store/switcher.js";
+import { decide, makeSwitcher, screenName, boxOf, TIMING, UNLISTED_MS, UNLISTED_LISTS, UNLISTED_CAP_MS } from "../client/store/switcher.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeHistoryStore } from "../client/store/history.js";
 import { placeOf } from "../contracts/address.js";
@@ -734,7 +734,8 @@ const FRESH = { id: "fresh", name: "Fresh", uid: "u-fresh" };
 
 /** A window whose tree has not listed Fresh yet, though the server — and so
  *  the history — has it with its uid; `list()` is the tree re-listed with it,
- *  heard as the workspace store's change is. */
+ *  heard as the workspace store's change is, and `without()` re-listed still
+ *  without it. */
 function beforeTheTree(route = page("log")) {
   let tree = [...PAGES];
   /** @type {Set<() => void>} */
@@ -743,7 +744,8 @@ function beforeTheTree(route = page("log")) {
     pages: () => tree,
     onPages: (/** @type {() => void} */ hear) => { hears.add(hear); return () => { hears.delete(hear); }; },
   }, [...PAGES, FRESH]);
-  return { ...w, list() { tree = [...PAGES, FRESH]; for (const hear of [...hears]) hear(); } };
+  const hearAll = () => { for (const hear of [...hears]) hear(); };
+  return { ...w, list() { tree = [...PAGES, FRESH]; hearAll(); }, without() { tree = [...PAGES]; hearAll(); }, repaint: hearAll };
 }
 
 test("a page the agent has just made is brought up once this window's tree lists it, a moment after the history named it", async () => {
@@ -762,26 +764,51 @@ test("a page the agent has just made is brought up once this window's tree lists
   expect(w.switcher.get().back?.name).toBe("Log");
 });
 
-test("a page the tree lists only after UNLISTED_MS is not brought up; exactly then it still is", async () => {
+test("a page the tree lists later than UNLISTED_MS is still brought up, however many repaints come first", async () => {
   expect(UNLISTED_MS).toBe(5_000);
+  // Measured on a workspace of 1870 pages: the edit arrived 40 ms after the
+  // write, and the window's tree named the page twelve seconds after that.
   const late = beforeTheTree();
   await late.switcher.start();
   late.clock.advance(10 * MIN);
   late.stream(late.server.edit("fresh"));
-  late.clock.advance(6_000);
-  late.list();
+  late.clock.advance(12_000);
+  late.repaint();
+  late.repaint();
   expect(late.ui.get().route).toEqual(page("log"));
-  // Dropped, not kept: a later change to the tree brings nothing up either.
   late.list();
-  expect(late.ui.get().route).toEqual(page("log"));
+  expect(late.ui.get().route).toEqual(page("fresh"));
+  expect(late.ui.get().panel).toBe(true);
+});
 
-  const edge = beforeTheTree();
-  await edge.switcher.start();
-  edge.clock.advance(10 * MIN);
-  edge.stream(edge.server.edit("fresh"));
-  edge.clock.advance(UNLISTED_MS);
-  edge.list();
-  expect(edge.ui.get().route).toEqual(page("fresh"));
+test("a write waiting for the tree is dropped only once UNLISTED_MS has passed AND the tree has come back UNLISTED_LISTS times without it; past UNLISTED_CAP_MS it is dropped whatever", async () => {
+  expect(UNLISTED_LISTS).toBe(2);
+  expect(UNLISTED_CAP_MS).toBe(60_000);
+  /** A window with Fresh's write waiting, and `steps` done to its tree in order. @param {(w: ReturnType<typeof beforeTheTree>) => void} steps */
+  const after = async (steps) => {
+    const w = beforeTheTree();
+    await w.switcher.start();
+    w.clock.advance(10 * MIN);
+    w.stream(w.server.edit("fresh"));
+    steps(w);
+    w.list();
+    return w.ui.get().route;
+  };
+
+  // Twice without it, but inside UNLISTED_MS: kept, and brought up when the
+  // tree names it later.
+  expect(await after((w) => { w.without(); w.without(); w.clock.advance(6_000); })).toEqual(page("fresh"));
+  // Once without it after UNLISTED_MS — that listing may have been asked for
+  // before the page was on disk — and a repaint is not a listing: kept.
+  expect(await after((w) => { w.clock.advance(6_000); w.without(); w.repaint(); w.repaint(); })).toEqual(page("fresh"));
+  // Twice without it, the second after UNLISTED_MS: dropped, so the listing
+  // that names it brings nothing up.
+  expect(await after((w) => { w.without(); w.clock.advance(6_000); w.without(); })).toEqual(page("log"));
+  expect(await after((w) => { w.clock.advance(6_000); w.without(); w.repaint(); w.without(); })).toEqual(page("log"));
+  // Past the ceiling, even the first listing that names it brings nothing up;
+  // exactly at it, it still does.
+  expect(await after((w) => { w.clock.advance(UNLISTED_CAP_MS + 1); })).toEqual(page("log"));
+  expect(await after((w) => { w.clock.advance(UNLISTED_CAP_MS); })).toEqual(page("fresh"));
 });
 
 test("a newer write of the chat takes the place of one waiting for the tree", async () => {

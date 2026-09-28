@@ -79,14 +79,26 @@ export const NOT_TOUCH = "data-no-touch";
  *  @type {Readonly<SwitcherTiming>} */
 export const TIMING = Object.freeze({ adopt: 5 * 60_000, idle: 2 * 60_000, settle: 5_000 });
 
-/** HOW LONG AN AGENT'S WRITE TO A PAGE THIS WINDOW'S TREE HAS NOT LISTED YET
- *  WAITS FOR IT. A page an agent has just made reaches the history about 30 ms
- *  after the write, with its `uid`, and this window's tree lists it only
- *  after the watcher's settle and a `page.list` round trip — so the edit's
- *  place names nothing here yet. It is kept, and taken again each
- *  time the tree changes, for this long after it arrived. Not one of the
- *  spec's times: it is how late the tree may be, not a rule of the switcher. */
+/** HOW LONG, AT LEAST, AN AGENT'S WRITE TO A PAGE THIS WINDOW'S TREE HAS NOT
+ *  LISTED YET WAITS FOR IT. A page an agent has just made reaches the history
+ *  about 30 ms after the write, with its `uid`, and this window's tree lists it
+ *  only after the watcher's settle and a re-list — and both grow with the
+ *  workspace: on one of eighteen hundred pages the tree named the page twelve
+ *  seconds after the history did. So the wait is not counted on the clock
+ *  alone: the write is dropped only once this has passed AND the tree has been
+ *  re-listed `UNLISTED_LISTS` times since without it. Not one of the spec's
+ *  times: it is how late the tree may be. */
 export const UNLISTED_MS = 5_000;
+
+/** HOW MANY RE-LISTS WITHOUT IT a kept write outlives. The first to come back
+ *  may have been asked for before the page was on disk; the window asks for
+ *  the next only once that one is in, so the second is the tree's answer. */
+export const UNLISTED_LISTS = 2;
+
+/** AND THE CEILING, however slow the tree or however few its re-lists: a
+ *  page that turns up later than this is not brought up for a write that long
+ *  ago. */
+export const UNLISTED_CAP_MS = 60_000;
 
 /**
  * One write, as the switcher looks at it: whose chat, which agent, and the
@@ -239,7 +251,9 @@ export function boxOf(a) {
  * @property {WindowId} window This window's own id: its views are the ones
  *   **Go back to** reads.
  * @property {() => readonly PageRef[]} pages The tree the workspace store
- *   holds, for a page's `uid`, its id now and its name.
+ *   holds, for a page's `uid`, its id now and its name — a new array each time
+ *   the tree is re-listed and the same one on a repaint, which is how a re-list
+ *   is told from a repaint.
  * @property {(hear: () => void) => () => void} [onPages] Hear the tree
  *   change — the workspace store's `on` — so a write to a page the tree had
  *   not listed yet is taken again once it has. Absent, it is never retried.
@@ -311,8 +325,12 @@ export function makeSwitcher(deps) {
   /** An edit waiting out the settle. @type {(() => void) | null} */
   let waiting = null;
   /** The open chat's latest write to a page this window's tree has not listed
-   *  yet, and when this window got it. @type {{ chat: ChatId, agent: AgentId, place: Place, got: number } | null} */
+   *  yet, when this window got it, and how many re-lists have come back
+   *  without it since. @type {{ chat: ChatId, agent: AgentId, place: Place, got: number, lists: number } | null} */
   let unlisted = null;
+  /** The tree as last heard, so a re-list — a new array — is told from a
+   *  repaint. @type {readonly PageRef[]} */
+  let tree = deps.pages();
   /** The adopt timer. @type {(() => void) | null} */
   let adopting = null;
   /** The context the server was last told. @type {WindowReport | null} */
@@ -516,7 +534,7 @@ export function makeSwitcher(deps) {
         if (e.writer.chat !== chat) continue;
         const to = addressOfPlace(e.place, idOf);
         if (to === null) {
-          unlisted = { chat: e.writer.chat, agent: e.writer.agent, place: e.place, got: r.got };
+          unlisted = { chat: e.writer.chat, agent: e.writer.agent, place: e.place, got: r.got, lists: 0 };
           break;
         }
         unlisted = null;
@@ -529,14 +547,24 @@ export function makeSwitcher(deps) {
 
   /** THE TREE CHANGED: a write kept for a page it had not listed is decided
    *  now that it does, with every rule as it stands — a touch since, a held
-   *  screen, the settle — or dropped once `UNLISTED_MS` has passed since it
-   *  arrived, because a page that has not turned up by then is not coming. */
+   *  screen, the settle — or dropped once `UNLISTED_MS` has passed AND the tree
+   *  has come back `UNLISTED_LISTS` times without it, because a page the tree
+   *  has answered for twice is not coming; and dropped past `UNLISTED_CAP_MS`
+   *  whatever the tree has done. */
   function listed() {
+    const listing = deps.pages();
+    const relisted = listing !== tree;
+    tree = listing;
     if (unlisted === null) return;
     const u = unlisted;
-    if (now() - u.got > UNLISTED_MS) { unlisted = null; return; }
+    const waited = now() - u.got;
+    if (waited > UNLISTED_CAP_MS) { unlisted = null; return; }
     const to = addressOfPlace(u.place, idOf);
-    if (to === null) return;
+    if (to === null) {
+      if (relisted) u.lists++;
+      if (waited > UNLISTED_MS && u.lists >= UNLISTED_LISTS) unlisted = null;
+      return;
+    }
     unlisted = null;
     consider({ chat: u.chat, agent: u.agent, to });
     tell();
