@@ -16,8 +16,10 @@
 //   - it is STABLE for the session: asked twice at once it is one `uid`, and
 //     an agent writing the document whole without it gets the same one back —
 //     a page that was there at mount included;
+//   - it is DECIDED FROM MEMORY: a known page that lost its `uid` reads its own
+//     document and walks no tree, because this is on the history's path;
 //   - a page that moved away takes its `uid` with it, and a new page made at
-//     its old id is not handed it;
+//     its old id is not handed it — only the page holding it is read to say so;
 //   - a document that is not there or will not parse is never rewritten;
 //   - through the composition root, with the scripted agent: the agent's new
 //     page is one history edit PLACED by its `uid`, the real switcher follows
@@ -192,19 +194,64 @@ test("STABLE FOR THE SESSION: an agent writing the document whole without its ui
   expect(readFileSync(docPath(root, "home/Notes"), "utf8")).toContain("Notes, rewritten");
 });
 
-test("A PAGE THAT MOVED TAKES ITS UID WITH IT: a new page at its old id is not handed it", async () => {
+/** A `Files` that counts what it is asked: every directory listed — a walk of
+ *  the tree lists every page's — and every file read. */
+function spied(root: string) {
+  const inner = makeFiles(root);
+  const reads: string[] = [];
+  let lists = 0;
+  const files = {
+    ...inner,
+    read: (rel: string) => { reads.push(rel); return inner.read(rel); },
+    list: (rel: string) => { lists++; return inner.list(rel); },
+  } as typeof inner;
+  return { files, reads, lists: () => lists, clear: () => { reads.length = 0; lists = 0; } };
+}
+
+test("DECIDED FROM MEMORY: a known page that lost its uid walks no tree — it reads its own document and nothing else", async () => {
   const root = vaultOf();
-  const ids = makeIdentities(makeFiles(root), yaml);
+  // Enough pages that a walk would show.
+  for (let i = 0; i < 30; i++) put(root, `home/Filler${i}`, `name: Filler ${i}\nuid: f1ller${String(i).padStart(10, "0")}\nplugin: biom-doc\ncontents: []\n`);
+  const spy = spied(root);
+  const ids = makeIdentities(spy.files, yaml);
   ids.saw(await makePages(makeFiles(root), yaml).list());
-  // Notes moves to Archive, from outside, uid and all; nothing asks about it.
+
+  // An agent writes Notes whole, without the uid it had.
+  put(root, "home/Notes", AGENT_DOC("Notes, rewritten"));
+  spy.clear();
+  expect(await ids.of("home/Notes")).toBe("n0tesinvented001");
+  await ids.written();
+  expect(spy.lists()).toBe(0);
+  expect([...new Set(spy.reads)]).toEqual([docPath("", "home/Notes").replace(/^\//, "")]);
+  expect(uidOnDisk(root, "home/Notes")).toBe("n0tesinvented001");
+});
+
+test("A PAGE THAT MOVED TAKES ITS UID WITH IT: a new page at its old id is not handed it, and only the page that holds it is read to say so", async () => {
+  const root = vaultOf();
+  const spy = spied(root);
+  const ids = makeIdentities(spy.files, yaml);
+  ids.saw(await makePages(makeFiles(root), yaml).list());
+  // Notes moves to Archive, uid and all — and the move is seen, as the
+  // watcher's structural settle sees every move and hands `arrived` the list.
   put(root, "home/Archive", readFileSync(docPath(root, "home/Notes"), "utf8"));
   rmSync(join(root, pageDir("home/Notes")), { recursive: true, force: true });
+  await ids.arrived(await makePages(makeFiles(root), yaml).list());
   // A new page is made where Notes was.
   put(root, "home/Notes", AGENT_DOC("Notes again"));
+  spy.clear();
   const uid = await ids.of("home/Notes");
   expect(uid).not.toBeNull();
   expect(uid).not.toBe("n0tesinvented001");
+  expect(spy.lists()).toBe(0);
+  expect([...new Set(spy.reads)].sort()).toEqual([docPath("", "home/Archive"), docPath("", "home/Notes")].map((p) => p.replace(/^\//, "")).sort());
+  // The moved page keeps its own — and gets it back when written whole without it.
   expect(await ids.of("home/Archive")).toBe("n0tesinvented001");
+  await ids.written();
+  put(root, "home/Archive", AGENT_DOC("Archive, rewritten"));
+  expect(await ids.of("home/Archive")).toBe("n0tesinvented001");
+  await ids.written();
+  expect(uidOnDisk(root, "home/Archive")).toBe("n0tesinvented001");
+  expect(uidOnDisk(root, "home/Notes")).toBe(uid);
 });
 
 test("a page that is not there is no identity, and one that will not parse — or the design doc, which is in no tree — is never written", async () => {

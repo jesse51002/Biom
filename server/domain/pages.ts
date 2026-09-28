@@ -1962,10 +1962,10 @@ export interface Identities {
  *   in memory, and the next ask writes it again.
  */
 export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: string, e: unknown) => void = () => {}): Identities {
-  /** The tree as the disk has it now, for the one question that needs all of
-   *  it: does another page hold this `uid`. Over the same baseline-free files. */
-  const tree = makePages(files, yaml);
-  /** Page id → `uid`, and back, as last seen or given. */
+  /** THE `uid` EACH PAGE ID LAST HAD, and WHICH PAGE LAST HELD each `uid`, as
+   *  seen or given. The two can disagree, and that is what they are for: a page
+   *  that moved leaves its old id still knowing the `uid`, while the `uid`'s
+   *  holder is the page at its new id. */
   const known = new Map<PageId, string>();
   const owner = new Map<string, PageId>();
   /** Pages whose `uid` is decided and not yet in the file. */
@@ -1977,12 +1977,6 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
   let writing: Promise<unknown> = Promise.resolve();
 
   const learn = (id: PageId, uid: string): void => {
-    // A `uid` seen at a new id is a page that moved: the old id holds it no
-    // longer, and must not hand it to whatever is made there next.
-    const was = owner.get(uid);
-    if (was !== undefined && was !== id && known.get(was) === uid) known.delete(was);
-    const had = known.get(id);
-    if (had !== undefined && had !== uid && owner.get(had) === id) owner.delete(had);
     known.set(id, uid);
     owner.set(uid, id);
   };
@@ -1998,15 +1992,18 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
     }
   };
 
-  /** Does a page other than `id` hold `uid` on disk now? */
+  /** DOES ANOTHER PAGE HOLD `uid` NOW — asked of memory, and of the disk only
+   *  for the one page memory names: never a walk of the tree, which on a
+   *  workspace of two thousand pages is over a second, and this is on the
+   *  history's path, where every append waits on it. A move is known without
+   *  one: the watcher's structural settle hands `arrived` the list, and an
+   *  agent's move is an edit the history asks about. A page moved while no
+   *  window watched and no writer Biom can name moved it is the one this
+   *  cannot see. */
   const heldElsewhere = async (uid: string, id: PageId): Promise<boolean> => {
-    let elsewhere = false;
-    for (const ref of await tree.list()) {
-      if (typeof ref.uid !== "string") continue;
-      learn(ref.id, ref.uid);
-      if (ref.uid === uid && ref.id !== id) elsewhere = true;
-    }
-    return elsewhere;
+    const holder = owner.get(uid);
+    if (holder === undefined || holder === id) return false;
+    return (await read(holder))?.uid === uid;
   };
 
   /** ONE COMMIT AHEAD, as mount does, then ONE LINE: `uid:` put in under the
