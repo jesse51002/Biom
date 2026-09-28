@@ -989,3 +989,28 @@ test("a lock file that cannot be read counts as held, judged stale by its time a
   expect(runs).toEqual(["A"]);
   expect(existsSync(lock)).toBe(false);
 });
+
+test("AN INSTALL THAT FINDS THIS VERSION ALREADY INSTALLED uses it and rebuilds nothing, though it never waited: a second workspace pressing Install after the first finished leaves the first's agent standing", async () => {
+  const home = fresh();
+  const runs: string[] = [];
+  const a = rig({ entries: [jsEntry], home });
+  a.deps.processes = heldNpm("A", runs, Promise.resolve());
+  a.deps.timing = { ...a.deps.timing, ...lockTiming };
+  const A = makeAgents(a.deps);
+  A.install("jsagent");
+  await A.settled();
+  expect(A.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+  const bin = join(home, "jsagent", "3.1.0", "node_modules", "@invented", "js-agent", "index.js");
+  expect(existsSync(bin)).toBe(true);
+  // Workspace B's More agents was drawn before A's install landed, and its
+  // npm would fail — the network is down, say.
+  const b = rig({ entries: [jsEntry], home });
+  b.deps.processes = heldNpm("B", runs, Promise.resolve(), true);
+  b.deps.timing = { ...b.deps.timing, ...lockTiming };
+  const B = makeAgents(b.deps);
+  B.install("jsagent");
+  await B.settled();
+  expect(runs).toEqual(["A"]);
+  expect(existsSync(bin)).toBe(true);
+  expect(B.list().find((x) => x.key === "jsagent")?.state).toBe("active");
+});

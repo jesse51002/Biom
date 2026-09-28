@@ -1538,10 +1538,17 @@ export function makeAgents(deps: AgentsDeps): Agents {
             // Gone already.
           }
         }
-        // Installed by the workspace this one waited on: used as it stands,
-        // not rebuilt under an agent that workspace may be running from it.
-        const theirs = lock.waited ? await fromInstalled(slot.key, env) : null;
-        if (theirs === null || theirs.version !== entry.version) {
+        // THIS VERSION ALREADY INSTALLED — by the workspace this one waited
+        // on, or by any before it: used as it stands, never rebuilt
+        // under an agent that may be running from it. An npm or uv install
+        // deletes its tree before it starts, so it is looked for whether or
+        // not this install waited. A binary one is staged beside its tree and
+        // replaces it only once whole, so without a wait it installs again
+        // and its download is checked again.
+        const look = lock.waited || plan.via !== "binary";
+        const theirs = look ? await fromInstalled(slot.key, env) : null;
+        const usable = theirs !== null && theirs.version === entry.version && theirs.launch !== null;
+        if (!usable) {
           if (lock.waited) {
             slot.info.message = `Installing ${entry.version} from the ACP Registry.`;
             emit();
