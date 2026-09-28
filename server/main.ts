@@ -1710,7 +1710,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     if (now.busy) return;
     now.busy = true;
     try {
-      const burst = [...now.pending];
+      // A FOLDER BEFORE WHAT IS IN IT. A page made in one go — its folder and
+      // its document, as an agent's write through Biom makes them — is named by
+      // both, and the folder's verdict is what says it arrived: the document's
+      // can only ask the index, which the history or the switcher may already
+      // have told of the page by then. Taken after the document, which it
+      // finds already noted, the folder said nothing.
+      const burst = [...now.pending].sort((a, b) => depthOf(a) - depthOf(b));
       now.pending.clear();
 
       // EVERY VERDICT IN THE BURST IS TAKEN BEFORE ANY PROJECTION RUNS, and that
@@ -2291,23 +2297,33 @@ export function changeOf(
 ): ChangeEvent {
   const pages = new Set<PageId>();
   const levels = new Set<PageId>(relisted);
+  // A PAGE ARRIVING OR LEAVING changes its parent's level, and the level above
+  // that too: the parent's row there says whether it holds anything, and its
+  // first child arriving, or its last leaving, is what draws or takes away its
+  // caret.
+  const around = (id: PageId): void => {
+    const parent = parentOf(id);
+    if (parent === null) return;
+    levels.add(parent);
+    const above = parentOf(parent);
+    if (above !== null) levels.add(above);
+  };
   for (const [id, what] of touched) {
     pages.add(id);
-    if (!what.structural) continue;
-    const parent = parentOf(id);
-    if (parent !== null) levels.add(parent);
+    if (what.structural) around(id);
   }
   for (const m of moved) {
     pages.add(m.from);
     pages.add(m.to);
-    for (const id of [m.from, m.to]) {
-      const parent = parentOf(id);
-      if (parent !== null) levels.add(parent);
-    }
+    around(m.from);
+    around(m.to);
   }
   if (beyond || pages.size + levels.size > LOCATE_MAX) return { pages: [], levels: [], all: true };
   return { pages: [...pages], levels: [...levels] };
 }
+
+/** How deep a path is, by its separators: a folder sorts before what is in it. */
+const depthOf = (path: string): number => path.split(/[\\/]/).length;
 
 /** What the mirror's pass on mount is stopped with when its folder closes. */
 const CLOSED = new Error("the folder closed");

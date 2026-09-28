@@ -4,7 +4,8 @@
 //
 // What is held: an outside write to one page costs at most two parses, names
 // that page and names no level; one that renames it names its parent's level
-// too; a page arriving, or deleted, names its parent's level, and
+// too; a page arriving, or deleted, names its parent's level and the one
+// above it — even where the index was asked about it first — and
 // the index is told only about its folder; a folder moved in a file manager
 // names both parents and takes its runs with it by identity; a page whose
 // `uid` an outside save dropped is given one on the next settle where a page
@@ -120,6 +121,44 @@ test.if(unix)("A PAGE RENAMED FROM OUTSIDE names its parent's level as well as i
   }
 }, 30_000);
 
+test.if(unix)("A PAGE AN AGENT MAKES, found by its uid before the watcher's settle, is still an arrival that names its parent's level", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    w.changes.length = 0;
+    // Its folder and document in one go, as an agent's write through Biom
+    // makes them — and the history, or the switcher, asks the index for the
+    // page before the settle has run.
+    await w.put("home/Right/Made", "Made", "invsettlemade01");
+    await call(w.host, w.vault, { kind: "page.locate", uids: ["invsettlemade01"] });
+    expect(await until(() => w.changes.length > 0)).toBe(true);
+    await Bun.sleep(300);
+    expect(w.changes.flatMap((c) => c.levels)).toContain("home/Right");
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
+test.if(unix)("A FIRST CHILD names the level above its parent too, where the parent's row learns that it holds a page", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    w.changes.length = 0;
+    await w.put("home/Left/P1/First", "First", "invsettlefirst1");
+    expect(await until(() => w.changes.length > 0)).toBe(true);
+    await Bun.sleep(300);
+    const levels = w.changes.flatMap((c) => c.levels);
+    expect(levels).toContain("home/Left/P1");
+    expect(levels).toContain("home/Left");
+    const level = (await call(w.host, w.vault, { kind: "children", page: "home/Left" })) as { ok: true; value: { id: string; children?: boolean }[] };
+    expect(level.value.find((c) => c.id === "home/Left/P1")?.children).toBe(true);
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
 test.if(unix)("A PAGE ARRIVING names its parent's level, and the index is told only about its folder", async () => {
   const w = await stand();
   try {
@@ -142,14 +181,14 @@ test.if(unix)("A PAGE ARRIVING names its parent's level, and the index is told o
   }
 }, 30_000);
 
-test.if(unix)("A PAGE DELETED FROM OUTSIDE that this process never read names itself and its parent's level, and leaves the level", async () => {
+test.if(unix)("A PAGE DELETED FROM OUTSIDE that this process never read names itself, its parent's level and the one above, and leaves the level", async () => {
   const w = await stand();
   try {
     await Bun.sleep(300);
     w.changes.length = 0;
     await rm(dirOf(w.vault, "home/Right/P2"), { recursive: true, force: true });
     expect(await until(() => w.changes.some((c) => c.levels.includes("home/Right")))).toBe(true);
-    expect(w.changes.find((c) => c.levels.includes("home/Right"))).toEqual({ pages: ["home/Right/P2"], levels: ["home/Right"] });
+    expect(w.changes.find((c) => c.levels.includes("home/Right"))).toEqual({ pages: ["home/Right/P2"], levels: ["home/Right", "home"] });
     const level = (await call(w.host, w.vault, { kind: "children", page: "home/Right" })) as { ok: true; value: { id: string }[] };
     expect(level.value.some((c) => c.id === "home/Right/P2")).toBe(false);
   } finally {
