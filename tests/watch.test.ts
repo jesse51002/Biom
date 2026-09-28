@@ -29,13 +29,14 @@
 //     that one's subscribers hear it.
 
 import { test, expect } from "bun:test";
+import { mkdirSync, readdirSync } from "node:fs";
 import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { events, makeHost } from "../server/main.ts";
 import type { Host } from "../server/main.ts";
-import { EXCLUDED, WATCHED_DIRS, WATCHED_FILES, watched } from "../server/platform/watch.ts";
+import { EXCLUDED, RECURSIVE, WATCHED_DIRS, WATCHED_FILES, watchTree, watched } from "../server/platform/watch.ts";
 import { makeSeen } from "../server/platform/files.ts";
 import { pageAt } from "../server/domain/mirror.ts";
 import { handle } from "../server/api/routes.ts";
@@ -317,6 +318,43 @@ test("a burst settles into one event, and a directory created after the watch st
     off();
   } finally {
     host.close();
+    await g.drop();
+  }
+});
+
+// Linux only: elsewhere the kernel recurses, and the watcher lists nothing.
+test.if(!RECURSIVE)("a folder made the moment its parent has been listed is watched, and what is written into it reports", async () => {
+  // THE GAP BETWEEN LISTING A NEW DIRECTORY AND WATCHING IT. `mkdir -p` of one
+  // page's folder makes `children/`, the watcher lists it and watches it — and
+  // a sibling's folder made on another thread between the two was in neither:
+  // not in the listing, and made before the watch that would have reported
+  // it. It stayed unwatched for the life of the watcher, and the page written
+  // into it never reached its markdown — which is how the two-sibling burst
+  // below failed, on a runner with the threads to land in that gap. Held open
+  // here by making the folder inside the listing itself.
+  const g = await ground();
+  const root = g.at("one");
+  const kids = join(pageDir(root, "home"), "children");
+  await mkdir(pageDir(root, "home"), { recursive: true });
+  const heard: string[] = [];
+  let made = false;
+  const w = watchTree(root, (abs) => void heard.push(abs), (abs) => {
+    const entries = readdirSync(abs, { withFileTypes: true });
+    if (abs === kids && !made) {
+      made = true;
+      mkdirSync(join(kids, "beta"));
+    }
+    return entries;
+  });
+  try {
+    await mkdir(join(kids, "alpha"), { recursive: true });
+    expect(await until(() => made)).toBe(true);
+    expect(await until(() => w.handles().includes(join(kids, "beta")))).toBe(true);
+
+    await writeFile(join(kids, "beta", "content.yaml"), "name: Beta\nplugin: biom-doc\ncontents: []\n", "utf8");
+    expect(await until(() => heard.includes(join(kids, "beta", "content.yaml")))).toBe(true);
+  } finally {
+    w.close();
     await g.drop();
   }
 });

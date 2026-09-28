@@ -31,7 +31,7 @@
 // Node's builtins are typed by a package this framework deliberately does not
 // depend on, so the import is annotated by hand below, exactly as `files.ts`
 // does it.
-import { readdirSync, watch } from "node:fs";
+import { readdirSync, statSync, watch } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** HOW LONG A BURST IS COALESCED FOR, in ms. A save is rarely one notification
@@ -90,6 +90,24 @@ export interface Watcher {
  *  first. */
 export type Notify = (abs: string) => void;
 
+/** One entry of a directory, as the walk reads it. */
+export interface DirEntry {
+  name: string;
+  isDirectory(): boolean;
+}
+
+/** A directory's entries, as the disk has them. */
+const entriesOf = (abs: string): DirEntry[] => readdirSync(abs, { withFileTypes: true });
+
+/** Is there a directory at `abs` — following a link, as listing it would. */
+function isDirectory(abs: string): boolean {
+  try {
+    return statSync(abs).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** True where `fs.watch` implements `recursive` natively. Linux does not, and a
  *  recursive watch there silently watches only the top directory — which reads
  *  as "the feature works for files in the root and nowhere else". */
@@ -121,8 +139,11 @@ export function watched(rel: string): boolean {
  * `fs.watch` does not work at all, says so once and leaves the Reload button as
  * the way — a workspace that refused to open because it could not watch itself
  * would be trading the thing for its shadow.
+ *
+ * @param list how a directory's entries are read: the disk's, unless a test
+ *   hands its own to make a folder the moment its parent has been read.
  */
-export function watchTree(root: string, notify: Notify): Watcher {
+export function watchTree(root: string, notify: Notify, list: (abs: string) => DirEntry[] = entriesOf): Watcher {
   const ROOT = resolve(root);
   /** Absolute directory → its handle. A directory is watched once. */
   const handles = new Map<string, { close(): void }>();
@@ -208,25 +229,44 @@ export function watchTree(root: string, notify: Notify): Watcher {
     notify(abs);
   }
 
+  /** Not a directory, or gone: nothing under `abs` is watched any more. */
+  const forget = (abs: string): void => {
+    drop(abs);
+    for (const held of [...handles.keys()]) if (held.startsWith(abs + sep)) drop(held);
+  };
+
   /** Pick up whatever is under `abs` that is not watched yet, and let go of
    *  whatever is no longer there. Linux only; elsewhere the kernel does it.
    *
    *  SYNCHRONOUS, and that is the point rather than an oversight: a watch
    *  installed one tick late is a write nothing reported, and the trees this
-   *  walks are a workspace's directories. */
+   *  walks are a workspace's directories.
+   *
+   *  AND A DIRECTORY IS WATCHED BEFORE IT IS LISTED. Listed first, a folder
+   *  made between the listing and the watch — a sibling's `mkdir` on another
+   *  thread, landing while this handles the notification for their parent —
+   *  was in neither: missing from the entries, and made before the watch that
+   *  would have reported it. It went unwatched for the life of the watcher,
+   *  and so did the page written into it, whose markdown was never made.
+   *  Watched first, whatever is made after the watch is reported by it and
+   *  whatever was made before it is in the listing; made in between, it is
+   *  both, and the layer above answers the second by content hash. */
   function follow(abs: string, report: boolean): void {
     if (shut) return;
-    let entries: { name: string; isDirectory(): boolean }[];
-    try {
-      entries = readdirSync(abs, { withFileTypes: true });
-    } catch {
-      // Not a directory, or gone. Either way nothing under it is watched.
-      drop(abs);
-      for (const held of [...handles.keys()]) if (held.startsWith(abs + sep)) drop(held);
+    if (!isDirectory(abs)) {
+      forget(abs);
       return;
     }
     const fresh = !handles.has(abs);
     add(abs);
+    let entries: DirEntry[];
+    try {
+      entries = list(abs);
+    } catch {
+      // Gone between the look and the listing.
+      forget(abs);
+      return;
+    }
     for (const entry of entries) {
       const here = join(abs, entry.name);
       if (!watched(relOf(here))) continue;
