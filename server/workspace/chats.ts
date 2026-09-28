@@ -707,7 +707,13 @@ export function makeChats(deps: ChatsDeps): Chats {
   const armGreen = (c: Chat): void => {
     clearGreen(c);
     if (c.stop !== "end_turn" || c.endedAt === null) return;
-    const left = GREEN_MS - (now() - c.endedAt);
+    // AN END AHEAD OF THE CLOCK COUNTS AS NOW: a turn ended while the
+    // clock was ahead and read back after it was put right would otherwise
+    // be green until the clock caught up — and a delay past 2^31 ms fires at
+    // once, which re-armed this about a thousand times a second.
+    const at = now();
+    if (c.endedAt > at) c.endedAt = at;
+    const left = Math.min(GREEN_MS, GREEN_MS - (at - c.endedAt));
     if (left <= 0) return;
     c.greenTimer = setTimeout(() => {
       c.greenTimer = null;

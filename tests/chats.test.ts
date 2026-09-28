@@ -648,6 +648,35 @@ only("A GREEN LIGHT READ BACK AFTER A RESTART goes out when its ten minutes run 
   expect(summaryOf(again, s.id).light).toBe("none");
 });
 
+only("A TURN'S END READ BACK FROM AHEAD OF THE CLOCK counts as now: its light is green for ten minutes and then goes out, and no timer past ten minutes is ever armed", async () => {
+  const w = world();
+  const s = await w.chats.create({ agent: "fake", text: "hi" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.endAll();
+  // The clock is put back forty days — a reset RTC before NTP, a snapshot
+  // restored — so the turn's recorded end is weeks ahead of it.
+  w.skewBy(-40 * 24 * 60 * 60_000);
+  const real = globalThis.setTimeout;
+  let long = 0;
+  const spy = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => {
+    if (typeof ms === "number" && ms > GREEN_MS) long++;
+    return real(fn, ms, ...rest);
+  }) as unknown as typeof setTimeout;
+  globalThis.setTimeout = spy;
+  let again: Chats;
+  try {
+    again = w.make();
+    await again.loaded;
+    await wait(300);
+  } finally {
+    globalThis.setTimeout = real;
+  }
+  expect(long).toBe(0);
+  expect(summaryOf(again, s.id).light).toBe("done");
+  w.skewBy(GREEN_MS + 1);
+  expect(summaryOf(again, s.id).light).toBe("none");
+});
+
 only("an agent that cannot be started, or answers the message with an error, ends the turn red with a sentence", async () => {
   const w = world({ agents: [info("fake", "Fake Agent"), info("ghost", "Ghost Agent")], scenarios: { fake: { turns: [[{ error: { code: -32603, message: "the model is\nbusy" } }]] } } });
   const a = await w.chats.create({ agent: "ghost", text: "hello?" });
