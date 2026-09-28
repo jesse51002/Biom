@@ -29,7 +29,8 @@
 //    2. The start screen: the turning line, View chat history, Ask anything,
 //       and the harness's name on the chip, never a model.
 //    4. A turn: the loader on the message, the light amber then green, the
-//       chat named in the history, one message at a time, Stop while it runs.
+//       chat named in the history, one message at a time, Stop while it runs;
+//       4a, its reply's words drawn live though they came with the turn's end.
 //    5. Stop: cancelled, and the light goes out.
 //    6. A red turn: red, with the reason, until the next turn starts.
 //    7. Tool lines: an edit tool call opens to its diff, the pages changed
@@ -38,10 +39,11 @@
 //    8. The / menu: the agent's commands and the workspace's skills, once each.
 //    9. Edit: a new chat beside the page, maximised and minimised back.
 //    9b. A page opened from the full Agent screen keeps the chat beside it.
-//   10–16. The switcher: follow, offer, idle, a send handing the screen over,
-//       five minutes on screen making it the person's (13b), a held screen
-//       (14; Go to page clear of the chat's last line in 14a, and taken in
-//       14b), a chat in the background, and no bounce.
+//   10–16. The switcher: follow (with the pages changed saying Edited for a
+//       new file in a page that was there, 10b), offer, idle, a send handing
+//       the screen over, five minutes on screen making it the person's
+//       (13b), a held screen (14; Go to page clear of the chat's last line in
+//       14a, and taken in 14b), a chat in the background, and no bounce.
 //   17. A shell write: one history edit by `shell`, followed.
 //   17b. A page the agent CREATES is one edit naming it, and is followed;
 //   17c. and one written with no uid gets one, kept, and is followed too.
@@ -53,11 +55,11 @@
 //   20c. A page on another localhost port gets nothing with the cookie.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
-// A STEP THAT FINDS A PRODUCT BUG is `test.failing` with the bug's id in its
-// name: it runs on every `make e2e`, stays green while the product is wrong,
-// and goes red the day it is fixed — which is the prompt to make it a plain
-// step. The ids are the ones the P4 hand-back reports; BUG-E2E-2, 3, 4 and 5
-// were fixed and are plain steps now (3b, 20b, 17b, 14a).
+// EVERY PRODUCT BUG THIS WALK FOUND is fixed and asserted as a plain step:
+// BUG-E2E-1 in 4a, 2 in 3b, 3 in 20b, 4 in 17b, 5 in 14a and 6 in 10b (the
+// ids are the P4 hand-back's). A bug found later is kept as `test.failing`,
+// named for its id, until it is fixed — green while the product is wrong, red
+// the day it is right, which is the prompt to make it a plain step.
 //
 // Every page, word, key, face and id here is invented.
 
@@ -217,28 +219,6 @@ function walk(n: string, name: string, run: () => Promise<void>, ms = 120000): v
     await shot(`${file}-before.png`);
     try {
       await step(`${n}. ${name}`, `${file}-after.png`, log, run);
-    } finally {
-      await shot(`${file}-after.png`);
-    }
-  }, ms);
-}
-
-/** A STEP THAT HOLDS A PRODUCT BUG: the check the product should pass, run
- *  every time and expected to fail until the bug is fixed. */
-function bug(id: string, name: string, run: () => Promise<void>, ms = 90000): void {
-  const file = `chat-${id.toLowerCase()}`;
-  (unix ? test.failing : test.skip)(`${id} (product bug, reported in the P4 hand-back): ${name}`, async () => {
-    if (fatal !== null) throw new Error(`skipped: the walk could not begin — ${fatal}`);
-    await shot(`${file}-before.png`);
-    try {
-      await step(`${id}: ${name}`, `${file}-after.png`, log, run);
-    } catch (e) {
-      // Said on every run, so the log shows the bug is still the bug and not
-      // some other failure passing for it.
-      const lines = String((e as Error)?.message ?? e).split("\n").slice(1);
-      const why = lines.slice(0, Math.max(1, lines.findIndex((l) => l.startsWith("screenshot:")))).join(" ").replace(/\s+/g, " ");
-      console.log(`[chat.e2e] ${id} still fails: ${why.slice(0, 600)}`);
-      throw e;
     } finally {
       await shot(`${file}-after.png`);
     }
@@ -695,17 +675,26 @@ walk("4", "a turn: the loader on the message, the light amber then green, the ch
   // The chat is in the look's history, by its name, lit green.
   await until("the chat is listed by its name, green", 8000, async () => (await rowLamp(name)) === "led green");
   expect((await page.locator(".agentdock .send").getAttribute("aria-label"))).toBe("Send");
-  // The server has the reply; whether the look drew its words is BUG-E2E-1.
+  // The server has the reply; the look drawing its words is step 4a.
   const reply = (await readChat(turnChat)).updates.filter((u) => u.kind === "reply").map((u) => (u as { text: string }).text).join("");
   expect(reply.startsWith("echo: hello")).toBe(true);
   expect(await promptsOf(turnChat)).toEqual(["hello\n!sleep 2500"]);
 });
 
-bug("BUG-E2E-1", "the words of a reply that arrives with the end of its turn are drawn in the look", async () => {
-  // The fake streams its reply and ends the turn a moment later, so both
-  // reach the look in one patch — as a short reply from a real agent does.
+walk("4a", "the words of a reply that arrives with the end of its turn are drawn in the look, live, with no reload", async () => {
+  // Step 4's turn slept, then streamed its reply and ended a moment later, so
+  // both reached the look in one patch — as a short reply from a real agent
+  // does. Once BUG-E2E-1: the prose finished empty and stayed so.
   await until("the look drew the reply's words", 5000, async () =>
     inLook(async (f) => ((await lastTurn(f).locator(".prose").textContent()) ?? "").includes("echo: hello"), false));
+  // And again for the shortest turn that shows it, drawn live.
+  await send("x\n!sleep 1500");
+  await until("the second turn ended", 20000, async () => {
+    const c = await summaryOf(turnChat);
+    return c?.turn === 2 && c.stop === "end_turn";
+  });
+  await until("the look drew that reply's words too", 5000, async () =>
+    inLook(async (f) => ((await lastTurn(f).locator(".prose").textContent()) ?? "").includes("echo: x"), false));
 });
 
 walk("4b", "Jev's faces: the chat's name gets one, and the finished turn's message keeps the last one", async () => {
@@ -764,7 +753,7 @@ walk("7", "tool lines: an edit tool call opens to its diff, the pages changed na
   expect(await hash()).toBe(`#/agent/${turnChat}`);
   const path = `${dirOf(A)}/content.yaml`;
   await send(`Tidy the invented Alpha page\n!edit ${path} invented-alpha-line=>rewritten-alpha-line`);
-  await until("the turn ended", 30000, async () => (await summaryOf(turnChat))?.stop === "end_turn" && (await summaryOf(turnChat))?.turn === 5);
+  await until("the turn ended", 30000, async () => (await summaryOf(turnChat))?.stop === "end_turn" && (await summaryOf(turnChat))?.turn === 6);
   expect(readFileSync(join(vault, path), "utf8")).toContain("rewritten-alpha-line");
   // ONE HISTORY EDIT, by the tool call, stamped with the chat's agent.
   const edits = await editsBy(path, turnChat);
@@ -924,7 +913,7 @@ walk("10", "the switcher follows: the open chat's agent writes B while A is unto
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
 });
 
-bug("BUG-E2E-6", "a new file inside a page that was already there makes the pages changed say the page was Edited, not Created (DECISIONS O40)", async () => {
+walk("10b", "a new file inside a page that was already there makes the pages changed say the page was Edited, not Created (DECISIONS O40)", async () => {
   // Step 10's turn wrote Beta's notes.md, new, beside Beta's own document.
   await until("the turn's pages changed name Beta, Edited", 5000, () =>
     inLook(async (f) => {
