@@ -40,8 +40,8 @@
 // the import graph acyclic.
 
 /** @import { ApiRequest, Automation, AutomationManifest, BlockId, Change, ChangeEvent, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
- *            PageId, PageRef, PageSearch, Part, Row, RowId, RowQuery, RunRead, RunRow, Section, Share, TableName,
- *            TableRef, TableView, Template, Theme, Transport, Variables, VarPatch, VaultFile, VaultInfo, WorkspaceStore }
+ *            PageId, PageRef, PageSearch, Row, RowId, RowQuery, RunRead, RunRow, Section, Share, TableName,
+ *            TableRef, TableView, Template, Theme, Transport, VarPatch, VaultFile, VaultInfo, WorkspaceStore }
  *            from "../../contracts/types.ts" */
 
 import { emitter } from "../../contracts/emitter.js";
@@ -132,24 +132,6 @@ const NO_THEME = {
   palette: { name: "", colors: {}, extra: [] },
   fonts: { roles: { sheet: "", furniture: "", gauge: "" }, available: [] },
 };
-
-/**
- * ONE SCOPE, RESOLVED, as a slot sees it: the page's variables with the
- * section's own written over the top. THE NEAREST ONE WINS, which is the whole
- * of the rule — a bare `{{rate}}` is always the closest one and never a
- * surprise.
- *
- * It is derived here as well as on the server, and that is deliberate rather
- * than sloppy: a variables patch answers with the whole `PageDoc`, and re-reading
- * the page to learn what six words in a paragraph now say would replace the page
- * object — and the frame keyed off it — on every keystroke. The rule is two
- * lines and it is stated in `Section.variables`, so both copies are reading the
- * same sentence.
- *
- * @param {Variables} pageVars @param {Variables | undefined} own
- * @returns {Variables}
- */
-export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
 
 /**
  * The store, plus the two things the tree needs and `WorkspaceStore` — frozen —
@@ -520,9 +502,10 @@ export function makeWorkspace(transport) {
    *  here touches that, and a section the document no longer carries keeps its
    *  old scope until something re-reads.
    *
-   *  THE SCOPE IS WRITTEN IN TWO PLACES because it is read in two: a section
-   *  carries it, and so does every markdown or html part inside it, since a part
-   *  is drawn from its own `vars` and never reaches up for the section's.
+   *  EACH SCOPE IS KEPT AS ITS OWN, the way the page read carried it: the page's
+   *  values on the page, a section's on the section. A part's are the part's,
+   *  which a patch never writes, so the parts are left as they were read;
+   *  whoever draws or projects one merges the three.
    *
    *  Re-reading instead would replace the page object on every slot flush, and
    *  the frame keyed off it with it, which restarts the runtime that did the
@@ -534,13 +517,7 @@ export function makeWorkspace(transport) {
     const sections = open.sections.map((s) => {
       const held = byName.get(s.name);
       if (held === undefined) return s;
-      const vars = scopeOf(doc.variables, held.variables);
-      /** @type {Record<string, Part>} */
-      const parts = {};
-      for (const [slot, part] of Object.entries(s.parts)) {
-        parts[slot] = part.kind === "markdown" || part.kind === "html" ? { ...part, vars } : part;
-      }
-      return { ...s, vars, parts };
+      return { ...s, vars: { ...(held.variables ?? {}) } };
     });
     return { ...open, name: doc.name, variables: doc.variables, sections };
   }

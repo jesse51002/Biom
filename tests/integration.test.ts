@@ -510,9 +510,10 @@ test("a variables patch is merged, never re-read, because a re-read restarts eve
   expect(mdOf(before, "title")).toContain("# Rates");
   expect(mdOf(after, "title")).toBe(mdOf(before, "title"));
   // NEAREST FIRST, and the page is the outermost of the three — so a value
-  // written here reaches the section and the part inside it.
-  expect(after?.sections[0]?.vars).toEqual({ heading: "Our rates" });
-  expect(partOf(after, "title")).toMatchObject({ vars: { heading: "Our rates" } });
+  // written here reaches the section and the part inside it where they are
+  // drawn, from the page's own; neither carries a copy of it.
+  expect(after?.sections[0]?.vars).toEqual({});
+  expect((partOf(after, "title") as { vars?: unknown } | undefined)?.vars).toEqual({});
   db.close();
 });
 

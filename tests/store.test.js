@@ -9,7 +9,7 @@
 // actually stops.
 
 import { test, expect } from "bun:test";
-import { makeWorkspace, rebase, scopeOf, childKey, parentOf, segmentOf, ROOT_PAGE } from "../client/store/workspace.js";
+import { makeWorkspace, rebase, childKey, parentOf, segmentOf, ROOT_PAGE } from "../client/store/workspace.js";
 import { makeUi } from "../client/store/ui.js";
 import { childKey as contractKey, ROOT_PAGE as contractRoot,
          parentOf as contractParent, segmentOf as contractSegment } from "../contracts/types.ts";
@@ -130,19 +130,19 @@ function fake() {
      *  The markdown comes back RAW, braces and all: interpolation happens where
      *  the part is drawn, because prose is editable in place and writes back.
      *
-     *  THE SCOPE IS WRITTEN AT BOTH LEVELS because it is read at both: a section
-     *  carries it, and so does every markdown or html part inside it, since a
-     *  part is drawn from its own `vars` and never reaches up. */
+     *  EACH SCOPE IS SENT ONCE, AS ITS OWN: the page's in `variables`, a
+     *  section's in its `vars`, and a markdown or html part's in its own, `{}`
+     *  where it has none. Whoever draws a part merges the three. */
     pageOf(id, doc) {
       return {
         id, name: doc.name, variables: doc.variables,
         sections: doc.contents.map((section) => {
-          const vars = { ...doc.variables, ...(section.variables ?? {}) };
+          const vars = { ...(section.variables ?? {}) };
           const parts = {};
           for (const [slot, held] of Object.entries(section.parts ?? {})) {
             // A bare string is markdown; a map is a full Content.
             const c = typeof held === "string" ? { type: "markdown", data: held } : held;
-            const own = { ...vars, ...(c.variables ?? {}) };
+            const own = { ...(c.variables ?? {}) };
             parts[slot] =
               c.type === "markdown" ? { kind: "markdown", md: c.data, vars: own }
               : c.type === "html" ? { kind: "html", file: c.data, html: "", vars: own }
@@ -635,27 +635,50 @@ test("THE NEAREST ONE WINS, and the open page picks up both scopes", async () =>
   await ws.loadPage("notes");
 
   await ws.patchVariables("notes", null, { rate: 90 });
+  /** Each section's OWN value, as the page read carried it. */
   const sections = () => Object.fromEntries(ws.get().page.sections.map((s) => [s.name, s.vars.rate]));
-  /** THE SAME SCOPE, ONE LEVEL DOWN. A part is drawn from its own `vars` and
-   *  never reaches up for its section's, so a patch that moved one and not the
-   *  other would leave the words showing the old number while the section
-   *  claimed the new one. */
-  const slots = () => Object.fromEntries(ws.get().page.sections.flatMap((s) =>
-    Object.entries(s.parts).map(([slot, part]) => [s.name + "." + slot, part.vars.rate])));
+  /** WHAT A SLOT RESOLVES AGAINST: the page's, under its section's, under its
+   *  own, merged the way the box merges them where the part is drawn. A patch
+   *  that moved one scope and not the store's copy of it would leave the words
+   *  showing the old number while the page claimed the new one. */
+  const slots = () => {
+    const page = ws.get().page;
+    return Object.fromEntries(page.sections.flatMap((s) =>
+      Object.entries(s.parts).map(([slot, part]) => [s.name + "." + slot, { ...page.variables, ...s.vars, ...part.vars }.rate])));
+  };
 
   // The page's value reaches every section that has not written its own. `tail`
   // carries `rate: 70` of its own, so it is untouched by a page-level write —
   // which is the whole of the rule, and the reason a slot writes to a section
   // rather than to the page.
   expect(ws.get().page.variables.rate).toBe(90);
-  expect(sections()).toEqual({ title: 90, body: 90, tail: 70 });
+  expect(sections()).toEqual({ title: undefined, body: undefined, tail: 70 });
   expect(slots()).toEqual({
     "title.body": 90, "body.left": 90, "body.right": 90, "tail.body": 70,
   });
 
   await ws.patchVariables("notes", "tail", { rate: 95 });
-  expect(sections()).toEqual({ title: 90, body: 90, tail: 95 });
+  expect(sections()).toEqual({ title: undefined, body: undefined, tail: 95 });
   expect(slots()["tail.body"]).toBe(95);
+});
+
+test("a patch gives the open page each scope as its own, and leaves a part's own alone", async () => {
+  // What the page read carried, kept in the same spelling: the page's values on
+  // the page, a section's on the section, a part's on the part — and a patch
+  // answers with the document, which says the first two and nothing of a
+  // part's, so a part keeps what it was read with.
+  const { server, ws } = wired();
+  server.docs.notes.contents[1].parts.right = { type: "markdown", data: "More words.", variables: { rate: 75 } };
+  await ws.loadPage("notes");
+
+  await ws.patchVariables("notes", "tail", { rate: 95 });
+
+  const page = ws.get().page;
+  expect(page.variables).toEqual({ rate: 62 });
+  expect(Object.fromEntries(page.sections.map((s) => [s.name, s.vars]))).toEqual({ title: {}, body: {}, tail: { rate: 95 } });
+  const body = page.sections.find((s) => s.name === "body");
+  expect(body.parts.right.vars).toEqual({ rate: 75 });
+  expect(body.parts.left.vars).toEqual({});
 });
 
 test("a slot flush re-reads NOTHING, because the document says what moved", async () => {
@@ -747,8 +770,9 @@ test("the slot the caret is in shows what was just typed, without a round trip",
   // drawn, so the store carries the template and never the number.
   expect(part.md).toContain("{{rate}}");
   // The scope is untouched: a prose write says what a paragraph SAYS, never what
-  // it resolves against.
-  expect(part.vars).toEqual({ rate: 62 });
+  // it resolves against. The part has none of its own; the page's is the page's.
+  expect(part.vars).toEqual({});
+  expect(ws.get().page.variables).toEqual({ rate: 62 });
   // AND NOTHING ELSE ON THE PAGE MOVED. The merge is one slot of one section.
   expect(ws.get().page.sections.map((s) => s.name)).toEqual(["title", "body", "tail"]);
   expect(ws.get().page.sections.find((s) => s.name === "body").parts.left.md).toBe("Words.");
@@ -1022,11 +1046,6 @@ test("an id that moved is said again under its new parent", () => {
   expect(rebase("other", "notes", "board/notes")).toBe("other");
   // And not fooled by a shared prefix that is not a path boundary.
   expect(rebase("notes-two", "notes", "board/notes")).toBe("notes-two");
-});
-
-test("one scope is the page's values with the content's over the top", () => {
-  expect(scopeOf({ rate: 62, vat: 20 }, { rate: 70 })).toEqual({ rate: 70, vat: 20 });
-  expect(scopeOf({ rate: 62 }, undefined)).toEqual({ rate: 62 });
 });
 
 test("a move inside the same page writes nothing at all", async () => {
