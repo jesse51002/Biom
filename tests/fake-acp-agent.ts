@@ -223,10 +223,13 @@ function run(scenario: Scenario): void {
       }
       if ("thought" in step) update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: step.thought } });
       else if ("reply" in step) {
-        // Two chunks, as an agent streams.
+        // Two chunks, as an agent streams — IN ONE WRITE, so they arrive
+        // together as the scenario means them to. Two writes are two reads at
+        // the other end, and a host whose event loop stalled between them past
+        // its push window sent the reply as two updates.
         const half = Math.ceil(step.reply.length / 2);
-        update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: step.reply.slice(0, half) } });
-        update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: step.reply.slice(half) } });
+        const chunk = (text: string): Json => ({ jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } });
+        process.stdout.write(`${JSON.stringify(chunk(step.reply.slice(0, half)))}\n${JSON.stringify(chunk(step.reply.slice(half)))}\n`);
       } else if ("tool" in step) update(sessionId, { sessionUpdate: "tool_call", ...step.tool });
       else if ("toolUpdate" in step) update(sessionId, { sessionUpdate: "tool_call_update", ...step.toolUpdate });
       else if ("write" in step) {
