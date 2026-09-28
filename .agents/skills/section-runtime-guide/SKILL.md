@@ -271,14 +271,21 @@ and a `}` inside a string or a comment is the only thing that could move one.
 an illegal selector written bare, so the selector is built with `CSS.escape`.
 
 **`{{name}}` is resolved at DRAW time, against three scopes, nearest first** —
-the part's own variables, then the section's, then the page's. It arrives raw and
-**stays raw in the stored data**: prose is edited in place and writes back, so
-resolving earlier would round-trip `62` over the top of `{{rate}}` and destroy
-the variable the first time somebody touched the paragraph it sits in. A name
-nothing answers is **left verbatim rather than blanked**, because a visible
-`{{tota1}}` is a typo somebody can fix and an empty space is not. A list joins
-with `", "` and `null` reads as empty, because a variable is a scalar or a list of
-scalars and both of those have an obvious reading in a sentence.
+the part's own variables, then the section's, then the page's. **The runtime is
+what merges them**: since the fourteenth contracts edit the page's variables
+arrive once, in `Page.variables`, and a `DrawnSection`'s `vars` and each part's
+are that entry's own, so `merge` gives the section the page's under its own and
+each part and list item the section's under its own. A slot plugin and a list
+item are handed their `content` with `vars` rebuilt as that merged scope,
+because `biom-grid`, and any workspace's own plugin for a part kind, reads
+`content.vars` before `ctx.vars`. It arrives raw and **stays raw in the stored
+data**: prose is edited in place and writes back, so resolving earlier would
+round-trip `62` over the top of `{{rate}}` and destroy the variable the first
+time somebody touched the paragraph it sits in. A name nothing answers is **left
+verbatim rather than blanked**, because a visible `{{tota1}}` is a typo somebody
+can fix and an empty space is not. A list joins with `", "` and `null` reads as
+empty, because a variable is a scalar or a list of scalars and both of those
+have an obvious reading in a sentence.
 
 **The section's markup is interpolated as TEXT, before it is parsed.** That is
 the only way `<img alt="{{caption}}">` can work at all — an attribute value is not

@@ -23,10 +23,10 @@
 //   4. a page the shape of Talks: its mounts and its projection by digest, and
 //      its answer's size.
 //
-// `test.failing` marks what holds only once the fourteenth edit is BUILT —
-// the server stops merging and the runtime rebuilds the content it hands a
-// slot plugin. Track F turns each into `test` and changes nothing else here:
-// not a golden, not the corpus, not what a check compares.
+// What held only once the fourteenth edit was BUILT — the server stopped
+// merging and the runtime rebuilt the content it hands a slot plugin — was
+// marked `test.failing` until it was, and is a `test` now; nothing else here
+// changed with it: not a golden, not the corpus, not what a check compares.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
