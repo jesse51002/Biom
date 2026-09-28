@@ -485,18 +485,24 @@ test("A CORRUPT INDEX FILE is rebuilt, and an index that cannot keep a cache sti
   const path = join(root, ".biom", "pages.db");
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, "this is not a database, it is invented junk ".repeat(40));
+  const first = makeDb(path);
+  let closedFirst = false;
+  let closedBeforeReset: boolean | null = null;
   const idx = makePageIndex({
-    db: makeDb(path),
+    db: { ...first, close: () => { closedFirst = true; first.close(); } },
     disk: makeFiles(root),
     yaml,
     tables: () => [],
     now: Date.now,
     reset: () => {
+      // The index lets go of the old file before the root deletes it.
+      closedBeforeReset = closedFirst;
       rmSync(path, { force: true });
       return makeDb(path);
     },
   });
   expect((await idx.level("home")).map((c) => c.id)).toEqual(["home/Alpha", "home/Beta", "home/Gamma"]);
+  expect(closedBeforeReset).toBe(true);
   await idx.sweep();
   expect(await idx.uidWas("home/Beta")).toBe("betainvented0001");
   idx.close();

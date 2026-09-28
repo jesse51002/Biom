@@ -99,8 +99,8 @@ export interface PageIndexDeps {
    *  function the root closes over. */
   tables: () => readonly TableAt[];
   now: () => number;
-  /** A FRESH DATABASE WHERE THE FILE WAS: the root closes the handle, deletes
-   *  the file and opens it again. A file that is not a database at all fails
+  /** A FRESH DATABASE WHERE THE FILE WAS: the index closes its handle, and
+   *  the root deletes the file — and its `-wal` and `-shm` — and opens it again. A file that is not a database at all fails
    *  every statement, dropping its tables included, so this is the only way
    *  back from one. Absent, the tables are dropped and made again, and where
    *  even that fails the index carries on with no cache — every answer read
@@ -271,6 +271,12 @@ export function makePageIndex(deps: PageIndexDeps): PageIndex {
   const rebuild = (): void => {
     if (deps.reset !== undefined) {
       try {
+        // The handle on the old file goes first: the root deletes the file.
+        try {
+          db.close();
+        } catch {
+          // Closed already, or never opened.
+        }
         db = deps.reset();
         create();
         return;
