@@ -562,7 +562,7 @@ test("THE LOOK'S KINDS ARE ANSWERED FOR THE @agent BOX ALONE: another page's box
   /** @type {any[]} */
   const asked = [];
   bridge.answerLook((req, ctx) => { asked.push([req.kind, ctx]); return null; });
-  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }], ["look.delete", { chat: CHAT }]])) {
+  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }], ["look.delete", { chat: CHAT }], ["look.view", { view: "thinking" }]])) {
     expect(await bridge.resolve(look(kind, body), pageCtx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   }
   expect(asked).toEqual([]);
@@ -591,9 +591,15 @@ test("the look is answered only just after a touch from its box, the list includ
   expect(await bridge.resolve(look("look.panel", { to: "beside" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   expect(asked).toEqual(["look.list", "look.new", "look.open"]);
   // Asking for a chat to be deleted is gated the same way: with no touch
-  // from the box, the host is not even asked to put the question.
+  // from the box, the host is not even asked to put the question. So is a
+  // view picked, which a look on a loop could otherwise flip for good.
   expect(await bridge.resolve(look("look.delete", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  expect(await bridge.resolve(look("look.view", { view: "tools" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   expect(asked).toEqual(["look.list", "look.new", "look.open"]);
+  t = 5100;
+  bridge.touched?.(ctx);
+  expect(await bridge.resolve(look("look.view", { view: "tools" }), ctx)).toMatchObject({ ok: true, value: null });
+  expect(asked).toEqual(["look.list", "look.new", "look.open", "look.view"]);
   // A field the guard does not name never gets as far as the answer.
   expect(await bridge.resolve(look("look.new", { text: "Invented instruction" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.UNKNOWN_KIND } });
   expect(d.calls).toEqual([]);
@@ -693,6 +699,7 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
     prefill: (/** @type {string} */ text, /** @type {any} */ page) => said.push(["prefill", text, page]),
     focus: () => said.push(["focus"]),
     fresh: () => said.push(["fresh"]),
+    say: (/** @type {string} */ words) => said.push(["say", words]),
   };
   /** @type {(() => void)[]} */
   const raf = [];
@@ -813,6 +820,59 @@ test("THE LOOK IS TOLD THE VIEW: whole with the state, and as a patch when the p
   // A state handed whole again carries the view picked.
   s.hello();
   expect(s.posted.filter((p) => p.kind === "look.state").at(-1).state.view).toBe("thinking");
+});
+
+test("THE VIEW PICKED FROM THE LOOK'S ⋯ IS KEPT HERE AND POSTED BACK: the host saves it for the workspace and the look hears it as a patch", async () => {
+  /** @type {any} */
+  let kept = { view: "plain", agent: null, agents: {} };
+  const s = await stand({
+    route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT,
+    answers: {
+      "settings.read": () => kept,
+      "settings.set": (req) => { kept = { ...kept, view: req.view }; return kept; },
+    },
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  s.hello();
+  s.posted.length = 0;
+  const ctx = s.mounts[0].ctx;
+  // Only the box this view mounted may ask.
+  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.calls.filter((c) => c.kind === "settings.set")).toEqual([]);
+  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), ctx)).toBe(null);
+  expect(s.chats.get().settings?.view).toBe("thinking");
+  s.tick();
+  expect(s.posted.filter((p) => p.kind === "look.patch").map((p) => p.view)).toEqual(["thinking"]);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
+  expect(kept.view).toBe("thinking");
+  // The view already kept, asked for again, saves nothing and says nothing.
+  s.posted.length = 0;
+  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), ctx)).toBe(null);
+  s.tick();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "settings.set").length).toBe(1);
+  expect(s.posted.filter((p) => p.view !== undefined)).toEqual([]);
+});
+
+test("a view the server will not keep is put back in the look, and the line under the input says so", async () => {
+  const s = await stand({
+    route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT,
+    answers: {
+      "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
+      "settings.set": () => { throw Object.assign(new Error("the kept choices could not be written"), { code: "internal" }); },
+    },
+  });
+  await s.chats.readSettings();
+  s.hello();
+  s.posted.length = 0;
+  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "tools" })), s.mounts[0].ctx)).toBe(null);
+  s.tick();
+  await new Promise((r) => setTimeout(r, 0));
+  s.tick();
+  expect(s.chats.get().settings?.view).toBe("plain");
+  expect(s.posted.filter((p) => p.kind === "look.patch" && p.view !== undefined).map((p) => p.view)).toEqual(["tools", "plain"]);
+  expect(s.said).toContainEqual(["say", "The view did not change: the kept choices could not be written"]);
 });
 
 test("A LOOK ASKING TO DELETE A CHAT GETS BIOM'S OWN QUESTION, and only the person's Delete there deletes it: Cancel, and no answer at all, delete nothing", async () => {

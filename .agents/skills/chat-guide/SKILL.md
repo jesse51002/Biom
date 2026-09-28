@@ -31,6 +31,7 @@ description: >-
   "idle agent", "AgentId", "onEdit", "changed", "look", "look.state",
   "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS",
   "settings.json", "kept choices", "view", "Plain", "Thinking", "Used N tools",
+  "⋯", "Chat options", "View menu", "look.view",
   "queue", "queued", "Send queued", "delete a chat", "session/delete".
 ---
 
@@ -317,8 +318,8 @@ process that made it.
   agent has dropped is skipped without a word (`offeredChoices` in
   `choices.ts`). They are laid on at once against the probe's list, so the
   pickers show them before anything starts. The view is the one choice a
-  window keeps itself, through
-  `settings.set`. A file that will not read is said once in the log, put aside
+  window keeps itself, through `settings.set`, when the look says
+  `look.view`. A file that will not read is said once in the log, put aside
   as `settings.json.bad`, and the defaults are used: Plain, no agent,
   nothing kept.
 - **Each chat keeps its own choices too** (`choices`, a record in its kept
@@ -536,16 +537,17 @@ and the default look's sheet shows each by the root's `data-view`, so the
 reader at the end of the chat stays there and nothing is drawn again
 (`runWords` and `viewOf` in `model.js`).
 
-**What the look may say is seven things, and none of them is text**:
+**What the look may say is eight things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed, `look.delete` from a row's three dots —
-which asks for Biom's own dialog and deletes nothing — and `look.unqueue`
-from a queued message's × — each strictly guarded, ids and words from a closed
-list — and `open` for a page a turn changed. **Every one is honoured
-only just after a touch from that same box**, as any box's `open` is: the
-`look.*` kinds move what is on screen, redraw the look whole or put a question
-to the person, so a look on a loop can do none of them. The bridge refuses the
-six `identity` unless the
+which asks for Biom's own dialog and deletes nothing — `look.unqueue` from a
+queued message's ×, and `look.view` from the chat's ⋯ — each strictly
+guarded, ids and words from a closed list — and `open` for a page a turn
+changed. **Every one is honoured only just after a touch from that same
+box**, as any box's `open` is: the `look.*` kinds move what is on screen,
+redraw the look whole, put a question to the person or change the view kept
+for the workspace, so a look on a loop can do none of them. The bridge refuses
+the seven `identity` unless the
 asking box is on `@agent` and the Agent screen has registered its answer
 (`answerLook`), and the answer refuses every box but the one it mounted, by the
 identity of that box's context. A page opened from the look comes up with the
@@ -600,10 +602,8 @@ kept per browser.
 and the one place a chat's agent is handed words**: the text area's own value,
 sent by Enter or Send as `chat.new` or `chat.send`. Under it the agent, model,
 mode and effort, each the agent's own list, five shown and the rest behind
-**More models**, and in a chat the **View** beside the effort — Plain, Tool
-calls, Thinking — worked from the keyboard like the others, kept for the
-workspace by `settings.set` and handed to the look as `view`, drawn at once
-and put back with a sentence if the server refuses it. **The start screen
+**More models** — the agent's own choices and nothing else, so nothing there
+reads as how the chat is shown. **The start screen
 starts where the person left off**: the agent chip defaults to the agent the
 workspace kept as last picked while it is on this machine — this window's own
 pick, or the last chat's agent, before it — and the pickers show that agent's
@@ -626,6 +626,28 @@ the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same
 and held by the server; More agents opens over it, saying so, when it was this
 window that sent it a moment ago.
+
+**How the chat is shown is picked from the look's own ⋯, never the input
+box**, because a control among the agent's pickers reads as a setting of the
+agent's. The default look draws a ⋯ — *Chat options* — at the chat's top
+right, in a chat only: in the panel's head before expand and close, and on
+the full screen in a bar the height of the panel's head before Minimize,
+which the thread starts under so nothing scrolled runs beneath either. It
+opens a menu headed **View**: the
+three views in the order of their ladder, each its name and the line saying
+what it adds (`VIEW_WORDS` in `wire.js`, which `model.js` says again, held
+equal by a test), the one shown checked and `aria-checked`. It is the same
+menu as a row's three dots — one `togglePopup` in `look.js`: Enter or Space
+opens it with the caret on its first item, the arrows move, Escape shuts it
+and gives the caret back to the button, and a press elsewhere, the box losing
+focus or changing size shuts it. **A pick says `look.view` and draws
+nothing**: the Agent view answers it with `chats.setView`, which keeps it for
+the workspace through `settings.set`, and the look draws the view when it
+comes back as `view` in a `look.patch` — so the host is the one statement of
+which view is shown, and a refusal puts the view back in the look and says
+*The view did not change* on the line under the input (`AgentInput.say`).
+**A look a workspace writes draws its own view control or none**; the host
+posts it `view` either way.
 
 **Deleting a chat is asked in Biom's own dialog, never the look's.** Every
 chat's row, in the history and in the panel's list, carries three dots — a
@@ -726,11 +748,11 @@ server/api/routes.ts            chatAnswer, CHAT_SENTENCES, the gate and `own` o
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring, events(),
                                 localRefusal, the exit handler, endAgentsWithin
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
-guest/plugins/biom-agent-look/  the default look: look.js (nodes), model.js (decisions, runWords, viewOf), sheet.js (the views)
+guest/plugins/biom-agent-look/  the default look: look.js (nodes, the ⋯ and togglePopup), model.js (decisions, runWords, VIEWS, VIEW_WORDS, viewOf), sheet.js (the views)
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
 client/store/chats.js           makeChatStore, fold, agentMode, showChat, freshThread, the pickers' rules
-client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer
-client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, NOT_TOUCH
+client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.view kept here)
+client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), NOT_TOUCH
 client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
 client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
 client/bridge/bridge.js         answerLook, and the look.* case: @agent only, touch-gated

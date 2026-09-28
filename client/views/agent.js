@@ -16,7 +16,8 @@
 // `view`, which of the chat's three views the person picked, kept in the
 // workspace's settings. It answers the look's `look.*` kinds for that box
 // alone, which it knows by the identity of the context it mounted the box
-// with.
+// with — `look.view` among them: the view is picked from the look's own ⋯,
+// kept here, and posted back, so the look draws what the host holds.
 //
 // ONE BOX SERVES THE FULL SCREEN AND THE PANEL, AND IT IS NEVER MOVED. Moving
 // an iframe to another parent reloads it — the look would lose its place and
@@ -103,7 +104,7 @@ const REREAD_AFTER = 600;
  * @typedef {object} AgentView
  * @property {HTMLElement} slot The Agent screen and the panel, one element.
  * @property {(req: LookRequest, ctx: BridgeContext) => null | { code: HostErrorCode, message: string }} answer
- *   The look's six kinds, for the box this view mounted and no other.
+ *   The look's own kinds, for the box this view mounted and no other.
  * @property {() => void} open The rail's **Agent**: the full screen, with the
  *   chat this window last had open.
  * @property {(page: PageId) => void} edit **Edit**: a new chat beside the page,
@@ -659,6 +660,16 @@ export function makeAgentView(deps) {
           // A queued message's ×: the person's words taken out, none sent.
           if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
           void chats.unqueue(req.chat, req.queued).catch((e) => console.warn("[biom] the queued message could not be taken out", e));
+          return null;
+        }
+        case "look.view": {
+          // THE VIEW PICKED FROM THE LOOK'S ⋯, kept for the workspace. The
+          // store holds it at once and puts it back if the server refuses,
+          // and either way it reaches the look as a patch — the look draws
+          // nothing ahead of that, so what it shows is what is kept here.
+          if (req.view !== viewNow()) {
+            void chats.setView(req.view).catch((e) => input.say("The view did not change: " + (e instanceof Error && e.message ? e.message : "the server did not answer")));
+          }
           return null;
         }
         case "look.panel": {

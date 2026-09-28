@@ -417,65 +417,22 @@ const option = (id, category, values) => ({ id, name: id, category, type: "selec
 /** Let every answer in flight land. */
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
-test("THE VIEW CHIP sits beside the effort in a chat and nowhere on the start screen, and a view picked is kept for the workspace and shown at once", async () => {
-  /** @type {any} */
-  let kept = { view: "tools", agent: null, agents: {} };
-  const s = stand(AGENTS, {
-    answers: {
-      "settings.read": () => kept,
-      "settings.set": (req) => { kept = { ...kept, view: req.view }; return kept; },
-    },
-  });
+test("THE INPUT BOX SHOWS NO VIEW: in a chat its bar is the agent, its pickers and Send, and nothing in it names a view or sets one", async () => {
+  const s = stand(AGENTS, { answers: { "settings.read": () => ({ view: "thinking", agent: null, agents: {} }) } });
   await settle();
-  const chip = /** @type {El} */ (s.input.el.querySelector("button.viewchip"));
+  s.chats.takeChat({ chat: aChat(), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  expect(s.input.el.querySelector("button.viewchip")).toBe(null);
+  expect(s.input.el.querySelectorAll("[data-view]")).toEqual([]);
   const cbar = /** @type {El} */ (s.input.el.querySelector(".cbar"));
-  // After the pickers and before Send.
-  expect(cbar.children.indexOf(chip)).toBe(cbar.children.length - 2);
-  expect(chip.hidden).toBe(true);
-  s.chats.takeChat({ chat: aChat(), updates: [] });
-  s.ui.set({ chat: CHAT_ID });
-  s.input.sync();
-  expect(chip.hidden).toBe(false);
-  expect(chip.text).toBe("Tool calls");
-  // Worked from the keyboard like the other chips: its menu takes the caret
-  // and the arrows, and Enter on a row is that row's click.
-  chip.fire("click");
-  expect(chip.getAttribute("aria-expanded")).toBe("true");
-  const rows = /** @type {El[]} */ (s.menu()?.querySelectorAll("button.mi"));
-  expect(rows.map((r) => r.getAttribute("data-view"))).toEqual(["plain", "thinking", "tools"]);
-  expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false", "true"]);
-  expect(doc.activeElement).toBe(rows[0]);
-  press("ArrowDown");
-  expect(doc.activeElement).toBe(rows[1]);
-  /** @type {El} */ (doc.activeElement).fire("click");
-  // Shown at once, before the server answers, and kept by it.
-  expect(s.chats.get().settings?.view).toBe("thinking");
-  expect(chip.text).toBe("Thinking");
+  expect(cbar.children.map((c) => c.className)).toEqual(["chip agentchip", "sep", "chip", "chip", "chip", "send"]);
+  const words = s.input.el.text;
+  for (const name of ["Plain", "Thinking", "Tool calls"]) expect([name, words.includes(name)]).toEqual([name, false]);
+  // Nothing here keeps a view: every chip's menu opened, and not one of them asks.
+  for (const chip of /** @type {El[]} */ (s.input.el.querySelectorAll("button.chip")).filter((c) => !c.hidden)) chip.fire("click");
   await settle();
-  expect(s.calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
-  expect(s.menu()).toBe(null);
-});
-
-test("a view the server will not keep is put back, with a sentence", async () => {
-  const s = stand(AGENTS, {
-    answers: {
-      "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
-      "settings.set": () => { throw Object.assign(new Error("the kept choices could not be written"), { code: "internal" }); },
-    },
-  });
-  await settle();
-  s.chats.takeChat({ chat: aChat(), updates: [] });
-  s.ui.set({ chat: CHAT_ID });
-  s.input.sync();
-  const chip = /** @type {El} */ (s.input.el.querySelector("button.viewchip"));
-  expect(chip.text).toBe("Plain");
-  chip.fire("click");
-  /** @type {El} */ (s.menu()?.querySelectorAll("button.mi").find((r) => r.getAttribute("data-view") === "tools")).fire("click");
-  expect(chip.text).toBe("Tool calls");
-  await settle();
-  expect(s.chats.get().settings?.view).toBe("plain");
-  expect(chip.text).toBe("Plain");
-  expect(/** @type {El} */ (s.input.el.querySelector(".said")).textContent).toBe("Not changed: the kept choices could not be written");
+  expect(s.calls.filter((c) => c.kind === "settings.set")).toEqual([]);
 });
 
 test("THE START SCREEN STARTS WHERE THE PERSON LEFT OFF: the kept agent while it is on this machine, and its kept values its list still offers", async () => {

@@ -111,7 +111,6 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .tmore:hover, .tmore[aria-expanded=true] { background: var(--l-field-3); color: var(--ink); }
 .trow > .led, .mi > .led, .mi > .check { transition: opacity calc(.12s * var(--l-m)); }
 .trowbox:hover .trow > .led, .trowbox:focus-within .trow > .led, .mirow:hover .mi > .led, .mirow:focus-within .mi > .led, .mirow:hover .mi > .check, .mirow:focus-within .mi > .check { opacity: 0; }
-.rowmenu { position: absolute; z-index: 70; min-width: 150px; background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top right; }
 .rowmenu .del { color: color-mix(in srgb, var(--l-red) 70%, var(--ink)); }
 @keyframes rowin { from { opacity: 0; transform: translateY(-6px); } }
 .emo { flex: none; width: 20px; overflow: hidden; display: inline-flex; justify-content: center; font-size: 15px; line-height: 1; font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; transform-origin: 50% 50%; }
@@ -130,6 +129,15 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .iconbtn { width: 30px; height: 30px; display: grid; place-items: center; color: var(--ink-2); flex: none; transition: background calc(.12s * var(--l-m)), color calc(.12s * var(--l-m)); }
 .iconbtn .ico { width: 15px; height: 15px; }
 .iconbtn:hover { background: var(--field); color: var(--ink); }
+
+/* a menu hung from a button — a row's three dots, the chat's ⋯ — kept inside the look */
+.popmenu { position: absolute; z-index: 70; min-width: 150px; max-width: calc(100% - 12px); background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top right; }
+/* the chat's views: each its name, and the line saying what it adds */
+.viewmenu { width: 250px; }
+.viewmenu .mi { align-items: flex-start; }
+.viewmenu .sub { font: 11.5px/1.4 var(--l-gauge); letter-spacing: .02em; color: var(--l-small); }
+.viewmenu .mark { flex: none; width: 15px; height: 15px; margin: 2px 0 0 auto; }
+.viewmenu .mark .check { margin: 0; }
 
 /* the history as a dropdown, in the panel */
 .menu { position: absolute; z-index: 60; top: calc(var(--l-head) - 2px); left: 6px; width: min(340px, calc(100% - 12px)); max-height: calc(100% - var(--l-head) - 12px); overflow: auto; background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top left; }
@@ -178,8 +186,16 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .jump.on { display: inline-flex; }
 .jump:hover { color: var(--ink); border-color: var(--ink-3); }
 .jump .ico { width: 12px; height: 12px; }
-.minbtn { position: absolute; z-index: 4; top: 8px; right: 10px; }
-.g-look[data-mode=panel] .minbtn { display: none; }
+/* the full screen's top bar: the chat's ⋯, then Minimize, at its right. In a
+   chat it is a bar the height of the panel's head, with its hairline, and the
+   thread starts under it, so nothing scrolled ever runs under its buttons; on
+   the start screen it is only Minimize, over nothing that moves. */
+.chatbar { position: absolute; z-index: 4; top: 0; left: 0; right: 0; height: var(--l-head); display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 10px; pointer-events: none; }
+.chatbar > * { pointer-events: auto; }
+.g-look[data-mode=screen][data-state=live] .chatbar { background: var(--stock); border-bottom: 1px solid var(--stock-edge); }
+.g-look[data-mode=screen][data-state=live] .log { top: var(--l-head); }
+.g-look[data-mode=panel] .chatbar { display: none; }
+.iconbtn.chatmore[aria-expanded=true] { background: var(--field); color: var(--ink); }
 .col { max-width: var(--l-col); margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
 .earlier { align-self: center; font: 11.5px var(--l-gauge); color: var(--ink-2); border: 1px solid var(--stock-edge); padding: 5px 11px; letter-spacing: .02em; }
 .earlier:hover { color: var(--ink); border-color: var(--ink-3); }

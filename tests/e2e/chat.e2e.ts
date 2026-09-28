@@ -35,7 +35,8 @@
 //    6. A red turn: red, with the reason, until the next turn starts.
 //    7. Tool lines: an edit tool call opens to its diff, the pages changed
 //       name the page, and a write off the full Agent screen brings the page
-//       up with the chat beside it.
+//       up with the chat beside it — drawn in Tool calls, picked from the ⋯
+//       in the panel's head.
 //    8. The / menu: the agent's commands and the workspace's skills, once each.
 //    9. Edit: a new chat beside the page, maximised and minimised back.
 //    9b. A page opened from the full Agent screen keeps the chat beside it.
@@ -53,8 +54,9 @@
 //   20. A page's own code cannot move the screen; a wikilink click can.
 //   20b. `#/page/@agent`, `@map` and `@design` are no page.
 //   20c. A page on another localhost port gets nothing with the cookie.
-//   20d. The choices kept: a mode and a view picked in a chat hold across a
-//       reload, a new chat and a server restart.
+//   20d. The choices kept: a mode, and a view picked from the chat's ⋯ in a
+//       menu headed View that says what each adds, hold across a reload, a
+//       new chat and a server restart.
 //   20e. A chat deleted from its row's three dots, asked in Biom's own
 //       dialog: Cancel deletes nothing, Delete takes it for good.
 //   20f. The queue: a message sent mid-turn waits under it and goes out when
@@ -74,13 +76,14 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chromium } from "playwright";
-import type { Browser, Frame, Page } from "playwright";
+import type { Browser, Frame, Locator, Page } from "playwright";
 
 import { HERE, SHOTS, BOUNDS, sandbox, withoutAgents, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
 import { installFakeAgent } from "../fake-acp-agent.ts";
 import type { Scenario } from "../fake-acp-agent.ts";
-import type { AgentInfo, ChatRead, ChatSettings, ChatSummary, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
+import type { AgentInfo, ChatRead, ChatSettings, ChatSummary, ChatView, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
+import { CHAT_VIEWS, VIEW_WORDS } from "../../contracts/wire.js";
 
 const unix = process.platform !== "win32";
 const AGENT = "claude-acp";
@@ -308,6 +311,41 @@ const crumbLamp = async (): Promise<string> => {
   const led = page.locator("button.crumb[aria-current=page] span.led");
   return (await led.count()) === 0 ? "" : ((await led.first().getAttribute("class")) ?? "").replace(/\s+/g, " ").trim();
 };
+
+/** THE CHAT'S ⋯, OPENED: its menu, headed View, once it shows. */
+async function viewMenu(): Promise<Locator> {
+  const f = await lookFrame();
+  await f.locator("button.chatmore").click();
+  const menu = f.locator(".viewmenu");
+  await until("the ⋯ opened its menu", 5000, () => menu.isVisible());
+  // Come to rest, so what is measured and pictured is where it stays.
+  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  return menu;
+}
+/** A VIEW PICKED as the person picks it: the ⋯, then the view by its name. */
+async function pickView(view: ChatView): Promise<void> {
+  const item = (await viewMenu()).locator(`button.mi[data-view=${view}]`);
+  expect(((await item.locator(".nm").textContent()) ?? "").trim()).toBe(VIEW_WORDS[view].name);
+  await item.click();
+}
+
+/** THE ⋯ AND ITS MENU FIT, as a browser lays them out: every control in the
+ *  bar the ⋯ sits in is inside the look and clear of the next, and the menu,
+ *  open, is wholly inside the look. */
+async function viewMenuFits(what: string): Promise<void> {
+  const seen = await (await lookFrame()).evaluate(() => {
+    const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
+    const more = root.querySelector("button.chatmore") as HTMLElement;
+    const box = (e: Element) => { const r = e.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom) }; };
+    const shown = [...more.parentElement!.children].filter((e) => getComputedStyle(e).display !== "none");
+    const menu = root.querySelector(".viewmenu");
+    return { w: innerWidth, h: innerHeight, bar: shown.map(box), more: box(more), menu: menu ? box(menu) : null };
+  });
+  const inside = (b: { l: number; r: number; t: number; b: number }) => b.l >= 0 && b.t >= 0 && b.r <= seen.w && b.b <= seen.h;
+  expect([what, seen.more.r - seen.more.l > 0, seen.bar.every(inside)]).toEqual([what, true, true]);
+  for (let i = 1; i < seen.bar.length; i++) expect([what, i, seen.bar[i - 1]!.r <= seen.bar[i]!.l]).toEqual([what, i, true]);
+  expect([what, seen.menu !== null && inside(seen.menu)]).toEqual([what, true]);
+}
 
 /** The page on screen drew, and says these words. */
 const pageSays = async (words: string): Promise<boolean> => {
@@ -808,6 +846,28 @@ walk("7", "tool lines: an edit tool call opens to its diff, the pages changed na
     const w = await myWindow();
     return w?.panel === true && w.chat === turnChat;
   });
+  // A NEW WORKSPACE SHOWS THE WORDS ALONE, so the tools are asked for: from
+  // the ⋯ in the panel's head, beside the panel's own controls.
+  expect(await inLook((f) => f.locator(".g-look").getAttribute("data-view"), null)).toBe("plain");
+  const head = await inLook((f) => f.locator(".panelhead button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") || b.className)), [] as string[]);
+  expect(head).toEqual(["tswitch", "New thread", "Chat options", "Open full size", "Close the chat"]);
+  await viewMenu();
+  await viewMenuFits("the panel");
+  await shot("chat-07-view-menu-panel.png");
+  await page.keyboard.press("Escape");
+  // And at the panel's narrowest, pulled there from its grip's keys.
+  const grip = page.locator(".agentgrip");
+  await grip.focus();
+  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");
+  expect(await grip.getAttribute("aria-valuenow")).toBe("320");
+  await viewMenu();
+  await viewMenuFits("the panel at its narrowest");
+  await shot("chat-07-view-menu-panel-narrowest.png");
+  await (await lookFrame()).locator(".viewmenu button.mi[data-view=tools]").click();
+  await grip.focus();
+  await page.keyboard.press("Home");
+  expect(await grip.getAttribute("aria-valuenow")).toBe("460");
+  await until("the look draws Tool calls", 8000, async () => (await inLook((f) => f.locator(".g-look").getAttribute("data-view"), null)) === "tools");
   // THE TOOL LINE, closed, then open to its diff.
   const f = await lookFrame();
   const act = lastTurn(f).locator(".acts button.act").first();
@@ -1399,8 +1459,24 @@ walk("20d", "the choices are kept: a mode and a view picked in a chat hold acros
   await until("its mode chip shows", 15000, async () => (await modeChip()) === "Ask (invented)");
   await page.locator(".agentdock .chip[data-category=mode]").click();
   await page.locator(".agentmenu button.mi[data-value=plan]").click();
-  await page.locator(".agentdock .viewchip").click();
-  await page.locator(".agentmenu button.mi[data-view=thinking]").click();
+  // THE VIEW IS THE CHAT'S, NOT THE AGENT'S: nothing in the input box names
+  // one, and the ⋯ at the chat's top right opens a menu headed View that says
+  // what each adds — the one shown checked.
+  expect(await page.locator(".agentdock [data-view], .agentdock .viewchip").count()).toBe(0);
+  const menu = await viewMenu();
+  const heading = menu.locator(".mlabel");
+  expect(await heading.isVisible()).toBe(true);
+  expect(((await heading.textContent()) ?? "").trim()).toBe("View");
+  for (const v of CHAT_VIEWS) {
+    const item = menu.locator(`button.mi[data-view=${v}]`);
+    expect([v, await item.locator(".nm").isVisible(), ((await item.locator(".nm").textContent()) ?? "").trim()]).toEqual([v, true, VIEW_WORDS[v].name]);
+    expect([v, await item.locator(".sub").isVisible(), ((await item.locator(".sub").textContent()) ?? "").trim()]).toEqual([v, true, VIEW_WORDS[v].line]);
+    expect([v, await item.getAttribute("aria-checked")]).toEqual([v, String(v === "tools")]);
+  }
+  await viewMenuFits("the full screen");
+  await shot("chat-20d-view-menu.png");
+  await menu.locator("button.mi[data-view=thinking]").click();
+  await until("the menu shut", 5000, async () => !(await menu.isVisible()));
   await until("the look draws Thinking", 8000, async () => (await lookView()) === "thinking");
   await until("the server kept both", 8000, async () => {
     const kept = await call<ChatSettings>("settings.read");
@@ -1417,7 +1493,9 @@ walk("20d", "the choices are kept: a mode and a view picked in a chat hold acros
     const config = (await readChat(chat)).updates.filter((u) => u.kind === "config").pop() as { options: { id: string; value: unknown }[] } | undefined;
     expect([what, config?.options.find((o) => o.id === "mode")?.value]).toEqual([what, "plan"]);
     await until(`${what}: the new chat is drawn in Thinking`, 8000, async () => (await lookView()) === "thinking");
-    expect([what, (await page.locator(".agentdock .viewchip").innerText()).trim()]).toEqual([what, "Thinking"]);
+    const checked = (await viewMenu()).locator("button.mi[aria-checked=true]");
+    expect([what, await checked.getAttribute("data-view")]).toEqual([what, "thinking"]);
+    await page.keyboard.press("Escape");
   };
   // THE SERVER STARTS AGAIN, and reads what it kept. First, because step 19
   // leaves the agent waiting for a sign-in — a refusal that holds until a
@@ -1432,8 +1510,7 @@ walk("20d", "the choices are kept: a mode and a view picked in a chat hold acros
   await page.reload({ waitUntil: "domcontentloaded" });
   await holds("a reload");
   // Left as the walk found it for the steps after, as the person would.
-  await page.locator(".agentdock .viewchip").click();
-  await page.locator(".agentmenu button.mi[data-view=tools]").click();
+  await pickView("tools");
   await until("the look is back on Tool calls", 8000, async () => (await lookView()) === "tools");
   expect((await call<ChatSettings>("settings.read")).view).toBe("tools");
 });

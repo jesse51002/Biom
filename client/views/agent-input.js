@@ -13,14 +13,14 @@
 // WHAT IT HOLDS, after the mockup's composer: the text area — *Ask anything*
 // on the start screen, *Reply* in a chat; under it the agent, model, mode and
 // effort, each a chip with the agent's own list, a list longer than five
-// showing five and **More models**, and in a chat the View beside them —
-// Plain, Tool calls, Thinking — kept in the workspace's settings and handed
-// to the look; Send, which sends — or, while a turn runs, QUEUES — whatever is
-// typed, and is **Stop** while a turn runs and nothing is, because a chat
-// takes one message at a time; **Go to *page*** above it when
-// the switcher offers the page the open chat wrote; the / menu of the agent's
-// commands and the workspace's skills; and one line under it saying the turn
-// is working, or what went wrong.
+// showing five and **More models**; Send, which sends — or, while a turn
+// runs, QUEUES — whatever is typed, and is **Stop** while a turn runs and
+// nothing is, because a chat takes one message at a time; **Go to *page***
+// above it when the switcher offers the page the open chat wrote; the / menu
+// of the agent's commands and the workspace's skills; and one line under it
+// saying the turn is working, or what went wrong. How the chat is SHOWN is
+// not here: its view is picked from the look's own ⋯, because a chip beside
+// the agent's pickers read as a setting of the agent's.
 //
 // A FIRST MESSAGE WITH NO AGENT READY is sent all the same, and held by the
 // server: More agents opens saying it is waiting, and the server sends it the
@@ -41,13 +41,12 @@
 // TYPING HERE IS NOT A TOUCH. The whole dock carries `NOT_TOUCH`, because
 // talking to the agent is not taking the screen back from it.
 
-/** @import { AgentInfo, AgentKey, ChatId, ChatSummary, ChatView, ConfigOption, ConfigValue, LookInput, PageId, SlashCommand } from "../../contracts/types.ts" */
+/** @import { AgentInfo, AgentKey, ChatId, ChatSummary, ConfigOption, ConfigValue, LookInput, PageId, SlashCommand } from "../../contracts/types.ts" */
 /** @import { ChatStore } from "../store/chats.js" */
 /** @import { Switcher } from "../store/switcher.js" */
 /** @import { Ui } from "../store/ui.js" */
 /** @import { AgentDialogs } from "./agent-dialogs.js" */
 
-import { CHAT_VIEWS, DEFAULT_VIEW } from "../../contracts/wire.js";
 import { svg } from "../platform/dom.js";
 import { NOT_TOUCH } from "../store/switcher.js";
 import {
@@ -69,6 +68,9 @@ import {
  * @property {() => void} focus
  * @property {() => void} fresh A new thread began: nothing pending for a page.
  *   It moves no caret; the view decides where the caret goes.
+ * @property {(sentence: string) => void} say A sentence on the line under the
+ *   input, as a send, a stop or a pick that did not happen puts there — for
+ *   what the look asked that did not happen either.
  */
 
 /** How the dock stands off the look's foot in a chat, under the composer —
@@ -103,13 +105,6 @@ const codeOf = (e) => (e && typeof e === "object" ? /** @type {{ code?: unknown 
 const CATEGORY_WORD = /** @type {Record<string, string>} */ ({ model: "model", mode: "mode", thought_level: "effort" });
 /** What a picker's long list is called on its More row. */
 const MORE_WORD = /** @type {Record<string, string>} */ ({ model: "More models", mode: "More modes", thought_level: "More levels" });
-
-/** EACH VIEW OF A CHAT, as its chip and its menu say it. */
-export const VIEW_WORDS = /** @type {Record<ChatView, { name: string, line: string }>} */ ({
-  plain: { name: "Plain", line: "The words alone, the thinking folded" },
-  tools: { name: "Tool calls", line: "Each run of tool calls as one line" },
-  thinking: { name: "Thinking", line: "The thinking written out, and the tool calls" },
-});
 
 /**
  * @param {{ h: H, ui: Ui, chats: ChatStore, switcher: Switcher | null, dialogs: AgentDialogs, doc?: Document, win?: Window }} deps
@@ -156,11 +151,6 @@ export function makeAgentInput(deps) {
   const agentChip = h("button.chip.agentchip", { type: "button", "aria-haspopup": "menu", "aria-expanded": "false", title: "The agent", onclick: () => agentMenu() },
     agentLed, agentName, icon("chev"));
   const sep = h("span.sep");
-  const viewName = h("span.nm");
-  /** THE VIEW OF THE CHAT, beside the effort: in a chat only, since the start
-   *  screen has nothing to view yet. */
-  const viewChip = h("button.chip.viewchip", { type: "button", "aria-haspopup": "menu", "aria-expanded": "false", title: "How the chat is shown", hidden: "", onclick: () => viewMenu() },
-    viewName, icon("chev"));
   /** The three pickers, kept, each redrawn in place. */
   const chipsFor = ["model", "mode", "thought_level"].map((cat) => {
     const label = h("span.nm");
@@ -178,7 +168,7 @@ export function makeAgentInput(deps) {
     onpointerdown: () => { pressedAs = { was: stopsNow() ? "stop" : "send", at: Date.now() }; },
     onclick: () => press(),
   }, icon("up"));
-  const cbar = h("div.cbar", agentChip, sep, ...chipsFor.map((c) => c.el), viewChip, send);
+  const cbar = h("div.cbar", agentChip, sep, ...chipsFor.map((c) => c.el), send);
   const composer = h("div.composer", slash, text, cbar);
   const followName = h("b");
   const follow = h("button.follow", { type: "button", hidden: "", onclick: () => switcher?.go() },
@@ -210,10 +200,8 @@ export function makeAgentInput(deps) {
     const options = chat !== null
       ? (s.open === chat.id && s.config !== null ? s.config : shown)
       : withValues(withValues(shown, keptValues(shown, keptFor(s.settings, agentKey))), startConfig);
-    /** @type {ChatView} */
-    const view = s.settings?.view ?? DEFAULT_VIEW;
     const name = chat !== null ? chat.harness ?? agent?.name ?? "No agent yet" : agent?.name ?? (s.agentsKnown ? "No agent yet" : "Looking for agents");
-    return { u, s, chatId, chat, agentKey, agent, busy, options, name, view };
+    return { u, s, chatId, chat, agentKey, agent, busy, options, name };
   }
 
   /** THE BUTTON IS STOP while a turn runs and nothing is typed; with words
@@ -258,8 +246,6 @@ export function makeAgentInput(deps) {
       if (o) c.label.textContent = choiceName(o);
     }
     sep.hidden = !pickers.length;
-    viewChip.hidden = n.chatId === null;
-    viewName.textContent = VIEW_WORDS[n.view].name;
 
     const stopMode = n.busy && text.value.trim() === "";
     if (send.getAttribute("aria-label") !== (stopMode ? "Stop" : "Send")) {
@@ -718,35 +704,6 @@ export function makeAgentInput(deps) {
     });
   }
 
-  /** THE VIEW'S MENU: the three views, the one shown checked. Picking one is
-   *  kept for the workspace and handed to the look — drawn at once, and put
-   *  back with a sentence if the server refuses it. */
-  function viewMenu() {
-    openMenu(viewChip, (close) => {
-      const n = now();
-      /** @type {HTMLElement[]} */
-      const out = [label("View")];
-      for (const v of CHAT_VIEWS) {
-        out.push(h("button.mi", {
-          type: "button", role: "menuitemradio", "aria-checked": String(v === n.view), "data-view": v,
-          onclick: () => { close(); void setView(v); },
-        }, h("span.txt", h("span.nm", VIEW_WORDS[v].name), h("span.sub", VIEW_WORDS[v].line)), v === n.view ? icon("check", "check") : null));
-      }
-      out.push(foot("Kept for this workspace, for every chat."));
-      return out;
-    });
-  }
-
-  /** @param {ChatView} v */
-  async function setView(v) {
-    if (v === now().view) return;
-    const going = chats.setView(v);
-    paint();
-    try { await going; }
-    catch (e) { said = "Not changed: " + sentence(e); }
-    paint();
-  }
-
   /** A PICKER SET: on a chat, the agent's own option, by its id — mid-turn it
    *  applies from the next message; on the start screen, kept for the chat
    *  the first message makes. @param {ConfigOption} option @param {ConfigValue} value */
@@ -798,6 +755,10 @@ export function makeAgentInput(deps) {
     },
     fresh() {
       pendingPage = null;
+    },
+    say(words) {
+      said = words;
+      paint();
     },
   };
 }

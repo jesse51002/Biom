@@ -519,9 +519,13 @@ so a look keeps its last line above that; **`center`**, on the start screen,
 where `height` is the composer's own height and it sits on the middle of the
 stage, so a look leaves that band free and draws above and below it. A patch
 carries `input` again whenever either moves. **`LookState.view` is the view the
-person picked** — `plain`, `tools` or `thinking`, from Biom's own View chip —
-and a patch carries it when they pick another; a look that draws fewer views
-draws the nearest it has, and a word it does not know is Tool calls.
+person picked** — `plain`, `thinking` or `tools` — and a patch carries it when
+it moves; a look that draws fewer views draws the nearest it has, and a word
+it does not know is Tool calls. **The view is picked in the look, and a look
+a workspace writes draws its own view control or none**: the default one
+draws a ⋯ at the chat's top right whose menu says `look.view`, and the host
+keeps the pick and posts it back as `view`, so a look that offers no control
+still draws the view the workspace keeps.
 
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands
