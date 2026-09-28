@@ -150,6 +150,12 @@ function doubles(overrides = {}) {
       return sections;
     },
     removeSection: async (page, name) => { calls.push({ kind: "removeSection", page, section: name }); },
+    // THE WINDOW'S DIRECTORY: the pages it knows, and `want` asking for the
+    // rest — which this double answers from nothing, so a miss stays a miss.
+    refOf: (id) => store.pages.find((p) => p.id === id) ?? null,
+    want: async (q) => { calls.push({ kind: "want", ...q }); },
+    // No page just read for a box to be handed, unless a test says so.
+    handoff: () => null,
     insertRow: async () => 7,
     updateRow: async () => {},
     removeRow: async () => {},
@@ -258,8 +264,10 @@ test("variables is forwarded, and an omitted page means the one you are mounted 
   expect(calls.filter((c) => c.kind === "variables").map((c) => c.page)).toEqual(["home/Rates", NOTES_CTX.page]);
 });
 
-test("doc.get answers prose, and doc.list answers the tree the user sees", async () => {
-  const { ws, transport } = doubles();
+test("doc.get answers prose, and doc.list is asked of the server, which alone knows every page", async () => {
+  const { ws, transport, calls } = doubles({
+    answer: (r) => ({ id: r.id, g: PROTOCOL, ok: true, value: r.kind === "page.list" ? [{ id: "job-board", name: "Job board" }, { id: "home/Far", name: "Far" }] : r.kind === "page.read" ? NOTES : null }),
+  });
   const bridge = makeBridge(ws, transport);
   const doc = await bridge.resolve(req({ kind: "doc.get", page: "notes" }), CTX);
   // RAW, with the braces still in it. Every MARKDOWN slot of every section, in
@@ -271,14 +279,18 @@ test("doc.get answers prose, and doc.list answers the tree the user sees", async
   // explicit rather than to smuggle into a string.
   expect(doc.value).toBe(
     "# Notes\n\nThe rate is {{rate}}.\n\nLeft column.\n\nRight column.\n\nLast.");
+  // THE WINDOW HOLDS ONLY THE PAGES ON ITS SCREEN, so a box asking for every
+  // page — the Map's case — is answered by the server, from its index.
   const list = await bridge.resolve(req({ kind: "doc.list" }), CTX);
-  expect(list.value).toEqual([{ id: "job-board", name: "Job board" }]);
+  expect(list.value).toEqual([{ id: "job-board", name: "Job board" }, { id: "home/Far", name: "Far" }]);
+  expect(calls.filter((c) => c.kind === "page.list")).toHaveLength(1);
   // A page drawn by its own document has no sections; its words are the
   // page-level `input` slots, strings and lists of strings alike, and they come
   // first — the H1 the runs bar names a slide by is read from here. A map in
   // `input` is the plugin's configuration and never prose. The server's
   // `doc.get` answers the same, so the two cannot drift.
-  const scene = await bridge.resolve(req({ kind: "doc.get", page: "scene" }), CTX);
+  const other = doubles();
+  const scene = await makeBridge(other.ws, other.transport).resolve(req({ kind: "doc.get", page: "scene" }), CTX);
   expect(scene.value).toBe("# A burst, then a fade\n\none\n\ntwo");
 });
 
@@ -1212,36 +1224,18 @@ test("page.embed answers the target page's woven document, and not_found for a p
 // A `[[wikilink]]` IS THE OTHER HALF OF `open`. A box has no page list, so what
 // a link names is a question for the host — and the answer is shaped like what
 // `open` takes, so following one is resolve-then-open with nothing in between.
-test("link.resolve answers what a wikilink names, four ways, and refuses an ambiguous one", async () => {
-  const { ws, transport, store } = doubles();
-  store.pages = [
-    { id: "home/Companies/Airtable", name: "Airtable" },
-    { id: "home/Companies/Notion", name: "Notion" },
-    { id: "home/Research/Notion", name: "Notion" },
-  ];
-  store.tables = [{ name: "contacts", kind: "basic", rows: 2 }];
+test("link.resolve is asked of the server, which alone knows every page's id and name", async () => {
+  // THE FOUR UNAMBIGUOUS TRIES — the id, folded, its tail, the name — need
+  // every page, and the window holds only the pages on its screen, so they are
+  // the server's, answered from its index; the box gets exactly its answer.
+  const { ws, transport, calls } = doubles({
+    answer: (r) => ({ id: r.id, g: PROTOCOL, ok: true, value: r.kind === "link.resolve" && r.target === "airtable" ? { kind: "page", id: "home/Companies/Airtable" } : null }),
+  });
   const bridge = makeBridge(ws, transport, uiSpy());
-  const ask = async (target) =>
-    (await bridge.resolve(req({ kind: "link.resolve", target }), CTX)).value;
-
-  // 1. the id, exactly — what the mirror writes and what an import produces.
-  expect(await ask("home/Companies/Airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 2. the id, folded. An id KEEPS its case, so this is the one place a link
-  //    typed in another spelling is allowed to find it.
-  expect(await ask("HOME/companies/airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 3. the id's tail. A vault's own links are written from the vault root, so
-  //    the root page on the front of the id is exactly what nobody types.
-  expect(await ask("Companies/Airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 4. the page's name, which is what somebody reading the page can see.
+  const ask = async (target) => (await bridge.resolve(req({ kind: "link.resolve", target }), CTX)).value;
   expect(await ask("airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // A table is named rather than pathed, and answers in the same shape.
-  expect(await ask("contacts")).toEqual({ kind: "table", id: "contacts" });
-
-  // AMBIGUOUS IS NO ANSWER. Two pages are called Notion; opening one of them at
-  // random is worse than a link that visibly went nowhere.
   expect(await ask("Notion")).toBeNull();
-  // And so is nothing at all.
-  expect(await ask("nowhere-at-all")).toBeNull();
+  expect(calls.filter((c) => c.kind === "link.resolve").map((c) => c.target)).toEqual(["airtable", "Notion"]);
 });
 
 // THE DESIGN DOC IS THE ONE PAGE NO SNAPSHOT HOLDS. It lives at `design/`,
@@ -1289,6 +1283,36 @@ test("the host decides: an id nothing holds is refused, not navigated to", async
   expect(res.ok).toBe(false);
   expect(res.error.code).toBe("not_found");
   expect(ui.went).toEqual([]);
+});
+
+test("open of a page this window does not know asks for it by id, and goes there when the answer names it", async () => {
+  const ui = uiSpy();
+  const { ws, transport, store, calls } = doubles();
+  store.pages = [];
+  ws.want = async (q) => { calls.push({ kind: "want", ...q }); store.pages.push({ id: "home/Far/Away", name: "Away" }); };
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "home/Far/Away" } }), CTX);
+  expect(res.ok).toBe(true);
+  expect(calls.filter((c) => c.kind === "want")).toEqual([{ kind: "want", ids: ["home/Far/Away"] }]);
+  expect(ui.went.length).toBe(1);
+});
+
+test("THE BOX'S FIRST READ OF ITS OWN PAGE is the host's read handed over; a read after it, or after a slot write, asks the server", async () => {
+  const { ws, transport, calls } = doubles();
+  let held = /** @type {any} */ ({ ...NOTES, id: "notes" });
+  ws.handoff = (id) => { const h = id === "notes" ? held : null; held = null; return h; };
+  const bridge = makeBridge(ws, transport);
+  const first = await bridge.runtime(req({ kind: "page.read", page: "notes" }), NOTES_CTX);
+  expect(first.ok).toBe(true);
+  expect(first.value.id).toBe("notes");
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(0);
+  await bridge.runtime(req({ kind: "page.read", page: "notes" }), NOTES_CTX);
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(1);
+  // Another page's read is never handed this box's page.
+  held = { ...NOTES, id: "notes" };
+  await bridge.runtime(req({ kind: "page.read", page: "job-board" }), NOTES_CTX);
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(2);
 });
 
 /* ── the Agent screen's box: the eleventh contracts edit ───────────────────── */

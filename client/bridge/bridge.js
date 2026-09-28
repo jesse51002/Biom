@@ -51,12 +51,13 @@
 // permission check. Scoping later is a change in this file and nowhere else —
 // which is the entire reason Port and Binding ship empty rather than not at all.
 
-/** @import { ApiRequest, BlockId, Bridge, BridgeContext, HostError, HostErrorCode, HostRequest, HostResponse, Page, PageDoc, PageId, PageRef, Part, RuntimeRequest, Transport, Variables, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { ApiRequest, BlockId, Bridge, BridgeContext, HostError, HostErrorCode, HostRequest, HostResponse, Page, PageDoc, PageId, Part, RuntimeRequest, Transport, Variables, WorkspaceStore } from "../../contracts/types.ts" */
 /** @import { Ui } from "../store/ui.js" */
+/** @import { Workspace } from "../store/workspace.js" */
 
 import { isHostRequest, isRuntimeRequest } from "../../contracts/guards.js";
 import { weaveRuntime } from "../platform/document.js";
-import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } from "../../contracts/wire.js";
+import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, nextId } from "../../contracts/wire.js";
 
 /** ONE OF THE LOOK'S SIX REQUESTS, as the Agent screen answers it.
  *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" }>} LookRequest */
@@ -207,7 +208,7 @@ const proseOf = (page) =>
     .join("\n\n");
 
 /**
- * @param {WorkspaceStore} ws
+ * @param {WorkspaceStore & Pick<Workspace, "refOf" | "want" | "handoff">} ws
  * @param {Transport} transport
  * @param {Pick<Ui, "open">} ui WHERE THE PERSON IS LOOKING. The one thing this
  *   module touches that is not data — `open` asks the host to go somewhere, and
@@ -294,8 +295,11 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       /* ── other pages ───────────────────────────────────────────────────── */
       case "doc.get":
         return yes(req.id, proseOf(await readPage(req.page)));
+      // EVERY PAGE, which a box that asks has asked for — the Map's case. The
+      // window holds only the pages on its screen, so the server answers it,
+      // from its index and without parsing a page.
       case "doc.list":
-        return yes(req.id, ws.get().pages);
+        return forward(req.id, { kind: "page.list" });
       // ANOTHER PAGE'S VARIABLES, and reaching one is a CALL rather than a
       // template on purpose: `{{name}}` stays inside a page so prose can be read
       // without chasing it, and a page that depends on a page somebody else may
@@ -357,11 +361,16 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       case "vault.info":
         return yes(req.id, await ws.vaultInfo());
 
-      // WHAT A `[[wikilink]]` NAMES. Answered here rather than by the server
-      // because the client already holds the whole tree — the rail is drawn from
-      // it — so this is a lookup and not a round trip.
+      // WHAT A `[[wikilink]]` NAMES. The server answers it — the window holds
+      // only the pages on its screen, and the four unambiguous tries need every
+      // page's id and name, which the server's index has without parsing one.
+      // THE DESIGN DOC, WHICH NO SEARCH COULD FIND, is named here: it is not in
+      // `pages/`, and its id is a reserved spelling rather than something
+      // somebody typed while reading, so `open` below takes it with no
+      // translation.
       case "link.resolve":
-        return yes(req.id, resolveLink(req.target, ws.get()));
+        if (String(req.target).trim().replace(/^\/+|\/+$/g, "") === DESIGN_PAGE) return yes(req.id, { kind: "page", id: DESIGN_PAGE });
+        return forward(req.id, { kind: "link.resolve", target: req.target });
 
       // The host decides. An id nothing holds is refused rather than navigated
       // to, because a blank screen is a worse answer than a no.
@@ -396,10 +405,12 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
           ui.open("design", "");
           return yes(req.id, null);
         }
-        const w = ws.get();
+        // A PAGE THIS WINDOW DOES NOT KNOW is asked for by id — it holds only
+        // the pages on its screen — and refused as not there only once the
+        // server says so.
         const there = t.kind === "table"
-          ? w.tables.some((x) => x.name === t.id)
-          : w.pages.some((x) => x.id === t.id);
+          ? ws.get().tables.some((x) => x.name === t.id)
+          : ws.refOf(t.id) !== null || (await ws.want({ ids: [t.id] }), ws.refOf(t.id) !== null);
         if (!there) return no(req.id, ERRORS.NOT_FOUND, "no such page or table");
         // A PAGE OPENED FROM THE CHAT KEEPS THE CHAT BESIDE IT: from the
         // Agent screen's look — a page a turn changed — the page comes up with
@@ -492,70 +503,14 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
     }
   }
 
-  /** The identity of the page a box is mounted on, read off the tree the store
-   *  holds, or null where the page has none — a page whose document would not
-   *  parse, or one made before this server first opened the folder.
+  /** The identity of the page a box is mounted on, read off the window's
+   *  directory — the box's own page was read to draw it, so it is there — or
+   *  null where the page has none: a page whose document would not parse, or
+   *  one made before this server first opened the folder.
    *  @param {PageId} id @returns {string | null} */
   function uidOf(id) {
-    const ref = ws.get().pages.find((p) => p.id === id);
+    const ref = ws.refOf(id);
     return ref && typeof ref.uid === "string" ? ref.uid : null;
-  }
-
-  /** WHAT A WIKILINK TARGET NAMES, or null.
-   *
-   *  Four attempts, narrowest first, and each one is only an answer when it is
-   *  UNAMBIGUOUS — two pages matching is no match, because opening one of them
-   *  at random is worse than a link that visibly did not resolve.
-   *
-   *    1. the id, exactly
-   *    2. the id, folded — `foldId` is the one place case is ignored, and this
-   *       is its second caller. A page id keeps its case, so `companies/airtable`
-   *       typed by hand still finds `home/Companies/Airtable`.
-   *    3. the id's TAIL. A vault's own links are written from the vault root
-   *       (`Companies/Airtable`) and a page's id has the workspace's root page
-   *       on the front of it, so the leading segments are exactly what a person
-   *       does not write.
-   *    4. the page's NAME. `[[Airtable]]` is how somebody writes a link while
-   *       reading, and the name is what they see on the page.
-   *
-   *  Then the same for a table, which is named rather than pathed.
-   *  @param {string} target @param {{pages: PageRef[], tables: {name: string}[]}} w
-   *  @returns {{kind: "page" | "table", id: string} | null} */
-  function resolveLink(target, w) {
-    const want = String(target).trim().replace(/^\/+|\/+$/g, "");
-    if (want === "") return null;
-    const page = (/** @type {string} */ id) => ({ kind: /** @type {const} */ ("page"), id: id });
-
-    // THE DESIGN DOC, WHICH NO SEARCH BELOW COULD EVER FIND: it is not in
-    // `pages/` and so not in the snapshot the four attempts walk. Exact and
-    // never folded — the id is a reserved spelling rather than something
-    // somebody typed while reading, and `open` above takes it from here with no
-    // translation.
-    if (want === DESIGN_PAGE) return page(DESIGN_PAGE);
-
-    const exact = w.pages.find((p) => p.id === want);
-    if (exact) return page(exact.id);
-
-    const folded = foldId(want);
-    /** The one page a test matches, or null where none or several do. */
-    const only = (/** @type {(p: PageRef) => boolean} */ test) => {
-      const hits = w.pages.filter(test);
-      const one = hits.length === 1 ? hits[0] : undefined;
-      return one ? page(one.id) : null;
-    };
-
-    /** The one table a test matches, or null where none or several do. */
-    const table = (/** @type {(t: {name: string}) => boolean} */ test) => {
-      const hits = w.tables.filter(test);
-      const one = hits.length === 1 ? hits[0] : undefined;
-      return one ? { kind: /** @type {const} */ ("table"), id: one.name } : null;
-    };
-
-    return only((p) => foldId(p.id) === folded)
-      || only((p) => foldId(p.id).endsWith("/" + folded))
-      || only((p) => foldId(p.name) === folded)
-      || table((t) => t.name === want)
-      || table((t) => foldId(t.name) === folded);
   }
 
   /** The five kinds only the section runtime may say, and then everything a
@@ -570,8 +525,16 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       // somebody is typing and does NOT go through the store, so the store's
       // copy is behind the file by design. A re-read has to come off disk or it
       // would hand back the version the typist has already moved past.
-      case "page.read":
+      //
+      // EXCEPT THE BOX'S FIRST READ OF ITS OWN PAGE: the host read that very
+      // page a moment ago to mount the box, and asking the server again was
+      // half of every page switch. The store hands it over once, within a few
+      // seconds of its read and only while nothing has changed the page since.
+      case "page.read": {
+        const held = req.page === ctx.page ? ws.handoff(req.page) : null;
+        if (held !== null) return yes(req.id, held);
         return forward(req.id, { kind: "page.read", page: req.page });
+      }
 
       // ONE SLOT'S TEXT, and it does not go through the store ON PURPOSE. It
       // fires on a debounce while somebody is typing, and a store write emits a
@@ -579,6 +542,8 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       // slot the cursor is sitting in. The prose path has to be the one write
       // that does not tell everybody about itself.
       case "section.write":
+        // The host's read is behind the file from here on: never handed over.
+        ws.handoff(req.page);
         return forward(req.id, {
           kind: "section.write",
           page: req.page,

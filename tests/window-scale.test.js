@@ -18,6 +18,8 @@ import { makeTreeView } from "../client/views/tree.js";
 import { makeShell, FIND_AFTER } from "../client/shell/shell.js";
 import { makeSwitcher, TIMING } from "../client/store/switcher.js";
 import { makeHistoryStore } from "../client/store/history.js";
+import { makeBridge } from "../client/bridge/bridge.js";
+import { PROTOCOL } from "../contracts/wire.js";
 import { closePopover } from "../client/widgets/popover.js";
 
 /* ── the invented tree ────────────────────────────────────────────────── */
@@ -690,4 +692,28 @@ test("an agent's write to a page this window never listed is looked up by uid an
   expect(ui.get().panel).toBe(true);
   expect(asked(spy.calls).filter((k) => k === "page.locate")).toEqual(["page.locate"]);
   expect(asked(spy.calls).filter((k) => k.startsWith("children"))).toEqual([]);
+});
+
+/* ── the bridge: a box asking about pages ─────────────────────────────── */
+
+test("a box's link.resolve and doc.list go to the server, and its open of a page the window never listed asks page.locate", async () => {
+  const { ws, spy } = standUp();
+  await ws.loadTree();
+  const went = [];
+  const bridge = makeBridge(ws, spy, { open: (/** @type {any[]} */ ...a) => { went.push(a); } });
+  const ctx = { page: "home/Specs" };
+  spy.clear();
+  await bridge.resolve(/** @type {any} */ ({ id: "l1", g: PROTOCOL, kind: "link.resolve", target: "Invented day 9" }), ctx);
+  await bridge.resolve(/** @type {any} */ ({ id: "l2", g: PROTOCOL, kind: "doc.list" }), ctx);
+  // doc.list is `page.list` on the server — the box asked for every page, the
+  // Map's case — and it is the box's ask, never a screen path of the window's.
+  expect(asked(spy.calls)).toEqual(["link.resolve", "page.list"]);
+  spy.clear();
+  bridge.touched(ctx);
+  const res = await bridge.resolve(/** @type {any} */ ({ id: "l3", g: PROTOCOL, kind: "open", target: { kind: "page", id: "home/Historic/Day_9" } }), ctx);
+  expect(res.ok).toBe(true);
+  expect(asked(spy.calls)).toEqual(["page.locate"]);
+  expect(went).toEqual([["page", "home/Historic/Day_9", undefined, undefined]]);
+  // The one page.list here was the box's: nothing of the window's asked it.
+  spies.splice(spies.indexOf(spy), 1);
 });

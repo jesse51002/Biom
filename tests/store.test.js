@@ -424,6 +424,21 @@ test("renaming a page is a move: the rail is re-listed and the open page re-read
   expect(seen.n).toBe(paints + 1);
 });
 
+test("the page just read for the screen is handed to its box once, and never once anything has changed it", async () => {
+  // The box's own first `page.read` is the read the host made a moment ago to
+  // mount it; handing that over is one read per page switch, not two.
+  const { ws } = wired();
+  await ws.loadPage("notes");
+  expect(ws.handoff("board")).toBe(null);
+  expect(ws.handoff("notes")?.id).toBe("notes");
+  expect(ws.handoff("notes")).toBe(null);
+  // A slot write merges into the open page — a new object — so the read is
+  // behind what the box shows, and is not handed over.
+  await ws.reloadPage("notes");
+  await ws.writeSlot("notes", "body", "left", "Changed since.");
+  expect(ws.handoff("notes")).toBe(null);
+});
+
 test("a page that is not there is an answer, not a failure", async () => {
   const { server, ws } = wired();
   server.fail.set("page.read", "not_found");

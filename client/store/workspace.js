@@ -185,7 +185,8 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
  * the next change — resolving once the answer is in. `search` asks the
  * server by name. `refresh` rereads the levels a change on disk named, and
  * `version` moves whenever a level does, which is how a reader tells a
- * re-listed tree from a repaint.
+ * re-listed tree from a repaint. `handoff` gives the box a page this store
+ * has just read for it, once, so a page switch is one read and not two.
  *
  * @typedef {WorkspaceStore & {
  *   loadTree(at?: PageId): Promise<void>,
@@ -199,6 +200,7 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
  *   search(query: string): Promise<PageSearch>,
  *   refresh(change: ChangeEvent): Promise<void>,
  *   version(): number,
+ *   handoff(id: PageId): Page | null,
  *   moveChild(child: Child, from: PageId, to: PageId): Promise<PageId | null>,
  *   writeSlot(id: PageId, section: BlockId, part: string, data: string): Promise<void>,
  *   setSections(id: PageId, sections: Section[]): Promise<Section[]>,
@@ -251,6 +253,14 @@ export function makeWorkspace(transport) {
   /** Misses gathered this microtask, and the one flush that asks for them.
    *  @type {{ ids: Set<PageId>, uids: Set<string>, done: Promise<void> } | null} */
   let gathering = null;
+  /** THE PAGE JUST READ FOR THE SCREEN, for the box about to draw it: its own
+   *  first `page.read` is the same read a moment later, and asking the server
+   *  twice was half of a page switch. Handed over once, only within
+   *  `HANDOFF_MS` of the read, and only while it is still the very object this
+   *  store holds — anything that changed the open page since replaced it.
+   *  @type {{ id: PageId, page: Page, at: number } | null} */
+  let handed = null;
+  const HANDOFF_MS = 3000;
   /** A key whose locate failed, and when: not asked again for `COOL_MS`.
    *  @type {Map<string, number>} */
   const cooling = new Map();
@@ -725,6 +735,7 @@ export function makeWorkspace(transport) {
       // ui store and has a different lifetime from a replica of server state.
       if (page && page.id === id) return page;
       page = await readPage(id);
+      handed = page === null ? null : { id, page, at: Date.now() };
       emit();
       return page;
     },
@@ -741,9 +752,17 @@ export function makeWorkspace(transport) {
       page = null;
       emit();
       page = await readPage(id);
+      handed = page === null ? null : { id, page, at: Date.now() };
       emit();
       changed({ page: id, shape: true });
       return page;
+    },
+
+    handoff(id) {
+      const h = handed;
+      if (h === null || h.id !== id) return null;
+      handed = null;
+      return h.page === page && Date.now() - h.at <= HANDOFF_MS ? h.page : null;
     },
 
     async createPage(init) {
