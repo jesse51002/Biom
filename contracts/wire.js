@@ -130,6 +130,14 @@ export const OPAQUE_ID = /^[A-Za-z0-9_-]{8,64}$/;
  *  list, `openclaw`. Lowercase, because the registry's are. */
 export const AGENT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
+/** THE THREE VIEWS OF A CHAT, in the order the View chip lists them —
+ *  `ChatView` in `types.ts` — and the one a workspace starts on: Tool calls.
+ *  The twelfth contracts edit.
+ *  @type {readonly ["plain", "tools", "thinking"]} */
+export const CHAT_VIEWS = Object.freeze(/** @type {const} */ (["plain", "tools", "thinking"]));
+/** @type {"tools"} */
+export const DEFAULT_VIEW = "tools";
+
 /* ── which vault a request is for ───────────────────────────────────────── */
 
 /** WHICH FOLDER, and it is an ADDRESS rather than a message — which is the whole

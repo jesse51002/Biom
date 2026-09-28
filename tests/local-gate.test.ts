@@ -440,6 +440,7 @@ test("the list of local kinds is every agent and chat kind and a window's report
   expect([...LOCAL_KIND_NAMES].sort()).toEqual([...CHAT_KIND_NAMES, "window.report"].sort());
   expect(isLocalKind("chat.somethingNew")).toBe(true);
   expect(isLocalKind("agents.somethingNew")).toBe(true);
+  expect(isLocalKind("settings.somethingNew")).toBe(true);
   expect(isLocalKind("history.read")).toBe(false);
   expect(isLocalKind("window.list")).toBe(false);
   expect(isLocalKind("page.list")).toBe(false);

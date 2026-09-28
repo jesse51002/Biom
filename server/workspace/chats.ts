@@ -586,6 +586,8 @@ export function makeChats(deps: ChatsDeps): Chats {
     reason: c.reason,
     created: c.created,
     updated: c.updated,
+    queued: 0,
+    queueHeld: false,
   });
 
   const fresh = (id: ChatId, created: number, page: Place | null, torn: boolean): Chat => ({

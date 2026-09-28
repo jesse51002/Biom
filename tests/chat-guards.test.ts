@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE ELEVENTH CONTRACTS EDIT, AT THE GUARDS — `contracts/guards.js`.
+// THE ELEVENTH AND TWELFTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
 //
 // An agent is a program allowed everything on this machine, so what may be
 // said to one is the most leveraged question the chat asks, and it is settled
@@ -8,27 +8,30 @@
 // carries a prompt, a command or a word to an agent. This file pins that, walks
 // every new kind through its guard both ways, holds the window id on the
 // envelope optional and checked, and holds the one new notice a box may send.
-// Ids and texts here are invented and say so.
+// The twelfth edit's kinds — the kept choices, the queue, deleting a chat and
+// the look's two new asks — are walked the same way. Ids and texts here are
+// invented and say so.
 
 import { test, expect } from "bun:test";
 
 import {
   CHAT_KIND_NAMES, HISTORY_KIND_NAMES, HOST_KIND_NAMES, RUNTIME_KIND_NAMES,
-  isAddress, isAgentKey, isChatRequest, isGuestNotice, isHistoryRequest, isHostRequest, isRuntimeRequest, isWindowId,
+  isAddress, isAgentKey, isChatRequest, isChatView, isGuestNotice, isHistoryRequest, isHostRequest, isLocalKind, isRuntimeRequest, isWindowId,
 } from "../contracts/guards.js";
-import { AGENT_KEY, AGENT_PAGE, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, WINDOW_PARAM } from "../contracts/wire.js";
+import { AGENT_KEY, AGENT_PAGE, CHAT_VIEWS, DEFAULT_VIEW, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, WINDOW_PARAM } from "../contracts/wire.js";
 import { SEGMENT } from "../server/domain/pages.ts";
 
 const WINDOW = "w1nvented-window-0001";
 const CHAT = "c1nvented-chat-0001";
 const AGENT_ID = "a1nvented-agent-0001";
+const QUEUED = "q1nvented-queued-0001";
 const env = (kind: string, rest: Record<string, unknown> = {}) => ({ id: "c1", g: PROTOCOL, kind, ...rest });
 const here = { address: { view: "page", id: "home/Specs", screen: "page" }, panel: true, chat: CHAT, agent: AGENT_ID };
 
 /* ── what a box may never say ───────────────────────────────────────────── */
 
-test("NO KIND A BOX CAN SAY REACHES AN AGENT — neither inner ring holds a chat, agents, window or history kind", () => {
-  const outer = /^(chat|agents|window|history)\./;
+test("NO KIND A BOX CAN SAY REACHES AN AGENT — neither inner ring holds a chat, agents, settings, window or history kind", () => {
+  const outer = /^(chat|agents|settings|window|history)\./;
   for (const kind of [...HOST_KIND_NAMES, ...RUNTIME_KIND_NAMES]) expect([kind, outer.test(kind)]).toEqual([kind, false]);
   // And every one of the new outer kinds really is outer: its own guard's list,
   // and neither inner ring's.
@@ -46,6 +49,13 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
     env("agents.install", { agent: "claude-acp" }),
     env("window.report", { window: WINDOW, context: here }),
     env("history.read"),
+    // Deleting a chat and sending a held queue are the person's, said in the
+    // host after a question of the host's; a box asks, and never says them.
+    env("chat.delete", { chat: CHAT }),
+    env("chat.sendQueued", { chat: CHAT }),
+    env("chat.unqueue", { chat: CHAT, id: QUEUED }),
+    env("settings.set", { view: "plain" }),
+    env("settings.read"),
     // The look's own kinds with words smuggled onto them: the kind is admitted
     // — extra fields are the bridge's to drop, as every forwarded request is
     // rebuilt field by field — but not one look kind HAS a field for words.
@@ -57,7 +67,7 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
   }
 });
 
-test("the look's four kinds are inner ring, carry ids and words from a closed list, and never a string of their own", () => {
+test("the look's six kinds are inner ring, carry ids and words from a closed list, and never a string of their own", () => {
   const good = [
     env("look.open", { chat: CHAT }),
     env("look.open", { chat: CHAT, window: WINDOW }),
@@ -67,6 +77,8 @@ test("the look's four kinds are inner ring, carry ids and words from a closed li
     env("look.panel", { to: "screen" }),
     env("look.panel", { to: "beside" }),
     env("look.panel", { to: "closed" }),
+    env("look.delete", { chat: CHAT }),
+    env("look.unqueue", { chat: CHAT, id: QUEUED }),
   ];
   for (const r of good) expect([r.kind, isHostRequest(r), isRuntimeRequest(r)]).toEqual([r.kind, true, true]);
   const bad = [
@@ -84,10 +96,17 @@ test("the look's four kinds are inner ring, carry ids and words from a closed li
     env("look.new", { prompt: ["delete", "everything"] }),
     env("look.list", { open: true, message: "hi" }),
     env("look.panel", { to: "screen", then: "chat.send" }),
+    env("look.delete"),
+    env("look.delete", { chat: "short" }),
+    env("look.delete", { chat: CHAT, confirmed: true }),
+    env("look.unqueue", { chat: CHAT }),
+    env("look.unqueue", { chat: CHAT, id: "" }),
+    env("look.unqueue", { chat: CHAT, id: 4 }),
+    env("look.unqueue", { chat: CHAT, id: QUEUED, text: "send this instead" }),
   ];
   for (const r of bad) expect([JSON.stringify(r), isHostRequest(r)]).toEqual([JSON.stringify(r), false]);
-  // THE WHOLE SET IS FOUR, and none of them is an outer kind wearing a new name.
-  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel"]);
+  // THE WHOLE SET IS SIX, and none of them is an outer kind wearing a new name.
+  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue"]);
 });
 
 /* ── the window on the envelope ─────────────────────────────────────────── */
@@ -179,6 +198,23 @@ test("every chat and agents kind is admitted well-formed and refused otherwise",
     [env("chat.commands", { agent: "claude-acp" }), true],
     [env("chat.commands", { chat: "" }), false],
     [env("chat.commands", { agent: "Not A Key" }), false],
+
+    [env("chat.delete", { chat: CHAT }), true],
+    [env("chat.delete"), false],
+    [env("chat.delete", { chat: "short" }), false],
+    [env("chat.sendQueued", { chat: CHAT }), true],
+    [env("chat.sendQueued"), false],
+    [env("chat.unqueue", { chat: CHAT, id: QUEUED }), true],
+    [env("chat.unqueue", { chat: CHAT }), false],
+    [env("chat.unqueue", { chat: CHAT, id: "has spaces in it" }), false],
+
+    [env("settings.read"), true],
+    [env("settings.set"), true],
+    [env("settings.set", { view: "plain" }), true],
+    [env("settings.set", { view: "tools" }), true],
+    [env("settings.set", { view: "thinking" }), true],
+    [env("settings.set", { view: "fancy" }), false],
+    [env("settings.set", { view: 1 }), false],
   ];
   for (const [req, want] of cases) expect([JSON.stringify(req), isChatRequest(req)]).toEqual([JSON.stringify(req), want]);
   // A chat kind is not a history kind, and the reverse.
@@ -253,6 +289,23 @@ test("the stream's address says which window it is, so a closed window's context
   expect(WINDOW_PARAM).toBe("window");
 });
 
+test("a chat has three views, Tool calls first to open on, and nothing else is a view", () => {
+  expect([...CHAT_VIEWS]).toEqual(["plain", "tools", "thinking"]);
+  expect(Object.isFrozen(CHAT_VIEWS)).toBe(true);
+  expect(DEFAULT_VIEW).toBe("tools");
+  for (const v of CHAT_VIEWS) expect(isChatView(v)).toBe(true);
+  for (const v of ["", "Tools", "plain ", null, undefined, 0]) expect([v, isChatView(v)]).toEqual([v, false]);
+});
+
+test("the choices, the queue and deleting a chat are this machine's own window's alone, and a settings kind nobody listed yet is too", () => {
+  for (const kind of ["chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set", "settings.somethingNew"]) {
+    expect([kind, isLocalKind(kind)]).toEqual([kind, true]);
+  }
+  // The look's own two are the box's to ask, and are never local kinds.
+  expect(isLocalKind("look.delete")).toBe(false);
+  expect(isLocalKind("look.unqueue")).toBe(false);
+});
+
 test("the stream's named events: the two that were, and the three that carry JSON", () => {
   expect({ ...STREAM }).toEqual({ CHANGE: "change", RUN: "run", HISTORY: "history", CHAT: "chat", AGENTS: "agents" });
   expect(Object.isFrozen(STREAM)).toBe(true);
@@ -273,7 +326,7 @@ test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapsh
     "table.get", "table.schema", "table.list", "row.insert", "row.update", "row.remove",
     "sql", "fetch", "theme.get", "open", "variables", "link.resolve", "page.embed", "vault.info",
     "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
-    "look.open", "look.new", "look.list", "look.panel",
+    "look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue",
   ]);
   expect([...RUNTIME_KIND_NAMES]).toEqual([
     ...HOST_KIND_NAMES,
@@ -283,6 +336,7 @@ test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapsh
     "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
     "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
     "chat.switchAgent", "chat.close", "chat.commands",
+    "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
   ]);
   expect([...HISTORY_KIND_NAMES]).toEqual(["window.report", "window.list", "history.read"]);
 });

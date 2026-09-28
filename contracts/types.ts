@@ -1067,6 +1067,36 @@ export interface ConfigOption {
   choices: ConfigChoice[];
 }
 
+/** WHICH PICKER A KEPT CHOICE IS FOR: the three under the input, and never
+ *  `other`, which is not drawn. */
+export type PickerCategory = Exclude<ConfigCategory, "other">;
+
+/** THE THREE VIEWS OF A CHAT (*Chat*, `screens`), picked beside the effort.
+ *  `plain` is the words alone — the thinking folded to its one line and no
+ *  tool calls; `tools`, the default, adds each run of tool calls as ONE line
+ *  that opens to them; `thinking` adds the agent's thinking written out where
+ *  it came, rather than folded. None of them draws a wall of tool calls.
+ *  `CHAT_VIEWS` in `wire.js` is the list. The twelfth contracts edit. */
+export type ChatView = "plain" | "tools" | "thinking";
+
+/** THE CHAT'S CHOICES, AS THE WORKSPACE KEEPS THEM — in `.biom/settings.json`,
+ *  beside the chats and never in git (*Chat*, `picker`: *the choices are
+ *  kept*). `view` is the view last picked. `agent` is the agent last picked —
+ *  a chat made with it or switched to it — or null before any. `agents` is
+ *  each agent's last model, mode and effort, by its key and the picker's
+ *  category, as the value the agent's own list offered.
+ *
+ *  THE SERVER KEEPS THEM WHEN THE CHOICE IS MADE — `chat.new`,
+ *  `chat.switchAgent` and `chat.config` — so they hold whichever window made
+ *  it, and across a restart. A new chat with an agent starts on that agent's
+ *  kept values that its list still offers; one it no longer offers is skipped
+ *  without a word. The twelfth contracts edit. */
+export interface ChatSettings {
+  view: ChatView;
+  agent: AgentKey | null;
+  agents: Record<AgentKey, Partial<Record<PickerCategory, ConfigValue>>>;
+}
+
 /** ONE LINE OF THE / MENU. `agent` is what the agent listed in
  *  `available_commands_update` — built-ins, custom commands, prompts and the
  *  skills it loaded — and goes out as the agent's own; `skill` is a workspace
@@ -1091,8 +1121,9 @@ export type ChatLight = "working" | "done" | "error" | "none";
 
 /** Where a chat's latest message is. `held`: waiting for an agent to become
  *  Active. `starting`: the agent is starting and its session opening — the
- *  dot-matrix loader. `running`: a turn is in flight and the input is Stop.
- *  `idle`: nothing is. */
+ *  dot-matrix loader. `running`: a turn is in flight, and the input's button
+ *  is Stop while nothing is typed. `idle`: nothing is. A message sent in any
+ *  phase but `idle` waits in the chat's queue. */
 export type TurnPhase = "idle" | "held" | "starting" | "running";
 
 /** How a turn ended: ACP's stop reasons, and `crashed` for an agent that died
@@ -1178,7 +1209,13 @@ export interface PlanEntry {
  *  turn's end and, where it was red, what happened in words. `face` is the
  *  emoji Jev picked once for the name. The config options are NOT here: they
  *  ride the stream's `config` update, sent when they change. Times are the
- *  server's, in ms. */
+ *  server's, in ms.
+ *
+ *  `queued` is how many of the person's messages wait in the chat's queue, and
+ *  `queueHeld` whether the queue waits for the person rather than for the turn
+ *  (the twelfth edit): a queue goes out by itself, one message a turn, after a
+ *  turn that ends `end_turn`; after Stop, a red end or a restart it is held,
+ *  and goes out only when the person asks (`chat.sendQueued`). */
 export interface ChatSummary {
   id: ChatId;
   name: string;
@@ -1194,6 +1231,8 @@ export interface ChatSummary {
   reason: string | null;
   created: number;
   updated: number;
+  queued: number;
+  queueHeld: boolean;
 }
 
 /** ONE UPDATE IN A CHAT'S STREAM, IN BIOM'S SHAPE — what the look draws and
@@ -1214,7 +1253,13 @@ export interface ChatSummary {
  *  workspace skill it did not list. `usage` and `plan` are what the agent last
  *  said of each. `error` is a sentence of Biom's own; an agent's stderr is
  *  never relayed raw. A `tool` update carries the line whole, so the kept log
- *  may drop a line's superseded updates for its last. */
+ *  may drop a line's superseded updates for its last.
+ *
+ *  `queued` is a message of the person's put in the chat's queue because a
+ *  turn was running, by an id the server minted; `unqueued` is one leaving it —
+ *  `sent` when it went out as the next turn's `prompt`, which follows it, and
+ *  not when the person removed it. The queue is those two read in order; the
+ *  twelfth edit. */
 export type ChatUpdate = { seq: number; at: number; turn: number } & (
   | { kind: "prompt"; text: string }
   | { kind: "reply"; text: string }
@@ -1230,7 +1275,19 @@ export type ChatUpdate = { seq: number; at: number; turn: number } & (
   | { kind: "usage"; used: number; size: number; cost: { amount: number; currency: string } | null }
   | { kind: "plan"; entries: PlanEntry[] }
   | { kind: "error"; message: string }
+  | { kind: "queued"; id: string; text: string }
+  | { kind: "unqueued"; id: string; sent: boolean }
 );
+
+/** WHAT `chat.send` ANSWERS: the chat as it now stands, and — where the
+ *  message waits in the chat's queue because a turn was running — its id and
+ *  its place in the queue, 1 being next. Null where it went out, or is held
+ *  for an agent to be ready. The twelfth edit; before it `chat.send` answered
+ *  the summary alone. */
+export interface ChatSent {
+  chat: ChatSummary;
+  queued: { id: string; place: number } | null;
+}
 
 /** What `chat.read` answers: the chat, and its stream after `since`. */
 export interface ChatRead {
@@ -1240,10 +1297,16 @@ export interface ChatRead {
 
 /** ONE `chat` EVENT ON THE STREAM: the chat as it now stands and what it
  *  streamed since the last event, batched. The summary is always there, so a
- *  light changing on a chat nobody has open is an event with no updates. */
+ *  light changing on a chat nobody has open is an event with no updates.
+ *
+ *  `deleted` says the chat is gone (`chat.delete`, the twelfth edit): the
+ *  summary is as it last stood, there are no updates, and every window drops
+ *  it from its list — one that had it open goes to the start screen. Absent
+ *  on every other push. */
 export interface ChatPush {
   chat: ChatSummary;
   updates: ChatUpdate[];
+  deleted?: boolean;
 }
 
 /** A page as the look names it: where it is now, and what it is called. */
@@ -1268,7 +1331,9 @@ export interface LookInput {
  *  `names` is every page the look's places name, by `uid`, as it is now called
  *  and where it now is: the look cannot resolve a `uid` itself, and a page it
  *  names it opens through `open`. `beside` is the page the panel sits beside,
- *  or the one the Agent screen would minimise to. */
+ *  or the one the Agent screen would minimise to. `view` is which of a chat's
+ *  three views the person picked (the twelfth edit): the look draws the chat
+ *  that way, and a look that draws fewer views draws the nearest it has. */
 export interface LookState {
   mode: "screen" | "panel";
   chat: ChatId | null;
@@ -1278,6 +1343,7 @@ export interface LookState {
   names: Record<string, PageName>;
   input: LookInput;
   beside: PageName | null;
+  view: ChatView;
 }
 
 /** WHAT CHANGED ON DISK, BY NAME — the `change` event's data since the
@@ -1526,6 +1592,18 @@ export type HostRequest = Envelope &
      *  screen; `beside`, the Agent screen minimised to the panel beside the last
      *  page the history shows; `closed`, the panel shut. */
     | { kind: "look.panel"; to: "screen" | "beside" | "closed" }
+    /** ASK FOR A CHAT TO BE DELETED — its row's three dots, then Delete. The
+     *  twelfth edit. The look deletes nothing: Biom answers with a dialog of
+     *  its own, *Delete this chat? It can't be undone.*, and only the person's
+     *  Delete there says `chat.delete`, which no box can say. So a look that
+     *  asks this unprompted, or on a loop, raises a question and never
+     *  deletes. */
+    | { kind: "look.delete"; chat: ChatId }
+    /** TAKE ONE MESSAGE OUT OF A CHAT'S QUEUE — the × on a *Queued* message,
+     *  by the chat and the id the server minted for it. The twelfth edit. It
+     *  removes words the person wrote and sends none: the look never says
+     *  anything to an agent. */
+    | { kind: "look.unqueue"; chat: ChatId; id: string }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -1630,8 +1708,9 @@ export type HostEvent =
    *  the look holds whole, because a light or a name moving on a chat in the
    *  background is a new list rather than a diff anybody should apply; `input`
    *  and `beside` replace theirs when the input box moves or grows and when the
-   *  page the panel sits beside changes. */
-  | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; names?: Record<string, PageName>; input?: LookInput; beside?: PageName | null };
+   *  page the panel sits beside changes; `view` replaces the view when the
+   *  person picks another. */
+  | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; names?: Record<string, PageName>; input?: LookInput; beside?: PageName | null; view?: ChatView };
 
 /** guest → host, unprompted. A null-origin frame's DOM cannot be read by the
  *  host, so everything the host needs to know arrives here.
@@ -2018,11 +2097,19 @@ export type ChatRequest = Envelope &
      *  workspace and never in git, so a chat reads the same whether or not its
      *  agent can reload it. */
     | { kind: "chat.read"; chat: ChatId; since?: number }
-    /** THE PERSON'S MESSAGE. One at a time: refused with `limit` while a turn
-     *  runs, which is why the input becomes Stop. A `/name` naming a workspace
-     *  skill the agent did not list goes out with a pointer to its
+    /** THE PERSON'S MESSAGE, answered as a `ChatSent`. One at a time: sent
+     *  while a turn runs, it WAITS IN THE CHAT'S QUEUE (the twelfth edit; it
+     *  was refused `limit` before), and the answer says its place. ACP has no
+     *  queue, so the queue is Biom's, kept with the chat. A `/name` naming a
+     *  workspace skill the agent did not list goes out with a pointer to its
      *  `SKILL.md`, added by the server. */
     | { kind: "chat.send"; chat: ChatId; text: string }
+    /** SEND THE HELD QUEUE — **Send queued**. A queue held after Stop, a red
+     *  end or a restart goes out again: its next message now, if no turn runs,
+     *  and one a turn after that. The twelfth edit. */
+    | { kind: "chat.sendQueued"; chat: ChatId }
+    /** TAKE ONE MESSAGE OUT OF THE QUEUE, by its id. The twelfth edit. */
+    | { kind: "chat.unqueue"; chat: ChatId; id: string }
     /** STOP: `session/cancel`. The turn ends `cancelled`. */
     | { kind: "chat.cancel"; chat: ChatId }
     /** SET ONE OF THE AGENT'S SESSION CONFIG OPTIONS — the model, mode and
@@ -2043,6 +2130,21 @@ export type ChatRequest = Envelope &
      *  — `.agents/skills/<name>/SKILL.md` — the agent did not list, added once.
      *  Neither named is the workspace's skills alone. */
     | { kind: "chat.commands"; chat?: ChatId; agent?: AgentKey }
+    /** DELETE A CHAT FOR GOOD (*Chat*, `history`), said only after the person
+     *  pressed Delete in Biom's own dialog. Its turn is cancelled if one runs,
+     *  its agent ended as `chat.close` ends it, and Biom's copy of it removed;
+     *  where the agent offers `session/delete`, it is asked to delete its own
+     *  record of the session too, best effort and in the background. The kept
+     *  choices are left alone, and so is the history, which is history. Every
+     *  window hears it as a `chat` push saying `deleted`. The twelfth edit. */
+    | { kind: "chat.delete"; chat: ChatId }
+    /** THE CHAT'S KEPT CHOICES, as `ChatSettings`. The twelfth edit. */
+    | { kind: "settings.read" }
+    /** KEEP A CHOICE MADE IN THE HOST — the view — and answer the choices as
+     *  they now stand. The agent, model, mode and effort are kept by the
+     *  server as `chat.new`, `chat.switchAgent` and `chat.config` make them,
+     *  and are not set here. The twelfth edit. */
+    | { kind: "settings.set"; view?: ChatView }
   );
 
 /** WHAT EACH WINDOW HAS OPEN, AND WHAT HAPPENED — the eleventh edit's other

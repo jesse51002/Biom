@@ -9,10 +9,10 @@
 // here would be larger than the thing it validated and would imply the rest of
 // the codebase is checked, which it is not.
 
-/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue } from "./types.ts" */
+/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue, ChatView } from "./types.ts" */
 /** @import { PageRequest } from "./types.ts" */
 
-import { AGENT_KEY, OPAQUE_ID, PROTOCOL } from "./wire.js";
+import { AGENT_KEY, CHAT_VIEWS, OPAQUE_ID, PROTOCOL } from "./wire.js";
 import { LOCATE_MAX, SEARCH_MAX, SEARCH_QUERY_MAX } from "./wire.js";
 import { PAGE_SCREENS, VIEW_NAMES } from "./address.js";
 
@@ -120,6 +120,11 @@ const HOST_KINDS = new Set([
   // holds both. The bridge answers them for the look's own box and refuses
   // every other. Same three-place rule as every line above it.
   "look.open", "look.new", "look.list", "look.panel",
+  // THE TWELFTH EDIT'S TWO: a chat's row asking for Biom's own delete dialog,
+  // and a queued message's × — ids only, like the four above. Neither deletes
+  // nor sends anything by itself: the dialog is the host's and the words were
+  // the person's.
+  "look.delete", "look.unqueue",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -153,6 +158,8 @@ const CHAT_KINDS = new Set([
   "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
   "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
   "chat.switchAgent", "chat.close", "chat.commands",
+  // The twelfth edit: deleting a chat, its queue, and the kept choices.
+  "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
 ]);
 
 /** WHAT EACH WINDOW HAS OPEN, AND THE HISTORY — outer ring, the same edit. */
@@ -170,12 +177,13 @@ const LOCAL_KINDS = new Set([...CHAT_KINDS, "window.report"]);
 
 /**
  * Whether a kind answers only this machine's own window. A kind nobody has
- * listed yet that starts `chat.` or `agents.` is local too, so a kind added
- * without this list still cannot reach an agent past the gate.
+ * listed yet that starts `chat.`, `agents.` or `settings.` is local too, so a
+ * kind added without this list still cannot reach an agent, or the choices
+ * the next chat starts on, past the gate.
  * @param {unknown} kind
  */
 export function isLocalKind(kind) {
-  return typeof kind === "string" && (LOCAL_KINDS.has(kind) || kind.startsWith("chat.") || kind.startsWith("agents."));
+  return typeof kind === "string" && (LOCAL_KINDS.has(kind) || kind.startsWith("chat.") || kind.startsWith("agents.") || kind.startsWith("settings."));
 }
 
 /** Every kind the two inner rings admit, as a list nobody can change — for
@@ -279,6 +287,16 @@ export const isWindowId = isOpaqueId;
  * @returns {v is string}
  */
 export const isAgentKey = (v) => typeof v === "string" && AGENT_KEY.test(v);
+
+/** @type {ReadonlySet<unknown>} */
+const VIEWS = new Set(CHAT_VIEWS);
+
+/**
+ * One of a chat's three views.
+ * @param {unknown} v
+ * @returns {v is ChatView}
+ */
+export const isChatView = (v) => VIEWS.has(v);
 
 /**
  * An address as a window reports it: a view the vocabulary holds, an id, and
@@ -455,6 +473,10 @@ function wellFormed(v, allowed) {
       return only(v, ["open"]) && typeof v.open === "boolean";
     case "look.panel":
       return only(v, ["to"]) && (v.to === "screen" || v.to === "beside" || v.to === "closed");
+    case "look.delete":
+      return only(v, ["chat"]) && isOpaqueId(v.chat);
+    case "look.unqueue":
+      return only(v, ["chat", "id"]) && isOpaqueId(v.chat) && isOpaqueId(v.id);
 
     /* ── the agents and the chats (outer ring) ─────────────────────────── */
     case "agents.probe":
@@ -477,7 +499,13 @@ function wellFormed(v, allowed) {
       return isOpaqueId(v.chat) && isWords(v.text);
     case "chat.cancel":
     case "chat.close":
+    case "chat.delete":
+    case "chat.sendQueued":
       return isOpaqueId(v.chat);
+    case "chat.unqueue":
+      return isOpaqueId(v.chat) && isOpaqueId(v.id);
+    case "settings.set":
+      return v.view === undefined || isChatView(v.view);
     case "chat.config":
       return isOpaqueId(v.chat) && typeof v.option === "string" && v.option !== "" && isConfigValue(v.value);
     case "chat.switchAgent":
@@ -505,7 +533,8 @@ function wellFormed(v, allowed) {
 
     default:
       // data.get, doc.list, table.list, theme.get, agents.list,
-      // agents.registry, chat.list, window.list — no parameters to check.
+      // agents.registry, chat.list, settings.read, window.list — no
+      // parameters to check.
       return true;
   }
 }

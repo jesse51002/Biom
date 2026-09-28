@@ -36,7 +36,7 @@
 /** @import { LookRequest } from "../bridge/bridge.js" */
 /** @import { AgentInput } from "./agent-input.js" */
 
-import { AGENT_PAGE, ERRORS } from "../../contracts/wire.js";
+import { AGENT_PAGE, DEFAULT_VIEW, ERRORS } from "../../contracts/wire.js";
 import { addressOfPlace } from "../../contracts/address.js";
 import { remember, remembered } from "../platform/dom.js";
 import { weaveRuntime } from "../platform/document.js";
@@ -321,7 +321,7 @@ export function makeAgentView(deps) {
     const inputNow = input.measure();
     const beside = besideNow();
     /** @type {LookState} */
-    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside };
+    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside, view: DEFAULT_VIEW };
     frame.post({ kind: "look.state", state });
     posted = want;
     queue = [];

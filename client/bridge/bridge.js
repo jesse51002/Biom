@@ -58,8 +58,8 @@ import { isHostRequest, isRuntimeRequest } from "../../contracts/guards.js";
 import { weaveRuntime } from "../platform/document.js";
 import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, nextId } from "../../contracts/wire.js";
 
-/** ONE OF THE LOOK'S FOUR REQUESTS, as the Agent screen answers it.
- *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" }>} LookRequest */
+/** ONE OF THE LOOK'S SIX REQUESTS, as the Agent screen answers it.
+ *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" }>} LookRequest */
 
 /** WHO ANSWERS THE LOOK: the Agent screen's host side, registered by the
  *  composition root through `answerLook`, handed each look request with the
@@ -470,10 +470,15 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       //
       // NONE OF IT CARRIES WORDS TO AN AGENT, and nothing here could: the
       // guard admitted ids and closed words only, and the answer is the ui's.
+      // The twelfth edit's two ask the same way: `look.delete` for Biom's own
+      // dialog, which alone may delete, and `look.unqueue` for a queued
+      // message's ×, which takes the person's words out and sends none.
       case "look.open":
       case "look.new":
       case "look.list":
-      case "look.panel": {
+      case "look.panel":
+      case "look.delete":
+      case "look.unqueue": {
         if (ctx.page !== AGENT_PAGE || lookAnswer === null) {
           return no(req.id, ERRORS.IDENTITY, "only the Agent screen's own look may ask that");
         }
