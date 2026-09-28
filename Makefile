@@ -197,11 +197,12 @@ test: install
 # TWO LAYERS AND ONE COMMAND. `server.e2e.ts` runs `server/main.ts` the way `dev`
 # does and drives it in a headless Chromium, and the files beside it walk the
 # rest of that layer — the chats over HTTP with a scripted agent, the Agent
-# screen's look in a real box, its host side on a screen, a server started
-# against a folder gone wrong; `app.e2e.ts` starts the PACKAGED
-# application and asks the window it opened. The second SKIPS, with a named
-# reason, where there is no bundle or no screen — build one with `make app`, and
-# on Linux it takes a display of its own through `xvfb-run` where there is one.
+# screen's look in a real box, its host side on a screen and on a workspace of
+# two thousand pages, a server started against a folder gone wrong;
+# `app.e2e.ts` starts the PACKAGED application and asks the window it opened.
+# The second SKIPS, with a named reason, where there is no bundle or no screen —
+# build one with `make app`, and on Linux it takes a display of its own through
+# `xvfb-run` where there is one.
 #
 # NAMED EXPLICITLY, WITH A `./` IN FRONT, and both halves are load-bearing. The
 # files end in `.e2e.ts` rather than `.test.ts` so `bun test`'s own discovery —
@@ -252,6 +253,7 @@ E2E_SERVER = \
 	./tests/e2e/chat.e2e.ts \
 	./tests/e2e/agent-look.e2e.ts \
 	./tests/e2e/agent-screen.e2e.ts \
+	./tests/e2e/big-vault.e2e.ts \
 	./tests/e2e/startup.e2e.ts
 E2E_APP = ./tests/e2e/app.e2e.ts
 
