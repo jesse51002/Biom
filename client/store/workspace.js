@@ -15,26 +15,43 @@
 // snapshot and the views repainted once. `reloadPage` is the single deliberate
 // exception and says why at the call site.
 //
-// It also holds LAYER ONE — what each page holds, pages and tables alike, read
-// for every page at once and kept beside the snapshot. That is a separate read
-// from `loadPage` on purpose: the rail needs several pages' children while the
-// user is looking at a different page, and `loadPage` owns the open-page slot.
-// `moveChild` is the only write against it, and it MOVES A DIRECTORY now: there
-// is no `parent:` to patch, so a page moves with `page.move` and comes back
-// wearing a NEW ID, which the caller re-routes onto.
+// It also holds LAYER ONE — what a page holds, pages and tables alike — but
+// only for the LEVELS THIS WINDOW HAS LISTED: the root's, the ones on the way
+// down to the page on screen, and the ones the person opened in the rail. A
+// level is read when it is wanted (`expand`), never for every page at once,
+// because a window of two thousand pages must hold what is on its screen and
+// ask for the rest by name. That is a separate read from `loadPage` on
+// purpose: the rail needs several pages' children while the user is looking
+// at a different page, and `loadPage` owns the open-page slot. `moveChild` is
+// the only write against it, and it MOVES A DIRECTORY: there is no `parent:`
+// to patch, so a page moves with `page.move` and comes back wearing a NEW ID,
+// which the caller re-routes onto.
+//
+// AND IT HOLDS A DIRECTORY of the pages this window knows — id to ref, uid to
+// id — filled by the levels it listed, the pages it read, and what it located
+// or searched. `WorkspaceSnapshot.pages` is that directory's values and never
+// every page. A reader that needs a page it does not know asks `want`, which
+// batches the misses into `page.locate` and emits when the answer lands; a
+// reader that needs a name asks `search`.
 //
 // It cannot see the DOM or a view. Views subscribe through `on()` and
 // a composition root registers the callback; the store has no idea a view
 // exists. That is the only upward mechanism in the framework and it is what keeps
 // the import graph acyclic.
 
-/** @import { ApiRequest, Automation, AutomationManifest, BlockId, Change, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
- *            PageId, PageRef, Part, Row, RowId, RowQuery, RunRead, RunRow, Section, Share, TableName,
+/** @import { ApiRequest, Automation, AutomationManifest, BlockId, Change, ChangeEvent, Child, DirListing, DrawnSection, Envelope, Page, PageDoc,
+ *            PageId, PageRef, PageSearch, Part, Row, RowId, RowQuery, RunRead, RunRow, Section, Share, TableName,
  *            TableRef, TableView, Template, Theme, Transport, Variables, VarPatch, VaultFile, VaultInfo, WorkspaceStore }
  *            from "../../contracts/types.ts" */
 
 import { emitter } from "../../contracts/emitter.js";
-import { ERRORS, PROTOCOL, nextId } from "../../contracts/wire.js";
+import { ERRORS, PROTOCOL, SEARCH_MAX, nextId } from "../../contracts/wire.js";
+
+/** HOW MANY IDS, AND HOW MANY UIDS, ONE `page.locate` ASKS FOR. Well inside
+ *  the wire's `LOCATE_MAX`, so a burst of misses — a history of two hundred
+ *  pages the window never listed — is a few small requests rather than one
+ *  the server has to wait on. */
+export const WANT_BATCH = 64;
 
 /* ── the four runtime values the client cannot import ────────────────────── */
 
@@ -92,6 +109,21 @@ export function rebase(id, from, to) {
   return id.startsWith(from + "/") ? to + id.slice(from.length) : id;
 }
 
+/** The ancestors of a page, root first, that hold it: for `home/A/B` the
+ *  root, `home` and `home/A` — each one's level names the next. The root is
+ *  always first, whether or not the id begins with it.
+ *  @param {PageId} id @returns {PageId[]} */
+export function ancestorsOf(id) {
+  /** @type {PageId[]} */
+  const out = [ROOT_PAGE];
+  const parts = id.split("/");
+  for (let n = 1; n < parts.length; n++) {
+    const at = parts.slice(0, n).join("/");
+    if (at !== ROOT_PAGE) out.push(at);
+  }
+  return out;
+}
+
 /** The null theme. Every field is empty rather than invented, because nothing
  *  outside the theme data may name a colour and that includes a default.
  *  `loadTree()` replaces it before boot mounts the shell.
@@ -143,8 +175,30 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
  * the `Pages` methods they stand in front of, so one vocabulary reaches from the
  * wire to the screen.
  *
+ * THE REST ARE THE WINDOW HOLDING ONLY WHAT IS ON ITS SCREEN — the twelfth
+ * contracts edit's client half, declared here for the same reason. `children`
+ * answers a level only once it has been listed, and `held` says whether it
+ * has; `expand` lists one, once, deduplicated while it is on its way;
+ * `reveal` lists the levels on the way down to a page. `refOf` and
+ * `idOfUid` read the directory synchronously, and `want` asks `page.locate`
+ * for what it misses — batched, deduplicated, and remembered as absent until
+ * the next change — resolving once the answer is in. `search` asks the
+ * server by name. `refresh` rereads the levels a change on disk named, and
+ * `version` moves whenever a level does, which is how a reader tells a
+ * re-listed tree from a repaint.
+ *
  * @typedef {WorkspaceStore & {
+ *   loadTree(at?: PageId): Promise<void>,
  *   children(id: PageId): Child[],
+ *   held(id: PageId): boolean,
+ *   expand(id: PageId): Promise<void>,
+ *   reveal(id: PageId): Promise<void>,
+ *   refOf(id: PageId): PageRef | null,
+ *   idOfUid(uid: string): PageId | null,
+ *   want(q: { ids?: readonly PageId[], uids?: readonly string[] }): Promise<void>,
+ *   search(query: string): Promise<PageSearch>,
+ *   refresh(change: ChangeEvent): Promise<void>,
+ *   version(): number,
  *   moveChild(child: Child, from: PageId, to: PageId): Promise<PageId | null>,
  *   writeSlot(id: PageId, section: BlockId, part: string, data: string): Promise<void>,
  *   setSections(id: PageId, sections: Section[]): Promise<Section[]>,
@@ -159,18 +213,48 @@ export const scopeOf = (pageVars, own) => ({ ...pageVars, ...(own ?? {}) });
 export function makeWorkspace(transport) {
   const bus = emitter();
 
-  /** @type {PageRef[]} */ let pages = [];
   /** @type {TableRef[]} */ let tables = [];
   /** @type {Theme} */ let theme = NO_THEME;
   /** @type {Page | null} */ let page = null;
   /** @type {TableView | null} */ let table = null;
 
-  /** Layer one, for every page at once: what each one holds, pages and tables
-   *  alike. It is a map beside the snapshot rather than a field in it because
-   *  `WorkspaceSnapshot` is frozen — and because a view asking for one page's
-   *  children must not have to hold the whole thing to do it.
+  /** Layer one, for the LEVELS THIS WINDOW HAS LISTED: what each holds, pages
+   *  and tables alike, keyed by the page that holds them. A map beside the
+   *  snapshot rather than a field in it because `WorkspaceSnapshot` is frozen.
    *  @type {Map<PageId, Child[]>} */
-  let kids = new Map();
+  const levels = new Map();
+  /** A level on its way, so a second ask while it is out is the same ask.
+   *  @type {Map<PageId, Promise<void>>} */
+  const listing = new Map();
+  /** Which read of a level is the latest, so an older answer landing after a
+   *  newer one is dropped rather than written over it. @type {Map<PageId, number>} */
+  const levelGen = new Map();
+  /** Moves whenever a level does. */
+  let treeVersion = 0;
+
+  /** THE DIRECTORY: every page this window knows, by id and by uid. Filled by
+   *  the levels, the reads, `page.locate` and `page.search`; emptied of a page
+   *  that a re-listed level no longer holds, or that was moved, renamed or
+   *  removed from here. @type {Map<PageId, PageRef>} */
+  const refs = new Map();
+  /** @type {Map<string, PageId>} */
+  const byUid = new Map();
+  /** `refs`' values, built again only when it moved, so `get().pages` is the
+   *  same array between changes. @type {PageRef[] | null} */
+  let known = null;
+  /** What `page.locate` said is not there, until the next change on disk.
+   *  @type {{ ids: Set<PageId>, uids: Set<string> }} */
+  const absent = { ids: new Set(), uids: new Set() };
+  /** What `want` is asking for, keyed `i:<id>` or `u:<uid>`.
+   *  @type {Map<string, Promise<void>>} */
+  const wanting = new Map();
+  /** Misses gathered this microtask, and the one flush that asks for them.
+   *  @type {{ ids: Set<PageId>, uids: Set<string>, done: Promise<void> } | null} */
+  let gathering = null;
+  /** A key whose locate failed, and when: not asked again for `COOL_MS`.
+   *  @type {Map<string, number>} */
+  const cooling = new Map();
+  const COOL_MS = 5000;
 
   /** The query the open view was read with, kept so a write can re-read the
    *  same view. A row's place in a filtered, sorted view is the server's
@@ -219,56 +303,193 @@ export function makeWorkspace(transport) {
     throw Object.assign(new Error(res.error.message), { code: res.error.code });
   }
 
-  /** Everything the chrome draws before a page is open, in one round of
-   *  requests, so any change to the shape of the workspace is one repaint. */
-  async function readShell() {
-    const [p, t, th] = await Promise.all([
-      ask({ ...env(), kind: "page.list" }),
-      ask({ ...env(), kind: "table.list" }),
-      ask({ ...env(), kind: "theme.get" }),
-    ]);
-    pages = /** @type {PageRef[]} */ (p);
-    tables = /** @type {TableRef[]} */ (t);
-    theme = /** @type {Theme} */ (th);
-    await readChildren();
-  }
-
   /** A page read WITHOUT taking the open-page slot. Everything that wants a page
    *  other than the one on screen — an order to patch, a parent to check — comes
-   *  through here; only `loadPage` and `reloadPage` assign to `page`.
+   *  through here; only `loadPage` and `reloadPage` assign to `page`. A page
+   *  read is a page known, uid and all; the framework's own screens are not.
    *  @param {PageId} id */
   async function readPage(id) {
-    return /** @type {Page | null} */ (await askOrNull({ ...env(), kind: "page.read", page: id }));
+    const read = /** @type {Page | null} */ (await askOrNull({ ...env(), kind: "page.read", page: id }));
+    if (read && !read.id.startsWith("@")) know(read);
+    return read;
   }
 
-  /** Layer one for the whole workspace, in ONE request.
-   *
-   *  Eager and complete rather than fetched as the rail expands, and that is the
-   *  cheap answer to a real hazard: a view that fetched what it was missing
-   *  while drawing would fetch again on the repaint its own answer caused.
-   *
-   *  It used to be one request per page, "a throwaway instrument's kind of
-   *  cost" on a few dozen pages — and on eighteen hundred it was more requests
-   *  than a browser will have in flight, refused before the server heard them,
-   *  and the shell said the server had not answered. So the server walks the
-   *  tree once and answers every page's children keyed by id, root included,
-   *  whether or not the root is in `pages`: the rail is its children, and a
-   *  workspace whose root has not been seeded yet should draw an empty rail
-   *  rather than fail. A page the answer does not name has no children. */
-  async function readChildren() {
-    const all = /** @type {Record<PageId, Child[]> | null} */ (await askOrNull({ ...env(), kind: "children.all" }));
-    const ids = [...new Set([ROOT_PAGE, ...pages.map((p) => p.id)])];
-    kids = new Map(ids.map((id) => [id, /** @type {Child[]} */ ((all && all[id]) ?? [])]));
+  /* ── the directory ──────────────────────────────────────────────── */
+
+  /** Take a page this window has seen into the directory: its id, its name,
+   *  and where it has one its uid. A uid seen before under another id is a
+   *  page that moved, and the old id is let go.
+   *  @param {PageRef} ref */
+  function know(ref) {
+    if (!ref || typeof ref.id !== "string" || ref.id === "") return;
+    const had = refs.get(ref.id);
+    /** @type {PageRef} */
+    const next = typeof ref.uid === "string" && ref.uid !== ""
+      ? { id: ref.id, name: String(ref.name), uid: ref.uid }
+      : { id: ref.id, name: String(ref.name) };
+    if (had && had.name === next.name && had.uid === next.uid) return;
+    if (had && had.uid !== undefined && had.uid !== next.uid && byUid.get(had.uid) === ref.id) byUid.delete(had.uid);
+    if (next.uid !== undefined) {
+      const was = byUid.get(next.uid);
+      if (was !== undefined && was !== next.id) {
+        const old = refs.get(was);
+        if (old && old.uid === next.uid) refs.delete(was);
+      }
+      byUid.set(next.uid, next.id);
+      absent.uids.delete(next.uid);
+    }
+    refs.set(next.id, next);
+    absent.ids.delete(next.id);
+    known = null;
   }
 
-  /** The tree, after a create, a remove or a move. Re-listed rather than patched
-   *  locally: the server owns ids and ordering, and it owns which page holds
-   *  what — the client must never decide that twice. */
-  async function readPages() {
-    pages = /** @type {PageRef[]} */ (await ask({ ...env(), kind: "page.list" }));
-    await readChildren();
+  /** A page, and everything under it, gone from here: removed, moved or
+   *  renamed away, or no longer in the level that held it. Its levels go too.
+   *  @param {PageId} id */
+  function forget(id) {
+    const under = id + "/";
+    for (const [at, ref] of refs) {
+      if (at !== id && !at.startsWith(under)) continue;
+      refs.delete(at);
+      if (ref.uid !== undefined && byUid.get(ref.uid) === at) byUid.delete(ref.uid);
+      known = null;
+    }
+    for (const at of [...levels.keys()]) {
+      if (at === id || at.startsWith(under)) { levels.delete(at); treeVersion++; }
+    }
   }
 
+  /** @param {Child[]} list */
+  function knowChildren(list) {
+    for (const c of list) {
+      if (c.kind !== "page") continue;
+      know(typeof c.uid === "string" ? { id: c.id, name: c.name, uid: c.uid } : { id: c.id, name: c.name });
+    }
+  }
+
+  /** THIS MICROTASK'S GATHERING OF MISSES, begun by the first one: every
+   *  `want` in the same tick joins it, and it asks once the tick is over.
+   *  @returns {{ ids: Set<PageId>, uids: Set<string>, done: Promise<void> }} */
+  function gather() {
+    if (gathering !== null) return gathering;
+    /** @type {{ ids: Set<PageId>, uids: Set<string>, done: Promise<void> }} */
+    const g = { ids: new Set(), uids: new Set(), done: Promise.resolve() };
+    g.done = Promise.resolve()
+      .then(() => {
+        if (gathering === g) gathering = null;
+        return flush(g);
+      })
+      .finally(() => {
+        for (const id of g.ids) if (wanting.get("i:" + id) === g.done) wanting.delete("i:" + id);
+        for (const uid of g.uids) if (wanting.get("u:" + uid) === g.done) wanting.delete("u:" + uid);
+      });
+    gathering = g;
+    return g;
+  }
+
+  /* ── the levels ────────────────────────────────────────────────── */
+
+  /** ONE LEVEL, READ AND TAKEN, silently: what `id` holds, written over what
+   *  was held, and a page the level no longer holds let go — a level is the
+   *  truth about its own children. Callers emit once when they are done.
+   *  @param {PageId} id */
+  async function readLevel(id) {
+    const gen = (levelGen.get(id) ?? 0) + 1;
+    levelGen.set(id, gen);
+    const list = /** @type {Child[] | null} */ (await askOrNull({ ...env(), kind: "children", page: id })) ?? [];
+    if (levelGen.get(id) !== gen) return;
+    const before = levels.get(id);
+    levels.set(id, list);
+    treeVersion++;
+    if (before) {
+      const still = new Set(list.filter((c) => c.kind === "page").map((c) => c.id));
+      for (const c of before) if (c.kind === "page" && !still.has(c.id)) forget(c.id);
+    }
+    knowChildren(list);
+  }
+
+  /** A level wanted once: nothing if it is held, the same ask if it is on its
+   *  way. @param {PageId} id @returns {Promise<void>} */
+  function listOnce(id) {
+    if (levels.has(id)) return Promise.resolve();
+    const out = listing.get(id);
+    if (out) return out;
+    const p = readLevel(id).finally(() => { if (listing.get(id) === p) listing.delete(id); });
+    listing.set(id, p);
+    return p;
+  }
+
+  /** The levels a write moved, read again — only those this window holds,
+   *  because a level nobody listed is read when somebody opens it.
+   *  @param {readonly (PageId | null)[]} ids */
+  async function relist(ids) {
+    const want = [...new Set(ids.map((id) => id ?? ROOT_PAGE))].filter((id) => levels.has(id));
+    await Promise.all(want.map((id) => readLevel(id)));
+  }
+
+  /** The page a table sits under, as the rack holds it. @param {TableName} name */
+  const tableParent = (name) => tables.find((t) => t.name === name)?.parent ?? ROOT_PAGE;
+
+  /** @param {unknown} next */
+  function takeTables(next) {
+    const list = /** @type {TableRef[]} */ (next);
+    if (JSON.stringify(list) !== JSON.stringify(tables)) tables = list;
+  }
+
+  /** @param {unknown} next */
+  function takeTheme(next) {
+    const t = /** @type {Theme} */ (next);
+    // Kept by identity where nothing moved: the theme is broadcast into every
+    // box when it changes, and a reread that found the same palette is not a
+    // change.
+    if (JSON.stringify(t) !== JSON.stringify(theme)) theme = t;
+  }
+
+  /* ── asking by name ────────────────────────────────────────────── */
+
+  /** ONE FLUSH OF THE MISSES GATHERED THIS MICROTASK: `page.locate` in
+   *  batches of at most `WANT_BATCH` ids and as many uids, the refs found
+   *  taken into the directory, what was asked and not found remembered as
+   *  absent, and one emit when anything was learned.
+   *  @param {{ ids: Set<PageId>, uids: Set<string> }} g */
+  async function flush(g) {
+    const ids = [...g.ids];
+    const uids = [...g.uids];
+    let answered = false;
+    /** @type {Promise<void>[]} */
+    const asks = [];
+    for (let i = 0; i < Math.max(ids.length, uids.length); i += WANT_BATCH) {
+      const someIds = ids.slice(i, i + WANT_BATCH);
+      const someUids = uids.slice(i, i + WANT_BATCH);
+      /** @type {ApiRequest} */
+      const req = someUids.length === 0
+        ? { ...env(), kind: "page.locate", ids: someIds }
+        : someIds.length === 0
+          ? { ...env(), kind: "page.locate", uids: someUids }
+          : { ...env(), kind: "page.locate", ids: someIds, uids: someUids };
+      asks.push(ask(req).then((found) => {
+        const list = Array.isArray(found) ? /** @type {PageRef[]} */ (found) : [];
+        for (const ref of list) know(ref);
+        const gotIds = new Set(list.map((r) => r.id));
+        const gotUids = new Set(list.map((r) => r.uid).filter((u) => typeof u === "string"));
+        for (const id of someIds) if (!gotIds.has(id) && !refs.has(id)) absent.ids.add(id);
+        for (const uid of someUids) if (!gotUids.has(uid) && !byUid.has(uid)) absent.uids.add(uid);
+        answered = true;
+      }, (e) => {
+        // A locate that failed says nothing about the pages: they are not
+        // remembered as gone, only left alone for a moment, so a window whose
+        // server is away does not ask again on every repaint.
+        const at = Date.now();
+        for (const id of someIds) cooling.set("i:" + id, at);
+        for (const uid of someUids) cooling.set("u:" + uid, at);
+        console.warn("[biom] pages could not be located", e);
+      }));
+    }
+    await Promise.all(asks);
+    // ONE EMIT FOR THE ANSWER, found or absent, so a reader waiting on either
+    // reads again once. None for a failure: a repaint would only ask again.
+    if (answered) emit();
+  }
   async function readTables() {
     tables = /** @type {TableRef[]} */ (await ask({ ...env(), kind: "table.list" }));
   }
@@ -345,11 +566,120 @@ export function makeWorkspace(transport) {
   /** @type {Workspace} */
   const store = {
     get() {
-      return { pages, tables, theme, page, table };
+      if (known === null) known = [...refs.values()];
+      return { pages: known, tables, theme, page, table };
     },
 
     children(id) {
-      return kids.get(id) ?? [];
+      return levels.get(id) ?? [];
+    },
+
+    held(id) {
+      return levels.has(id);
+    },
+
+    version() {
+      return treeVersion;
+    },
+
+    /* ── the levels, one at a time ─────────────────────────────────── */
+
+    async expand(id) {
+      // AN ACT, NEVER A SIDE EFFECT OF DRAWING: the rail calls this when a
+      // row is opened, and draws only what is held. A view that fetched what
+      // it was missing while drawing would fetch again on the repaint its own
+      // answer caused.
+      if (levels.has(id)) return;
+      const out = listing.has(id);
+      await listOnce(id);
+      if (!out) emit();
+    },
+
+    async reveal(id) {
+      // THE WAY DOWN TO A PAGE: every level that holds it, root first, that
+      // this window has not listed — which is how a deep page opened from a
+      // link names its crumbs without the rest of the tree.
+      const missing = ancestorsOf(id).filter((at) => !levels.has(at) && !listing.has(at));
+      if (!missing.length) return;
+      await Promise.all(missing.map((at) => listOnce(at)));
+      emit();
+    },
+
+    /* ── the directory ─────────────────────────────────────────────── */
+
+    refOf(id) {
+      return refs.get(id) ?? null;
+    },
+
+    idOfUid(uid) {
+      return byUid.get(uid) ?? null;
+    },
+
+    want(q) {
+      // SAFE TO CALL FROM A DRAW, unlike a level: what is known, remembered
+      // absent, cooling after a failure or already asked for is never asked
+      // again, so the repaint an answer causes asks nothing.
+      /** @type {Promise<void>[]} */
+      const waits = [];
+      const now = Date.now();
+      /** @param {string} key */
+      const cold = (key) => {
+        const at = cooling.get(key);
+        if (at === undefined) return false;
+        if (now - at < COOL_MS) return true;
+        cooling.delete(key);
+        return false;
+      };
+      for (const id of q.ids ?? []) {
+        if (typeof id !== "string" || id === "" || refs.has(id) || absent.ids.has(id) || cold("i:" + id)) continue;
+        const out = wanting.get("i:" + id);
+        if (out) { waits.push(out); continue; }
+        const g = gather();
+        g.ids.add(id);
+        wanting.set("i:" + id, g.done);
+        waits.push(g.done);
+      }
+      for (const uid of q.uids ?? []) {
+        if (typeof uid !== "string" || uid === "" || byUid.has(uid) || absent.uids.has(uid) || cold("u:" + uid)) continue;
+        const out = wanting.get("u:" + uid);
+        if (out) { waits.push(out); continue; }
+        const g = gather();
+        g.uids.add(uid);
+        wanting.set("u:" + uid, g.done);
+        waits.push(g.done);
+      }
+      return Promise.all(waits).then(() => undefined);
+    },
+
+    async search(query) {
+      const q = String(query).trim();
+      if (q === "") return { hits: [], more: false, complete: true };
+      const found = /** @type {PageSearch} */ (await ask({ ...env(), kind: "page.search", query: q, limit: SEARCH_MAX }));
+      // What turned up is known now, silently: the finder draws the answer it
+      // was handed, and nothing else on screen was waiting for it.
+      for (const ref of found.hits) know(ref);
+      return found;
+    },
+
+    async refresh(change) {
+      // WHAT CHANGED ON DISK, BY NAME: the levels it names that this window
+      // holds — every one it holds for `all` — read again, and what was
+      // remembered as absent forgotten, because a page that was not there a
+      // moment ago may be now. The open page is the shell's to reread, since
+      // only the shell knows the box it is drawn in. The rack's tables and the
+      // theme are two small reads and kept by identity where nothing moved.
+      absent.ids.clear();
+      absent.uids.clear();
+      cooling.clear();
+      const named = change.all === true ? [...levels.keys()] : change.levels.filter((id) => levels.has(id));
+      const [t, th] = await Promise.all([
+        ask({ ...env(), kind: "table.list" }),
+        ask({ ...env(), kind: "theme.get" }),
+        ...named.map((id) => readLevel(id)),
+      ]);
+      takeTables(t);
+      takeTheme(th);
+      emit();
     },
 
     on(fn) {
@@ -362,8 +692,21 @@ export function makeWorkspace(transport) {
 
     /* ── the workspace ───────────────────────────────────────────────── */
 
-    async loadTree() {
-      await readShell();
+    /** @param {PageId} [at] the page the window opens on, whose levels are read with the root's */
+    async loadTree(at) {
+      // WHAT THE CHROME DRAWS BEFORE A PAGE IS OPEN, in one round of
+      // requests: the root's level, the levels on the way down to the page
+      // the window opens on, the rack's tables and the theme. NEVER every
+      // page — no `page.list`, no `children.all` — because on two thousand
+      // pages those are seconds each, and the tree is read a level at a time.
+      const down = at ? ancestorsOf(at) : [ROOT_PAGE];
+      const [t, th] = await Promise.all([
+        ask({ ...env(), kind: "table.list" }),
+        ask({ ...env(), kind: "theme.get" }),
+        ...down.map((id) => readLevel(id)),
+      ]);
+      tables = /** @type {TableRef[]} */ (t);
+      theme = /** @type {Theme} */ (th);
       emit();
     },
 
@@ -398,7 +741,10 @@ export function makeWorkspace(transport) {
 
     async createPage(init) {
       const ref = /** @type {PageRef} */ (await ask({ ...env(), kind: "page.create", init }));
-      await readPages();
+      // The level it was made in, read again — only that one: the server owns
+      // ids and ordering, and nothing else in the tree moved.
+      know(ref);
+      await relist([parentOf(ref.id) ?? ROOT_PAGE]);
       emit();
       return ref;
     },
@@ -406,7 +752,8 @@ export function makeWorkspace(transport) {
     async removePage(id) {
       await ask({ ...env(), kind: "page.remove", page: id });
       if (page && page.id === id) page = null;
-      await readPages();
+      forget(id);
+      await relist([parentOf(id)]);
       emit();
     },
 
@@ -419,8 +766,13 @@ export function makeWorkspace(transport) {
         await ask({ ...env(), kind: "page.rename", page: id, name })
       );
       // Re-read rather than reconcile, as a move is: the server owns ids and
-      // names both.
-      await readPages();
+      // names both. The level that holds it is the one that moved; the
+      // renamed page's own levels are let go and read again when opened. Its
+      // identity is the same page's, so the directory keeps it under the new id.
+      const was = refs.get(id);
+      forget(id);
+      know(was?.uid !== undefined ? { id: to, name, uid: was.uid } : { id: to, name });
+      await relist([parentOf(id)]);
       // The open page may be the one renamed, or beneath it — the whole
       // subtree was rewritten — so its id is rebuilt onto the new prefix and
       // re-read under that, which is the read that carries the new name too.
@@ -525,8 +877,8 @@ export function makeWorkspace(transport) {
       // THE RAIL DRAWS THIS ORDER TOO. A page's children come back in the order
       // its own `contents` puts them, so moving `@page-x` moves the row in the
       // tree — and a rail left holding the old order is the drag that appears
-      // not to have happened.
-      await readChildren();
+      // not to have happened. Its own level, and only that one.
+      await relist([id]);
       emit();
       return next;
     },
@@ -585,8 +937,17 @@ export function makeWorkspace(transport) {
 
       // Re-read rather than reconcile: the server owns what a page holds, and
       // the rail is the one place a client-side guess would be visible as the
-      // thing you just dragged jumping back.
-      await readPages();
+      // thing you just dragged jumping back. Both ends, and nothing else: the
+      // page left one level and arrived in another. A moved table is a row in
+      // the rack as well.
+      if (child.kind === "page") {
+        // The same page under its new id, identity and all: the history and
+        // the switcher find it by uid, and it has not stopped being itself.
+        const was = refs.get(child.id);
+        forget(child.id);
+        if (moved !== null) know(was?.uid !== undefined ? { id: moved, name: was.name, uid: was.uid } : { id: moved, name: child.name });
+      }
+      await Promise.all([relist([from, to]), child.kind === "table" ? readTables() : Promise.resolve()]);
       // THE OPEN PAGE MAY HAVE BEEN RENAMED UNDERNEATH THE ROUTE. It is the
       // page that moved, or anything beneath it — the whole subtree was rewritten
       // — so the open id is rebuilt onto the new prefix rather than re-read,
@@ -729,8 +1090,10 @@ export function makeWorkspace(transport) {
 
     async createTable(schema) {
       await ask({ ...env(), kind: "table.create", schema });
-      // A table is a child of some page, so the rail moved as well as the rack.
-      await Promise.all([readTables(), readChildren()]);
+      // A table is a child of some page, so the rail moved as well as the rack:
+      // the level of the page it sits under, once the rack says which.
+      await readTables();
+      await relist([tableParent(schema.name)]);
       emit();
       changed({ tables: [schema.name] });
     },
@@ -740,16 +1103,19 @@ export function makeWorkspace(transport) {
       // A column added, retyped or dropped changes every cell in the view, so
       // the open view is re-read rather than reconciled.
       if (open && open.name === name) open = { name: next.name, query: open.query };
-      // A rename changes the child key, so the rail is re-read with the rack.
-      await Promise.all([readTables(), readChildren(), reopen(next.name)]);
+      // A rename changes the child key, so the level it sits in is re-read
+      // with the rack.
+      await Promise.all([readTables(), reopen(next.name)]);
+      await relist([tableParent(next.name)]);
       emit();
       changed({ tables: [name, next.name] });
     },
 
     async dropTable(name) {
+      const holder = tableParent(name);
       await ask({ ...env(), kind: "table.remove", name });
       if (showing(name)) { table = null; open = null; }
-      await Promise.all([readTables(), readChildren()]);
+      await Promise.all([readTables(), relist([holder])]);
       emit();
       changed({ tables: [name] });
     },
@@ -853,7 +1219,7 @@ export function makeWorkspace(transport) {
     // rather than `page.*` with an id nobody may use.
     //
     // NOTHING BELOW TOUCHES THE SNAPSHOT and none of it emits. The three fields
-    // a page write moves — `pages`, `page`, `kids` — cannot see this doc, so an
+    // a page write moves — `pages`, `page`, the levels — cannot see this doc, so an
     // emit would repaint the whole workspace to say that nothing in it changed,
     // and on a prose flush that is a repaint per keystroke. The one screen that
     // wants this reads it on demand and shows its own edit by re-reading; every

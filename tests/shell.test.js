@@ -1054,9 +1054,15 @@ const drag = () => ({ preventDefault() {}, dataTransfer: null });
 function tree(kids = KIDS, { expanded = [], route = { view: "page", id: "home/Notes" }, treeOrder = "asc" } = {}) {
   const moves = [];
   const made = [];
+  /** Every level the rail asked to be listed, in order. */
+  const expanded_ = [];
   const ws = {
     get: () => ({ pages: [], tables: [], theme: THEME, page: null, table: null }),
     children: (id) => kids[id] ?? [],
+    // A LEVEL IS HELD once listed; the rail draws only what is held and asks
+    // for a level only when a row is opened.
+    held: (id) => id in kids,
+    async expand(id) { expanded_.push(id); },
     async createPage(init) {
       made.push({ name: init.name, parent: init.parent });
       return { id: "made", name: init.name };
@@ -1070,7 +1076,7 @@ function tree(kids = KIDS, { expanded = [], route = { view: "page", id: "home/No
     },
   };
   const ui = makeUi({ route, expanded: new Set(expanded), treeOrder });
-  return { ws, ui, moves, made, draw: makeTreeView({ h, ws, ui }) };
+  return { ws, ui, moves, made, listed: expanded_, draw: makeTreeView({ h, ws, ui }) };
 }
 
 const rowsOf = (root) => findAll(root, (el) => el.tagName === "A");
@@ -1176,17 +1182,16 @@ test("a page cannot be dropped into itself or into its own child", () => {
   expect(g.moves).toEqual([]);
 });
 
-test("nothing the walk missed is hidden — an unclaimed page or table is at the root", () => {
-  const children = (id) => (id === "home" ? KIDS.home.slice(0, 1) : []);
-  // No `parent:` on either page. The id is the path, so where a page sits is
-  // read off the id and there is no second field that could disagree with it —
-  // `gone/lost` is under a page that is not in the list, and is therefore lost.
-  const rows = nest(children, new Set(),
-    [{ id: "home/Notes", name: "Notes" }, { id: "gone/lost", name: "Lost" }],
-    [{ name: "jobs", kind: "basic", rows: 2, parent: null }]);
+test("the rail draws the levels it holds and invents nothing at the root", () => {
+  // THE ORPHAN RESCUE WENT with the whole-tree read. A window that holds a
+  // level at a time cannot tell a page whose parent is gone from one whose
+  // parent it has not listed, and a table whose page is gone is listed under
+  // the root by the server, which sees every table — so it arrives here as a
+  // row of the root's own level.
+  const children = (id) => (id === "home" ? [...KIDS.home.slice(0, 1), { kind: "table", id: "lost", name: "lost", rows: 2 }] : []);
+  const rows = nest(children, new Set(), () => false);
 
-  expect(rows.map((r) => r.child.kind + ":" + r.child.id))
-    .toEqual(["page:home/Notes", "page:gone/lost", "table:jobs"]);
+  expect(rows.map((r) => r.child.kind + ":" + r.child.id)).toEqual(["page:home/Notes", "table:lost"]);
   expect(rows.every((r) => r.parent === "home")).toBe(true);
 });
 
@@ -1195,7 +1200,7 @@ test("a cycle in what pages claim to hold does not hang the rail", () => {
     home: [{ kind: "page", id: "home/A", name: "A" }],
     "home/A": [{ kind: "page", id: "home", name: "Home" }],
   };
-  expect(nest((id) => loop[id] ?? [], new Set(["a", "home"]), [], []).length)
+  expect(nest((id) => loop[id] ?? [], new Set(["a", "home"]), () => true).length)
     .toBeLessThanOrEqual(2);
 });
 
@@ -1233,25 +1238,37 @@ test("a child inside a closed folder stays inside it", () => {
   const tables = [{ name: "jobs", kind: "basic", rows: 12, parent: "home/Notes" }];
   const children = (id) => kids[id] ?? [];
 
-  const shut = nest(children, new Set(), pages, tables);
+  void pages; void tables;
+  const holds = (c) => (kids[c.id] ?? []).length > 0;
+  const shut = nest(children, new Set(), holds);
   expect(shut.map((r) => r.child.id)).toEqual(["home/Notes"]);
 
-  const open = nest(children, new Set(["home/Notes"]), pages, tables);
+  const open = nest(children, new Set(["home/Notes"]), holds);
   expect(open.map((r) => r.child.id)).toEqual(["home/Notes", "home/Notes/Rates", "jobs"]);
   expect(open.find((r) => r.child.id === "home/Notes/Rates").depth).toBe(1);
 });
 
-test("a page whose parent is gone is still reachable", () => {
-  // The other half, and why the rescue exists: its id says it lives under a page
-  // that is in nobody's list, so nothing's `children/` reaches it and it would be
-  // lost entirely.
-  const pages = [
-    { id: "home", name: "Home" },
-    { id: "deleted-page/stray", name: "Stray" },
-  ];
-  const rows = nest(() => [], new Set(), pages, []);
-  expect(rows.map((r) => r.child.id)).toEqual(["deleted-page/stray"]);
-  expect(rows[0].depth).toBe(0);
+test("a branch wears its chevron before it is listed, and opening it is the act that lists it", () => {
+  // THE LISTING SAYS WHETHER A PAGE'S FOLDER HOLDS PAGES (`Child.children`), so
+  // a chevron is drawn without fetching the branch; drawing asks for nothing,
+  // and pressing the chevron is what lists the level.
+  const g = tree({
+    home: [
+      { kind: "page", id: "home/Historic", name: "Historic", children: true },
+      { kind: "page", id: "home/Leaf", name: "Leaf", children: false },
+    ],
+  });
+  let root = g.draw();
+  for (let i = 0; i < 10; i++) root = g.draw();
+  expect(g.listed).toEqual([]);
+  const carets = findAll(root, (el) => has(el, "caret"));
+  expect(carets.map((c) => has(c, "bare"))).toEqual([false, true]);
+  carets[0].fire("click", { preventDefault() {}, stopPropagation() {} });
+  expect(g.listed).toEqual(["home/Historic"]);
+  expect(g.ui.get().expanded.has("home/Historic")).toBe(true);
+  // Shutting it lists nothing.
+  carets[0].fire("click", { preventDefault() {}, stopPropagation() {} });
+  expect(g.listed).toEqual(["home/Historic"]);
 });
 
 test("every page row can start a page inside it; a table row cannot", async () => {
