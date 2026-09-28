@@ -231,3 +231,43 @@ test.if(process.platform !== "win32")("THE SERVER ANSWERS / WHILE THE WORKSPACE 
     await proc.exited;
   }
 }, 60_000);
+
+test("A FOLDER OPENED EMPTY has a root with its identity by the time the mount answers, so the first tree a window reads carries it", async () => {
+  const empty = join(ground, "empty");
+  await mkdir(empty, { recursive: true });
+  const host = await makeHost({ vault: empty, memory: join(data, "vaults-empty.json"), presets: join(FRAMEWORK, "presets"), agentsHome: join(data, "agents") });
+  try {
+    const tree = (await call(host, empty, { kind: "page.list" })) as { ok: true; value: { id: string; uid?: string }[] };
+    const root = tree.value.find((p) => p.id === "home");
+    expect(root?.uid).toMatch(/^[a-z0-9]{8,32}$/);
+    expect(await readFile(join(empty, "pages/home/content.yaml"), "utf8")).toContain(`uid: ${root!.uid}`);
+    await host.settled(empty);
+  } finally {
+    host.close();
+  }
+}, 30_000);
+
+test.if(process.platform !== "win32")("PAGES GIVEN AN IDENTITY AFTER THE MOUNT are named, with their levels, to a window holding the stream", async () => {
+  const bare = join(ground, "bare");
+  const put = async (rel: string, text: string) => {
+    await mkdir(join(bare, rel), { recursive: true });
+    await writeFile(join(bare, rel, "content.yaml"), text);
+  };
+  await put("pages/home", "name: Home\nuid: inventedbarehome\nplugin: biom-doc\ncontents: []\n");
+  await put("pages/home/children/Nameless", "name: Nameless\nplugin: biom-doc\ncontents: []\n");
+  // Older than the mount, as a page an agent made while the app was closed is.
+  const then = new Date(Date.now() - 60_000);
+  const { utimes } = await import("node:fs/promises");
+  await utimes(join(bare, "pages/home/children/Nameless/content.yaml"), then, then);
+  const host = await makeHost({ vault: bare, memory: join(data, "vaults-bare.json"), presets: join(FRAMEWORK, "presets"), agentsHome: join(data, "agents") });
+  const heard: { pages: string[]; levels: string[] }[] = [];
+  const off = await host.watch(bare, (c) => void heard.push(c as { pages: string[]; levels: string[] }));
+  try {
+    await host.settled(bare);
+    expect(await readFile(join(bare, "pages/home/children/Nameless/content.yaml"), "utf8")).toMatch(/^uid: \S+$/m);
+    expect(heard.some((c) => c.pages.includes("home/Nameless") && c.levels.includes("home"))).toBe(true);
+  } finally {
+    off();
+    host.close();
+  }
+}, 30_000);

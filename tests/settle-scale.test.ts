@@ -6,12 +6,15 @@
 // that page and names no level; one that renames it names its parent's level
 // too; a page arriving names its parent's level, and
 // the index is told only about its folder; a folder moved in a file manager
-// names both parents and takes its runs with it by identity; and a burst too
+// names both parents and takes its runs with it by identity; a page whose
+// `uid` an outside save dropped is given one on the next settle where a page
+// arrives, and not on an edit; and a burst too
 // big to name says `all`. Nothing here lists every page. Every page, run and
 // word is invented.
 
 import { test, expect, afterAll } from "bun:test";
 import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -133,6 +136,24 @@ test.if(unix)("A PAGE ARRIVING names its parent's level, and the index is told o
     // And the level the window rereads has it.
     const level = (await call(w.host, w.vault, { kind: "children", page: "home/Right" })) as { ok: true; value: { id: string }[] };
     expect(level.value.some((c) => c.id === "home/Right/Arrived")).toBe(true);
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
+test.if(unix)("A PAGE WHOSE UID AN OUTSIDE SAVE DROPPED keeps none through edits, and is given one on the next settle where a page arrives", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    const lost = join(dirOf(w.vault, "home/Left/P4"), "content.yaml");
+    w.changes.length = 0;
+    await writeFile(lost, doc("Left 4", "x").replace("uid: x\n", ""));
+    expect(await until(() => w.changes.length > 0)).toBe(true);
+    await Bun.sleep(300);
+    expect(await Bun.file(lost).text()).not.toMatch(/^uid:/m);
+    await w.put("home/Right/Newcomer", "Newcomer", "invsettlenewcomer");
+    expect(await until(() => /^uid: \S+$/m.test(readFileSync(lost, "utf8")))).toBe(true);
   } finally {
     w.off();
     w.host.close();

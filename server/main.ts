@@ -36,7 +36,7 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
-import { DOC_PLUGIN, parentOf } from "../contracts/types.ts";
+import { DOC_PLUGIN, ROOT_PAGE, parentOf } from "../contracts/types.ts";
 import { SKILL_PREFIX, keepHarness, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
@@ -1010,6 +1010,22 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         await breathe();
       }
       await held.identities.written();
+      // A WINDOW THAT READ ITS TREE BEFORE THIS FINISHED holds these pages with
+      // no identity, and the server's own write-back is not a change the
+      // watcher reports. So the windows holding the stream are told, once,
+      // which pages have one now and which levels show them.
+      const hears = live.get(held.path)?.hears;
+      if (hears !== undefined && hears.size > 0) {
+        const parents = there.map(parentOf).filter((p): p is PageId => p !== null);
+        const change = changeOf(new Map(there.map((id) => [id, { structural: false }])), [], false, parents);
+        for (const hear of [...hears]) {
+          try {
+            hear(change);
+          } catch (e) {
+            console.warn("a live-change subscriber threw", e);
+          }
+        }
+      }
     } catch (e) {
       console.warn("pages could not be given an identity", e instanceof Error ? e.message : e);
     }
@@ -1288,6 +1304,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // watcher bringing the server's own write-back of a `uid` back is known for
     // what it is rather than taken for a second change of the page.
     const identities = makeIdentities(remembering(makeFiles(path), path, ownWrites), yaml, (what, e) => console.warn(what, e instanceof Error ? e.message : e), index);
+    // THE ROOT'S IDENTITY IS GIVEN HERE, before the mount answers: every other
+    // page without one is given it in the background, and the root is the one
+    // every window reads first — a folder opened empty conjured it a moment
+    // ago, with none. One head, and one write where it has none.
+    try {
+      const root = await index.head(ROOT_PAGE);
+      if (root !== null && root.uid === null) {
+        await identities.of(ROOT_PAGE);
+        await identities.written();
+      }
+    } catch (e) {
+      console.warn("the root page could not be given an identity", e instanceof Error ? e.message : e);
+    }
     // ONE HEAD, and an identity given only where the page has none — never a
     // list of every page, at mount or at any append.
     const uidOf = async (id: PageId): Promise<string | null> => {
@@ -1749,35 +1778,34 @@ export async function makeHost(at: HostPaths): Promise<Host> {
           console.warn("the page index could not take in a change", e instanceof Error ? e.message : e);
         }
       }
-      // A PAGE THAT ARRIVED WITHOUT AN IDENTITY GETS ONE — after its arrival
-      // was read as one above, and before the windows are told, so the level
-      // they reread already carries it. What is written back is the server's
-      // own, and the next settle says nothing of it (`ownPages`).
-      // ARRIVALS ONLY: a page in this burst that arrived, or one inside a folder
-      // that did. A page edited without a `uid` is given one where it is first
-      // named in the history, as it always was — writing into a page somebody
-      // is editing, on every edit, would make their next save a change of ours.
-      // The index's own news is not the whole of it: a page made while the
-      // mount's sweep was still running was met by the sweep, which gave no
-      // identity to a page newer than the mount, and the index then has
-      // nothing new to say when the watcher names it. So each page the watcher
-      // saw arrive is asked of the index too.
-      const arrivals = new Set(news.noUid.filter((id) => touched.get(id)?.structural ?? true));
-      for (const [id, what] of touched) {
-        if (!what.structural || arrivals.has(id)) continue;
-        try {
-          const head = await held.index.head(id);
-          if (head !== null && head.uid === null) arrivals.add(id);
-        } catch {
-          // Given one where the history first names it.
-        }
+      // A SETTLE THAT SAW A PAGE ARRIVE OR LEAVE GIVES AN IDENTITY TO EVERY PAGE
+      // WITHOUT ONE — after the arrival was read as one above, and before the
+      // windows are told, so the level they reread already carries it. What is
+      // written back is the server's own, and the next settle says nothing of
+      // it (`ownPages`). A settle of edits alone gives none: writing into a page
+      // somebody is editing, on every edit, would make their next save a change
+      // of ours, and such a page is given one where the history first names it.
+      // Every page without one, as the structural settle always gave them, but
+      // off the index's rows rather than a list of every page: what arrived in
+      // this burst, a page inside a folder that did, a page whose `uid` an
+      // outside save dropped, and one made while the mount's sweep was still
+      // running — which the sweep met, and gave no identity to because it was
+      // newer than the mount.
+      const arrivals = new Set<PageId>();
+      if ([...touched.values()].some((w) => w.structural)) {
+        for (const id of news.noUid) arrivals.add(id);
+        for (const id of uidless(held)) arrivals.add(id);
       }
       if (arrivals.size > 0) {
-        try {
-          for (const id of arrivals) {
+        for (const id of arrivals) {
+          try {
             held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
             await held.identities.of(id);
+          } catch (e) {
+            console.warn("a page that arrived could not be given an identity", e instanceof Error ? e.message : e);
           }
+        }
+        try {
           await held.identities.written();
         } catch (e) {
           console.warn("pages that arrived could not be given an identity", e instanceof Error ? e.message : e);
@@ -1818,6 +1846,16 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       now.busy = false;
       // A burst that arrived while this one was settling still has to be read.
       if (now.pending.size > 0 && live.get(held.path) === now) arm(held, now);
+    }
+  }
+
+  /** EVERY PAGE THE INDEX HOLDS WITH NO `uid`, off its table: one query and
+   *  no page read. Nothing where the table cannot be asked. */
+  function uidless(held: Mounted): PageId[] {
+    try {
+      return held.pagesDb.all<{ id: string }>("SELECT id FROM pages WHERE uid IS NULL").map((r) => r.id);
+    } catch {
+      return [];
     }
   }
 
