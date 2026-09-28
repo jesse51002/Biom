@@ -1296,7 +1296,8 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     if (lost > 0) console.log(`runs               →  ${lost} marked lost from a previous run of the server`);
     // A ROW WHOSE PAGE MOVED while this server was not running is re-pointed
     // by identity after the mount, in the background, from what the index's
-    // sweep finds — `afterMount` — and never by a list of every page here.
+    // sweep finds — `relocateRuns` in `afterMountAll` — and never by a list of
+    // every page here.
 
     /* ── the history, the agents and the chats ──────────────────────── */
 
@@ -1310,10 +1311,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // agent made — which the vault's rules tell it never to give a `uid` — or
     // one whose document it wrote whole without the `uid` it had. The first
     // time the page reaches the history, or the watcher's structural settle,
-    // whichever is sooner, it gets the `uid` this session already knew for it
-    // or a new one, and that is written into the file the way mount writes
-    // one. Seeded from the tree as mount left it, so an existing page keeps its
-    // own. Written through the same baseline-free files, for the same reason.
+    // whichever is sooner, it gets the `uid` this session already knew for it —
+    // or, for a page this session has not met, the one its folder last
+    // carried, which the page index remembers — or a new one, and that goes
+    // into the file as one `uid:` line under `name:`, every other byte kept.
+    // Nothing is read ahead of the question: the session learns a page's `uid`
+    // as it meets the page, and the index answers for the rest. The pages that
+    // were there before the folder opened and have none are given theirs the
+    // same way, in the background after the mount. Written through the same
+    // baseline-free files, for the same reason.
     const ownWrites = new Map<string, OwnWrite>();
     const ownPages = new Set<string>();
     // THROUGH FILES WITH NO BASELINE, as ever — a read that made an agent's new
@@ -1730,15 +1736,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       const burst = [...now.pending].sort((a, b) => depthOf(a) - depthOf(b));
       now.pending.clear();
 
-      // EVERY VERDICT IN THE BURST IS TAKEN BEFORE ANY PROJECTION RUNS, and that
-      // ordering is the whole of this loop rather than a tidy-up. The baseline
-      // is what this process last wrote or last READ, and projecting a page
-      // reads: `follow` re-projects the PARENT, because a parent lists its
-      // children, and reading a parent reads every child's `content.yaml`. Taken
-      // one path at a time, the first of two siblings created in the same burst
-      // rebaselines the second before it has been considered — so the second
-      // reads as nothing that happened, and its markdown is never written.
-      // Measured on two pages created together.
+      // EVERY VERDICT IN THE BURST IS TAKEN BEFORE ANYTHING BELOW TOUCHES A
+      // PAGE, and that ordering is the whole of this loop rather than a tidy-up.
+      // A document's verdict asks the page index what it last knew of the page
+      // (`uidWas`), and the index hears the burst only after every verdict: told
+      // first, it would already hold the head of a page that has just arrived,
+      // and the arrival would read as an edit of a page it had. The identities
+      // given below write into the pages that arrived, and the mirror's queue
+      // projects them later still, so both follow the verdicts too; neither
+      // reads through the watcher's baseline, and nor does the index.
       //
       // Deduplicated by page id in the same pass: a burst touching three files
       // of one page is one projection rather than three.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // THE TWELFTH CONTRACTS EDIT, AT THE GUARDS — `contracts/guards.js` and
-// `contracts/wire.js`, for the SCALE design: a workspace of two thousand pages.
+// `contracts/wire.js`, for the workspace's *Loading at scale* spec: a
+// workspace of two thousand pages.
 //
 // The window no longer holds every page. It lists the tree a level at a time,
 // and asks for anything else by name: `page.locate` for ids and identities,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE TWO INSTRUMENTS THE SCALE WORK IS HELD WITH — not a test file, a helper
-// the tracks' tests import (named without `.test.` so `bun test` walks past it).
+// THE TWO INSTRUMENTS THE LOADING-AT-SCALE WORK IS HELD WITH — not a test
+// file, a helper the tracks' tests import (named without `.test.` so
+// `bun test` walks past it).
 //
 // The twelfth contracts edit's rule is that nothing on the path to what is on
 // screen reads or parses every page. Two instruments make that checkable

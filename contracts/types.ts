@@ -1362,16 +1362,17 @@ export interface LookState {
   view: ChatView;
 }
 
-/** WHAT CHANGED ON DISK, BY NAME — the `change` event's data since the
- *  twelfth contracts edit (the SCALE design, 2026-09-28). `pages` are the
- *  pages whose own files changed: a window redraws its open page only when it
- *  is one of them. `levels` are the pages whose CHILDREN changed — a page
- *  arrived, left, moved or was renamed beneath them — and a window re-lists
- *  only those of its tree's levels it holds. IDS ONLY, NEVER CONTENT: every
- *  word is still read from the server, so this names which reads to repeat
- *  and cannot become a second description of the workspace. It replaced a
- *  bare `1`, which made every window reread the open page and the whole tree
- *  on every write anywhere — seconds per write on two thousand pages. */
+/** WHAT CHANGED ON DISK, BY NAME — the `change` event's data since the twelfth
+ *  contracts edit (the workspace's *Loading at scale* spec, 2026-09-28).
+ *  `pages` are the pages whose own files changed: a window redraws its open
+ *  page only when it is one of them. `levels` are the pages whose CHILDREN
+ *  changed — a page arrived, left, moved or was renamed beneath them — and a
+ *  window re-lists only those of its tree's levels it holds. IDS ONLY, NEVER
+ *  CONTENT: every word is still read from the server, so this names which
+ *  reads to repeat and cannot become a second description of the workspace. It
+ *  replaced a bare `1`, which made every window reread the open page and the
+ *  whole tree on every write anywhere — seconds per write on two thousand
+ *  pages. */
 export interface ChangeEvent {
   pages: PageId[];
   levels: PageId[];
@@ -2199,14 +2200,15 @@ export type HistoryRequest = Envelope &
 /* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
 
 /** PAGES THE WINDOW HAS NOT LOADED — the twelfth contracts edit, taken at its
- *  own barrier on 2026-09-28 for the SCALE design: a workspace of two thousand
- *  pages. The window no longer holds every page: it lists the tree a level at
- *  a time (`children`), and asks for anything else it needs BY NAME. Both are
- *  answered from the server's persisted index of page heads — the first few
- *  kilobytes of each document, checked against a stat before they are trusted
- *  — and never by parsing every page. Outer ring: a box asks about its own
- *  page and nothing wider. Reads, so they stay on the launch token and are not
- *  local-gated: a run may ask them. `isPageRequest` narrows them. */
+ *  own barrier on 2026-09-28 for the workspace's *Loading at scale* spec: a
+ *  workspace of two thousand pages. The window no longer holds every page: it
+ *  lists the tree a level at a time (`children`), and asks for anything else
+ *  it needs BY NAME. Both are answered from the server's persisted index of
+ *  page heads — the first few kilobytes of each document, checked against a
+ *  stat before they are trusted — and never by parsing every page. Outer ring:
+ *  a box asks about its own page and nothing wider. Reads, so they stay on the
+ *  launch token and are not local-gated: a run may ask them. `isPageRequest`
+ *  narrows them. */
 export type PageRequest = Envelope &
   (
     /** THESE PAGES, BY ID OR BY IDENTITY: at most `LOCATE_MAX` of each. The
