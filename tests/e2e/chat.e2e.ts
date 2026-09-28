@@ -53,6 +53,12 @@
 //   20. A page's own code cannot move the screen; a wikilink click can.
 //   20b. `#/page/@agent`, `@map` and `@design` are no page.
 //   20c. A page on another localhost port gets nothing with the cookie.
+//   20d. The choices kept: a mode and a view picked in a chat hold across a
+//       reload, a new chat and a server restart.
+//   20e. A chat deleted from its row's three dots, asked in Biom's own
+//       dialog: Cancel deletes nothing, Delete takes it for good.
+//   20f. The queue: a message sent mid-turn waits under it and goes out when
+//       the turn ends; after Stop it is held until Send queued.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
 // EVERY PRODUCT BUG THIS WALK FOUND is fixed and asserted as a plain step:
@@ -74,7 +80,7 @@ import { HERE, SHOTS, BOUNDS, sandbox, withoutAgents, outside, freePort, until, 
 import type { Sandbox } from "./harness.ts";
 import { installFakeAgent } from "../fake-acp-agent.ts";
 import type { Scenario } from "../fake-acp-agent.ts";
-import type { AgentInfo, ChatRead, ChatSummary, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
+import type { AgentInfo, ChatRead, ChatSettings, ChatSummary, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
 
 const unix = process.platform !== "win32";
 const AGENT = "claude-acp";
@@ -135,7 +141,7 @@ const signInFails = (): unknown[] => [{
 
 /** THE AGENT THIS WALK TALKS TO: it echoes, obeys `!write`, `!sh`, `!edit`,
  *  `!sleep` and `!crash`, refuses a session while `signedIn` is missing, has a
- *  model list, and sends three commands — one of them the name of a workspace
+ *  model list and a mode list, and sends three commands — one of them the name of a workspace
  *  skill, which the / menu must show once. */
 function scenario(auth: unknown[] = signInOk(), extra: Partial<Scenario> = {}): Scenario {
   return {
@@ -147,6 +153,10 @@ function scenario(auth: unknown[] = signInOk(), extra: Partial<Scenario> = {}): 
         { id: "model", name: "Model", category: "model", type: "select", currentValue: "opus", options: [
           { value: "opus", name: "Opus (invented)", description: "Most capable" },
           { value: "haiku", name: "Haiku (invented)", description: "Fastest" },
+        ] },
+        { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "ask", options: [
+          { value: "ask", name: "Ask (invented)" },
+          { value: "plan", name: "Plan (invented)" },
         ] },
       ],
       commands: [
@@ -395,6 +405,38 @@ function pageDoc(name: string, uid: string, body: string): string {
 
 /* ── the run ─────────────────────────────────────────────────────────────── */
 
+/** THE SERVER, run as `make dev` runs it, on this walk's port — at the start,
+ *  and again after a restart, which is a step of its own. */
+async function startServer(): Promise<void> {
+  const env = {
+    // No agent of this machine's — bun and the system only, and /bin/sh as
+    // the login shell (`withoutAgents`) — with the fake's place first.
+    ...withoutAgents(box.env),
+    PORT: String(port),
+    PATH: [bin, withoutAgents(box.env).PATH].join(":"),
+    BIOM_JEV_ENDPOINT: `http://127.0.0.1:${jev?.port}/v1/systemone`,
+    TYPESAFE_API_KEY: KEY,
+  };
+  server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], { cwd: HERE, env, stdout: "pipe", stderr: "pipe" });
+  drain(server.stdout as ReadableStream<Uint8Array>, "out");
+  drain(server.stderr as ReadableStream<Uint8Array>, "err");
+  await until("the server answered", BOUNDS.serve, async () => {
+    try {
+      return (await fetch(`${base}/`)).ok;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** The server stopped as the person's Ctrl-C stops it — asked of the system,
+ *  not of Bun's handle, for the reason step 21 gives. */
+async function stopServer(): Promise<void> {
+  const pid = server!.pid;
+  server!.kill("SIGTERM");
+  await until("the server stopped", 20000, () => ended(pid));
+}
+
 beforeAll(async () => {
   if (!unix) return;
   shotsDir();
@@ -421,29 +463,7 @@ beforeAll(async () => {
     },
   });
 
-  server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
-    cwd: HERE,
-    env: {
-      // No agent of this machine's — bun and the system only, and /bin/sh as
-      // the login shell (`withoutAgents`) — with the fake's place first.
-      ...withoutAgents(box.env),
-      PORT: String(port),
-      PATH: [bin, withoutAgents(box.env).PATH].join(":"),
-      BIOM_JEV_ENDPOINT: `http://127.0.0.1:${jev.port}/v1/systemone`,
-      TYPESAFE_API_KEY: KEY,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  drain(server.stdout as ReadableStream<Uint8Array>, "out");
-  drain(server.stderr as ReadableStream<Uint8Array>, "err");
-  await until("the server answered", BOUNDS.serve, async () => {
-    try {
-      return (await fetch(`${base}/`)).ok;
-    } catch {
-      return false;
-    }
-  });
+  await startServer();
 
   const args = process.env.E2E_NO_SANDBOX === "1" ? ["--no-sandbox", "--disable-gpu"] : [];
   browser = await chromium.launch({ headless: true, args });
@@ -1328,6 +1348,158 @@ walk("20c", "a page on another localhost port gets nothing from this server with
 });
 
 /* ── 21 · lastly ─────────────────────────────────────────────────────────── */
+
+/* ── 20d · the choices kept ──────────────────────────────────────────────── */
+
+/** The view the look draws, as its root says it. */
+const lookView = (): Promise<string> => inLook(async (f) => (await f.locator(".g-look").getAttribute("data-view")) ?? "", "");
+const modeChip = async (): Promise<string> => ((await page.locator(".agentdock .chip[data-category=mode]").innerText().catch(() => "")) ?? "").trim();
+
+/** A new chat from the start screen, sent and come to rest: its id. */
+async function newChat(words: string): Promise<string> {
+  await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+  await until("the agent is Active", 30000, async () => (await agentState())?.state === "active");
+  await until("the start screen is ready to send", BOUNDS.draw, async () =>
+    (await page.locator("#agentta").isVisible()) && (await page.locator(".agentdock .agentchip").innerText()).includes("Claude Code"));
+  const was = new Set((await call<ChatSummary[]>("chat.list")).map((c) => c.id));
+  await send(words);
+  let made = "";
+  await until("the message made a chat", 10000, async () => {
+    const h = await hash();
+    const id = /^#\/agent\/([A-Za-z0-9_-]{8,})$/.exec(h)?.[1] ?? "";
+    if (id !== "" && !was.has(id)) made = id;
+    return made !== "";
+  });
+  await idle(made);
+  return made;
+}
+
+walk("20d", "the choices are kept: a mode and a view picked in a chat hold across a server restart and a new chat, and across a reload", async () => {
+  // In a chat, as the person picks them.
+  await page.goto(at(`#/agent/${X}`), { waitUntil: "domcontentloaded" });
+  await until("chat X drew", BOUNDS.draw, () => lookSays("give it an invented subtitle"));
+  await until("its mode chip shows", 15000, async () => (await modeChip()) === "Ask (invented)");
+  await page.locator(".agentdock .chip[data-category=mode]").click();
+  await page.locator(".agentmenu button.mi[data-value=plan]").click();
+  await page.locator(".agentdock .viewchip").click();
+  await page.locator(".agentmenu button.mi[data-view=thinking]").click();
+  await until("the look draws Thinking", 8000, async () => (await lookView()) === "thinking");
+  await until("the server kept both", 8000, async () => {
+    const kept = await call<ChatSettings>("settings.read");
+    return kept.view === "thinking" && kept.agents[AGENT]?.mode === "plan" && kept.agent === AGENT;
+  });
+  await shot("chat-20d-thinking.png");
+
+  /** What a person sees after `what`: the start screen's mode chip on the
+   *  kept mode, and a new chat started on it and drawn in the kept view. */
+  const holds = async (what: string): Promise<void> => {
+    await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+    await until(`${what}: the start screen's mode chip is the kept one`, 30000, async () => (await modeChip()) === "Plan (invented)");
+    const chat = await newChat(`An invented new chat after ${what}`);
+    const config = (await readChat(chat)).updates.filter((u) => u.kind === "config").pop() as { options: { id: string; value: unknown }[] } | undefined;
+    expect([what, config?.options.find((o) => o.id === "mode")?.value]).toEqual([what, "plan"]);
+    await until(`${what}: the new chat is drawn in Thinking`, 8000, async () => (await lookView()) === "thinking");
+    expect([what, (await page.locator(".agentdock .viewchip").innerText()).trim()]).toEqual([what, "Thinking"]);
+  };
+  // THE SERVER STARTS AGAIN, and reads what it kept. First, because step 19
+  // leaves the agent waiting for a sign-in — a refusal that holds until a
+  // sign-in or a restart — and a new chat here wants it Active.
+  await stopServer();
+  await startServer();
+  // The capability cookie is minted per launch, so the window takes the new
+  // server's by loading the page again.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await holds("a restart");
+  // THE WINDOW RELOADS, and what was kept is still what it shows.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await holds("a reload");
+  // Left as the walk found it for the steps after, as the person would.
+  await page.locator(".agentdock .viewchip").click();
+  await page.locator(".agentmenu button.mi[data-view=tools]").click();
+  await until("the look is back on Tool calls", 8000, async () => (await lookView()) === "tools");
+  expect((await call<ChatSettings>("settings.read")).view).toBe("tools");
+});
+
+/* ── 20e · a chat deleted ────────────────────────────────────────────────── */
+
+walk("20e", "a chat deleted from its row's three dots, asked in Biom's own dialog: Cancel deletes nothing, Delete takes it from the history, from disk and from a reload", async () => {
+  const keep = await newChat("An invented chat to keep");
+  const gone = await newChat("An invented chat to delete");
+  const goneName = (await summaryOf(gone))?.name ?? "";
+  expect(goneName).not.toBe("");
+  // The history is open beside the chat on the full screen.
+  await until("both are listed", 8000, async () => (await rowLamp(goneName)) !== "" && (await summaryOf(keep)) !== undefined);
+  const openMenu = async (): Promise<void> => {
+    const f = await lookFrame();
+    const row = f.locator(".tlist .trowbox", { hasText: goneName }).first();
+    await row.hover();
+    await row.locator("button.tmore").click();
+    await f.locator(".rowmenu button.del").click();
+    await until("Biom asks", 5000, async () => page.locator(".aask .cdialog").isVisible());
+  };
+  await openMenu();
+  const dialog = page.locator(".aask .cdialog");
+  expect((await dialog.locator("b").innerText()).trim()).toBe("Delete this chat?");
+  expect((await dialog.locator("p").innerText()).trim()).toBe("It can’t be undone.");
+  // Cancel holds the caret, and Cancel deletes nothing.
+  expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toBe("Cancel");
+  await shot("chat-20e-asked.png");
+  await dialog.locator("button[data-answer=no]").click();
+  await Bun.sleep(400);
+  expect((await summaryOf(gone))?.id).toBe(gone);
+  // Delete does.
+  await openMenu();
+  await page.locator(".aask .cdialog button[data-answer=yes]").click();
+  await until("the chat is gone from the server", 8000, async () => (await summaryOf(gone)) === undefined);
+  expect(existsSync(join(vault, ".biom", "chats", `${gone}.jsonl`))).toBe(false);
+  expect(existsSync(join(vault, ".biom", "chats", `${keep}.jsonl`))).toBe(true);
+  // The window had it open: the start screen, and the history without it.
+  await until("the window went to the start screen", 8000, async () => (await hash()) === "#/agent");
+  await until("the history no longer lists it", 8000, async () => (await rowLamp(goneName)) === "");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await until("after a reload, the kept chat is listed", BOUNDS.draw, async () => (await inLook(async (f) => f.locator(".tlist .trow").count(), 0)) > 0 || (await page.locator("#agentta").isVisible()));
+  expect((await call<ChatSummary[]>("chat.list")).map((c) => c.id)).toContain(keep);
+  expect((await call<ChatSummary[]>("chat.list")).map((c) => c.id)).not.toContain(gone);
+  expect(await rowLamp(goneName)).toBe("");
+});
+
+/* ── 20f · the queue ─────────────────────────────────────────────────────── */
+
+walk("20f", "a message sent while a turn runs waits in the queue under it and goes out when the turn ends; one queued and then Stop is held until Send queued sends it", async () => {
+  await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+  await until("the agent is Active", 30000, async () => (await agentState())?.state === "active");
+  await until("the start screen is ready to send", BOUNDS.draw, async () => page.locator("#agentta").isVisible());
+  await send("Queue walk a\n!sleep 3000");
+  await until("the message made a chat", 10000, async () => /^#\/agent\/[A-Za-z0-9_-]{8,}$/.test(await hash()));
+  const Q = (await hash()).split("/")[2] as string;
+  await running(Q);
+  // B, sent while A runs: Queued, under the running turn.
+  await send("Queue walk b\n!sleep 3000");
+  const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
+  await until("b shows Queued", 8000, async () => { const b = await bubbles(); return b.length === 1 && /Queued/i.test(b[0] ?? "") && (b[0] ?? "").includes("Queue walk b"); });
+  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000"]);
+  await shot("chat-20f-queued.png");
+  // A ends: B goes out on its own, and its bubble goes with it.
+  await until("b went out when a ended", 20000, async () => (await promptsOf(Q)).length === 2 && (await bubbles()).length === 0);
+  await running(Q);
+  // C, queued behind B; then Stop, with nothing typed.
+  await send("Queue walk c");
+  await until("c shows Queued", 8000, async () => (await bubbles()).length === 1);
+  await until("the button is Stop", 5000, async () => (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Stop");
+  await page.locator(".agentdock .send").click();
+  await until("b ended cancelled", 15000, async () => (await summaryOf(Q))?.stop === "cancelled");
+  // C is held, and says so; Send queued shows under the input.
+  await until("c is held", 8000, async () => (await summaryOf(Q))?.queueHeld === true && /held/i.test((await bubbles())[0] ?? ""));
+  await Bun.sleep(500);
+  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000", "Queue walk b\n!sleep 3000"]);
+  await until("Send queued shows", 5000, async () => page.locator(".agentdock .sendqueued").isVisible());
+  await shot("chat-20f-held.png");
+  await page.locator(".agentdock .sendqueued").click();
+  await until("c went out", 15000, async () => (await promptsOf(Q)).at(-1) === "Queue walk c" && (await bubbles()).length === 0);
+  await idle(Q);
+  expect((await summaryOf(Q))?.queued).toBe(0);
+  expect(await page.locator(".agentdock .sendqueued").isVisible()).toBe(false);
+});
 
 walk("21", "nothing threw on stderr, nothing was written outside the sandbox, and no agent process is left once the server stops", async () => {
   expect(stackTraces(said.err)).toEqual([]);

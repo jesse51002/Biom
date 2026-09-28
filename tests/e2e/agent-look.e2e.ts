@@ -365,7 +365,7 @@ test("THE THREE VIEWS, as a browser lays them out: Plain draws no tool calls, To
     const look = () => inLook<any>(box, `return {
       view: root.querySelector(".g-look").getAttribute("data-view"),
       runs: ${shown(".grp")}, lists: ${shown(".grplist")}, folds: ${shown(".think")}, thoughts: ${shown(".thought")},
-      style: (() => { const t = root.querySelector(".thought"); const c = getComputedStyle(t); return c.fontStyle + "|" + c.borderLeftStyle + "|" + c.borderLeftWidth; })(),
+      style: (() => { const t = root.querySelector(".thought"); if (!t) return ""; const c = getComputedStyle(t); return c.fontStyle + "|" + c.borderLeftStyle + "|" + c.borderLeftWidth; })(),
       failed: [...root.querySelectorAll(".grp .gfail")].map((f) => getComputedStyle(f).display !== "none" ? f.textContent : ""),
     };`);
     await post(page, box, { kind: "look.state", state: chatState("live", { view: "tools" }) });

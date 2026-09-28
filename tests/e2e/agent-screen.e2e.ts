@@ -253,7 +253,7 @@ walk("1. a window with no hash opens on the Agent screen: the look in its box, B
   // The agent is found and probed, and its own options are the pickers.
   await until("the fake agent is Active", 30000, async () => (await agentState())?.state === "active");
   await until("the pickers show the agent's options", 15000, async () =>
-    (await page.locator(".agentdock .chip").allInnerTexts()).map((t) => t.trim()).join("|") === "Claude Code|Opus (invented)|Default|High");
+    (await page.locator(".agentdock .chip:not([hidden])").allInnerTexts()).map((t) => t.trim()).join("|") === "Claude Code|Opus (invented)|Default|High");
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("screen");
 });
 
