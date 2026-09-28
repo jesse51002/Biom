@@ -187,6 +187,7 @@ export function lookState(over) {
     names: NAMES,
     input: { at: "center", height: 118 },
     beside: { id: "home/Boards", name: "Boards" },
+    view: "tools",
   };
   const out = { ...base, ...over };
   delete out.now;

@@ -13,7 +13,7 @@ import { test, expect } from "bun:test";
 import { AGENT_PAGE, ERRORS, PROTOCOL } from "../contracts/wire.js";
 import {
   agentMode, choiceName, defaultAgent, fold, freshThread, groupedChoices, held, isUpdate, machineAgents,
-  makeChatStore, pickersOf, showChat, shownChoices, slashQuery, slashRows, stateWords, buttonOf, waitingWords, withValues,
+  makeChatStore, pickersOf, showChat, shownChoices, slashQuery, slashRows, stateWords, buttonOf, waitingWords, withValues, keptFor, keptValues,
 } from "../client/store/chats.js";
 import { makeUi } from "../client/store/ui.js";
 import { makeBridge } from "../client/bridge/bridge.js";
@@ -290,10 +290,11 @@ test("chat.new sends only what was given: no agent when none is named, no page, 
   const { transport, calls } = transportOf({ "chat.new": () => summary({ agent: null, harness: null, phase: "held" }) });
   const store = makeChatStore({ transport });
   await store.create({ text: "Invented", config: {} });
-  const req = calls[0];
+  const made = () => calls.filter((c) => c.kind === "chat.new");
+  const req = made()[0];
   expect(Object.keys(req).filter((k) => k !== "id" && k !== "g").sort()).toEqual(["kind", "text"]);
   await store.create({ agent: "claude-acp", text: "x", page: "home/Specs", config: { model: "opus" } });
-  expect(calls[1]).toMatchObject({ kind: "chat.new", agent: "claude-acp", text: "x", page: "home/Specs", config: { model: "opus" } });
+  expect(made()[1]).toMatchObject({ kind: "chat.new", agent: "claude-acp", text: "x", page: "home/Specs", config: { model: "opus" } });
 });
 
 /* ── the pure rules ────────────────────────────────────────────────────── */
@@ -348,6 +349,68 @@ test("a new chat goes to the agent picked while it is here, else the first Activ
   expect(defaultAgent(/** @type {any} */ ([list[0]]), null)).toBe("a");
   expect(defaultAgent([], null)).toBe(null);
   expect(machineAgents(/** @type {any} */ (list)).map((a) => a.key)).toEqual(["b", "a", "c"]);
+  // The agent the workspace kept as last picked comes after this window's own
+  // pick and before the first Active, while it is on this machine.
+  expect(defaultAgent(/** @type {any} */ (list), null, "c")).toBe("c");
+  expect(defaultAgent(/** @type {any} */ (list), "a", "c")).toBe("a");
+  expect(defaultAgent(/** @type {any} */ (list), null, "gone")).toBe("b");
+});
+
+test("the start screen's pickers show an agent's kept values its list still offers, each on the picker of its category", () => {
+  const opts = [
+    { id: "m", name: "Model", category: "model", type: "select", value: "a", choices: [{ value: "a", name: "A", description: null, group: null }, { value: "b", name: "B", description: null, group: null }] },
+    { id: "m2", name: "Other model", category: "model", type: "select", value: "x", choices: [{ value: "b", name: "B", description: null, group: null }] },
+    { id: "think", name: "Think", category: "thought_level", type: "boolean", value: false, choices: [] },
+  ];
+  expect([...keptValues(/** @type {any} */ (opts), { model: "b", thought_level: true, mode: "code" })]).toEqual([["m", "b"], ["think", true]]);
+  expect([...keptValues(/** @type {any} */ (opts), { model: "gone", thought_level: "yes" })]).toEqual([]);
+  expect([...keptValues(/** @type {any} */ (opts), undefined)]).toEqual([]);
+  const kept = { view: /** @type {const} */ ("tools"), agent: null, agents: { "claude-acp": { model: "b" } } };
+  expect(keptFor(kept, "claude-acp")).toEqual({ model: "b" });
+  expect(keptFor(kept, "constructor")).toBeUndefined();
+  expect(keptFor(null, "claude-acp")).toBeUndefined();
+});
+
+test("THE KEPT CHOICES ARE READ on every open of the stream, and again after this window makes a chat, sets a picker or switches agent", async () => {
+  let reads = 0;
+  const { transport } = transportOf({
+    "settings.read": () => { reads++; return { view: "plain", agent: "claude-acp", agents: { "claude-acp": { model: "b" } } }; },
+    "chat.list": () => [], "agents.list": () => [],
+    "chat.new": () => summary(), "chat.config": () => summary(), "chat.switchAgent": () => summary(),
+  });
+  const store = makeChatStore({ transport });
+  expect(store.get().settings).toBe(null);
+  await store.resync();
+  expect(reads).toBe(1);
+  expect(store.get().settings).toEqual({ view: "plain", agent: "claude-acp", agents: { "claude-acp": { model: "b" } } });
+  await store.create({ agent: "claude-acp", text: "x" });
+  await store.config(CHAT, "model", "b");
+  await store.switchAgent(CHAT, "codex-acp");
+  await new Promise((r) => setTimeout(r, 0));
+  expect(reads).toBe(4);
+});
+
+test("a view picked is drawn at once, kept by the server, and put back if the server refuses it; a read landing after the pick never undoes it", async () => {
+  let refuse = false;
+  /** @type {(v: any) => void} */
+  let release = () => {};
+  const { transport, calls } = transportOf({
+    "settings.read": () => new Promise((r) => { release = r; }),
+    "settings.set": (req) => { if (refuse) throw Object.assign(new Error("not kept"), { code: "internal" }); return { view: req.view, agent: null, agents: {} }; },
+  });
+  const store = makeChatStore({ transport });
+  const reading = store.readSettings();
+  const setting = store.setView("thinking");
+  expect(store.get().settings?.view).toBe("thinking");
+  await setting;
+  // The read was asked before the pick and answers after it: the pick stands.
+  release({ view: "plain", agent: "gemini", agents: {} });
+  await reading;
+  expect(store.get().settings).toEqual({ view: "thinking", agent: "gemini", agents: {} });
+  expect(calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
+  refuse = true;
+  await expect(store.setView("plain")).rejects.toThrow("not kept");
+  expect(store.get().settings?.view).toBe("thinking");
 });
 
 test("an agent is Active or Inactive and nothing else, and only a sign-in or a Gateway gives it a button", () => {
@@ -611,6 +674,27 @@ test("another chat is handed over whole once its stream is read; the stream afte
   s.tick();
   expect(s.posted[0].updates).toBeUndefined();
   expect(s.posted[0].chats.map((/** @type {any} */ c) => c.id)).toEqual([OTHER, CHAT]);
+});
+
+test("THE LOOK IS TOLD THE VIEW: whole with the state, and as a patch when the person picks another", async () => {
+  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT });
+  await new Promise((r) => setTimeout(r, 0));
+  s.hello();
+  const state = s.posted.filter((p) => p.kind === "look.state").at(-1);
+  expect(state.state.view).toBe("tools");
+  s.posted.length = 0;
+  void s.chats.setView("thinking").catch(() => {});
+  s.tick();
+  const patch = s.posted.find((p) => p.kind === "look.patch");
+  expect(patch).toMatchObject({ kind: "look.patch", chat: CHAT, view: "thinking" });
+  // Said once: the next patch does not say it again.
+  s.posted.length = 0;
+  s.chats.takeChat({ chat: summary({ updated: 60 }), updates: [up(9, "reply", { text: "more" })] });
+  s.tick();
+  expect(s.posted.every((p) => p.view === undefined)).toBe(true);
+  // A state handed whole again carries the view picked.
+  s.hello();
+  expect(s.posted.filter((p) => p.kind === "look.state").at(-1).state.view).toBe("thinking");
 });
 
 test("a flood too big for a patch is handed over whole instead", async () => {

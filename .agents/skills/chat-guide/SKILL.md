@@ -470,7 +470,27 @@ patches by the contract's rule and hands the look the state as it stands
 through `biom.onLook(fn)`. The look is handed `names`, uid to page, because it
 cannot resolve a `uid`; it draws in a shadow root of its own, an agent's words
 only ever as text; it draws incrementally, the latest forty turns with more on
-a press, a diff and an output bounded where they are drawn.
+a press, a diff, an output and a block of thinking bounded where they are
+drawn.
+
+**A chat has three views, and none of them draws a wall of tool calls**
+(`LookState.view`, `ChatView`): **Plain** is the words, the thinking folded to
+its one line and no tool calls at all; **Tool calls**, the default, keeps the
+thinking folded and draws each RUN of tool calls — every call with no thinking
+and no reply between them, the transcript's `acts` block — as ONE line, *Used
+3 tools ›* (*Used 1 tool*), which opens to the calls one by one, each opening
+to its diff or its output as before; **Thinking** writes the thinking out where
+it came, muted italic with a thin rule down its left, between the same shut
+runs. While the turn runs, its current run reads *Using 3 tools* with the call
+under way after it, muted, and a run holding a failed call carries its red
+mark and *1 failed* on the shut line, so a failure is never folded out of
+sight. The run line and each call line are buttons, reached by Tab and worked
+by Enter and Space, and each keeps whether it is open while the turn streams:
+a call joining an open run leaves it open, one joining a shut run leaves it
+shut. **A view picked moves no node**: every block is drawn both ways at once
+and the default look's sheet shows each by the root's `data-view`, so the
+reader at the end of the chat stays there and nothing is drawn again
+(`runWords` and `viewOf` in `model.js`).
 
 **What the look may say is five things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
@@ -529,7 +549,17 @@ The panel's width is the grip's, kept per browser.
 and the one place a chat's agent is handed words**: the text area's own value,
 sent by Enter or Send as `chat.new` or `chat.send`. Under it the agent, model,
 mode and effort, each the agent's own list, five shown and the rest behind
-**More models**; Send is **Stop** while a turn runs; **Go to *page*** is drawn
+**More models**, and in a chat the **View** beside the effort — Plain, Tool
+calls, Thinking — worked from the keyboard like the others, kept for the
+workspace by `settings.set` and handed to the look as `view`, drawn at once
+and put back with a sentence if the server refuses it. **The start screen
+starts where the person left off**: the agent chip defaults to the agent the
+workspace kept as last picked while it is on this machine — this window's own
+pick, or the last chat's agent, before it — and the pickers show that agent's
+kept values its list still offers (`keptValues`), which is what the server
+lays on the chat the first message makes; the store reads the kept choices on
+every open of the stream, after this window makes a chat, sets a picker or
+switches agent, and whenever the dock comes back to the start screen; Send is **Stop** while a turn runs; **Go to *page*** is drawn
 above it from the switcher's offer; the / menu lists the agent's commands and
 the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same
@@ -620,7 +650,7 @@ server/api/routes.ts            chatAnswer, CHAT_SENTENCES, the gate and `own` o
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring, events(),
                                 localRefusal, the exit handler, endAgentsWithin
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
-guest/plugins/biom-agent-look/  the default look: look.js (nodes), model.js (decisions), sheet.js
+guest/plugins/biom-agent-look/  the default look: look.js (nodes), model.js (decisions, runWords, viewOf), sheet.js (the views)
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
 client/store/chats.js           makeChatStore, fold, agentMode, showChat, freshThread, the pickers' rules
 client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer

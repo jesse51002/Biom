@@ -197,7 +197,7 @@ const agent = (over = {}) => ({
   state: "active", reason: null, message: null, auth: [], options: [], commands: [], ...over,
 });
 
-/** @param {any[]} agents @param {{ switcher?: any, route?: any }} [at] */
+/** @param {any[]} agents @param {{ switcher?: any, route?: any, answers?: Record<string, (req: any) => any> }} [at] */
 function stand(agents, at = {}) {
   /** @type {any[]} */
   const calls = [];
@@ -205,6 +205,14 @@ function stand(agents, at = {}) {
     /** @param {any} req */
     async call(req) {
       calls.push(req);
+      const answer = at.answers?.[req.kind];
+      if (answer) {
+        try {
+          return { id: req.id, g: PROTOCOL, ok: true, value: await answer(req) };
+        } catch (e) {
+          return { id: req.id, g: PROTOCOL, ok: false, error: { code: /** @type {any} */ (e).code ?? "internal", message: String(/** @type {any} */ (e).message) } };
+        }
+      }
       return { id: req.id, g: PROTOCOL, ok: true, value: agents.find((a) => a.key === req.agent) ?? null };
     },
   };
@@ -280,7 +288,8 @@ test("the row of an Inactive agent opens More agents and runs nothing; the row o
   const claude = /** @type {El} */ (s.menu()?.querySelectorAll("button.mi").find((b) => b.getAttribute("data-agent") === "claude-acp"));
   claude.fire("click");
   expect(s.said).toEqual([["agents"]]);
-  expect(s.calls).toEqual([]);
+  // Reading what the workspace kept is not running anything.
+  expect(s.calls.filter((c) => c.kind !== "settings.read")).toEqual([]);
 });
 
 /* ── Active or Inactive, and nothing else ──────────────────────────────── */
@@ -396,4 +405,120 @@ test("the height the look leaves the input covers Go to page above it: it grows 
   s.input.sync();
   expect(s.input.measure()).toEqual({ at: "bottom", height: 200 });
   expect(told).toBe(before + 2);
+});
+
+/* ── the kept choices and the view ─────────────────────────────────────── */
+
+const CHAT_ID = "c1nvented-chat-0001";
+/** @param {Record<string, unknown>} [over] */
+const aChat = (over = {}) => ({ id: CHAT_ID, name: "Invented chat", face: null, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "idle", turn: 1, light: "none", stop: null, reason: null, created: 1, updated: 10, queued: 0, queueHeld: false, ...over });
+/** @param {string} id @param {string} category @param {string[]} values */
+const option = (id, category, values) => ({ id, name: id, category, type: "select", value: values[0], choices: values.map((v) => ({ value: v, name: v.toUpperCase(), description: null, group: null })) });
+/** Let every answer in flight land. */
+const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+test("THE VIEW CHIP sits beside the effort in a chat and nowhere on the start screen, and a view picked is kept for the workspace and shown at once", async () => {
+  /** @type {any} */
+  let kept = { view: "tools", agent: null, agents: {} };
+  const s = stand(AGENTS, {
+    answers: {
+      "settings.read": () => kept,
+      "settings.set": (req) => { kept = { ...kept, view: req.view }; return kept; },
+    },
+  });
+  await settle();
+  const chip = /** @type {El} */ (s.input.el.querySelector("button.viewchip"));
+  const cbar = /** @type {El} */ (s.input.el.querySelector(".cbar"));
+  // After the pickers and before Send.
+  expect(cbar.children.indexOf(chip)).toBe(cbar.children.length - 2);
+  expect(chip.hidden).toBe(true);
+  s.chats.takeChat({ chat: aChat(), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  expect(chip.hidden).toBe(false);
+  expect(chip.text).toBe("Tool calls");
+  // Worked from the keyboard like the other chips: its menu takes the caret
+  // and the arrows, and Enter on a row is that row's click.
+  chip.fire("click");
+  expect(chip.getAttribute("aria-expanded")).toBe("true");
+  const rows = /** @type {El[]} */ (s.menu()?.querySelectorAll("button.mi"));
+  expect(rows.map((r) => r.getAttribute("data-view"))).toEqual(["plain", "tools", "thinking"]);
+  expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+  expect(doc.activeElement).toBe(rows[0]);
+  press("ArrowDown");
+  press("ArrowDown");
+  expect(doc.activeElement).toBe(rows[2]);
+  /** @type {El} */ (doc.activeElement).fire("click");
+  // Shown at once, before the server answers, and kept by it.
+  expect(s.chats.get().settings?.view).toBe("thinking");
+  expect(chip.text).toBe("Thinking");
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
+  expect(s.menu()).toBe(null);
+});
+
+test("a view the server will not keep is put back, with a sentence", async () => {
+  const s = stand(AGENTS, {
+    answers: {
+      "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
+      "settings.set": () => { throw Object.assign(new Error("the kept choices could not be written"), { code: "internal" }); },
+    },
+  });
+  await settle();
+  s.chats.takeChat({ chat: aChat(), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  const chip = /** @type {El} */ (s.input.el.querySelector("button.viewchip"));
+  expect(chip.text).toBe("Plain");
+  chip.fire("click");
+  /** @type {El} */ (s.menu()?.querySelectorAll("button.mi").find((r) => r.getAttribute("data-view") === "tools")).fire("click");
+  expect(chip.text).toBe("Tool calls");
+  await settle();
+  expect(s.chats.get().settings?.view).toBe("plain");
+  expect(chip.text).toBe("Plain");
+  expect(/** @type {El} */ (s.input.el.querySelector(".said")).textContent).toBe("Not changed: the kept choices could not be written");
+});
+
+test("THE START SCREEN STARTS WHERE THE PERSON LEFT OFF: the kept agent while it is on this machine, and its kept values its list still offers", async () => {
+  const opts = [option("model", "model", ["fast", "deep"]), option("mode", "mode", ["ask", "code"])];
+  const list = [agent({ options: opts }), agent({ key: "gemini", name: "Gemini CLI", options: opts })];
+  const s = stand(list, {
+    answers: {
+      "settings.read": () => ({ view: "tools", agent: "gemini", agents: { gemini: { model: "deep", mode: "retired" }, "codex-acp": { mode: "code" } } }),
+    },
+  });
+  // Before the kept choices are read, the first Active agent, on its own values.
+  const chips = () => /** @type {El[]} */ (s.input.el.querySelectorAll("button.chip")).filter((c) => !c.hidden).map((c) => c.text);
+  expect(chips()[0]).toBe("Codex");
+  await settle();
+  s.input.sync();
+  // Read: the agent the workspace kept, its kept model, and the mode it no
+  // longer offers left at the agent's own.
+  expect(chips()).toEqual(["Gemini CLI", "DEEP", "ASK"]);
+  // Sent as the chat the first message makes: the kept values are the
+  // server's to lay on, so nothing but the agent goes with it.
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  text.value = "Invented first message";
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "chat.new").length).toBe(1);
+  const made = s.calls.find((c) => c.kind === "chat.new");
+  expect(made).toMatchObject({ agent: "gemini", text: "Invented first message" });
+  expect(made.config).toBeUndefined();
+});
+
+test("a kept agent no longer on this machine is passed over, and a pick in this window wins over the kept one", async () => {
+  const s = stand(AGENTS, { answers: { "settings.read": () => ({ view: "tools", agent: "gone-agent", agents: {} }) } });
+  await settle();
+  s.input.sync();
+  const name = () => /** @type {El} */ (s.chip.querySelector(".nm")).textContent;
+  expect(name()).toBe("Codex");
+  const t = stand([agent(), agent({ key: "gemini", name: "Gemini CLI" })], { answers: { "settings.read": () => ({ view: "tools", agent: "gemini", agents: {} }) } });
+  await settle();
+  t.input.sync();
+  expect(/** @type {El} */ (t.chip.querySelector(".nm")).textContent).toBe("Gemini CLI");
+  t.chip.fire("click");
+  /** @type {El} */ (t.menu()?.querySelectorAll("button.mi").find((b) => b.getAttribute("data-agent") === "codex-acp")).fire("click");
+  await settle();
+  expect(/** @type {El} */ (t.chip.querySelector(".nm")).textContent).toBe("Codex");
 });

@@ -121,17 +121,26 @@ test("an update already held is dropped, and a tool line is replaced where it st
   expect(held.updates.map((/** @type {any} */ x) => x.seq)).toEqual([2, 3]);
 });
 
-test("chats, names, input and beside replace what is held", () => {
+test("chats, names, input, beside and the view replace what is held", () => {
   const s = shim();
   /** @type {any} */
   let held = null;
-  s.biom.onLook((/** @type {any} */ state) => { held = state; });
+  /** @type {any} */
+  let patched = null;
+  s.biom.onLook((/** @type {any} */ state, /** @type {any} */ patch) => { held = state; patched = patch; });
   s.hear({ kind: "look.state", state: lookState({}) });
-  s.hear({ kind: "look.patch", chat: null, chats: [], names: { a: { id: "home", name: "home" } }, input: { at: "bottom", height: 90 }, beside: null });
+  expect(held.view).toBe("tools");
+  s.hear({ kind: "look.patch", chat: null, chats: [], names: { a: { id: "home", name: "home" } }, input: { at: "bottom", height: 90 }, beside: null, view: "thinking" });
   expect(held.chats).toEqual([]);
   expect(held.names).toEqual({ a: { id: "home", name: "home" } });
   expect(held.input).toEqual({ at: "bottom", height: 90 });
   expect(held.beside).toBe(null);
+  expect(held.view).toBe("thinking");
+  expect(patched.view).toBe("thinking");
+  // A patch that names no view leaves the one held.
+  s.hear({ kind: "look.patch", chat: null, chats: [] });
+  expect(held.view).toBe("thinking");
+  expect(patched.view).toBeUndefined();
 });
 
 /* ══ the mount ═══════════════════════════════════════════════════════════ */
@@ -278,6 +287,25 @@ test("a tool line says its verb for its kind and state, and its object without s
   expect(t({ title: "", kind: "__proto__" }).verb).toBe("Done");
   expect(M.stopWords("constructor", null)).toBe(null);
   expect(M.stopWords("toString", null)).toBe(null);
+});
+
+test("A RUN OF TOOL CALLS IS ONE LINE: how many, one or many, while it runs with the call under way, and how many failed", () => {
+  const line = (/** @type {string} */ status, /** @type {string} */ title = "Read pages/a.yaml", kind = "read") => ({ id: title, title, kind, status, locations: [], diffs: [], output: "", truncated: false });
+  expect(M.runWords([line("completed")], false)).toEqual({ label: "Used 1 tool", current: "", failed: 0, live: false });
+  expect(M.runWords([line("completed"), line("completed"), line("completed")], false).label).toBe("Used 3 tools");
+  // While it runs: the call in progress, in its own words, after the count.
+  expect(M.runWords([line("completed"), line("in_progress", "Edit pages/b.yaml", "edit")], true)).toEqual({ label: "Using 2 tools", current: "Editing pages/b.yaml", failed: 0, live: true });
+  expect(M.runWords([line("completed")], true)).toEqual({ label: "Using 1 tool", current: "", failed: 0, live: true });
+  // A failure is counted whatever else the run did.
+  expect(M.runWords([line("failed"), line("completed"), line("failed")], false)).toMatchObject({ label: "Used 3 tools", failed: 2 });
+  // A run that is over says nothing of a call it never saw finish.
+  expect(M.runWords([line("pending")], false).current).toBe("");
+  expect(M.runWords(/** @type {any} */ (null), false).label).toBe("Used 0 tools");
+});
+
+test("a chat has three views, and a view the look does not know is Tool calls", () => {
+  expect(["plain", "tools", "thinking"].map(M.viewOf)).toEqual(["plain", "tools", "thinking"]);
+  for (const v of [undefined, null, "", "Plain", "constructor", 3]) expect([v, M.viewOf(v)]).toEqual([v, "tools"]);
 });
 
 test("the list is grouped as the mockup groups it, newest first, and each row says what the chat is doing and with what", () => {
@@ -597,6 +625,131 @@ test("the look draws a chat: the list, each turn in order, the loader on the run
   expect(byClass(turns[0], "crow").map((r) => r.textContent)).toEqual(["Boards" + "Edited" + "+1 −2" + "Open"]);
   expect(byClass(turns[0], "tfoot")[0].textContent).toBe("Claude Code · Opus 5.5 · 21s");
   expect(byClass(turns[1], "tfoot")[0].hidden).toBe(true);
+  w.teardown();
+});
+
+/** Every run line in a root, in order: its words, open or shut, and the
+ *  count of call lines it holds. @param {any} root */
+const runs = (root) => byClass(root, "grp").map((g) => ({
+  label: one(g, "glabel").textContent,
+  current: one(g, "gcur").hidden ? "" : one(g, "gcur").textContent,
+  failed: one(g, "gfail").hidden ? "" : one(g, "gfail").textContent,
+  open: g.getAttribute("aria-expanded") === "true",
+  shown: !one(g.parentNode, "grplist").hidden,
+  calls: byClass(one(g.parentNode, "grplist"), "act").length,
+}));
+
+test("EACH RUN OF TOOL CALLS IS ONE SHUT LINE in every view: Used N tools, Using N tools with the call under way while it runs, and a failure marked while it is shut", () => {
+  for (const view of ["plain", "tools", "thinking"]) {
+    const w = mounted();
+    w.hear({ kind: "look.state", state: chatState("live", { view }) });
+    const look = one(w.root(), "g-look");
+    expect(look.getAttribute("data-view")).toBe(view);
+    const turns = byClass(w.root(), "turnw");
+    expect(runs(turns[0])).toEqual([{ label: "Used 3 tools", current: "", failed: "", open: false, shown: false, calls: 3 }]);
+    expect(runs(turns[1])).toEqual([{ label: "Using 1 tool", current: "Reading pages/home/children/Specs/content.yaml", failed: "", open: false, shown: false, calls: 1 }]);
+    // Each is a button with its own words said, shut until pressed.
+    const grp = one(turns[0], "grp");
+    expect(grp.localName).toBe("button");
+    expect(grp.getAttribute("type")).toBe("button");
+    expect(grp.getAttribute("aria-label")).toBe("Used 3 tools");
+    w.teardown();
+    const r = mounted();
+    r.hear({ kind: "look.state", state: chatState("red", { view }) });
+    expect(runs(r.root())).toEqual([{ label: "Used 2 tools", current: "", failed: "1 failed", open: false, shown: false, calls: 2 }]);
+    expect(byClass(one(r.root(), "gfail"), "led")[0].className).toBe("led red");
+    r.teardown();
+  }
+});
+
+test("a run line opens to its calls and each call to its diff, and both stay as they were while the turn streams: a call joining an open run leaves it open, one joining a shut run leaves it shut", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  const [first, second] = byClass(w.root(), "turnw");
+  const grp = one(first, "grp");
+  grp.fire("click");
+  expect(runs(first)[0]).toMatchObject({ open: true, shown: true, calls: 3 });
+  // The second level: a call opens to its diff, as it always did.
+  const edit = byClass(first, "act")[1];
+  edit.fire("click");
+  expect(edit.getAttribute("aria-expanded")).toBe("true");
+  expect(byClass(one(edit.parentNode, "detail"), "dl").map((d) => d.className).slice(0, 2)).toEqual(["dl path", "dl ctx"]);
+  // Streaming on: the shut run of the running turn takes a call and stays
+  // shut; the first turn's open run is left open.
+  const now = Date.now();
+  const call = (/** @type {number} */ seq, /** @type {string} */ id, /** @type {string} */ status) => ({ seq, at: now, turn: 2, kind: "tool", tool: { id, title: "Edit pages/home/children/Specs/content.yaml", kind: "edit", status, locations: [], diffs: [], output: "", truncated: false } });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [call(20, "tool-edit-2", "in_progress")] });
+  expect(runs(second)[0]).toEqual({ label: "Using 2 tools", current: "Editing pages/home/children/Specs/content.yaml", failed: "", open: false, shown: false, calls: 2 });
+  expect(runs(first)[0]).toMatchObject({ open: true, shown: true });
+  // Opened while it runs, it stays open as the next call joins and the last
+  // one fails — and the failure is on the line, open or shut.
+  one(second, "grp").fire("click");
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [call(21, "tool-edit-2", "failed"), call(22, "tool-edit-3", "in_progress")] });
+  expect(runs(second)[0]).toEqual({ label: "Using 3 tools", current: "Editing pages/home/children/Specs/content.yaml", failed: "1 failed", open: true, shown: true, calls: 3 });
+  // The turn ends: the run says what it used, and still says what failed.
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [call(23, "tool-edit-3", "completed"), { seq: 24, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null }],
+    chats: chatState("live").chats.map((/** @type {any} */ c) => (c.id === cid("live") ? { ...c, phase: "idle", light: "done", stop: "end_turn" } : c)) });
+  expect(runs(second)[0]).toMatchObject({ label: "Used 3 tools", current: "", failed: "1 failed", open: true });
+  // Pressed again, it shuts.
+  one(second, "grp").fire("click");
+  expect(runs(second)[0]).toMatchObject({ open: false, shown: false });
+  w.teardown();
+});
+
+test("thinking is drawn both ways at once and the view picks which: folded to its line, opened by a press, and written out in Thinking", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("done", { view: "tools", updates: [
+    ...chatState("done").updates.slice(0, 3),
+    { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: "Read the run first, then say what wants the person's eye." },
+    ...chatState("done").updates.slice(3),
+  ] }) });
+  const root = w.root();
+  const think = one(root, "think");
+  const thinkw = think.parentNode;
+  const thought = one(root, "thought");
+  expect(thought.textContent).toBe("Read the run first, then say what wants the person's eye.");
+  // Folded: the words are there and the sheet shows them only when opened.
+  expect(thinkw.hasAttribute("data-open")).toBe(false);
+  think.fire("click");
+  expect(thinkw.hasAttribute("data-open")).toBe(true);
+  expect(think.getAttribute("aria-expanded")).toBe("true");
+  think.fire("click");
+  expect(thinkw.hasAttribute("data-open")).toBe(false);
+  // The sheet says what each view shows, by the root's attribute.
+  const sheet = glob.__gAgentLookSheet;
+  expect(sheet).toContain(".thinkw[data-open] .thought { display: block;");
+  expect(sheet).toContain(".g-look[data-view=thinking] .thinkw .think { display: none; }");
+  expect(sheet).toMatch(/\.g-look\[data-view=thinking\] \.thinkw \.thought \{ display: block;[^}]*border-left: 1px solid var\(--rule\);[^}]*font: italic/);
+  expect(sheet).toContain(".g-look[data-view=plain] .acts { display: none; }");
+  w.teardown();
+});
+
+test("A VIEW PICKED MOVES NO NODE: the root's view changes and every turn, run and thought drawn stays where it was, with the reader kept at the end", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  const root = w.root();
+  const before = everything(root);
+  const log = one(root, "log");
+  for (const view of ["thinking", "plain", "tools", "nonsense"]) {
+    log.scrollHeight = 5000 + before.length;
+    log.scrollTop = 0;
+    w.hear({ kind: "look.patch", chat: cid("live"), view });
+    expect(one(root, "g-look").getAttribute("data-view")).toBe(view === "nonsense" ? "tools" : view);
+    expect(everything(root)).toEqual(before);
+    // The reader was at the end, so the end is where they are left.
+    expect(log.scrollTop).toBe(log.scrollHeight);
+  }
+  w.teardown();
+});
+
+test("thinking written out is bounded as an output is, and says how much more there was", () => {
+  const w = mounted();
+  const long = "x".repeat(20000) + "y".repeat(345);
+  const state = chatState("done");
+  w.hear({ kind: "look.state", state: { ...state, view: "thinking", updates: [...state.updates.slice(0, 3), { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: long }, ...state.updates.slice(3)] } });
+  const thought = one(w.root(), "thought");
+  expect(thought.childNodes[0].textContent).toBe("x".repeat(20000));
+  expect(one(thought, "more").textContent).toBe("345 more characters not shown");
   w.teardown();
 });
 

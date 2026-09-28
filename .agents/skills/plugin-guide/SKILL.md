@@ -514,7 +514,10 @@ the pixels it covers from the box's bottom edge up to the top of the composer,
 so a look keeps its last line above that; **`center`**, on the start screen,
 where `height` is the composer's own height and it sits on the middle of the
 stage, so a look leaves that band free and draws above and below it. A patch
-carries `input` again whenever either moves.
+carries `input` again whenever either moves. **`LookState.view` is the view the
+person picked** — `plain`, `tools` or `thinking`, from Biom's own View chip —
+and a patch carries it when they pick another; a look that draws fewer views
+draws the nearest it has, and a word it does not know is Tool calls.
 
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands

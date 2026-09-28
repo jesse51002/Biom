@@ -200,8 +200,27 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .think.done:hover { color: var(--ink-2); background: var(--l-wash); }
 .think .ico { width: 11px; height: 11px; transition: transform calc(.2s * var(--l-m)) var(--l-ease); }
 .think[aria-expanded=true] .ico { transform: rotate(90deg); }
-.thought { margin: -4px 0 2px 1px; padding: 2px 0 2px 14px; border-left: 1px dotted var(--ink-3); font: italic 14px/1.6 var(--l-sheet); color: var(--ink-3); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
-.acts { display: flex; flex-direction: column; gap: 1px; margin-left: 3px; padding-left: 12px; border-left: 1px dotted var(--ink-3); }
+.thought { display: none; margin: -4px 0 2px 1px; padding: 2px 0 2px 14px; border-left: 1px dotted var(--ink-3); font: italic 14px/1.6 var(--l-sheet); color: var(--ink-3); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
+.thinkw[data-open] .thought { display: block; animation: fadein calc(.25s * var(--l-m)); }
+.thought .more { display: block; margin-top: 6px; font: normal 11.5px var(--l-gauge); letter-spacing: .02em; color: var(--l-small); white-space: normal; }
+
+/* the three views, by the root's data-view: a view picked moves no node */
+.g-look[data-view=thinking] .thinkw .think { display: none; }
+.g-look[data-view=thinking] .thinkw .thought { display: block; margin: 0; padding: 1px 0 1px 13px; border-left: 1px solid var(--rule); font: italic 14.5px/1.62 var(--l-sheet); color: color-mix(in srgb, var(--ink-2) 70%, var(--ink-3)); max-height: none; overflow: visible; animation: none; }
+.g-look[data-view=plain] .acts { display: none; }
+
+/* a run of tool calls: one line that opens to them */
+.acts { display: flex; flex-direction: column; gap: 1px; }
+.grp { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; max-width: 100%; min-height: 26px; padding: 2px 7px 2px 1px; font: 14px var(--l-sheet); color: var(--l-small); text-align: left; transition: color calc(.12s * var(--l-m)), background calc(.12s * var(--l-m)); }
+.grp:hover { color: var(--ink-2); background: var(--l-wash); }
+.grp[data-state=live] .glabel { color: var(--ink-2); }
+.grp .led.none { display: none; }
+.grp .glabel { white-space: nowrap; }
+.grp .gcur { min-width: 0; font: 12.5px var(--l-gauge); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp .gfail { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--l-gauge); color: color-mix(in srgb, var(--l-red) 55%, var(--ink)); white-space: nowrap; }
+.grp .ico { width: 11px; height: 11px; transition: transform calc(.2s * var(--l-m)) var(--l-ease); }
+.grp[aria-expanded=true] .ico { transform: rotate(90deg); }
+.grplist { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px 3px; padding-left: 12px; border-left: 1px dotted var(--ink-3); animation: fadein calc(.25s * var(--l-m)); }
 .act { display: grid; grid-template-columns: 7px auto minmax(0, 1fr) auto 12px; align-items: center; column-gap: 9px; width: 100%; min-height: 29px; padding: 3px 7px 3px 2px; font: 14px var(--l-sheet); color: var(--ink-2); text-align: left; transition: background calc(.12s * var(--l-m)); animation: actin calc(.35s * var(--l-m)) var(--l-ease); }
 @keyframes actin { from { opacity: 0; transform: translateX(-4px); } }
 .act:hover { background: var(--l-wash); }

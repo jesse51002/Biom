@@ -21,14 +21,20 @@
 // one before it, because only the last of each is ever read. Only the open
 // chat's stream is held at all — a chat in the background is its summary.
 //
+// THE CHAT'S KEPT CHOICES are the workspace's (`settings.read`), read on
+// every open of the stream as the rest is, and again after this window makes
+// a chat, sets a picker or switches agent — each of which the server keeps.
+// The view is the one choice kept from here (`settings.set`), drawn at once
+// and put back if the server refuses it.
+//
 // IT DOES NO OTHER I/O. Which chat a window has open is the ui store's
 // (`UiState.chat`); the composition root remembers it for the session.
 
-/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSummary, ChatUpdate, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
+/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSettings, ChatSummary, ChatUpdate, ChatView, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, PickerCategory, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
 /** @import { Ui } from "./ui.js" */
 
 import { emitter } from "../../contracts/emitter.js";
-import { isOpaqueId } from "../../contracts/guards.js";
+import { isChatView, isOpaqueId } from "../../contracts/guards.js";
 import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
 
 /**
@@ -47,6 +53,9 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {number} epoch Which read of the open chat's stream this is: it
  *   moves every time the stream is read from the start, so a reader that was
  *   handed the stream whole knows when it must be handed it whole again.
+ * @property {ChatSettings | null} settings The workspace's kept choices — the
+ *   view, the agent last picked, each agent's last pickers — as last read, or
+ *   null before they have been.
  */
 
 /**
@@ -76,6 +85,10 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {(agent: AgentKey) => Promise<AgentInfo>} install
  * @property {(agent: AgentKey, method: string) => Promise<SignIn>} signIn
  * @property {() => Promise<RegistryAgent[]>} registry
+ * @property {() => Promise<ChatSettings | null>} readSettings Read the kept
+ *   choices again; null where the server would not say.
+ * @property {(view: ChatView) => Promise<void>} setView Keep the view: drawn at
+ *   once, and put back if the server refuses it.
  * @property {() => Promise<Page>} lookPage The Agent screen's own document:
  *   `@agent`, read as the bare plugin page the server answers it with — read
  *   here rather than through the workspace store, whose `page` is the page on
@@ -218,6 +231,11 @@ export function makeChatStore(deps) {
   let gen = 0;
   /** @type {Map<ChatId, number>} */
   const sent = new Map();
+  /** @type {ChatSettings | null} */
+  let settings = null;
+  /** Bumped by every view picked here, so a read that lands after a pick
+   *  never puts the old view back. */
+  let viewGen = 0;
 
   /** @type {ChatState} */
   let state = snapshot();
@@ -234,6 +252,7 @@ export function makeChatStore(deps) {
       config: latestOf(h, "config")?.options ?? null,
       commands: latestOf(h, "commands")?.commands ?? null,
       epoch,
+      settings,
     };
   }
 
@@ -374,6 +393,27 @@ export function makeChatStore(deps) {
     emit();
   }
 
+  /** THE KEPT CHOICES, read. A view picked here while the read was out wins
+   *  over the view it brings. @returns {Promise<ChatSettings | null>} */
+  async function readSettings() {
+    const my = viewGen;
+    /** @type {unknown} */
+    let got;
+    try {
+      got = await ask({ kind: "settings.read" });
+    } catch (e) {
+      console.warn("[biom] the chat's kept choices could not be read", e);
+      return settings;
+    }
+    if (!isSettings(got)) return settings;
+    settings = my === viewGen || settings === null ? got : { ...got, view: settings.view };
+    emit();
+    return settings;
+  }
+
+  /** After a call the server kept a choice for: read what it keeps now. */
+  const rekept = () => { void readSettings(); };
+
   /** @type {Promise<void> | null} */
   let syncing = null;
   let again = false;
@@ -418,7 +458,7 @@ export function makeChatStore(deps) {
       syncing = (async () => {
         do {
           again = false;
-          const done = await Promise.allSettled([readList(), readAgents(), catchUp()]);
+          const done = await Promise.allSettled([readList(), readAgents(), catchUp(), readSettings()]);
           for (const d of done) if (d.status === "rejected") console.warn("[biom] the chats could not be read again", d.reason);
         } while (again);
       })().finally(() => { syncing = null; });
@@ -444,6 +484,7 @@ export function makeChatStore(deps) {
       /** @type {ChatSummary} */
       const s = await ask(body);
       if (body.text !== undefined && isSummary(s)) sent.set(s.id, at);
+      rekept();
       return summarised(s);
     },
 
@@ -457,11 +498,15 @@ export function makeChatStore(deps) {
     },
 
     async config(chat, option, value) {
-      return summarised(await ask({ kind: "chat.config", chat, option, value }));
+      const s = await ask({ kind: "chat.config", chat, option, value });
+      rekept();
+      return summarised(s);
     },
 
     async switchAgent(chat, agent) {
-      return summarised(await ask({ kind: "chat.switchAgent", chat, agent }));
+      const s = await ask({ kind: "chat.switchAgent", chat, agent });
+      rekept();
+      return summarised(s);
     },
 
     async close(chat) {
@@ -504,10 +549,34 @@ export function makeChatStore(deps) {
       return Array.isArray(list) ? list : [];
     },
 
+    readSettings,
+
+    async setView(view) {
+      const was = settings;
+      const gen = ++viewGen;
+      settings = { ...(settings ?? { agent: null, agents: {} }), view };
+      emit();
+      /** @type {unknown} */
+      let got;
+      try {
+        got = await ask({ kind: "settings.set", view });
+      } catch (e) {
+        // Put back only if nothing was picked since.
+        if (gen === viewGen) { settings = was; emit(); }
+        throw e;
+      }
+      if (gen === viewGen && isSettings(got)) { settings = got; emit(); }
+    },
+
     async lookPage() {
       return ask({ kind: "page.read", page: AGENT_PAGE });
     },
   };
+}
+
+/** @param {unknown} v @returns {v is ChatSettings} */
+function isSettings(v) {
+  return isObj(v) && isChatView(v.view) && (v.agent === null || typeof v.agent === "string") && isObj(v.agents);
 }
 
 /* ── pure, and therefore testable ──────────────────────────────────────── */
@@ -647,6 +716,35 @@ export function withValues(options, set) {
   return options.map((o) => (set.has(o.id) ? { ...o, value: /** @type {ConfigValue} */ (set.get(o.id)) } : o));
 }
 
+/** AN AGENT'S KEPT VALUES THAT ITS LIST STILL OFFERS, by the option id each
+ *  goes on — what the start screen's pickers show for it, as the server
+ *  starts a new chat on them: each on the picker of its category (the first
+ *  option in it), and only where that picker offers it. A dropped model, a
+ *  word kept for a switch, a switch kept for a list, are left out.
+ *  @param {readonly ConfigOption[]} options
+ *  @param {Partial<Record<PickerCategory, ConfigValue>> | undefined} kept
+ *  @returns {Map<string, ConfigValue>} */
+export function keptValues(options, kept) {
+  /** @type {Map<string, ConfigValue>} */
+  const out = new Map();
+  if (!isObj(kept)) return out;
+  for (const o of pickersOf(options)) {
+    const cat = /** @type {PickerCategory} */ (o.category);
+    if (!Object.prototype.hasOwnProperty.call(kept, cat)) continue;
+    const v = kept[cat];
+    const offered = o.type === "boolean" ? typeof v === "boolean" : typeof v === "string" && o.choices.some((c) => c.value === v);
+    if (offered) out.set(o.id, /** @type {ConfigValue} */ (v));
+  }
+  return out;
+}
+
+/** An agent's kept choices out of the kept whole, by its own key only.
+ *  @param {ChatSettings | null} settings @param {AgentKey | null} key */
+export function keptFor(settings, key) {
+  if (settings === null || key === null || !Object.prototype.hasOwnProperty.call(settings.agents, key)) return undefined;
+  return settings.agents[key];
+}
+
 /** THIS MACHINE'S AGENTS AS THE PICKER LISTS THEM: the Active ones first, then
  *  the Inactive, each in the order the server found them.
  *  @param {readonly AgentInfo[]} agents @returns {AgentInfo[]} */
@@ -654,12 +752,15 @@ export function machineAgents(agents) {
   return [...agents.filter((a) => a.state === "active"), ...agents.filter((a) => a.state !== "active")];
 }
 
-/** THE AGENT A NEW CHAT GOES TO: the one the person picked while it is still
- *  on this machine, else the first Active one, else the first there is.
+/** THE AGENT A NEW CHAT GOES TO: the one the person picked in this window
+ *  while it is still on this machine, else the one the workspace kept as last
+ *  picked while it is, else the first Active one, else the first there is.
  *  @param {readonly AgentInfo[]} agents @param {AgentKey | null} picked
+ *  @param {AgentKey | null} [kept]
  *  @returns {AgentKey | null} */
-export function defaultAgent(agents, picked) {
+export function defaultAgent(agents, picked, kept = null) {
   if (picked !== null && agents.some((a) => a.key === picked)) return picked;
+  if (kept !== null && agents.some((a) => a.key === kept)) return kept;
   const active = agents.find((a) => a.state === "active");
   if (active) return active.key;
   return agents[0]?.key ?? null;

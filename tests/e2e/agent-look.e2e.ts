@@ -233,7 +233,9 @@ test("a chat mid-turn: the history left, the finished turn whole, the running on
         groups: [...root.querySelectorAll(".tgroup")].map((g) => g.textContent), moods, acts,
         prose: root.querySelector(".prose").textContent, strong: root.querySelector(".prose strong")?.textContent,
         changes: [...root.querySelectorAll(".crow")].map((r) => r.textContent), foot: root.querySelector(".tfoot:not([hidden])")?.textContent,
-        thinking: turns[1].querySelector(".think").textContent, input, selected: root.querySelector(".trow[aria-selected=true] .t").textContent };`);
+        thinking: turns[1].querySelector(".think").textContent, input, selected: root.querySelector(".trow[aria-selected=true] .t").textContent,
+        runs: [...root.querySelectorAll(".grp")].map((g) => g.querySelector(".glabel").textContent + "|" + g.querySelector(".gcur").textContent + "|" + g.getAttribute("aria-expanded")),
+        shut: [...root.querySelectorAll(".grplist")].map((l) => getComputedStyle(l).display) };`);
     expect(seen.state).toBe("live");
     expect(seen.threads).toBe(true);
     expect(seen.rows).toBe(5);
@@ -251,11 +253,16 @@ test("a chat mid-turn: the history left, the finished turn whole, the running on
     // The second turn thought, then reached for a tool: the thinking is
     // folded and timed, and the tool is what is running.
     expect(seen.thinking).toBe("Thought for 2s");
+    // Each run of tool calls is ONE line, shut: what it used, and what is in
+    // progress while the turn runs.
+    expect(seen.runs).toEqual(["Used 3 tools||false", "Using 1 tool|Reading pages/home/children/Specs/content.yaml|false"]);
+    expect(seen.shut).toEqual(["none", "none"]);
     expect(seen.input).toBe(132);
     expect(seen.selected).toBe("Tidy the Boards page");
     // The art loads: it is the vendored file, served, drawn at 26 px.
     await box.waitForFunction(() => { const i = document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".mood img") as HTMLImageElement | null; return !!i && i.complete && i.naturalWidth > 0; }, null, { timeout: BOUND });
-    // A tool line opens to its diff.
+    // The run opens to its lines, and a tool line to its diff.
+    await box.locator(".grp").first().click();
     await box.locator(".act").nth(1).click();
     const diff = await inLook<string[]>(box, `return [...root.querySelectorAll(".detail:not([hidden]) .dl")].map((d) => d.className + "|" + d.textContent);`);
     expect(diff[0]).toContain("path|pages/home/children/Boards/content.yaml");
@@ -351,6 +358,53 @@ test("a turn that ended red says why, a handover is a line in the thread, and a 
   } finally { await ctx.close(); }
 }, 60000);
 
+test("THE THREE VIEWS, as a browser lays them out: Plain draws no tool calls, Tool calls one shut line a run, Thinking the thinking written out — and a failure shows while its run is shut", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    const shown = (sel: string) => `[...root.querySelectorAll(${JSON.stringify(sel)})].map((e) => getComputedStyle(e).display !== "none" && e.getBoundingClientRect().height > 0)`;
+    const look = () => inLook<any>(box, `return {
+      view: root.querySelector(".g-look").getAttribute("data-view"),
+      runs: ${shown(".grp")}, lists: ${shown(".grplist")}, folds: ${shown(".think")}, thoughts: ${shown(".thought")},
+      style: (() => { const t = root.querySelector(".thought"); const c = getComputedStyle(t); return c.fontStyle + "|" + c.borderLeftStyle + "|" + c.borderLeftWidth; })(),
+      failed: [...root.querySelectorAll(".grp .gfail")].map((f) => getComputedStyle(f).display !== "none" ? f.textContent : ""),
+    };`);
+    await post(page, box, { kind: "look.state", state: chatState("live", { view: "tools" }) });
+    let seen = await look();
+    expect(seen.view).toBe("tools");
+    expect(seen.runs).toEqual([true, true]);
+    expect(seen.lists).toEqual([false, false]);
+    expect(seen.folds).toEqual([true, true]);
+    expect(seen.thoughts).toEqual([false, false]);
+    await shot(page, "view-tools");
+    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "thinking" });
+    seen = await look();
+    expect(seen.view).toBe("thinking");
+    expect(seen.runs).toEqual([true, true]);
+    expect(seen.folds).toEqual([false, false]);
+    expect(seen.thoughts).toEqual([true, true]);
+    expect(seen.style).toBe("italic|solid|1px");
+    await shot(page, "view-thinking");
+    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "plain" });
+    seen = await look();
+    expect(seen.view).toBe("plain");
+    expect(seen.runs).toEqual([false, false]);
+    expect(seen.folds).toEqual([true, true]);
+    expect(seen.thoughts).toEqual([false, false]);
+    await shot(page, "view-plain");
+    // The red chat's run holds a failed call: marked on the shut line.
+    await post(page, box, { kind: "look.state", state: chatState("red", { view: "tools" }) });
+    seen = await look();
+    expect(seen.failed).toEqual(["1 failed"]);
+    expect(seen.lists).toEqual([false]);
+    // Opened by the keyboard as well as the pointer: Tab reaches it, Enter opens it.
+    await box.locator(".grp").first().focus();
+    await page.keyboard.press("Enter");
+    expect((await look()).lists).toEqual([true]);
+    await page.keyboard.press(" ");
+    expect((await look()).lists).toEqual([false]);
+  } finally { await ctx.close(); }
+}, 60000);
+
 test("beside a page: the panel's head, the history as a dropdown, and only the look's own kinds asked for", async () => {
   const { ctx, page, box } = await open({ width: 460, height: 760 });
   try {
@@ -378,6 +432,7 @@ test("AN AGENT'S WORDS NEVER BECOME MARKUP: not in a reply, a thought, a tool, a
   const { ctx, page, box } = await open();
   try {
     await post(page, box, { kind: "look.state", state: chatState("evil") });
+    await box.locator(".grp").first().click();
     await box.locator(".act").first().click();
     await box.locator(".think").first().click();
     await box.waitForTimeout(400);

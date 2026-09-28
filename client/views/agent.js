@@ -12,9 +12,11 @@
 // and never a scan of sessions by page. It hands the look `names`, the pages
 // its places name, because the look cannot resolve a `uid`; `input`, where
 // Biom's input box sits and how much of the look it covers; and `beside`, the
-// page the panel sits beside or the Agent screen would minimise to. It answers
-// the look's four `look.*` kinds for that box alone, which it knows by the
-// identity of the context it mounted the box with.
+// page the panel sits beside or the Agent screen would minimise to; and
+// `view`, which of the chat's three views the person picked, kept in the
+// workspace's settings. It answers the look's `look.*` kinds for that box
+// alone, which it knows by the identity of the context it mounted the box
+// with.
 //
 // ONE BOX SERVES THE FULL SCREEN AND THE PANEL, AND IT IS NEVER MOVED. Moving
 // an iframe to another parent reloads it — the look would lose its place and
@@ -27,7 +29,7 @@
 // THE PANEL'S HEAD IS THE LOOK'S (its list of chats, expand, close); its
 // width is this view's grip, kept for this browser.
 
-/** @import { Address, BridgeContext, ChatId, ChatSummary, ChatUpdate, Frame, FrameHost, HostErrorCode, LookInput, LookState, PageId, PageName, WindowId } from "../../contracts/types.ts" */
+/** @import { Address, BridgeContext, ChatId, ChatSummary, ChatUpdate, ChatView, Frame, FrameHost, HostErrorCode, LookInput, LookState, PageId, PageName, WindowId } from "../../contracts/types.ts" */
 /** @import { ChatStore } from "../store/chats.js" */
 /** @import { HistoryStore } from "../store/history.js" */
 /** @import { Switcher } from "../store/switcher.js" */
@@ -244,7 +246,12 @@ export function makeAgentView(deps) {
   let sentNames = "";
   let sentInput = "";
   let sentBeside = "";
+  /** @type {ChatView} */
+  let sentView = DEFAULT_VIEW;
   let scheduled = false;
+
+  /** The view the person picked, as the store last had it. @returns {ChatView} */
+  const viewNow = () => chats.get().settings?.view ?? DEFAULT_VIEW;
 
   /** The chats as the look draws them, minus what moves on every push of a
    *  streaming chat and draws nothing new — `updated` to the minute — so a
@@ -320,8 +327,9 @@ export function makeAgentView(deps) {
     const names = namesNow();
     const inputNow = input.measure();
     const beside = besideNow();
+    const view = viewNow();
     /** @type {LookState} */
-    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside, view: DEFAULT_VIEW };
+    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside, view };
     frame.post({ kind: "look.state", state });
     posted = want;
     queue = [];
@@ -329,6 +337,7 @@ export function makeAgentView(deps) {
     sentNames = JSON.stringify(names);
     sentInput = JSON.stringify(inputNow);
     sentBeside = JSON.stringify(beside);
+    sentView = view;
   }
 
   /** A STATE WHEN THE SHAPE MOVED, a patch for anything else. The shape is
@@ -374,7 +383,7 @@ export function makeAgentView(deps) {
       post();
       return;
     }
-    /** @type {{ kind: "look.patch", chat: ChatId | null, updates?: ChatUpdate[], chats?: ChatSummary[], names?: Record<string, PageName>, input?: LookInput, beside?: PageName | null }} */
+    /** @type {{ kind: "look.patch", chat: ChatId | null, updates?: ChatUpdate[], chats?: ChatSummary[], names?: Record<string, PageName>, input?: LookInput, beside?: PageName | null, view?: ChatView }} */
     const patch = { kind: "look.patch", chat: posted.chat };
     let any = false;
     if (queue.length) { patch.updates = queue; queue = []; any = true; }
@@ -390,6 +399,8 @@ export function makeAgentView(deps) {
     const beside = besideNow();
     const bs = JSON.stringify(beside);
     if (bs !== sentBeside) { patch.beside = beside; sentBeside = bs; any = true; }
+    const view = viewNow();
+    if (view !== sentView) { patch.view = view; sentView = view; any = true; }
     if (any) frame.post(patch);
   }
 

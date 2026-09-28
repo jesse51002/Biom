@@ -73,6 +73,9 @@
   /** The most of one tool's output drawn, in characters, and of one diff line. */
   const OUTPUT_CAP = 20000;
   const LINE_CAP = 2000;
+  /** The most of one block of thinking drawn, in characters — written out or
+   *  opened, it is bounded as an output is. */
+  const THINK_CAP = 20000;
 
   /**
    * @param {any} node the document's own node, which this fills
@@ -178,6 +181,7 @@
     const root = h("div", "g-look");
     root.setAttribute("data-mode", "screen");
     root.setAttribute("data-state", "empty");
+    root.setAttribute("data-view", "tools");
     shadow.appendChild(root);
 
     // The history, down the left on the full screen.
@@ -496,6 +500,18 @@
       root.toggleAttribute("data-threads", mode === "screen" && !!S && (S.chat !== null || listOpen));
     }
 
+    /** THE VIEW THE PERSON PICKED, on the root: the sheet shows each block by
+     *  it — a run of tool calls not drawn in Plain, the thinking written out
+     *  in Thinking — so a view picked moves no node and draws nothing again,
+     *  and a reader at the end of the chat is kept there.
+     *  @param {any} v */
+    function setView(v) {
+      const want = M.viewOf(v);
+      if (root.getAttribute("data-view") === want) return;
+      root.setAttribute("data-view", want);
+      if (pinned) { pin(); frame(pin); }
+    }
+
     /** Biom's input box sits over this box; the look leaves it `height`. @param {any} input */
     function setInput(input) {
       const px = input && typeof input.height === "number" && isFinite(input.height) && input.height > 0 ? Math.min(Math.round(input.height), 2000) : 0;
@@ -786,27 +802,44 @@
       return bv;
     }
 
-    /** @param {any} b a thinking block @param {any} t its turn */
+    /** A BLOCK OF THINKING, drawn both ways at once: the one line it folds
+     *  to — *Thinking*, then *Thought for Ns*, which opens it — and the words
+     *  themselves. Which shows is the root's `data-view` in the sheet, so a
+     *  view picked moves no node: folded in Plain and Tool calls (the words
+     *  there only while the line is opened), written out in Thinking. The
+     *  words are a text node, appended as they stream and bounded.
+     *  @param {any} b a thinking block @param {any} t its turn */
     function thinkView(b, t) {
-      const el = h("div", "bw");
+      const el = h("div", "bw thinkw");
       const row = h("button", "think");
       row.type = "button";
       const body = h("div", "thought");
-      body.hidden = true;
-      const words = doc.createTextNode(b.text);
+      const first = Math.min(b.text.length, THINK_CAP);
+      const words = doc.createTextNode(b.text.slice(0, first));
       body.appendChild(words);
+      const more = h("span", "more");
+      more.hidden = true;
+      body.appendChild(more);
       el.appendChild(row); el.appendChild(body);
       let label = "";
       row.addEventListener("click", () => {
         if (!row.classList.contains("done")) return;
-        const open = row.getAttribute("aria-expanded") !== "true";
+        const open = !el.hasAttribute("data-open");
+        el.toggleAttribute("data-open", open);
         row.setAttribute("aria-expanded", String(open));
-        body.hidden = !open;
       });
       const bv = {
-        kind: "think", el: el, shown: b.text.length,
+        kind: "think", el: el, shown: first,
         paint() {
-          if (b.text.length > bv.shown) { words.appendData(b.text.slice(bv.shown)); bv.shown = b.text.length; }
+          if (b.text.length > bv.shown && bv.shown < THINK_CAP) {
+            const to = Math.min(b.text.length, THINK_CAP);
+            words.appendData(b.text.slice(bv.shown, to));
+            bv.shown = to;
+          }
+          if (b.text.length > THINK_CAP) {
+            more.hidden = false;
+            more.textContent = (b.text.length - THINK_CAP) + " more characters not shown";
+          }
           const done = b.end !== null || !liveOf(t);
           const want = done ? "done:" + M.seconds(b.at, b.end) : "live";
           if (want === label) return;
@@ -814,7 +847,7 @@
           row.replaceChildren();
           if (done) {
             row.classList.add("done");
-            row.setAttribute("aria-expanded", String(!body.hidden));
+            row.setAttribute("aria-expanded", String(el.hasAttribute("data-open")));
             row.appendChild(icon("chevr"));
             row.appendChild(h("span", "", b.end !== null ? "Thought for " + M.seconds(b.at, b.end) + "s" : "Thought"));
           } else {
@@ -857,13 +890,62 @@
       }
     }
 
-    /** @param {any} b a block of tool lines @param {any} t its turn */
+    /** A RUN OF TOOL CALLS — every call with no thinking and no reply between
+     *  them — as ONE line that opens to them: *Used 3 tools ›*, or while the
+     *  turn runs *Using 3 tools* with the call in progress after it, muted, and
+     *  a failed call's red mark on the line while it is shut, so a failure is
+     *  never folded out of sight. Opened, each call is its own line, which
+     *  opens to its diff or its output as before. Both are buttons, both keep
+     *  whether they are open while the turn streams — a call joining an open
+     *  run leaves it open, one joining a shut run leaves it shut — and in
+     *  Plain the whole run is not drawn at all (the sheet, by the root's
+     *  `data-view`), so a view picked moves no node.
+     *  @param {any} b a block of tool lines @param {any} t its turn */
     function actsView(b, t) {
       const el = h("div", "acts");
+      const grp = h("button", "grp");
+      grp.type = "button";
+      grp.setAttribute("aria-expanded", "false");
+      const glamp = h("span", "led");
+      const glabel = h("span", "glabel");
+      const gcur = h("span", "gcur");
+      const gfail = h("span", "gfail");
+      gfail.hidden = true;
+      grp.appendChild(glamp); grp.appendChild(glabel); grp.appendChild(gcur); grp.appendChild(gfail); grp.appendChild(icon("chevr"));
+      const list = h("div", "grplist");
+      list.hidden = true;
+      el.appendChild(grp); el.appendChild(list);
+      let gsig = "";
+      grp.addEventListener("click", () => {
+        const open = grp.getAttribute("aria-expanded") !== "true";
+        grp.setAttribute("aria-expanded", String(open));
+        list.hidden = !open;
+      });
       /** @type {Map<string, any>} */
       const lines = new Map();
+      /** The shut line: how many, whether the run is still going and what is
+       *  in progress, and how many failed. */
+      function paintGroup() {
+        /** @type {any[]} */
+        const tools = [];
+        for (const id of b.ids) { const e = T && T.tools.get(id); if (e) tools.push(e.tool); }
+        const anyLive = tools.some((x) => M.toolWords(x).live);
+        const w = M.runWords(tools, liveOf(t) && (b.end === null || anyLive));
+        const sig = [w.label, w.current, w.failed, w.live].join("\u0001");
+        if (sig === gsig) return;
+        gsig = sig;
+        glabel.textContent = w.label;
+        gcur.textContent = w.current;
+        gcur.hidden = w.current === "";
+        glamp.className = w.live ? "led lit pulse" : "led none";
+        gfail.hidden = w.failed === 0;
+        gfail.replaceChildren();
+        if (w.failed) { gfail.appendChild(led("red")); gfail.appendChild(doc.createTextNode(w.failed + " failed")); }
+        grp.setAttribute("data-state", w.live ? "live" : "done");
+        grp.setAttribute("aria-label", w.label + (w.current ? ", " + w.current : "") + (w.failed ? ", " + w.failed + " failed" : ""));
+      }
       const bv = {
-        kind: "acts", el: el,
+        kind: "acts", el: el, group: paintGroup,
         /** @param {any} entry */
         line(entry) {
           let v = lines.get(entry.id);
@@ -889,7 +971,7 @@
               if (open) fillDetail(det, held.entry.tool); else det.replaceChildren();
             });
             lines.set(entry.id, v);
-            el.appendChild(w);
+            list.appendChild(w);
           }
           v.entry = entry;
           const tool = entry.tool || {};
@@ -911,6 +993,7 @@
         },
         paint() {
           for (const id of b.ids) { const e = T && T.tools.get(id); if (e) bv.line(e); }
+          paintGroup();
         },
       };
       bv.paint();
@@ -1218,7 +1301,7 @@
         if (!v) return;
         let bv = v.blocks.get(b);
         if (!bv) { sink.block(t, b); bv = v.blocks.get(b); }
-        if (bv && bv.kind === "acts") bv.line(entry);
+        if (bv && bv.kind === "acts") { bv.line(entry); bv.group(); }
       },
       /** @param {any} t */
       phase(t) { const v = views.get(t.n); if (v) paintTurn(v); },
@@ -1300,6 +1383,7 @@
         mode = state.mode === "panel" ? "panel" : "screen";
         listOpen = !!state.list;
         setInput(state.input);
+        setView(state.view);
         if (state.chat !== heldChat) openChat();
         else {
           foldNew(state.updates);
@@ -1310,6 +1394,7 @@
         settled = true;
       } else {
         if (patch.input) setInput(patch.input);
+        if (patch.view !== undefined) setView(patch.view);
         if (Array.isArray(patch.updates) && patch.updates.length && patch.chat === heldChat) foldNew(patch.updates);
         if (patch.chats) { drawList(); drawHead(); drawMenu(); drawStart(); refreshLive(); }
         if (patch.names && T) for (const v of views.values()) { const t = T.turn(v.n); if (t && t.changed) paintChanges(v, t); }

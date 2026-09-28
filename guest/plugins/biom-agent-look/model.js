@@ -196,6 +196,35 @@
     return { verb: live ? pair[1] : pair[0], obj: obj, live: live, failed: failed };
   }
 
+  /** WHAT A RUN OF TOOL CALLS SAYS WHILE IT IS SHUT: *Used 3 tools*, or
+   *  *Using 3 tools* while it is the turn's run in progress, with the call
+   *  under way after it in its own words; and how many failed, which the shut
+   *  line marks so a failure is never hidden. One call is *1 tool*.
+   *  @param {any[]} tools the run's lines, in the order they came
+   *  @param {boolean} live whether the run is still going
+   *  @returns {{ label: string, current: string, failed: number, live: boolean }} */
+  function runWords(tools, live) {
+    const list = (Array.isArray(tools) ? tools : []).filter((x) => x && typeof x === "object");
+    let failed = 0;
+    for (const x of list) if (x.status === "failed") failed++;
+    let current = "";
+    if (live) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        const w = toolWords(list[i]);
+        if (w.live) { current = w.obj ? w.verb + " " + w.obj : w.verb; break; }
+      }
+    }
+    const n = list.length;
+    return { label: (live ? "Using " : "Used ") + n + (n === 1 ? " tool" : " tools"), current: current, failed: failed, live: live };
+  }
+
+  /** THE THREE VIEWS OF A CHAT, and the one this look draws for a word it
+   *  does not know: Tool calls, the default. @param {any} v
+   *  @returns {"plain" | "tools" | "thinking"} */
+  function viewOf(v) {
+    return v === "plain" || v === "thinking" ? v : "tools";
+  }
+
   /* ── diffs ─────────────────────────────────────────────────────────────── */
 
   /** @param {any} s @returns {string[]} */
@@ -817,6 +846,8 @@
     grouped: grouped,
     subOf: subOf,
     toolWords: toolWords,
+    runWords: runWords,
+    viewOf: viewOf,
     lineDiff: lineDiff,
     countsOf: countsOf,
     countWords: countWords,

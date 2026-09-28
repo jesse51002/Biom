@@ -788,6 +788,10 @@ walk("7", "tool lines: an edit tool call opens to its diff, the pages changed na
   expect(await said(".verb")).toBe("Edited");
   expect(await said(".obj")).toBe(path);
   expect(await said(".meta")).toBe("+1 −1");
+  // The run is one line, shut; it opens to the line, which opens to its diff.
+  const run = lastTurn(f).locator(".acts button.grp").first();
+  expect(((await run.locator(".glabel").textContent()) ?? "").trim()).toBe("Used 1 tool");
+  await run.click();
   await act.click();
   const detail = lastTurn(f).locator(".acts .detail").first();
   await until("the line opened to its diff", 5000, async () => !(await detail.isHidden()));
