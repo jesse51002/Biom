@@ -1,0 +1,250 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "# Scopes\n\nEvery page, word and number in this workspace is invented, for the fourteenth contracts edit's equivalence suite.\n\nThe page says {{who}} at {{rate}}, with {{crew}}; the quarter reads [{{quarter}}], lit reads {{lit}}, and {{nobody}} is left as written.\n",
+            "vars": {
+              "crew": [
+                "Ana",
+                "Bo"
+              ],
+              "lit": true,
+              "quarter": null,
+              "rate": 62,
+              "who": "the page"
+            }
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "intro",
+          "via": "slot"
+        }
+      ],
+      "name": "intro"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Nearest here is {{who}}, beside {{only}} and the page's {{rate}}.",
+            "vars": {
+              "crew": [
+                "Ana",
+                "Bo"
+              ],
+              "lit": true,
+              "only": "section only",
+              "quarter": null,
+              "rate": 62,
+              "who": "the section"
+            }
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "only": "section only",
+            "quarter": null,
+            "rate": 62,
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "near",
+          "via": "slot"
+        }
+      ],
+      "name": "near"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": true,
+              "id": "home/Shadowing",
+              "kind": "page",
+              "name": "Shadowing",
+              "uid": "scopesfixshadow01"
+            },
+            "draw": {
+              "file": "child.html",
+              "html": "<!-- Invented: how Shadowing looks inside its parent, reading the parent's scope. -->\n<div class=\"kid-row\" data-who=\"{{who}}\"><b>{{name}}</b>, a {{kind}}, held where {{who}} is at {{rate}}</div>\n"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Shadowing",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Shadowing"
+    },
+    {
+      "markup": "8dfcaa3bdcfb337297bae866d5e02f03d1616a9406e52de081650cbc4af2e949",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Values",
+              "kind": "page",
+              "name": "Values",
+              "uid": "scopesfixvalues01"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the row's section"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Values",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Values"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Base_Figure",
+              "kind": "page",
+              "name": "Figure beside prose",
+              "uid": "scopesfixfigure01"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Base_Figure",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Base_Figure"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Base_Reveal",
+              "kind": "page",
+              "name": "A figure that plays once",
+              "uid": "scopesfixreveal01"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Base_Reveal",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Base_Reveal"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Base_Diagram",
+              "kind": "page",
+              "name": "Diagram drawn from its own words",
+              "uid": "scopesfixdiagram01"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "crew": [
+              "Ana",
+              "Bo"
+            ],
+            "lit": true,
+            "quarter": null,
+            "rate": 62,
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Base_Diagram",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Base_Diagram"
+    }
+  ]
+}

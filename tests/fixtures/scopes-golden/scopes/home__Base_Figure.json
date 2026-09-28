@@ -1,0 +1,287 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Copy `index.html` beside a page's `content.yaml` — `figure.html` is the obvious name — and\npaste the section below into that page's `contents` with `data:` changed to match. Or copy\nthis whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.\n\nThe picture is held while the prose scrolls past it, and it is released where this section\nends: sticky only pins inside its own containing block. That is why the figure and the\nargument are ONE section rather than two.\n\n**The figure is a drawing and not a photograph.** A row of counts over a row of bars, in\nHTML, on the palette's tokens, growing once when the section is first seen — which is what a\nfigure is here. Its words and its numbers are the section's `variables`, as parallel lists,\nso changing the drawing is changing the document.\n",
+            "vars": {}
+          },
+          "ctx": {},
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "how-to-use-this",
+          "via": "slot"
+        }
+      ],
+      "name": "how-to-use-this"
+    },
+    {
+      "markup": "d5b2eb12918ffddd4263fc6e0ae87c3d2126de009449b33503df3926f832f86f",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## What the section can do that the document could not\n\nA section is a div. It is full width, it owns its layout entirely, and the reading measure\nlives inside the default section's own file rather than on the sheet — so a band that goes\nedge to edge costs nothing, and a column that wants 34rem of measure asks for it here.\n\n> Prose still wants a measure. A page that is edge to edge everywhere is exactly as\n> monotonous as one that is 34rem everywhere.\n\nThe freedom is to choose per section. Two columns where a figure earns its place beside the\nargument; one column where the words are the whole of it; a grid where things are being\ncompared. A page that chooses the same shape every time has not used any of it.\n\nSwap this slot's prose for the real argument, and swap `kpiName`, `kpiValue`, `barName` and\n`barValue` for the real figures. The tallest bar lights itself, so nothing here has to be\ntold which one matters.\n",
+            "vars": {
+              "barName": [
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun"
+              ],
+              "barValue": [
+                12,
+                19,
+                34,
+                26,
+                15
+              ],
+              "kpiName": [
+                "Trays potted on",
+                "Trays lost",
+                "Trays given away"
+              ],
+              "kpiValue": [
+                17,
+                4,
+                9
+              ]
+            }
+          },
+          "ctx": {
+            "barName": [
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun"
+            ],
+            "barValue": [
+              12,
+              19,
+              34,
+              26,
+              15
+            ],
+            "kpiName": [
+              "Trays potted on",
+              "Trays lost",
+              "Trays given away"
+            ],
+            "kpiValue": [
+              17,
+              4,
+              9
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "spread",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "_This figure has no numbers yet. Add `kpiName` and `kpiValue`, or `barName` and `barValue`,\nto the section's `variables` — one entry each per count — and the drawing appears._\n",
+            "vars": {
+              "barName": [
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun"
+              ],
+              "barValue": [
+                12,
+                19,
+                34,
+                26,
+                15
+              ],
+              "kpiName": [
+                "Trays potted on",
+                "Trays lost",
+                "Trays given away"
+              ],
+              "kpiValue": [
+                17,
+                4,
+                9
+              ]
+            }
+          },
+          "ctx": {
+            "barName": [
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun"
+            ],
+            "barValue": [
+              12,
+              19,
+              34,
+              26,
+              15
+            ],
+            "kpiName": [
+              "Trays potted on",
+              "Trays lost",
+              "Trays given away"
+            ],
+            "kpiValue": [
+              17,
+              4,
+              9
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "fault",
+          "section": "spread",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "_A number per bar cannot live in a list slot — a slot holds markdown, and reading a figure\nback out of prose is parsing — so the figures are `variables`, edited on this page's config\nscreen rather than on the page. Every count here is invented._\n",
+            "vars": {
+              "barName": [
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun"
+              ],
+              "barValue": [
+                12,
+                19,
+                34,
+                26,
+                15
+              ],
+              "kpiName": [
+                "Trays potted on",
+                "Trays lost",
+                "Trays given away"
+              ],
+              "kpiValue": [
+                17,
+                4,
+                9
+              ]
+            }
+          },
+          "ctx": {
+            "barName": [
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun"
+            ],
+            "barValue": [
+              12,
+              19,
+              34,
+              26,
+              15
+            ],
+            "kpiName": [
+              "Trays potted on",
+              "Trays lost",
+              "Trays given away"
+            ],
+            "kpiValue": [
+              17,
+              4,
+              9
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "caption",
+          "section": "spread",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "barName": [
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun"
+            ],
+            "barValue": [
+              12,
+              19,
+              34,
+              26,
+              15
+            ],
+            "kpiName": [
+              "Trays potted on",
+              "Trays lost",
+              "Trays given away"
+            ],
+            "kpiValue": [
+              17,
+              4,
+              9
+            ]
+          },
+          "item": null,
+          "node": "biom-reveal",
+          "part": null,
+          "section": "spread",
+          "via": "node"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "barName": [
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun"
+            ],
+            "barValue": [
+              12,
+              19,
+              34,
+              26,
+              15
+            ],
+            "kpiName": [
+              "Trays potted on",
+              "Trays lost",
+              "Trays given away"
+            ],
+            "kpiValue": [
+              17,
+              4,
+              9
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "spread",
+          "via": "script"
+        }
+      ],
+      "name": "spread"
+    }
+  ]
+}

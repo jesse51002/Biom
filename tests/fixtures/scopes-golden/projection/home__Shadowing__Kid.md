@@ -1,0 +1,1 @@
+The kid page's own scope says the kid page, and {{rate}} is not in it.

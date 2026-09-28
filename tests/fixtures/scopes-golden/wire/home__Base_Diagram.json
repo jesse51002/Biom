@@ -1,0 +1,288 @@
+{
+  "id": "home/Base_Diagram",
+  "name": "Diagram drawn from its own words",
+  "plugin": "biom-doc",
+  "variables": {},
+  "sections": [
+    {
+      "name": "how-to-use-this",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "Copy `index.html` beside a page's `content.yaml` — call it `shape.html`, or whatever the\ndrawing is about — and paste the section below into that page's `contents` with `data:`\nchanged to match. Or copy this whole directory into `pages/<parent>/children/<name>/` and it\ndraws as it stands.\n\n**The diagram is the `variables` on the section, not the markup.** `nodes` is every box, in\nthe order they should read across a row; `nodeIcon` is the mark each one wears; `edgeFrom`,\n`edgeTo`, `edgeSays` and `edgeKind` are parallel lists, one entry each per arrow. Add a name\nto `nodes`, add a pair to the edge lists, and the drawing rearranges itself around them —\nnothing in the html file holds a position, and there is nothing to keep in step.\n\n**It is HTML, drawn in place and animated once when it is first seen.** No library is\nfetched and no stylesheet but this page's own decides what it looks like: every border takes\n`--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. The\nboxes are a grid, each station's mark is CSS rather than a picture, each edge is one element\nwith three borders running down a lane beside them, and the edges draw themselves in behind\n`--motion` — which means a reader who asked for less motion gets the finished diagram and no\nmove at all.\n\n**The reveal walks the loop once.** One station at a time takes the hot colour and gives it\nback, in the order the layout put them in, because what this drawing is about is the loop\ngoing round rather than a state one box is in.\n",
+          "vars": {}
+        }
+      },
+      "vars": {},
+      "source": {
+        "name": "how-to-use-this",
+        "parts": {
+          "body": "Copy `index.html` beside a page's `content.yaml` — call it `shape.html`, or whatever the\ndrawing is about — and paste the section below into that page's `contents` with `data:`\nchanged to match. Or copy this whole directory into `pages/<parent>/children/<name>/` and it\ndraws as it stands.\n\n**The diagram is the `variables` on the section, not the markup.** `nodes` is every box, in\nthe order they should read across a row; `nodeIcon` is the mark each one wears; `edgeFrom`,\n`edgeTo`, `edgeSays` and `edgeKind` are parallel lists, one entry each per arrow. Add a name\nto `nodes`, add a pair to the edge lists, and the drawing rearranges itself around them —\nnothing in the html file holds a position, and there is nothing to keep in step.\n\n**It is HTML, drawn in place and animated once when it is first seen.** No library is\nfetched and no stylesheet but this page's own decides what it looks like: every border takes\n`--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. The\nboxes are a grid, each station's mark is CSS rather than a picture, each edge is one element\nwith three borders running down a lane beside them, and the edges draw themselves in behind\n`--motion` — which means a reader who asked for less motion gets the finished diagram and no\nmove at all.\n\n**The reveal walks the loop once.** One station at a time takes the hot colour and gives it\nback, in the order the layout put them in, because what this drawing is about is the loop\ngoing round rather than a state one box is in.\n"
+        }
+      }
+    },
+    {
+      "name": "how-it-fits",
+      "html": "<!-- base/diagram/index.html — A DIAGRAM DRAWN FROM THE DOCUMENT'S OWN WORDS.\n\n     THERE IS NO DIAGRAM LIBRARY HERE AND THAT IS THE POINT. A figure in this\n     format is HTML the section writes — elements, grid and flex, borders and\n     backgrounds on the palette's tokens, animated once when it arrives — and a\n     diagram of relationships is that same figure with boxes and edges in it.\n     Nothing is fetched, nothing is themed by somebody else's stylesheet, and\n     every line on screen is a line in this file.\n\n     WHAT IT DRAWS. Four stations round a loop, each with a mark of its own drawn\n     in CSS — somebody asking, a file being written, a window redrawing, a folder\n     — with the edges bracketed down a lane beside them, and a walk that goes\n     round once when the section arrives, lighting one station at a time in the\n     one hot colour and leaving it as it found it.\n\n     WHERE THE WORDS LIVE. All of them in `content.yaml`. The prose is markdown\n     parts; the DIAGRAM is `variables` on the section — `nodes` and `nodeIcon`,\n     one entry each per box, and `edgeFrom`/`edgeTo`/`edgeSays`/`edgeKind` as\n     parallel lists sharing a stem and the same length — so editing the diagram\n     is editing the document. A variable is a scalar or a list of scalars and\n     nothing else; anything tabular is parallel lists, which is why the edges are\n     four lists rather than one.\n\n     WHAT TO CHANGE FIRST: `nodes`, then the edge lists, then the prose beside\n     them. `nodeIcon` takes `ask`, `file`, `window` or `folder`, and anything\n     else — a typo, a missing entry — draws a plain mark rather than nothing.\n\n     NOTHING IN HERE HOLDS A POSITION. The script lays the graph out: a node's ROW\n     is how far it is from a source — one more than the deepest thing pointing at\n     it — and its place across that row is the order it was written in. So adding\n     a node is adding a name, and the drawing rearranges itself around it. The\n     only thing the script tells the stylesheet is a CUSTOM PROPERTY — which grid\n     line a box starts on, which lane an edge runs in — and the stylesheet decides\n     what to do with it.\n\n     THE EDGES RUN IN A LANE BESIDE THE BOXES, and that is the one decision this\n     starter makes for you rather than the rule making it. Each edge is ONE\n     element with three borders — a bracket — spanning the grid rows between the\n     box it leaves and the box it points at, so it comes out of one, runs down its\n     own lane and goes back in at the other, with the arrowhead where it lands.\n     Parallel edges take deeper lanes and nothing overlaps; the bracket costs no\n     geometry at all, because the grid already knows where every row is. A backward\n     edge is the same bracket upside down, dashed, with its arrow at the top.\n\n     TOP TO BOTTOM, because the reader scrolls down and never sideways. That is\n     the rule the layout enforces rather than asks for, and it is why an edge that\n     runs back up the page is drawn dashed: `.agents/skills/biom-diagrams/` carries the\n     rest of the drawing rules — sibling-only edges, names not sentences, edges\n     labelled with the contract, and never colour alone.\n\n     THE EDGES DRAW THEMSELVES IN, ONCE, WHEN THE SECTION IS FIRST SEEN. The\n     `reveal` plugin adds `is-seen` and disconnects; everything under that class\n     is in the `<style>` below. Every duration is multiplied by `--motion`, which\n     the document declares as 1 and as 0 under `prefers-reduced-motion` — so a\n     reader who asked for stillness gets the finished diagram and no move at all,\n     with no second media query in here to keep in step.\n\n     NO PIXEL WIDTHS. A box is as wide as its own name makes it, a row of boxes\n     wraps, and the lanes are in `rem` — so the drawing is right on a phone and on\n     a projector and nothing in here was measured to make it so.\n\n     ONE HOT COLOUR, SPENT ON ONE STATION AT A TIME. Everything else on the\n     drawing is `--ink` and `--rule`, because a figure where every box is\n     coloured has coloured nothing — and `--cyan` is a role rather than a hue, so\n     the whole drawing repaints when the workspace changes its palette.\n\n     WHAT TO KEEP AND WHAT TO REPLACE. The MECHANISM is the part to keep: the\n     words in the document, the layout computed, the reveal behind `--motion`,\n     nothing measured and no colour spelled. Everything about how it LOOKS is\n     yours — the icon set is four shapes this loop happened to need, the lit\n     colour is the palette's, and `design/` is whose taste decides both. -->\n<style>\n  /* THE SECTION IS THE CONTAINER, and it has to say so: `@container` matches\n     nothing until an ancestor declares `container-type`. Nothing declares it for\n     you. */\n  :scope {\n    display: block;\n    container-type: inline-size;\n    padding-block: 2.5rem;\n  }\n\n  .band {\n    display: grid;\n    gap: 1.75rem 2.5rem;\n    max-inline-size: 64rem;\n    margin-inline: auto;\n    padding-inline: 1.25rem;\n    font-family: var(--sheet-face);\n    color: var(--ink);\n    line-height: 1.55;\n    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);\n    grid-template-areas:\n      \"head  head\"\n      \"plate say\"\n      \"note  note\";\n    align-items: start;\n  }\n\n  .head { grid-area: head; max-inline-size: 34rem; }\n  .head > :first-child { margin-block-start: 0; }\n  .head > :last-child { margin-block-end: 0; }\n\n  /* THE DRAWING SCROLLS INSIDE ITS OWN BOX where it cannot fit, which is the one\n     rule in here that is not negotiable: the page's one frame IS the scroller for\n     the whole document, so a wide drawing left to widen the page would drag every\n     section on it sideways. The boxes reflow to the plate, so this almost never\n     fires — it is here for the day somebody gives the drawing a minimum. */\n  .plate {\n    grid-area: plate;\n    min-inline-size: 0;\n    overflow-x: auto;\n    overscroll-behavior-x: contain;\n  }\n\n  /* THE DRAWING IS A GRID AND THE GRID IS THE WHOLE LAYOUT. Two columns — the\n     edges' lane, then the boxes — and TWO ROWS PER ROW OF BOXES, so a bracket can\n     start and end halfway down a box rather than at its corner. Every line number\n     on either side of that is a custom property the script writes. */\n  .plot {\n    display: grid;\n    grid-template-columns: minmax(0, auto) minmax(0, 1fr);\n    column-gap: .2rem;\n  }\n\n  /* A ROW OF SIBLINGS, side by side and wrapping where there is no room. Nothing\n     names how many there are. */\n  .row {\n    grid-column: 2;\n    grid-row: var(--row, 1) / span 2;\n    display: flex;\n    flex-wrap: wrap;\n    gap: .5rem;\n    margin-block: .45rem;\n  }\n\n  /* A STATION IS ITS MARK AND ITS NAME. `row-reverse` puts the drawn icon in\n     front of the words while leaving the NAME as the box's own text node, which\n     is what keeps the layout test able to read a row off the drawing. */\n  .node {\n    flex: 1 1 auto;\n    min-inline-size: 0;\n    display: flex;\n    flex-direction: row-reverse;\n    align-items: center;\n    justify-content: center;\n    gap: .45rem;\n    padding: .55rem .85rem;\n    border: 1px solid var(--rule);\n    border-radius: 3px;\n    color: var(--ink);\n    text-align: center;\n  }\n\n  /* THE MARK, DRAWN HERE. A border and two pseudo-elements each — no picture\n     file, no icon font, no vector geometry — so it takes the palette like\n     everything else does and it is\n     one more thing the page can repaint by changing `theme.json`. Everything\n     inside one is `currentColor`, which is what lets the walk below light the\n     whole station, pseudo-elements included, by animating one property.\n\n     A LENGTH IN `rem` RATHER THAN A PERCENTAGE, because an icon's size is fixed\n     by what it IS rather than by the column it is drawn in — the one case R25\n     makes room for. */\n  .ico {\n    position: relative;\n    flex: 0 0 auto;\n    inline-size: .95rem;\n    block-size: .8rem;\n    border: 1px solid currentColor;\n    border-radius: 2px;\n  }\n  .ico::before,\n  .ico::after { content: \"\"; position: absolute; }\n\n  /* SOMEBODY ASKING — a bubble with a tail. */\n  .ico.is-ask { border-radius: 3px; }\n  .ico.is-ask::after {\n    inset-block-start: 100%;\n    inset-inline-start: .18rem;\n    inline-size: 0;\n    block-size: 0;\n    border-inline: .16rem solid transparent;\n    border-block-start: .2rem solid currentColor;\n  }\n\n  /* A FILE BEING WRITTEN — a sheet, portrait, with two lines on it. */\n  .ico.is-file { inline-size: .72rem; block-size: .92rem; border-radius: 1px; }\n  .ico.is-file::before { inset-block-start: .22rem; inset-inline: .15rem; block-size: 1px; background: currentColor; }\n  .ico.is-file::after { inset-block-end: .22rem; inset-inline: .15rem .3rem; block-size: 1px; background: currentColor; }\n\n  /* A WINDOW REDRAWING — a frame with its bar across the top. */\n  .ico.is-window::before { inset-block-start: 0; inset-inline: 0; block-size: .18rem; background: currentColor; }\n  .ico.is-window::after { inset-block-end: .16rem; inset-inline-start: .16rem; inline-size: .38rem; block-size: 1px; background: currentColor; }\n\n  /* A FOLDER — a box with a tab on its leading corner. */\n  .ico.is-folder { border-start-start-radius: 0; }\n  .ico.is-folder::before {\n    inset-block-end: 100%;\n    inset-inline-start: -1px;\n    inline-size: .42rem;\n    block-size: .2rem;\n    border: 1px solid currentColor;\n    border-block-end: 0;\n    border-start-start-radius: 2px;\n    border-start-end-radius: 2px;\n  }\n\n  /* AND ANYTHING ELSE — a plain mark, so a station whose `nodeIcon` is absent or\n     misspelled still has one rather than a broken shape. */\n  .ico.is-dot { inline-size: .5rem; block-size: .5rem; border-radius: 50%; }\n\n  /* AN EDGE IS ITS LABEL AND ITS BRACKET, right-aligned against the boxes. */\n  .link {\n    grid-column: 1;\n    grid-row: var(--from, 1) / var(--to, 2);\n    display: flex;\n    justify-content: flex-end;\n    align-items: stretch;\n    gap: .4rem;\n  }\n\n  /* THE EDGE'S OWN WORDS, beside the line it belongs to rather than over it —\n     which is what an ordinary element gives you and a line in a drawing does not:\n     nothing overlaps, nothing needs a halo behind it, and it wraps. */\n  .says {\n    align-self: center;\n    /* AND A DEEPER LANE'S WORDS SIT LOWER, so two edges crossing the same rows do\n       not write over each other: every label is right-aligned against the boxes,\n       so without this the long edge's label and the short one it spans land in\n       the same place. A translate rather than a margin, because it moves the\n       words and not the row they were centred in. */\n    translate: 0 calc(var(--lane, 0) * 2.2rem);\n    max-inline-size: 10rem;\n    font-size: .78rem;\n    line-height: 1.35;\n    color: var(--ink-3);\n    text-align: end;\n  }\n\n  /* THE BRACKET. Three borders on one element: out of the box it leaves, down its\n     own lane, back in at the box it points at. `--lane` is how far out that lane\n     sits, so two edges crossing the same rows never share a line.\n     SOLID IS A LIVE DEPENDENCY, DASHED IS EVERYTHING ELSE — a handoff, a build\n     step, an edge that runs back up the page. It is a rule about every diagram in\n     a workspace rather than about this one: the distinction stops carrying\n     information the moment two pages spell it differently. */\n  .line {\n    position: relative;\n    inline-size: calc(.9rem + var(--lane, 0) * .8rem);\n    border: 1px solid var(--rule);\n    border-inline-end: 0;\n    border-start-start-radius: 3px;\n    border-end-start-radius: 3px;\n  }\n  .line.is-dash { border-style: dashed; }\n\n  /* THE ARROWHEAD, at the end the edge points at: a box with no size, two\n     transparent borders and one inked one. */\n  .line::after {\n    content: \"\";\n    position: absolute;\n    inset-inline-end: -1px;\n    inset-block-end: -.26rem;\n    inline-size: 0;\n    block-size: 0;\n    border-block: .26rem solid transparent;\n    border-inline-start: .34rem solid var(--rule);\n  }\n  .line.is-back::after {\n    inset-block-end: auto;\n    inset-block-start: -.26rem;\n  }\n\n  /* BEFORE IT IS SEEN: the boxes are already there and the edges are not drawn\n     yet. The figure is legible at every frame of this, which is the bar — a\n     reveal that starts from nothing is a section that is blank while it plays. */\n  .line { transform: scaleY(0); transform-origin: top; }\n  .line.is-back { transform-origin: bottom; }\n  .says { opacity: 0; }\n\n  /* AND THE CLASS THE `reveal` PLUGIN ADDS. `--i` is the edge's own index, set by\n     the script as a CUSTOM PROPERTY — the one thing a script may write onto an\n     element's style — so the stagger is a number the stylesheet decides what to\n     do with rather than a duration baked into the JavaScript. */\n  :scope.is-seen .line {\n    animation: line-in calc(520ms * var(--motion, 1)) ease-out both;\n    animation-delay: calc(var(--i, 0) * 90ms * var(--motion, 1));\n  }\n  :scope.is-seen .says {\n    animation: mark-in calc(260ms * var(--motion, 1)) ease-out both;\n    animation-delay: calc((var(--i, 0) * 90ms + 380ms) * var(--motion, 1));\n  }\n  /* AND THE WALK. The reveal goes round the loop once, lighting one station at a\n     time in the one hot colour and leaving it as it found it — `--n` is the\n     station's own index, written by the script, so the order is the order the\n     graph was laid out in and nothing here counts anything.\n\n     ONE PROPERTY CARRIES THE WHOLE STATION, because a keyframe on the box cannot\n     reach the icon inside it: everything the icon is drawn with is\n     `currentColor`, so animating `color` lights the mark, its two\n     pseudo-elements and the name together.\n\n     LIT AND THEN RELEASED, rather than lit and left on. A figure where every box\n     ends up coloured has coloured nothing, and the thing being shown here is the\n     loop going round rather than a state one station is in. */\n  :scope.is-seen .node {\n    animation: station-lit calc(1100ms * var(--motion, 1)) ease-out both;\n    animation-delay: calc(var(--n, 0) * 320ms * var(--motion, 1));\n  }\n\n  @keyframes line-in {\n    from { transform: scaleY(0); }\n    to { transform: scaleY(1); }\n  }\n  @keyframes mark-in {\n    from { opacity: 0; }\n    to { opacity: 1; }\n  }\n  @keyframes station-lit {\n    0% { color: var(--ink); border-color: var(--rule); background-color: transparent; }\n    22%,\n    46% { color: var(--cyan-t); border-color: var(--cyan); background-color: color-mix(in srgb, var(--cyan) 12%, transparent); }\n    100% { color: var(--ink); border-color: var(--rule); background-color: transparent; }\n  }\n\n  /* A READER WHO ASKED FOR LESS MOTION GETS THE DIAGRAM AND NOT THE MOVE. The\n     durations are already nothing through `--motion`; this is the half a\n     multiplier cannot do, which is putting the ink back. */\n  @media (prefers-reduced-motion: reduce) {\n    .line { transform: none; }\n    .says { opacity: 1; }\n    /* The walk's last keyframe IS the station at rest, so a zero duration\n       already ends there; this says so rather than leaving it to be inferred. */\n    :scope.is-seen .node { animation: none; }\n  }\n\n  .say { grid-area: say; max-inline-size: 34rem; }\n  .say > :first-child { margin-block-start: 0; }\n  .say > :last-child { margin-block-end: 0; }\n\n  /* A DIV AND NOT A `<p>`, like every markdown slot here: the plugin fills the\n     node with rendered prose, and rendered prose is paragraphs — a `<p>` inside\n     a `<p>` is not nesting the browser keeps. */\n  .note { grid-area: note; font-size: .85rem; color: var(--ink-3); }\n  .note > :first-child { margin-block-start: 0; }\n  .note > :last-child { margin-block-end: 0; }\n\n  /* THE FAULT IS A SLOT LIKE EVERY OTHER WORD HERE, hidden until the script says\n     otherwise. A blank rectangle where a drawing was is indistinguishable from a\n     page that is still loading, and the person looking at it is usually the\n     person who could have fixed it if it had said anything. */\n  .fault { grid-area: plate; color: var(--ink-3); font-size: .9rem; display: none; }\n  :scope.is-fault .fault { display: block; }\n  :scope.is-fault .plate { display: none; }\n\n  /* NARROW: ONE COLUMN, in `rem` so the breakpoint tracks the reader's type size\n     rather than a device's pixels. IT HAS TO COME LAST — it overrides `.band`\n     above it, and at equal specificity the later rule wins. */\n  @container (width <= 52rem) {\n    .band {\n      grid-template-columns: minmax(0, 1fr);\n      grid-template-areas: \"head\" \"plate\" \"say\" \"note\";\n    }\n    /* The lane keeps its width and the labels give theirs up first, because a\n       phone has room for the drawing or for the words beside it and not both. */\n    .says { max-inline-size: 6.5rem; font-size: .72rem; }\n  }\n</style>\n\n<div class=\"band\">\n  <div class=\"head\" data-g-part=\"head\"></div>\n  <div class=\"plate\"></div>\n  <div class=\"fault\" data-g-part=\"fault\"></div>\n  <div class=\"say\" data-g-part=\"argument\"></div>\n  <div class=\"note\" data-g-part=\"note\"></div>\n  <!-- ONE CLASS, ONCE, ON THIS SECTION, and the observer disconnects after it.\n       `data-g-on` would narrow it to one element inside the section; with\n       nothing named it is the section itself, which is what the `<style>` above\n       hangs everything off. -->\n  <span data-g-plugin=\"biom-reveal\"></span>\n</div>\n<script>\n  /* THE LAYOUT, AND NOTHING ELSE. Everything this draws comes out of `ctx.vars`\n     — the page's variables and the section's, merged with the nearest last — so\n     the diagram is edited in `content.yaml` beside the prose that explains it,\n     and this file never has to be opened to move a box. */\n\n  /** A variable that is a list, a lone scalar, or absent — all three arrive here\n   *  and leave as an array of strings. A one-item list is written as a scalar by\n   *  most people writing YAML, so reading only the list form would break the\n   *  smallest diagram somebody draws. */\n  function list(value) {\n    if (Array.isArray(value)) return value.map(function (v) { return String(v).trim(); });\n    if (value === undefined || value === null || value === \"\") return [];\n    return [String(value).trim()];\n  }\n\n  /** One element, with its class, appended where it belongs. */\n  function add(parent, tag, cls) {\n    const el = document.createElement(tag);\n    if (cls) el.setAttribute(\"class\", cls);\n    parent.appendChild(el);\n    return el;\n  }\n\n  const vars = ctx.vars || {};\n  const names = list(vars.nodes).filter(Boolean);\n  /* ONE MARK PER STATION, NAMED IN THE DOCUMENT. A list parallel to `nodes`, so\n     a station's icon is a word somebody can change beside its name rather than a\n     class typed into this file. A name this file has no shape for — or a list\n     that stops short — falls back to a plain mark, because a misspelling should\n     cost a nicer icon and never the drawing. */\n  const ICONS = [\"ask\", \"file\", \"window\", \"folder\"];\n  const icons = list(vars.nodeIcon);\n  const from = list(vars.edgeFrom);\n  const to = list(vars.edgeTo);\n  const says = list(vars.edgeSays);\n  const kind = list(vars.edgeKind);\n\n  const plate = section.querySelector(\".plate\");\n\n  const at = {};\n  names.forEach(function (name, i) { at[name] = i; });\n\n  /* EVERY EDGE HAS TO NAME TWO NODES THAT EXIST. An edge pointing at a name\n     nobody wrote is a typo, and drawing the rest of the graph around the hole is\n     how a diagram quietly stops matching the argument beside it. */\n  const edges = [];\n  for (let i = 0; i < Math.max(from.length, to.length); i++) {\n    const a = at[from[i]];\n    const b = at[to[i]];\n    if (a === undefined || b === undefined || a === b) continue;\n    edges.push({ a: a, b: b, says: says[i] || \"\", dashed: (kind[i] || \"solid\") !== \"solid\" });\n  }\n\n  /* NO NODES IS NOT AN EMPTY DRAWING, it is a section whose words have not been\n     written yet — so it says so, in its own slot, rather than drawing a box with\n     nothing in it. */\n  if (names.length === 0) {\n    section.classList.add(\"is-fault\");\n  } else {\n    /* A LOOP THAT CLOSES IS USUALLY THE POINT, so the first thing the layout does\n       is find the edges that close one and take them OUT of it. A cycle has no\n       \"how far from a source\" to compute — every node in it is behind every\n       other — and left in, the relaxation below just pushes the whole ring down\n       the page once per pass until the passes run out, which draws four boxes\n       over a screenful of empty plate. Measured, in exactly the loop this starter\n       ships with.\n\n       A DEPTH-FIRST WALK IN THE ORDER THE NODES WERE WRITTEN is what decides\n       which edge closes it: an edge to a node that is still on the stack is\n       pointing back at an ancestor of itself. The edge is still DRAWN — dashed,\n       running back up the page, which is the rule — it simply does not get a say\n       in where its target sits. */\n    const kids = names.map(function () { return []; });\n    for (let i = 0; i < edges.length; i++) kids[edges[i].a].push(i);\n    const back = new Set();\n    const state = names.map(function () { return 0; }); // 0 unseen · 1 on the stack · 2 done\n    names.forEach(function (_name, start) {\n      if (state[start] !== 0) return;\n      /* An explicit stack rather than recursion: a graph written by hand is\n         small, but a page must not be able to blow the call stack. */\n      const stack = [{ at: start, next: 0 }];\n      state[start] = 1;\n      while (stack.length) {\n        const top = stack[stack.length - 1];\n        if (top.next >= kids[top.at].length) { state[top.at] = 2; stack.pop(); continue; }\n        const e = kids[top.at][top.next++];\n        const target = edges[e].b;\n        if (state[target] === 1) back.add(e);\n        else if (state[target] === 0) { state[target] = 1; stack.push({ at: target, next: 0 }); }\n      }\n    });\n\n    /* THE ROW A NODE SITS ON IS HOW FAR IT IS FROM A SOURCE — one more than the\n       deepest thing pointing at it. Relaxed rather than sorted, because relaxing\n       is four lines and says the same thing. With the closing edges gone this is\n       a graph that ends, so no node can be pushed past the last row and the pass\n       cap is a belt rather than the mechanism. */\n    const row = names.map(function () { return 0; });\n    for (let pass = 0; pass < names.length; pass++) {\n      let moved = false;\n      for (let i = 0; i < edges.length; i++) {\n        const e = edges[i];\n        if (back.has(i)) continue;\n        if (row[e.b] < row[e.a] + 1) { row[e.b] = row[e.a] + 1; moved = true; }\n      }\n      if (!moved) break;\n    }\n\n    /* AND ITS PLACE ACROSS THAT ROW IS THE ORDER IT WAS WRITTEN IN. Nothing\n       cleverer: a crossing-minimising sweep would reorder a row the day somebody\n       added an edge, and a diagram that rearranges itself under its own author is\n       worse than one with a crossing in it. */\n    const rows = [];\n    row.forEach(function (r, i) { (rows[r] = rows[r] || []).push(i); });\n\n    const plot = document.createElement(\"div\");\n    plot.setAttribute(\"class\", \"plot\");\n    plot.setAttribute(\"role\", \"img\");\n    /* THE DRAWING SAYS WHAT IT IS, to a reader who is not looking at it. The\n       words are the document's own — the node names, in the order they were\n       written — so there is nothing here for somebody to keep in step by hand. */\n    plot.setAttribute(\"aria-label\", names.join(\", \"));\n\n    /* TWO GRID ROWS PER ROW OF BOXES, so an edge can start and end halfway down a\n       box rather than at its corner: the boxes take both, and a bracket runs from\n       the line between one box's halves to the line between the other's. */\n    rows.forEach(function (members, r) {\n      const rowEl = add(plot, \"div\", \"row\");\n      rowEl.style.setProperty(\"--row\", String(2 * r + 1));\n      members.forEach(function (i) {\n        const box = add(rowEl, \"div\", \"node\");\n        /* THE NAME IS THE BOX'S OWN TEXT and the mark is a child after it, which\n           `row-reverse` draws in front — set the other way round, the text would\n           replace the icon. */\n        box.textContent = names[i];\n        /* THE WALK'S ORDER IS THE LAYOUT'S ORDER, as a custom property: the one\n           thing a script may write onto an element's style, with the stylesheet\n           deciding what the delay does with it. */\n        box.style.setProperty(\"--n\", String(i));\n        const mark = ICONS.indexOf(icons[i]) >= 0 ? icons[i] : \"dot\";\n        add(box, \"i\", \"ico is-\" + mark).setAttribute(\"aria-hidden\", \"true\");\n      });\n    });\n\n    /* AND EACH EDGE GETS THE FIRST LANE NOTHING ELSE IS USING OVER THE ROWS IT\n       CROSSES. Greedy and order-independent, which is the property that matters:\n       adding an edge must not move the ones already drawn. */\n    const laid = [];\n    const overlaps = function (one, other) { return one[0] < other[1] && other[0] < one[1]; };\n\n    edges.forEach(function (e, n) {\n      const lo = Math.min(row[e.a], row[e.b]);\n      const hi = Math.max(row[e.a], row[e.b]);\n      /* An edge between two boxes on the SAME row would be a bracket with no\n         height, so it takes that row's own two lines instead. */\n      const span = hi > lo ? [2 * lo + 2, 2 * hi + 2] : [2 * lo + 1, 2 * lo + 3];\n      let lane = 0;\n      while (laid.some(function (other) { return other.lane === lane && overlaps(other.span, span); })) lane++;\n      laid.push({ lane: lane, span: span });\n\n      const link = add(plot, \"div\", \"link\");\n      /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM\n         PROPERTY. The stylesheet decides what the stagger and the lane do. */\n      link.style.setProperty(\"--i\", String(n));\n      link.style.setProperty(\"--from\", String(span[0]));\n      link.style.setProperty(\"--to\", String(span[1]));\n      /* ON THE EDGE AND NOT ON ITS LINE, because the label reads it too: a deeper\n         lane's words have to clear the ones it spans. */\n      link.style.setProperty(\"--lane\", String(lane));\n\n      if (e.says) add(link, \"span\", \"says\").textContent = e.says;\n\n      const upward = row[e.b] < row[e.a];\n      add(link, \"div\", \"line\" + (upward ? \" is-back\" : \"\") + (e.dashed || upward ? \" is-dash\" : \"\"));\n    });\n\n    plate.replaceChildren(plot);\n  }\n</script>\n",
+      "fallback": false,
+      "parts": {
+        "head": {
+          "kind": "markdown",
+          "md": "## How a page gets made\n\nThere is no build step between asking and seeing.\n",
+          "vars": {
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ]
+          }
+        },
+        "argument": {
+          "kind": "markdown",
+          "md": "The loop closes because **the file is the product**. Nothing is exported, nothing is\npublished, and the page a person is looking at is the same file the agent just wrote.\n\nWhat that costs is a redraw from disk rather than a hot swap, and what it buys is that every\nchange is a readable diff in a git history nobody has to touch.\n",
+          "vars": {
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ]
+          }
+        },
+        "note": {
+          "kind": "markdown",
+          "md": "The workflow drawn here is invented and represents nothing real. Replace it.\n",
+          "vars": {
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ]
+          }
+        },
+        "fault": {
+          "kind": "markdown",
+          "md": "This diagram has no `nodes` yet. Add them to the section's `variables` — one name per box —\nand the drawing appears.\n",
+          "vars": {
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "nodes": [
+          "Somebody asks",
+          "Claude writes the file",
+          "The window redraws",
+          "The page is the workspace"
+        ],
+        "nodeIcon": [
+          "ask",
+          "file",
+          "window",
+          "folder"
+        ],
+        "edgeFrom": [
+          "Somebody asks",
+          "Claude writes the file",
+          "The window redraws",
+          "The page is the workspace"
+        ],
+        "edgeTo": [
+          "Claude writes the file",
+          "The window redraws",
+          "The page is the workspace",
+          "Somebody asks"
+        ],
+        "edgeSays": [
+          "in a sentence",
+          "one commit per write",
+          "no build step",
+          "and asks again"
+        ],
+        "edgeKind": [
+          "solid",
+          "solid",
+          "solid",
+          "dashed"
+        ]
+      },
+      "source": {
+        "name": "how-it-fits",
+        "data": "index.html",
+        "parts": {
+          "head": "## How a page gets made\n\nThere is no build step between asking and seeing.\n",
+          "argument": "The loop closes because **the file is the product**. Nothing is exported, nothing is\npublished, and the page a person is looking at is the same file the agent just wrote.\n\nWhat that costs is a redraw from disk rather than a hot swap, and what it buys is that every\nchange is a readable diff in a git history nobody has to touch.\n",
+          "note": "The workflow drawn here is invented and represents nothing real. Replace it.\n",
+          "fault": "This diagram has no `nodes` yet. Add them to the section's `variables` — one name per box —\nand the drawing appears.\n"
+        },
+        "variables": {
+          "nodes": [
+            "Somebody asks",
+            "Claude writes the file",
+            "The window redraws",
+            "The page is the workspace"
+          ],
+          "nodeIcon": [
+            "ask",
+            "file",
+            "window",
+            "folder"
+          ],
+          "edgeFrom": [
+            "Somebody asks",
+            "Claude writes the file",
+            "The window redraws",
+            "The page is the workspace"
+          ],
+          "edgeTo": [
+            "Claude writes the file",
+            "The window redraws",
+            "The page is the workspace",
+            "Somebody asks"
+          ],
+          "edgeSays": [
+            "in a sentence",
+            "one commit per write",
+            "no build step",
+            "and asks again"
+          ],
+          "edgeKind": [
+            "solid",
+            "solid",
+            "solid",
+            "dashed"
+          ]
+        }
+      }
+    }
+  ]
+}

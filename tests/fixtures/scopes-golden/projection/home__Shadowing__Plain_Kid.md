@@ -1,0 +1,1 @@
+A kid drawn by a copy of the shipped child row.

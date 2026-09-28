@@ -1,0 +1,423 @@
+<!-- design/panel.html — the third world: an instrument panel.
+
+     THE SAME TEN VARIABLES AGAIN, dark this time, and the gauge face doing every
+     label because a readout is a column of figures that has to line up. The
+     reading face is kept small on purpose: prose is not what this world is for,
+     and that is a density decision rather than a size one.
+
+     THE SAME WEEK ONCE MORE, as meters. The one running warm is the SMALLEST of
+     the week — the day that carried least — found rather than marked, and the
+     scale under them is drawn from the largest. -->
+<style>
+  :scope {
+    display: block;
+    container-type: inline-size;
+
+    --stock: {{stock}};
+    --stock-lo: {{stockLo}};
+    --ink: {{ink}};
+    --ink-2: {{ink2}};
+    --ink-3: {{ink3}};
+    --rule: {{rule}};
+    --rule-soft: {{ruleSoft}};
+    --spot: {{spot}};
+    --spot-2: {{spot2}};
+
+    background: var(--stock);
+    color: var(--ink);
+  }
+
+  [data-g-part] { max-inline-size: none; }
+
+  .said {
+    padding: 1.15rem 3rem;
+    border-block-end: 1px solid var(--rule);
+    font-family: var(--furniture-face);
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+  }
+
+  .said p { margin-block: 0; }
+  .said strong { color: var(--ink); font-weight: 400; }
+
+  .said p::before {
+    content: "";
+    display: inline-block;
+    inline-size: 0.9rem;
+    block-size: 2px;
+    margin-inline-end: 0.6rem;
+    vertical-align: 0.24em;
+    background: var(--spot);
+  }
+
+  .board { padding: 4.2rem 3rem 3.6rem; }
+
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 2rem;
+    padding-block-end: 0.75rem;
+    border-block-end: 1px solid var(--rule);
+  }
+
+  .head h2 {
+    margin-block: 0;
+    font-family: var(--furniture-face);
+    font-weight: 700;
+    font-size: 1.9rem;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ink);
+  }
+
+  .stamp p {
+    margin-block: 0;
+    white-space: nowrap;
+    font-family: var(--gauge-face);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+  }
+
+  .stamp strong { color: var(--spot); font-weight: 400; }
+
+  .sub p {
+    margin-block: 0.9rem 0;
+    max-inline-size: 62ch;
+    font-family: var(--furniture-face);
+    font-size: 0.8125rem;
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    margin-block-start: 1.6rem;
+    border: 1px solid var(--rule);
+  }
+
+  .cell { padding: 1.2rem 1.4rem; border-inline-end: 1px solid var(--rule); }
+  .cell:last-child { border-inline-end: 0; }
+
+  .lab p,
+  .tab h3 {
+    margin-block: 0 1rem;
+    font-family: var(--gauge-face);
+    font-size: 0.625rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .meter {
+    display: grid;
+    grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem;
+    align-items: center;
+    gap: 0.8rem;
+    margin-block-end: 0.62rem;
+  }
+
+  .meter .nm {
+    font-family: var(--gauge-face);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  .meter .track {
+    position: relative;
+    block-size: 0.62rem;
+    background: var(--rule-soft);
+    border: 1px solid var(--rule);
+  }
+
+  .meter .fill {
+    position: absolute;
+    inset: 1px auto 1px 1px;
+    inline-size: calc(var(--at, 0) * 100%);
+    background: var(--spot);
+    transform-origin: left;
+  }
+
+  .meter.warn .fill { background: var(--spot-2); }
+
+  .meter .num {
+    text-align: right;
+    font-family: var(--gauge-face);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+
+  .ticks {
+    display: grid;
+    grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem;
+    gap: 0.8rem;
+    margin-block-start: 0.55rem;
+  }
+
+  .ticks .scale {
+    grid-column: 2;
+    display: flex;
+    justify-content: space-between;
+    padding-block-start: 0.25rem;
+    border-block-start: 1px solid var(--rule);
+    font-family: var(--gauge-face);
+    font-size: 0.5625rem;
+    color: var(--ink-3);
+  }
+
+  .alert {
+    /* A grid rather than a flex row: the reading of it is one line with the
+       elapsed time on the end, and a grid says that in the track sizes instead
+       of leaving it to what the words happen to be. */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    margin-block-start: 1.5rem;
+    padding: 0.75rem 1.1rem;
+    border: 1px solid var(--spot-2);
+    background: color-mix(in srgb, var(--spot-2) 8%, transparent);
+    font-family: var(--gauge-face);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+  }
+
+  .alert p { margin-block: 0; }
+
+  .alert .hold strong {
+    margin-inline-end: 0.8rem;
+    font-weight: 400;
+    font-size: 0.625rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--spot-2);
+  }
+
+  .alert .since { color: var(--ink-2); }
+
+  .tab { overflow-x: auto; }
+
+  .tab table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-family: var(--gauge-face);
+    font-size: 0.75rem;
+    color: var(--ink-2);
+  }
+
+  .tab th {
+    padding: 0 0.7rem 0.5rem 0;
+    text-align: left;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-block-end: 1px solid var(--rule);
+  }
+
+  .tab td {
+    padding: 0.42rem 0.7rem 0.42rem 0;
+    border-block-end: 1px solid var(--rule-soft);
+    border-inline-end: 1px solid var(--rule-soft);
+  }
+
+  .tab td:last-child,
+  .tab th:last-child { border-inline-end: 0; padding-inline-end: 0; text-align: right; }
+
+  .tab td:nth-child(2),
+  .tab td:nth-child(3),
+  .tab th:nth-child(2),
+  .tab th:nth-child(3) { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* A route that is held says so in the word a person typed, and the mark beside
+     it is read off that word rather than kept in step with it by hand. */
+  .tab td:first-child::before {
+    content: "";
+    display: inline-block;
+    inline-size: 0.45rem;
+    block-size: 0.45rem;
+    margin-inline-end: 0.45rem;
+    background: var(--spot);
+  }
+
+  .tab tr.held td:first-child::before { background: var(--spot-2); }
+
+  .sw {
+    display: flex;
+    gap: 1px;
+    margin-block-start: 1.6rem;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+
+  .sw .chip { position: relative; flex: 1; block-size: 2.4rem; background: var(--c); }
+  .sw .chip:nth-child(1) { --c: var(--stock); }
+  .sw .chip:nth-child(2) { --c: var(--stock-lo); }
+  .sw .chip:nth-child(3) { --c: var(--rule); }
+  .sw .chip:nth-child(4) { --c: var(--ink); }
+  .sw .chip:nth-child(5) { --c: var(--spot); }
+  .sw .chip:nth-child(6) { --c: var(--spot-2); }
+
+  .sw .nm {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: calc(100% + 0.45rem);
+    font-family: var(--gauge-face);
+    font-size: 0.5625rem;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+
+  .swwrap { padding-block-end: 1.6rem; }
+
+  @container (width <= 62rem) {
+    .board { padding-inline: 1.5rem; }
+    .said { padding-inline: 1.5rem; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .cell { border-inline-end: 0; border-block-end: 1px solid var(--rule); }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .rise {
+      opacity: 0;
+      transform: translateY(0.55rem);
+      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);
+    }
+
+    :scope.set .rise { opacity: 1; transform: none; }
+
+    .head h2 {
+      opacity: 0;
+      letter-spacing: 0.34em;
+      filter: blur(0.9px);
+      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;
+    }
+
+    :scope.set .head h2 { opacity: 1; letter-spacing: 0.2em; filter: none; }
+
+    .meter .fill { transform: scaleX(0); transition: transform .9s cubic-bezier(.16, 1, .3, 1) var(--d, 0s); }
+    :scope.set .meter .fill { transform: scaleX(1); }
+  }
+</style>
+
+<div class="said" data-g-part="said"></div>
+<div class="board">
+  <div class="head">
+    <div data-g-part="headline"></div>
+    <div class="stamp rise" data-g-part="stamp"></div>
+  </div>
+  <div class="sub rise" data-g-part="sub"></div>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="lab rise" data-g-part="meterlabel"></div>
+      <div class="meters"></div>
+      <div class="ticks"><span class="scale"></span></div>
+      <div class="alert rise">
+        <div class="hold" data-g-part="hold"></div>
+        <div class="since" data-g-part="held"></div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="tab rise" data-g-part="status"></div>
+      <div class="swwrap"><div class="sw rise"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* THE SAME WEEK, AS METERS. The day running warm is the smallest of them and
+     the scale under them is drawn from the largest, so both are right whatever
+     the document says. */
+  var days = ctx.vars.day || [];
+  var out = (ctx.vars.out || []).map(Number);
+  var top = Math.max.apply(null, out.concat([1]));
+  var low = Math.min.apply(null, out.concat([top]));
+
+  var meters = section.querySelector(".meters");
+
+  out.forEach(function (n, i) {
+    var row = document.createElement("div");
+    row.className = "meter" + (n === low ? " warn" : "");
+
+    var nm = document.createElement("span");
+    nm.className = "nm rise";
+    nm.textContent = String(days[i] === undefined ? "" : days[i]);
+    nm.style.setProperty("--d", (0.26 + i * 0.06) + "s");
+
+    var track = document.createElement("span");
+    track.className = "track";
+    var fill = document.createElement("i");
+    fill.className = "fill";
+    fill.style.setProperty("--at", String(n / top));
+    fill.style.setProperty("--d", (0.26 + i * 0.06) + "s");
+    track.appendChild(fill);
+
+    var num = document.createElement("span");
+    num.className = "num rise";
+    num.textContent = String(n);
+    num.style.setProperty("--d", (0.26 + i * 0.06) + "s");
+
+    row.appendChild(nm);
+    row.appendChild(track);
+    row.appendChild(num);
+    meters.appendChild(row);
+  });
+
+  /* The scale: five ticks up to the next even number above the tallest meter. */
+  var scale = section.querySelector(".scale");
+  var ceiling = Math.ceil(top / 4) * 4;
+  for (var t = 0; t <= 4; t++) {
+    var tick = document.createElement("span");
+    tick.textContent = String((ceiling / 4) * t);
+    scale.appendChild(tick);
+  }
+
+  /* THE STATE IS READ OFF THE WORDS. A row whose state says HOLD wears the amber
+     mark; editing the table is the whole of editing the figure. */
+  var tab = section.querySelector(".tab");
+
+  function mark() {
+    Array.prototype.forEach.call(tab.querySelectorAll("tbody tr"), function (row) {
+      var last = row.lastElementChild;
+      var word = last === null ? "" : last.textContent.trim().toUpperCase();
+      row.classList.toggle("held", word.indexOf("HOLD") === 0 || word.indexOf("THU") === 0);
+    });
+  }
+
+  var watch = new MutationObserver(mark);
+  watch.observe(tab, { childList: true, subtree: true, characterData: true });
+  onTeardown(function () { watch.disconnect(); });
+  mark();
+
+  var strip = section.querySelector(".sw");
+  (ctx.vars.panelSwatch || []).forEach(function (name) {
+    var chip = document.createElement("i");
+    chip.className = "chip";
+    var nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = String(name);
+    chip.appendChild(nm);
+    strip.appendChild(chip);
+  });
+
+  var io = new IntersectionObserver(function (rows) {
+    rows.forEach(function (row) {
+      if (!row.isIntersecting) return;
+      section.classList.add("set");
+      io.disconnect();
+    });
+  }, { root: document, threshold: 0.12 });
+
+  io.observe(section);
+  onTeardown(function () { io.disconnect(); });
+</script>

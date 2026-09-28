@@ -254,7 +254,8 @@ E2E_SERVER = \
 	./tests/e2e/agent-look.e2e.ts \
 	./tests/e2e/agent-screen.e2e.ts \
 	./tests/e2e/big-vault.e2e.ts \
-	./tests/e2e/startup.e2e.ts
+	./tests/e2e/startup.e2e.ts \
+	./tests/e2e/scopes-dom.e2e.ts
 E2E_APP = ./tests/e2e/app.e2e.ts
 
 e2e-server: browser

@@ -1,0 +1,4 @@
+# This page's rung over the framework's document. The worlds below hold tables
+# as specimens, each drawn by its own section file in its own dress, so the
+# document's conversion of a markdown table into a grid section is off here.
+convert: false
