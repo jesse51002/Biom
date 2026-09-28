@@ -472,6 +472,14 @@ walk("10. a page the agent makes is brought up beside the chat, though the histo
   // The chat from 9, on the full Agent screen, its agent signed in and idle.
   const made = (await hash()).split("/")[2] as string;
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("screen");
+  // IDLE IN THIS WINDOW, and not only on the server. Step 9 ends on the
+  // server's word that its turn ended, and this window hears it a push later:
+  // the chat gathers its pushes and the stream gathers them again. Until then
+  // the window counts the turn as running, its button is Stop, and Enter sends
+  // nothing — so an Enter pressed in that gap left the words in the box, no
+  // turn began, and this step waited out its bound for a turn never sent.
+  await until("this window heard the turn from 9 end: its button is Send, not Stop", 10000, async () =>
+    (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Send");
   const input = page.locator("#agentta");
   await input.fill("!write pages/home/children/Fresh/content.yaml name: Fresh");
   await input.press("Enter");

@@ -324,8 +324,13 @@ async function touchPage(): Promise<void> {
   await Bun.sleep(300);
 }
 
-/** Type into Biom's own input box and send, as the person does. */
+/** Type into Biom's own input box and send, as the person does — once this
+ *  window's button is Send. A turn the server has ended reaches the window a
+ *  push later, and until it does the button is Stop and Enter sends nothing:
+ *  a step that waited on the server alone could type into that gap. */
 async function send(words: string): Promise<void> {
+  await until("this window's button is Send, not Stop", 10000, async () =>
+    (await page.evaluate(() => document.querySelector(".agentdock .send")?.getAttribute("aria-label") ?? null)) === "Send");
   const input = page.locator("#agentta");
   await input.fill(words);
   await input.press("Enter");
