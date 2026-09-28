@@ -12,15 +12,15 @@
 // invented. Every request is served by Playwright from this checkout; nothing
 // listens on a port.
 //
-// WHAT IT HOLDS: the start screen, and its word turning as one word frame by
-// frame; a chat mid-turn, a finished one, a red one and the panel draw; a
-// patch appends where it belongs and leaves the rest of the thread's nodes
-// alone, and a stale one is dropped; the chat's ⋯ and its View menu, worked
-// from the keyboard, fit on a desktop, at the panel's narrowest and at a
-// phone's width; an agent's words never become markup; the look asks for
-// nothing but its own kinds and `open`; reduced motion rests still with faces
-// as text; and a pagehide leaves nothing behind. Pictures of each land in
-// `dist/e2e/`, or in `LOOK_SHOTS` if set.
+// WHAT IT HOLDS: the start screen, and its word turning as one word on one
+// centre frame by frame; a chat mid-turn, a finished one, a red one and the
+// panel draw; a patch appends where it belongs and leaves the rest of the
+// thread's nodes alone, and a stale one is dropped; the chat's ⋯ and its View
+// menu, worked from the keyboard, fit on a desktop, at the panel's narrowest
+// and at a phone's width; an agent's words never become markup; the look asks
+// for nothing but its own kinds and `open`; reduced motion rests still with
+// faces as text; and a pagehide leaves nothing behind. Pictures of each land
+// in `dist/e2e/`, or in `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -259,10 +259,26 @@ test("THE WORD TURNS AS ONE WORD: the leaving word takes no rule of the thread's
         // `.out` is the tool output's rule, and a word named `out` took its
         // padding and its wrapping: the leaving word broke over lines.
         expect([w.word, w.cls, w.padding, w.lines.length, w.colour]).toEqual([w.word, w.cls, "0px 0px", 1, led]);
-        // Each word moves a third of its size up or down as it turns, and no
-        // further: never lifted off the line by the other one.
+        // Each word moves three tenths of its size up or down as it turns, and
+        // no further: never lifted off the line by the other one.
         expect([w.word, Math.abs(w.lines[0].y - f.lead.y) <= f.size * 0.3 + 1]).toEqual([w.word, true]);
       }
+    }
+  } finally { await ctx.close(); }
+}, 60000);
+
+test("THE TWO WORDS OF A TURN SHARE ONE CENTRE in every frame, the wider leaving and the wider arriving, while the line opens or closes round them", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    await post(page, box, { kind: "look.state", state: lookState({}) });
+    // automate → plan, the one leaving wider; plan → create, the one arriving.
+    for (const turn of [await turnFrames(box), await turnFrames(box)]) {
+      const centre = (w: any) => w.lines[0].x + w.lines[0].w / 2;
+      const pairs = turn.filter((f) => f.words.length === 2);
+      expect(pairs.length).toBeGreaterThan(10);
+      const which = pairs[0].words.map((w: any) => w.word).join(" → ");
+      const apart = Math.max(...pairs.map((f) => Math.abs(centre(f.words[0]) - centre(f.words[1]))));
+      expect([which, apart <= 1 ? "one centre" : `${Math.round(apart)}px apart`]).toEqual([which, "one centre"]);
     }
   } finally { await ctx.close(); }
 }, 60000);

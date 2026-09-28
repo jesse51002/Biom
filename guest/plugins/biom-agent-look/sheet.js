@@ -166,7 +166,9 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 @keyframes heroin { from { opacity: 0; transform: translate(-50%, 10px); filter: blur(3px); } }
 .line { margin: 0; text-shadow: 0 0 18px var(--stock), 0 0 5px var(--stock); font: 500 2.75rem/1.15 var(--l-sheet); letter-spacing: -.015em; color: var(--ink); text-align: center; white-space: nowrap; }
 .swap { display: inline-grid; grid-template-columns: minmax(0, 1fr); text-align: center; vertical-align: bottom; white-space: nowrap; color: var(--l-led); transition: width calc(.5s * var(--l-m)) var(--l-ease); }
-.swap span { grid-area: 1 / 1; min-width: 0; transition: transform calc(.45s * var(--l-m)) var(--l-ease), opacity calc(.3s * var(--l-m)) ease, filter calc(.3s * var(--l-m)) ease; }
+/* each word its own width, centred in the swap: the two of a turn share one
+   centre while the swap's width moves, and the wider never hangs off one side */
+.swap span { grid-area: 1 / 1; justify-self: center; min-width: 0; transition: transform calc(.45s * var(--l-m)) var(--l-ease), opacity calc(.3s * var(--l-m)) ease, filter calc(.3s * var(--l-m)) ease; }
 /* the word's two states are named for the word: this sheet's rules are bare
    classes, and a word called \`out\` took the tool output's padding and wrapping */
 .swap .word-out { transform: translateY(-.3em); opacity: 0; filter: blur(3px); }
