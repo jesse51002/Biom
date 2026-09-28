@@ -2738,6 +2738,16 @@ let TROUBLE: () => string | null = () => null;
  *  says nothing, and the next load says it. */
 let NEWER: string | null = null;
 
+/** THE OPENING OF THE WORKSPACE THIS LAUNCH OPENS, as `/` waits on it: the run
+ *  below sets it; a caller that stood the routes up without one has nothing to
+ *  wait for. */
+let BOOTED: Promise<unknown> = Promise.resolve();
+
+/** How long the composed document waits for that opening's verdict, in ms,
+ *  before it is served without one. Opening a workspace is well under a second
+ *  now; a folder that will not open refuses faster than that. */
+const ROOT_WAIT_MS = 3000;
+
 /** The framework's own files: the client, the box's code, the contracts, the
  *  fonts and the vendored scripts. One url whichever folder is being looked at,
  *  and one lookup whether they are carried or on disk.
@@ -2748,6 +2758,10 @@ let NEWER: string | null = null;
  *  this is. */
 async function serveStatic(pathname: string, grant?: string): Promise<Response> {
   const key = locate(pathname);
+  // THE COMPOSED DOCUMENT WAITS FOR THE OPENING'S VERDICT, and no longer than
+  // `ROOT_WAIT_MS`: a workspace that cannot open is said on the page the
+  // window loads, and one that is merely slow does not hold the window.
+  if (key === INDEX) await Promise.race([BOOTED.catch(() => {}), new Promise((r) => setTimeout(r, ROOT_WAIT_MS))]);
   const response = await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
   // THIS MACHINE'S CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE
   // — a cookie rather than a third meta tag, because a script on the page never
@@ -3357,13 +3371,17 @@ function endAgentsWithin(host: Host): Promise<void> {
 /** END EVERY RUN, THEN EXIT, on the signals that still run a handler. Armed
  *  once; a second signal while the first is being honoured exits at once
  *  rather than waiting again, because somebody pressing Ctrl-C twice means it. */
-function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
+function endRunsOn(hostNow: () => Host | null, signals: ("SIGINT" | "SIGTERM")[]): void {
   let ending = false;
   for (const sig of signals) {
     process.on(sig, () => {
       // Pressed twice means it: the `exit` handler kills what is left.
       if (ending) process.exit(130);
       ending = true;
+      // Still opening its workspace: there is nothing of a run or an agent to
+      // end yet, and the `exit` handler takes whatever the opening started.
+      const host = hostNow();
+      if (host === null) process.exit(sig === "SIGINT" ? 130 : 143);
       const alive = host.live();
       if (alive > 0) console.log(`ending ${alive} run${alive === 1 ? "" : "s"} before stopping`);
       // The runs and the agents together: each has its own TERM–grace–KILL,
@@ -3375,7 +3393,7 @@ function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
   }
 }
 
-function exitWhenTheParentGoes(host: Host): void {
+function exitWhenTheParentGoes(hostNow: () => Host | null): void {
   if (Bun.env[PARENT_ENV] !== "1") return;
   void (async () => {
     try {
@@ -3393,7 +3411,8 @@ function exitWhenTheParentGoes(host: Host): void {
     // reason: there is nothing else to flush.
     // And every chat's agent beside them, each turn in flight ended `crashed`
     // and its log flushed, so the next launch reads what happened.
-    await Promise.allSettled([host.endRuns(), endAgentsWithin(host)]);
+    const host = hostNow();
+    if (host !== null) await Promise.allSettled([host.endRuns(), endAgentsWithin(host)]);
     process.exit(0);
   })();
 }
@@ -3425,23 +3444,36 @@ if (import.meta.main) {
   // trade for a start-up that never waits on a network.
   if (CHECK_UPDATES) fetchNewer(VERSION).then((newer) => { NEWER = newer; });
 
-  const start = await bootVault(Bun.env.VAULT, await memory.last());
-  const host = await makeHost({
-    vault: start.path ?? undefined,
-    memory: MEMORY,
-    presets: PRESETS,
-    vaultSeed: VAULT_SEED,
-    skill: SKILL,
-    production: PRODUCTION,
-    pluginRoot: PLUGIN_ROOT,
+  // LISTEN FIRST. The workspace this launch opens is opened BESIDE the
+  // server, not before it: the port answers, the ready line is said and the
+  // document, the client and the box's code are served while it opens, and
+  // everything that is about a workspace — the API, the stream, the sign-in
+  // terminal, a folder's own files — waits for it, as a request naming a
+  // folder not yet open always has. On two thousand pages the opening held the
+  // whole server for twenty seconds, with nothing on the window at all.
+  const booting = (async () => {
+    const start = await bootVault(Bun.env.VAULT, await memory.last());
+    const opened = await makeHost({
+      vault: start.path ?? undefined,
+      memory: MEMORY,
+      presets: PRESETS,
+      vaultSeed: VAULT_SEED,
+      skill: SKILL,
+      production: PRODUCTION,
+      pluginRoot: PLUGIN_ROOT,
+    });
+    return { start, host: opened };
+  })();
+  // A host is always built — a folder that will not open is its `trouble`, not
+  // a throw — so this is the machine itself failing, as a top-level throw was.
+  booting.catch((e: unknown) => {
+    console.error("the server could not start", e);
+    process.exit(1);
   });
-
-  // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
-  // host on every request rather than captured here, so it decays the moment a
-  // folder opens — see the getter on `Host.trouble`. `start.why` is a remembered
-  // entry refused before it was tried and never changes; `host.trouble` is a
-  // mount that failed anyway and does.
-  TROUBLE = () => (host.open().length > 0 ? null : start.why ?? host.trouble);
+  const hosted = booting.then((b) => b.host);
+  /** The host, once the opening has answered; null until then. */
+  let host: Host | null = null;
+  BOOTED = booting;
 
   // MINTED ONLY WHERE THERE IS SOMETHING TO TELL IT TO. The compiled build is
   // opened by the shell, which reads this off stdout and puts it in the window's
@@ -3474,7 +3506,7 @@ if (import.meta.main) {
   // way out after a switch — each a process group of its own, which a signal
   // to this process reaches none of. `endAgents` below ends them gracefully
   // where there is time; this is the KILL for whatever that did not reach.
-  process.on("exit", () => { terminals.killAll(); host.killRuns(); host.killAgents(); });
+  process.on("exit", () => { terminals.killAll(); host?.killRuns(); host?.killAgents(); });
 
   const server = Bun.serve({
     port: PORT,
@@ -3538,6 +3570,7 @@ if (import.meta.main) {
         // has its envelope's `window` dropped, so nothing holding the launch
         // token — a run's script, which can read every window's id off
         // `window.list` — can put its writes in the history as the person's.
+        const host = await hosted;
         return await route(request, await host.deps(named === null ? undefined : named.path), (kind) => {
           if (!isLocalKind(kind)) return null;
           const why = local();
@@ -3570,6 +3603,7 @@ if (import.meta.main) {
         // THE FOLDER A SIGN-IN RUNS IN IS THE MOUNT'S OWN PATH, resolved here and
         // never defaulted: a workspace that will not open is a refusal, not a
         // command in the home directory.
+        const host = await hosted;
         let deps: Deps;
         let cwd: string;
         try {
@@ -3621,7 +3655,7 @@ if (import.meta.main) {
         // kept while the stream is open and dropped when it closes. Anything
         // that is not a window's id is no window, and the stream is still one.
         const w = url.searchParams.get(WINDOW_PARAM);
-        return events(host, named.path, isWindowId(w) ? w : null);
+        return events(await hosted, named.path, isWindowId(w) ? w : null);
       }
 
       if (named !== null) {
@@ -3637,6 +3671,7 @@ if (import.meta.main) {
           // otherwise be "this server's own page" to the local gate. Nothing
           // asks for a folder's files before it is open — the box is drawn from
           // a page the API has already read, and that read opened the folder.
+          const host = await hosted;
           if (!host.open().includes(resolve(named.path))) return new Response("Not found", { status: 404 });
           // THE FOLDER, BEFORE ANY FILE IN IT. `/plugin/` with nothing after it
           // is the loader's answer — every plugin this vault has, as one script
@@ -3691,9 +3726,6 @@ if (import.meta.main) {
   // the application is killed.
   served = { origin: `http://localhost:${server.port}`, token: TOKEN };
   if (TOKEN !== null) console.log(`biom ready ${JSON.stringify({ port: server.port, token: TOKEN })}`);
-  // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
-  // this launch's token, into every run's `BIOM_API` from here on.
-  host.listen(server.port, TOKEN);
   // AND NO RUN OUTLIVES THE SERVER. Every automation is a process group of its
   // own, so a Ctrl-C at the terminal does not reach it and a shell quitting
   // this process does not either — the registry has to end them. These two
@@ -3704,13 +3736,24 @@ if (import.meta.main) {
   // stdin pipe, is `exitWhenTheParentGoes` below and ends them too; the
   // `exit` handler kills whatever any of those did not reach. An abort runs
   // nothing, and what that leaves is marked `lost` on the next mount.
-  endRunsOn(host, ["SIGINT", "SIGTERM"]);
+  endRunsOn(() => host, ["SIGINT", "SIGTERM"]);
   // AND THE LIFETIME, from this end. Armed after the port is open so a launch
   // that ends the moment it begins still says what it was — see
   // `exitWhenTheParentGoes`, which does nothing at all unless a parent said it
   // is holding the other end of stdin.
-  exitWhenTheParentGoes(host);
+  exitWhenTheParentGoes(() => host);
   console.log(`Biom framework  →  http://localhost:${server.port}   (${ENV})`);
+  const { start, host: opened } = await booting;
+  host = opened;
+  // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
+  // host on every request rather than captured here, so it decays the moment a
+  // folder opens — see the getter on `Host.trouble`. `start.why` is a remembered
+  // entry refused before it was tried and never changes; `host.trouble` is a
+  // mount that failed anyway and does.
+  TROUBLE = () => (opened.open().length > 0 ? null : start.why ?? opened.trouble);
+  // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
+  // this launch's token, into every run's `BIOM_API` from here on.
+  opened.listen(server.port, TOKEN);
   // NOTHING OPEN IS A STATE AND IT SAYS SO. A first launch has no folder, and a
   // line saying which workspace is being served would be a line about nothing.
   //
@@ -3721,8 +3764,8 @@ if (import.meta.main) {
   // the folder never existed. `bootVault` refuses a remembered folder before it
   // is tried and `Host.trouble` carries a mount that failed anyway; one of the
   // two is set at most, and the sentence is the same shape either way.
-  const why = start.why ?? host.trouble;
-  if (host.open().length === 0) {
+  const why = start.why ?? opened.trouble;
+  if (opened.open().length === 0) {
     console.log(
       why === null
         ? "vault              →  none yet — pick or create one in the app"
@@ -3730,7 +3773,7 @@ if (import.meta.main) {
           "                      pick or create one in the app",
     );
   }
-  for (const path of host.open()) {
+  for (const path of opened.open()) {
     // A VAULT WITH NO HISTORY SAYS SO, once, next to its own path. It is not the
     // place this belongs — the person who needs to know is looking at the app,
     // not at a terminal — and the UI cannot be told until `VaultInfo` can carry

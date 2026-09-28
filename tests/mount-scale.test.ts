@@ -180,3 +180,54 @@ test("REQUESTS ARE ANSWERED PROMPTLY WHILE THE WORK AFTER THE MOUNT RUNS: the sw
     host.close();
   }
 }, 120_000);
+
+test.if(process.platform !== "win32")("THE SERVER ANSWERS / WHILE THE WORKSPACE IS STILL OPENING, and the page it composes once that fails still says why", async () => {
+  // A folder whose `workspace.db` is a pipe: reading it to see whether it is a
+  // database waits until something writes into the pipe, so the workspace's
+  // opening is held for as long as the test likes. Invented, like the rest.
+  const held = join(ground, "held");
+  await mkdir(held, { recursive: true });
+  const { spawnSync } = await import("node:child_process");
+  expect(spawnSync("mkfifo", [join(held, "workspace.db")]).status).toBe(0);
+  const port = 6500 + Math.floor(Math.random() * 900);
+  const base = `http://127.0.0.1:${port}`;
+  const home = join(ground, "held-home");
+  await mkdir(home, { recursive: true });
+  const proc = Bun.spawn([process.execPath, "run", join(FRAMEWORK, "server", "main.ts")], {
+    cwd: FRAMEWORK,
+    env: { ...process.env, PORT: String(port), VAULT: held, VAULTS: join(home, "vaults.json"), HOME: home, XDG_DATA_HOME: home, BIOM_NO_UPDATE_CHECK: "1" },
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  try {
+    const started = performance.now();
+    let first: Response | null = null;
+    while (first === null && performance.now() - started < 15_000) {
+      try {
+        first = await fetch(`${base}/`);
+      } catch {
+        await Bun.sleep(20);
+      }
+    }
+    expect(first?.status).toBe(200);
+    const doc = await first!.text();
+    expect(doc).toContain('name="biom-env"');
+    // Answered while the workspace is still held: the API, which waits for
+    // the opening, has not answered.
+    let apiAnswered = false;
+    const api = fetch(`${base}/api/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "h1", g: PROTOCOL, kind: "vault.recent" }) })
+      .then((r) => r.json()).then((j) => { apiAnswered = true; return j; });
+    await Bun.sleep(300);
+    expect(apiAnswered).toBe(false);
+
+    // Let it go: what is in the pipe is not a database, and the workspace does
+    // not open — which the next composed page says in its own words.
+    await writeFile(join(held, "workspace.db"), "invented bytes that are not a database\n");
+    await api;
+    const after = await (await fetch(`${base}/`)).text();
+    expect(after).toContain('name="biom-trouble"');
+  } finally {
+    proc.kill("SIGKILL");
+    await proc.exited;
+  }
+}, 60_000);
