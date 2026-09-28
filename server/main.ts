@@ -112,7 +112,7 @@ import type { ChangeEvent } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, LOCATE_MAX, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { isLocalKind, isWindowId } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -2530,10 +2530,10 @@ export async function pluginBundle(vault: string, framework: Files | null = null
     }
   };
   for (const { base, files, walk } of await plugins.walks(null)) await take(files, base, walk);
-  // EVERY PAGE'S OWN FOLDER, in page-id order. A readdir per page and never a
-  // document parsed: `pageDirs` walks positions, not content.
-  for (const dir of await pageDirs(own)) {
-    const base = `${dir}/${PLUGINS_DIR_VAULT}`;
+  // EVERY PAGE'S OWN FOLDER, in page-id order — of the pages that have one,
+  // which `pagePluginBases` remembers between two bundles. Each is walked
+  // again every time, so an edit inside one is always in the bundle.
+  for (const base of await pagePluginBases(vault, own)) {
     const walk = await walkPlugins(own, base, "page", base);
     if (walk.folders.length === 0 && walk.faults.length === 0) continue;
     await take(own, base, walk);
@@ -2579,6 +2579,70 @@ function compiled(name: string, root: string, source: string, broken: string | n
   if (broken === null) return `file(${JSON.stringify(name)}, ${JSON.stringify(root)}, function () {\n${source}\n});`;
   return `fail(${JSON.stringify(name)}, ${JSON.stringify(root)}, ${JSON.stringify(broken)});`;
 }
+
+/** WHICH PAGES HAVE A `plugins/` OF THEIR OWN, per vault, and the time every
+ *  folder the walk that found them looked at last changed. Every box asks for
+ *  the bundle, so a page switch listed every page's folder — two thousand of
+ *  them, most of the switch — to find the one or two pages with a plugin.
+ *
+ *  CHECKED BY STAT, NEVER TOLD: the watcher runs only while a window holds the
+ *  stream, and a folder changed with none open is still changed. A page gaining
+ *  a `plugins/`, a page arriving or leaving, a folder added inside a page's
+ *  `plugins/` — each changes the time of a folder recorded here, and one that
+ *  differs walks the pages again. A few thousand stats, a few milliseconds.
+ *
+ *  AND NEVER TRUSTED WHILE IT MAY BE MOVING: a folder whose time is later than
+ *  `RACY_MS` before the walk began may have changed during it, after it was
+ *  listed, within one tick of the clock, so a walk that recorded one is not
+ *  remembered — the next bundle walks again. */
+const pagePlugins = new Map<string, { stamps: [string, number][]; bases: string[] }>();
+const RACY_MS = 2000;
+
+/** A folder's modification time, or -1 where nothing is there. */
+function stampOf(abs: string): number {
+  try {
+    return statSync(abs, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+  } catch {
+    return -1;
+  }
+}
+
+/** The vault-relative `plugins/` folders of every page that has one, in
+ *  page-id order: remembered where every folder's time still agrees, and found
+ *  by walking the pages where one does not. */
+async function pagePluginBases(vault: string, own: Files): Promise<string[]> {
+  const had = pagePlugins.get(vault);
+  if (had !== undefined && had.stamps.every(([abs, ms]) => stampOf(abs) === ms)) return had.bases;
+  const began = Date.now();
+  // A readdir per page and never a document parsed: `pageDirs` walks
+  // positions, not content.
+  const dirs = await pageDirs(own);
+  const stamps: [string, number][] = [];
+  const bases: string[] = [];
+  const stamp = (rel: string): number => {
+    const ms = stampOf(join(vault, rel));
+    stamps.push([join(vault, rel), ms]);
+    return ms;
+  };
+  stamp(PAGES_ROOT);
+  for (const dir of dirs) {
+    stamp(dir);
+    const kids = join(vault, dir, PAGE_CHILDREN);
+    if (stampOf(kids) !== -1) stamp(`${dir}/${PAGE_CHILDREN}`);
+    const base = `${dir}/${PLUGINS_DIR_VAULT}`;
+    if (stampOf(join(vault, base)) === -1) continue;
+    stamp(base);
+    bases.push(base);
+  }
+  if (stamps.every(([, ms]) => ms < began - RACY_MS)) pagePlugins.set(vault, { stamps, bases });
+  else pagePlugins.delete(vault);
+  return bases;
+}
+
+/** Where every page folder is, and the folder under a page that holds its
+ *  children — the two names the walk above stamps. */
+const PAGES_ROOT = "pages";
+const PAGE_CHILDREN = "children";
 
 /** The largest a single plugin script may be. Generous for a file somebody is
  *  meant to read and far under what would sit in memory unnoticed. */
