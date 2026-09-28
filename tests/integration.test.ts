@@ -42,6 +42,9 @@ import { ROOT_PAGE } from "../contracts/types.ts";
 import type { ApiRequest, ApiResponse, Change, Page, Part, PageId, PageRef } from "../contracts/types.ts";
 
 let root: string;
+/** Every mirror a test stood up, so its folder is not taken away while one is
+ *  still writing into it. */
+const booted: { queue: { idle(): Promise<void> } }[] = [];
 
 /** Stand the whole stack up over a directory. Calling it twice against the same
  *  directory is what "survive a reload" means — nothing is carried over in
@@ -72,6 +75,7 @@ function boot(dir: string) {
   // the background and read the tables for a page's children; closed under
   // them, each says so on the console, into whichever test is running then.
   const closing = { close: () => void deps.mirror.queue.idle().then(() => db.close(), () => db.close()) };
+  booted.push(deps.mirror);
   return { deps, db: closing, ws: makeWorkspace(transport), transport };
 }
 
@@ -125,7 +129,12 @@ beforeEach(async () => {
   await initVault(root);
 });
 
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(async () => {
+  // THE MIRROR'S QUEUE FIRST: its projections run in the background and write
+  // into this folder, and one still running when it went wrote into nothing.
+  for (const mirror of booted.splice(0)) await mirror.queue.idle();
+  rmSync(root, { recursive: true, force: true });
+});
 
 test("a slot write survives a reload", async () => {
   const first = boot(root);

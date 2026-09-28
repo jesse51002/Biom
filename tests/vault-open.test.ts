@@ -66,6 +66,13 @@ async function ground() {
     memory: join(root, "vaults.json"),
     at: (name: string) => join(root, name),
     async drop() {
+      // EVERY HOST THIS TEST STOOD UP IS DONE BEFORE ITS FOLDERS GO: the work
+      // after a mount writes into the folder, and closing ends it — once what
+      // it had started has finished.
+      for (const host of stood.splice(0)) {
+        await Promise.allSettled(host.open().map((path) => host.settled(path)));
+        host.close();
+      }
       await rm(root, { recursive: true, force: true });
     },
   };
@@ -76,8 +83,13 @@ async function ground() {
  *  render layer it was written against — so it is a root that is simply not
  *  there, which is the state `install` is written to survive. There is no
  *  `market` any more: the marketplace is deleted, not empty. */
-const stand = (vault: string, memory: string): Promise<Host> =>
-  makeHost({ vault, memory, presets: join(FRAMEWORK, "presets") });
+const stand = async (vault: string, memory: string): Promise<Host> => {
+  const host = await makeHost({ vault, memory, presets: join(FRAMEWORK, "presets") });
+  stood.push(host);
+  return host;
+};
+/** Every host a test stood up, closed by its ground's `drop`. */
+const stood: Host[] = [];
 
 /** One request, against one folder. Every call here names the vault it means,
  *  which is the whole change: there is no "current" one to leave out. */
