@@ -188,7 +188,15 @@ test("each named event decodes to what the contract says it carries, or to nothi
   expect(decodeStream("agents", JSON.stringify([{ key: "claude-acp", name: "Claude Code" }]))).toEqual({ event: "agents", data: [{ key: "claude-acp", name: "Claude Code" }] });
   expect(decodeStream("agents", JSON.stringify([{ name: "no key" }]))).toBe(null);
 
-  expect(decodeStream("change", "1")).toEqual({ event: "change", data: 1 });
+  // The twelfth edit: `change` names what changed, ids only; anything else —
+  // a bare `1` from before the edit, text that is not JSON — is `all`.
+  expect(decodeStream("change", JSON.stringify({ pages: ["home/Specs"], levels: ["home"] })))
+    .toEqual({ event: "change", data: { pages: ["home/Specs"], levels: ["home"] } });
+  expect(decodeStream("change", JSON.stringify({ pages: [], levels: [], all: true })))
+    .toEqual({ event: "change", data: { pages: [], levels: [], all: true } });
+  expect(decodeStream("change", "1")).toEqual({ event: "change", data: { pages: [], levels: [], all: true } });
+  expect(decodeStream("change", "not json")).toEqual({ event: "change", data: { pages: [], levels: [], all: true } });
+  expect(decodeStream("change", JSON.stringify({ pages: [3], levels: [] }))).toEqual({ event: "change", data: { pages: [], levels: [], all: true } });
   expect(decodeStream("run", "")).toEqual({ event: "run", data: 1 });
   expect(decodeStream("nonsense", "[]")).toBe(null);
 });

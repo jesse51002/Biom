@@ -10,8 +10,10 @@
 // the codebase is checked, which it is not.
 
 /** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue } from "./types.ts" */
+/** @import { PageRequest } from "./types.ts" */
 
 import { AGENT_KEY, OPAQUE_ID, PROTOCOL } from "./wire.js";
+import { LOCATE_MAX, SEARCH_MAX, SEARCH_QUERY_MAX } from "./wire.js";
 import { PAGE_SCREENS, VIEW_NAMES } from "./address.js";
 
 /**
@@ -184,6 +186,34 @@ export const RUNTIME_KIND_NAMES = Object.freeze([...RUNTIME_KINDS]);
 export const CHAT_KIND_NAMES = Object.freeze([...CHAT_KINDS]);
 export const HISTORY_KIND_NAMES = Object.freeze([...HISTORY_KINDS]);
 export const LOCAL_KIND_NAMES = Object.freeze([...LOCAL_KINDS]);
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** PAGES BY ID, BY IDENTITY AND BY NAME — outer ring, and reads: not local-
+ *  gated, because a run may ask them, and never a box's, because a box asks
+ *  about its own page and nothing wider. */
+const PAGE_KINDS = new Set(["page.locate", "page.search"]);
+export const PAGE_KIND_NAMES = Object.freeze([...PAGE_KINDS]);
+
+/**
+ * True when `v` is a well-formed request for pages the window has not loaded:
+ * a bounded list of ids or identities, or a bounded name search.
+ * @param {unknown} v
+ * @returns {v is PageRequest}
+ */
+export function isPageRequest(v) {
+  return wellFormed(v, PAGE_KINDS);
+}
+
+/** A page id as a caller may name one: a non-empty path of at most 1024
+ *  characters with no null byte. Its grammar is the server's to check — a
+ *  malformed one is simply not found — so this only keeps junk off the wire.
+ *  @param {unknown} v */
+const isPageIdish = (v) => typeof v === "string" && v !== "" && v.length <= 1024 && !v.includes("\u0000");
+
+/** A bounded list: an array of at most `max` items, each passing `one`.
+ *  @param {unknown} v @param {number} max @param {(x: unknown) => boolean} one */
+const isBounded = (v, max, one) => Array.isArray(v) && v.length <= max && v.every(one);
 
 /**
  * True when `v` is a well-formed request an artifact is allowed to make.
@@ -462,6 +492,16 @@ function wellFormed(v, allowed) {
         (v.moved === undefined || isMove(v.moved));
     case "history.read":
       return v.since === undefined || isSeq(v.since);
+
+    /* ── pages a window has not loaded (outer ring) ────────────────────── */
+    case "page.locate":
+      // At least one list, each bounded; a `uid` has an opaque id's grammar.
+      return (v.ids !== undefined || v.uids !== undefined) &&
+        (v.ids === undefined || isBounded(v.ids, LOCATE_MAX, isPageIdish)) &&
+        (v.uids === undefined || isBounded(v.uids, LOCATE_MAX, isOpaqueId));
+    case "page.search":
+      return typeof v.query === "string" && v.query.trim() !== "" && v.query.length <= SEARCH_QUERY_MAX &&
+        (v.limit === undefined || (typeof v.limit === "number" && Number.isInteger(v.limit) && v.limit >= 1 && v.limit <= SEARCH_MAX));
 
     default:
       // data.get, doc.list, table.list, theme.get, agents.list,

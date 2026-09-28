@@ -20,7 +20,7 @@
 // with. The server is Biom's own, so a failure here is a bug to see, and it is
 // said once on the console with the event's name.
 
-/** @import { AgentInfo, ChatPush, HistoryEntry, Place, StreamEvent } from "../../contracts/types.ts" */
+/** @import { AgentInfo, ChangeEvent, ChatPush, HistoryEntry, Place, StreamEvent } from "../../contracts/types.ts" */
 
 import { STREAM } from "../../contracts/wire.js";
 import { PAGE_SCREENS, VIEW_NAMES } from "../../contracts/address.js";
@@ -103,6 +103,29 @@ function isChatPush(v) {
 /** @param {unknown} v @returns {v is AgentInfo[]} */
 const isAgents = (v) => Array.isArray(v) && v.every((a) => isObj(a) && isStr(a.key) && a.key !== "");
 
+/** @param {unknown} v @returns {v is string[]} */
+const isIds = (v) => Array.isArray(v) && v.every((x) => isStr(x) && x !== "");
+
+/**
+ * A `change` event's data: the pages and levels it names, or `all` where it
+ * names nothing a window can use.
+ * @param {string} data
+ * @returns {ChangeEvent}
+ */
+export function changeOf(data) {
+  /** @type {unknown} */
+  let v;
+  try {
+    v = JSON.parse(data);
+  } catch {
+    v = null;
+  }
+  if (isObj(v) && isIds(v.pages) && isIds(v.levels)) {
+    return v.all === true ? { pages: v.pages, levels: v.levels, all: true } : { pages: v.pages, levels: v.levels };
+  }
+  return { pages: [], levels: [], all: true };
+}
+
 /**
  * One named event's data, decoded to what the contract says it carries, or
  * null — for a name this does not know, for text that is not JSON, and for
@@ -113,7 +136,11 @@ const isAgents = (v) => Array.isArray(v) && v.every((a) => isObj(a) && isStr(a.k
  * @returns {StreamEvent | null}
  */
 export function decodeStream(name, data) {
-  if (name === STREAM.CHANGE) return { event: "change", data: 1 };
+  // WHAT CHANGED, BY NAME (the twelfth edit): ids only. Anything that is not
+  // that shape — a bare `1` from before the edit, text that is not JSON — is
+  // read as `all`, the answer that rereads everything the window holds,
+  // because a change the window cannot name is still a change.
+  if (name === STREAM.CHANGE) return { event: "change", data: changeOf(data) };
   if (name === STREAM.RUN) return { event: "run", data: 1 };
   if (name !== STREAM.HISTORY && name !== STREAM.CHAT && name !== STREAM.AGENTS) return null;
   /** @type {unknown} */

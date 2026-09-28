@@ -280,3 +280,18 @@ export const AGENT_PAGE = "@agent";
  *  a browser loads directly.
  *  @param {string} id */
 export const foldId = (id) => String(id).toLowerCase();
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** THE MOST PAGES ONE `page.locate` NAMES, of ids and of uids each. A window
+ *  asks for what is on its screen and in its history, in batches, and a bound
+ *  is what keeps one request from being a way to ask for the workspace. */
+export const LOCATE_MAX = 256;
+
+/** THE MOST HITS ONE `page.search` ANSWERS, and its default: a list longer
+ *  than this is a list nobody reads, and `more` says there were others. */
+export const SEARCH_MAX = 50;
+
+/** THE LONGEST QUERY `page.search` TAKES, in characters. A name is short; a
+ *  query this long is a paste, and it is refused rather than scanned. */
+export const SEARCH_QUERY_MAX = 200;

@@ -285,6 +285,16 @@ export interface Child {
    *  sorts on it, and a later version may keep the date in the page without
    *  the field or that plugin changing. The tenth contracts edit. */
   created?: string;
+  /** Pages only: THE PAGE'S IDENTITY, off the head of its document, so a
+   *  window that lists a level learns uid and id together for everything on
+   *  screen without asking again. Absent where the page has none yet. The
+   *  twelfth contracts edit. */
+  uid?: string;
+  /** Pages only: WHETHER THIS PAGE HOLDS PAGES OF ITS OWN — its `children/`
+   *  folder holds at least one page — read off the folder listing and never
+   *  off a document, so the tree draws a branch's chevron without fetching the
+   *  branch. The twelfth contracts edit. */
+  children?: boolean;
 }
 
 /** The block id standing for a child, and it has to be derived rather than
@@ -1270,16 +1280,37 @@ export interface LookState {
   beside: PageName | null;
 }
 
+/** WHAT CHANGED ON DISK, BY NAME — the `change` event's data since the
+ *  twelfth contracts edit (the SCALE design, 2026-09-28). `pages` are the
+ *  pages whose own files changed: a window redraws its open page only when it
+ *  is one of them. `levels` are the pages whose CHILDREN changed — a page
+ *  arrived, left, moved or was renamed beneath them — and a window re-lists
+ *  only those of its tree's levels it holds. IDS ONLY, NEVER CONTENT: every
+ *  word is still read from the server, so this names which reads to repeat
+ *  and cannot become a second description of the workspace. It replaced a
+ *  bare `1`, which made every window reread the open page and the whole tree
+ *  on every write anywhere — seconds per write on two thousand pages. */
+export interface ChangeEvent {
+  pages: PageId[];
+  levels: PageId[];
+  /** TOO MUCH CHANGED TO NAME, OR THE SERVER COULD NOT SAY WHAT: a burst past
+   *  the names' bound (a checkout, a folder of a thousand pages copied in), a
+   *  data text from before this edit. The window rereads its open page and
+   *  every level it holds, which is still bounded by what is on its screen. */
+  all?: boolean;
+}
+
 /** THE NAMED EVENTS ON A WORKSPACE'S ONE STREAM, `GET /v/<vault>/events`, and
- *  what each carries. `change` and `run` are as they always were — a bare `1`
- *  saying *reread*. The eleventh edit added three that carry JSON, because a
+ *  what each carries. `change` names the pages and levels that changed (the
+ *  twelfth edit — it was a bare `1` saying *reread*); `run` is a bare `1` as it
+ *  always was. The eleventh edit added three that carry JSON, because a
  *  history entry, a chat's words and an agent signing in are not on disk to
  *  be reread: `history` is the entries just appended; `chat` one chat's
  *  push; `agents` the whole list of what this machine has, whenever any of
  *  it changes. The names are `STREAM` in `wire.js`. None of it is a wire
  *  kind: a box never opens the stream and never learns it exists. */
 export type StreamEvent =
-  | { event: "change"; data: 1 }
+  | { event: "change"; data: ChangeEvent }
   | { event: "run"; data: 1 }
   | { event: "history"; data: HistoryEntry[] }
   | { event: "chat"; data: ChatPush }
@@ -1327,6 +1358,9 @@ export type HostRequest = Envelope &
     | { kind: "data.get" }
     | { kind: "data.set"; patch: VarPatch }
     | { kind: "doc.get"; page: PageId }
+    /** EVERY PAGE, for a box that asks for every page — the Map does. Answered
+     *  from the server's index of page heads, never by parsing every page
+     *  (the twelfth edit); no screen of the framework's own asks it. */
     | { kind: "doc.list" }
     /** Layer one, reachable from an artifact: what this page holds. A page that
      *  wants to draw its own children its own way asks for this and draws it,
@@ -1755,6 +1789,11 @@ export type ApiRequest =
   | RuntimeRequest
   | (Envelope &
       (
+        /** EVERY PAGE. Answered from the server's index of page heads, never
+         *  by parsing every page, and asked by no screen of the framework's
+         *  own since the twelfth edit: the tree lists a level at a time with
+         *  `children`, and anything else is `page.locate` or `page.search`.
+         *  Kept for agents, runs and tools that want the whole list. */
         | { kind: "page.list" }
         /** EVERY PAGE'S CHILDREN IN ONE ANSWER, root included, keyed by page
          *  id — what the workspace UI reads to draw the tree. Layer one for the
@@ -1764,7 +1803,10 @@ export type ApiRequest =
          *  on and nothing wider; the tree is the shell's. The NINTH contracts
          *  edit, and the reason is in the store: one request per page was a
          *  throwaway instrument's cost until a workspace of eighteen hundred
-         *  pages met a browser that refuses that many at once. */
+         *  pages met a browser that refuses that many at once. SINCE THE
+         *  TWELFTH EDIT the tree reads a level at a time instead, and nothing
+         *  of the framework's asks this; it is answered from the index and
+         *  kept for callers outside the window, to go at a later barrier. */
         | { kind: "children.all" }
         | { kind: "page.create"; init: PageInit }
         | { kind: "page.remove"; page: PageId }
@@ -1888,7 +1930,9 @@ export type ApiRequest =
    *  what each window has open — the eleventh edit's outer-ring kinds, each
    *  union with its own guard below. */
   | ChatRequest
-  | HistoryRequest;
+  | HistoryRequest
+  /** Pages a window has not loaded, by name — the twelfth edit. */
+  | PageRequest;
 
 /** THE AGENTS AND THE CHATS, and every one of them is OUTER RING. The eleventh
  *  contracts edit, taken at its own barrier on 2026-09-25 for the workspace's
@@ -2030,6 +2074,44 @@ export type HistoryRequest = Envelope &
      *  holds. It lives in memory and is gone when the server stops. */
     | { kind: "history.read"; since?: number }
   );
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** PAGES THE WINDOW HAS NOT LOADED — the twelfth contracts edit, taken at its
+ *  own barrier on 2026-09-28 for the SCALE design: a workspace of two thousand
+ *  pages. The window no longer holds every page: it lists the tree a level at
+ *  a time (`children`), and asks for anything else it needs BY NAME. Both are
+ *  answered from the server's persisted index of page heads — the first few
+ *  kilobytes of each document, checked against a stat before they are trusted
+ *  — and never by parsing every page. Outer ring: a box asks about its own
+ *  page and nothing wider. Reads, so they stay on the launch token and are not
+ *  local-gated: a run may ask them. `isPageRequest` narrows them. */
+export type PageRequest = Envelope &
+  (
+    /** THESE PAGES, BY ID OR BY IDENTITY: at most `LOCATE_MAX` of each. The
+     *  answer is the refs found, in no promised order; a page that is not
+     *  there is ABSENT, never an error, because a history entry naming a page
+     *  since deleted is ordinary. A `uid` the index has never seen — a folder
+     *  moved in a file manager, say — waits for the background sweep, bounded
+     *  at two seconds, and is then found or absent. What the switcher, the
+     *  look and the history ask when they hold a `uid` the window has not
+     *  listed. */
+    | { kind: "page.locate"; ids?: PageId[]; uids?: string[] }
+    /** PAGES BY NAME, ranked — a name that starts with the query, then one that
+     *  contains it, then an id that does — at most `limit` (at most
+     *  `SEARCH_MAX`). Answers a `PageSearch`. The rail's finder and a table's
+     *  page picker ask it, so no window holds every name to search them. */
+    | { kind: "page.search"; query: string; limit?: number }
+  );
+
+/** What `page.search` answers. `more` says there were hits past the limit.
+ *  `complete` is false until the server's first sweep of the workspace since
+ *  it opened has finished, so a finder can say the answer may grow. */
+export interface PageSearch {
+  hits: PageRef[];
+  more: boolean;
+  complete: boolean;
+}
 
 /** One editable file a page or the vault offers its screens. `seeded` is true
  *  of a file the framework wrote and rewrites — a copy nobody should edit in
@@ -2372,6 +2454,12 @@ export interface Change {
 }
 
 export interface WorkspaceSnapshot {
+  /** THE PAGES THIS WINDOW KNOWS — the levels its tree has listed, the pages it
+   *  has read, and what it has located or searched — and NOT every page in
+   *  the workspace. The twelfth contracts edit changed the meaning and not the
+   *  type: a window of two thousand pages must not hold them all, so a reader
+   *  that wants a page it has not seen asks `page.locate`, and one that wants
+   *  a name asks `page.search`. */
   pages: PageRef[];
   tables: TableRef[];
   theme: Theme;

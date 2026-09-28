@@ -22,7 +22,7 @@
 // depend on — nothing the server runs is a package. Bun runs this file as
 // written; tsc cannot see the module, so the import is suppressed and every
 // value that comes out of it is annotated by hand below.
-import { mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -225,6 +225,31 @@ export interface DiskFiles extends Files {
    *  wrote. For a write decided from a read a moment before — a page's `uid`
    *  written back — where the page may have been deleted from outside since. */
   replace(rel: string, text: string): Promise<boolean>;
+  /** WHAT A PATH IS, WITHOUT READING IT — or null where nothing is there. The
+   *  inode, the size and the modification time together are how a cached head
+   *  of a page is trusted or thrown away: an edit moves the size or the time,
+   *  and an atomic write — a sibling renamed over the file — moves the inode.
+   *  It never touches the baseline: knowing a file is there is not a sighting
+   *  of its bytes. The twelfth contracts edit's page index reads it. */
+  stat(rel: string): Promise<FileStat | null>;
+  /** THE FIRST `bytes` OF A FILE, as UTF-8, or null where nothing is there — a
+   *  page's head: its `name:` and `uid:` without the rest of its document. A
+   *  character cut at the end is decoded as a replacement, which is why a
+   *  caller looks for whole lines. It never touches the baseline either: a
+   *  head is not the file, and a sighting of part of one would silence the
+   *  watcher's verdict on the whole. */
+  head(rel: string, bytes: number): Promise<string | null>;
+}
+
+/** What `DiskFiles.stat` answers. Times are milliseconds since the epoch, with
+ *  whatever fraction the platform keeps; `born` is the birth time where the
+ *  filesystem records one and the modification time where it does not. */
+export interface FileStat {
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  bornMs: number;
+  dir: boolean;
 }
 
 /** Text files under `root`, and the git repo they live in.
@@ -375,6 +400,42 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): DiskFiles {
         // readdir order is whatever the filesystem feels like; the page tree
         // must not reshuffle between two runs.
         .sort(byName);
+    },
+
+    async stat(rel: string): Promise<FileStat | null> {
+      const abs = await safe(rel === "" ? "." : rel, true);
+      try {
+        const found = await stat(abs);
+        return {
+          ino: found.ino,
+          size: found.size,
+          mtimeMs: found.mtimeMs,
+          bornMs: found.birthtimeMs > 0 ? found.birthtimeMs : found.mtimeMs,
+          dir: found.isDirectory(),
+        };
+      } catch (e) {
+        if (isMissing(e)) return null;
+        throw e;
+      }
+    },
+
+    async head(rel: string, bytes: number): Promise<string | null> {
+      const abs = await safe(rel);
+      let handle: Awaited<ReturnType<typeof open>>;
+      try {
+        handle = await open(abs, "r");
+      } catch (e) {
+        if (isMissing(e)) return null;
+        throw e;
+      }
+      try {
+        const want = Math.max(0, Math.floor(bytes));
+        const buf = Buffer.alloc(want);
+        const { bytesRead } = await handle.read(buf, 0, want, 0);
+        return buf.subarray(0, bytesRead).toString("utf8");
+      } finally {
+        await handle.close();
+      }
     },
 
     async created(rel: string): Promise<string | null> {

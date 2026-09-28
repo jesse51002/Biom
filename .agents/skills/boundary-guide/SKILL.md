@@ -615,7 +615,9 @@ locally.
   are hand-copies of `contracts/types.ts` — see §7.
 - **The narrowing predicates:** `contracts/guards.js` — `isHostRequest` /
   `isRuntimeRequest` over `HOST_KINDS` / `RUNTIME_KINDS`, the outer ring's
-  `isChatRequest` / `isHistoryRequest` over `CHAT_KINDS` / `HISTORY_KINDS`,
+  `isChatRequest` / `isHistoryRequest` / `isPageRequest` over `CHAT_KINDS` /
+  `HISTORY_KINDS` / `PAGE_KINDS` (the last the twelfth edit's `page.locate` and
+  `page.search`, outer ring and reads),
   `isLocalKind` over `LOCAL_KINDS` (what only this machine's own window may
   say), the shared `wellFormed` envelope-and-payload check (the envelope's
   `window` included), `isGuestNotice`, `isAddress`, `isOpaqueId`, `isAgentKey`,
