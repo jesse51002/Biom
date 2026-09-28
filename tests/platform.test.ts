@@ -772,6 +772,29 @@ test("write, read, list and remove, on vault-relative paths", async () => {
   }
 });
 
+test("replace writes over a file that is there, and makes nothing where the file or its folder has gone", async () => {
+  const root = await scratch();
+  try {
+    const files = makeFiles(root);
+    await files.write("pages/team-notes/content.yaml", "name: Team notes\n");
+    expect(await files.replace("pages/team-notes/content.yaml", "name: Team notes, again\n")).toBe(true);
+    expect(await files.read("pages/team-notes/content.yaml")).toBe("name: Team notes, again\n");
+
+    // The file deleted, its folder left: it stays deleted, and nothing is left beside it.
+    await rm(join(root, "pages/team-notes/content.yaml"));
+    expect(await files.replace("pages/team-notes/content.yaml", "name: Back\n")).toBe(false);
+    expect(await files.list("pages/team-notes")).toEqual([]);
+
+    // The folder deleted whole: it is not made again.
+    await files.remove("pages/team-notes");
+    expect(await files.replace("pages/team-notes/content.yaml", "name: Back\n")).toBe(false);
+    expect(await files.list("pages")).toEqual([]);
+    await expect(files.replace("../outside.txt", "x")).rejects.toBeInstanceOf(PathError);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("created answers when a path was made, as an ISO instant, and null for one that is not there", async () => {
   const root = await scratch();
   try {

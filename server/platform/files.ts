@@ -204,7 +204,28 @@ const MISSING = new Set(["ENOENT", "EISDIR", "ENOTDIR"]);
 const isMissing = (e: unknown): boolean =>
   typeof e === "object" && e !== null && MISSING.has(String((e as { code?: string }).code));
 
+/** Whether a file is at `abs` right now — not a folder, and not nothing. */
+async function isFile(abs: string): Promise<boolean> {
+  try {
+    const found: { isFile(): boolean } = await stat(abs);
+    return found.isFile();
+  } catch (e) {
+    if (isMissing(e)) return false;
+    throw e;
+  }
+}
+
 const byName = (a: FileEntry, b: FileEntry) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/** `Files` ON A DISK, with the one write a store in memory has no need of —
+ *  kept here rather than in the contract, which is `Files` everywhere else. */
+export interface DiskFiles extends Files {
+  /** WRITE OVER A FILE THAT IS THERE, and only then: its folder is never made
+   *  and a file deleted meanwhile is never brought back. Answers whether it
+   *  wrote. For a write decided from a read a moment before — a page's `uid`
+   *  written back — where the page may have been deleted from outside since. */
+  replace(rel: string, text: string): Promise<boolean>;
+}
 
 /** Text files under `root`, and the git repo they live in.
  *
@@ -212,7 +233,7 @@ const byName = (a: FileEntry, b: FileEntry) => (a.name < b.name ? -1 : a.name > 
  *  writes — see `Seen`. It is optional and defaults to remembering nothing,
  *  because most of the `Files` in this process are rooted outside any vault
  *  and nothing watches them. */
-export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
+export function makeFiles(root: string, seen: Seen = FORGETFUL): DiskFiles {
   const ROOT = resolve(root);
   // The root itself may be reached through a symlink — a home directory on a
   // separate volume, say — so every comparison is made in real-path space.
@@ -288,6 +309,40 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
         seen.note(abs, text);
         try {
           await rename(tmp, abs);
+        } catch (e) {
+          await rm(tmp, { force: true });
+          throw e;
+        }
+      });
+    },
+
+    async replace(rel: string, text: string): Promise<boolean> {
+      // ON `write`'S QUEUE, so a replace and a write to one path land in the
+      // order they were asked, and whole in the same way: a sibling, renamed.
+      return await oneAtATime(resolve(ROOT, rel), async () => {
+        const abs = await safe(rel);
+        // NO FOLDER IS MADE. A page deleted from outside after its caller read
+        // it was brought back by `write`, whose mkdir made the folder again:
+        // here the sibling cannot be written into a folder that is gone.
+        const tmp = join(dirname(abs), `.${basename(abs)}.${randomBytes(4).toString("hex")}.tmp`);
+        try {
+          await writeFile(tmp, text, "utf8");
+        } catch (e) {
+          if (isMissing(e)) return false;
+          throw e;
+        }
+        try {
+          // AND NO FILE IS BROUGHT BACK: one deleted with its folder left
+          // stays deleted. Nothing an outside `rm` honours can hold the file
+          // between this look and the rename, so this narrows the gap to those
+          // two calls, where it was a read, a parse and a write.
+          if (!(await isFile(abs))) {
+            await rm(tmp, { force: true });
+            return false;
+          }
+          seen.note(abs, text);
+          await rename(tmp, abs);
+          return true;
         } catch (e) {
           await rm(tmp, { force: true });
           throw e;

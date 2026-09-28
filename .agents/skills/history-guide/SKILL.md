@@ -119,9 +119,12 @@ already knew for that page or a new one, and it keeps that `uid` for the
 session however the file is written again. It goes into the file behind a
 commit as ONE `uid:` line under the first top-level `name:`, every other byte
 as it was, kept only if the document reads back as itself plus that `uid`;
-only where that cannot be verified is it written the way mount writes one. A
-page whose document will not parse — an unknown top-level key included — gets
-none and is never rewritten.
+only where that cannot be verified is it written the way mount writes one.
+Either is a `replace` (`DiskFiles` in `server/platform/files.ts`), never a
+`write`: a page deleted from outside between the write-back's read and its
+write stays deleted, where a write made the folder again and brought the page
+back, `uid` and all. A page whose document will not parse — an unknown
+top-level key included — gets none and is never rewritten.
 
 **Bounded in every part**: a ring of `LIMIT` (5000) entries, oldest first out,
 which a reader sees as a gap in `seq`; typing coalesced into **one edit per

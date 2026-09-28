@@ -118,6 +118,7 @@ import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, pare
 import { foldId } from "../../contracts/wire.js";
 import { AGENT_PAGE, DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
+import type { DiskFiles } from "../platform/files.ts";
 
 const PAGES_DIR = "pages";
 /** A workspace's OWN plugins, a root sibling of `pages/`. The server serves
@@ -1961,7 +1962,7 @@ export interface Identities {
  * @param warn where a write-back that failed is said; the page keeps the `uid`
  *   in memory, and the next ask writes it again.
  */
-export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: string, e: unknown) => void = () => {}): Identities {
+export function makeIdentities(files: DiskFiles, yaml: YamlCodec, warn: (what: string, e: unknown) => void = () => {}): Identities {
   /** THE `uid` EACH PAGE ID LAST HAD, and WHICH PAGE LAST HELD each `uid`, as
    *  seen or given. The two can disagree, and that is what they are for: a page
    *  that moved leaves its old id still knowing the `uid`, while the `uid`'s
@@ -2014,7 +2015,10 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
    *  agent wrote meanwhile is what gets the `uid`. The insert is kept only if
    *  it reads back as the same document plus that `uid` and nothing else; a
    *  layout it cannot be put into — no `name:` line, a name spread over lines,
-   *  an empty `uid:` already there — is written the way mount writes one. */
+   *  an empty `uid:` already there — is written the way mount writes one.
+   *  Either is a `replace`, never a `write`: a page deleted from outside
+   *  between the read and the write stays deleted, where a write made its
+   *  folder again and brought it back, `uid` and all. */
   const writeBack = (id: PageId): void => {
     pending.add(id);
     const run = writing.then(async () => {
@@ -2037,10 +2041,10 @@ export function makeIdentities(files: Files, yaml: YamlCodec, warn: (what: strin
         }
         const inserted = withUidLine(text, uid);
         if (inserted !== null && onlyTheUid(yaml, text, inserted, uid)) {
-          await files.write(path, inserted);
+          await files.replace(path, inserted);
           return;
         }
-        await files.write(path, yaml.format({ ...now, uid }));
+        await files.replace(path, yaml.format({ ...now, uid }));
       } finally {
         pending.delete(id);
       }

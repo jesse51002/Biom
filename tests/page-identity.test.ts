@@ -20,7 +20,9 @@
 //     document and walks no tree, because this is on the history's path;
 //   - a page that moved away takes its `uid` with it, and a new page made at
 //     its old id is not handed it — only the page holding it is read to say so;
-//   - a document that is not there or will not parse is never rewritten;
+//   - a document that is not there or will not parse is never rewritten, and
+//     a page deleted from outside while its `uid` is written back stays
+//     deleted;
 //   - through the composition root, with the scripted agent: the agent's new
 //     page is one history edit PLACED by its `uid`, the real switcher follows
 //     that edit once the window's tree lists the page, and the agent
@@ -266,6 +268,37 @@ test("a page that is not there is no identity, and one that will not parse — o
   await ids.written();
   expect(readFileSync(docPath(root, "home/Broken"), "utf8")).toBe("name: [unclosed\n");
   expect(readFileSync(join(root, "design", PAGE_DOC), "utf8")).toBe("name: Design\nplugin: biom-doc\ncontents: []\n");
+});
+
+test("A PAGE DELETED FROM OUTSIDE WHILE ITS UID IS WRITTEN BACK STAYS DELETED — the write-back makes no folder and brings back no file", async () => {
+  // The write-back reads the document after its commit and writes the line in
+  // a moment later. Deleted in that moment — a person's file manager, an
+  // agent's `rm -rf`, a checkout — the page came back, uid and all, because
+  // the write made the folder it wrote into.
+  const root = vaultOf();
+  put(root, "home/Going", AGENT_DOC("Going"));
+  const inner = makeFiles(root);
+  const rel = join(pageDir("home/Going"), PAGE_DOC);
+  let committed = false;
+  const files = {
+    ...inner,
+    commit: async (message: string) => { await inner.commit(message); committed = true; },
+    // The write-back's own read, the one after its commit: the page is
+    // deleted from outside the moment it has been read.
+    read: async (path: string) => {
+      const text = await inner.read(path);
+      if (committed && path === rel) {
+        committed = false;
+        rmSync(join(root, pageDir("home/Going")), { recursive: true, force: true });
+      }
+      return text;
+    },
+  } as typeof inner;
+  const ids = makeIdentities(files, yaml);
+  expect(await ids.of("home/Going")).not.toBeNull();
+  await ids.written();
+  expect(existsSync(join(root, pageDir("home/Going")))).toBe(false);
+  expect((await makePages(makeFiles(root), yaml).list()).map((r) => r.id)).not.toContain("home/Going");
 });
 
 test("arrived: every page in a list without a uid is given one, and every one with a uid is remembered", async () => {
