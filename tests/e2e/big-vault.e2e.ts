@@ -34,10 +34,9 @@
 //   4. Five of its pages opened from the rail, one after another.
 //   5. The Agent screen, a first message, and the level the agent will write
 //      into opened in the rail.
-//   6. A page the agent makes three levels down, brought up by the switcher
-//      with the chat beside it and Go back to over it;
-//   6b. and its row in the level the rail already holds — kept failing, for a
-//      bug this walk found (the step says which).
+//   6. A page the agent makes three levels down: its row in the level the
+//      rail already holds, and the switcher bringing it up with the chat
+//      beside it and Go back to over it.
 //   7. A write from outside to ANOTHER page redraws its row and leaves the open
 //      page's box standing, unread.
 //   8. A name typed in the finder, to its hits.
@@ -84,9 +83,6 @@ const NEVER = 60_000;
 /** One settle of the watcher and then some: how long the open page is watched
  *  after a write elsewhere has visibly landed. */
 const AFTER_SETTLE = 600;
-/** How long the agent's new page's row is waited for: four times its bound,
- *  past which it is not coming. */
-const ROW_NEVER = 4 * 1500;
 
 /* ── the walk's furniture ────────────────────────────────────────────────── */
 
@@ -103,10 +99,6 @@ let page: Page;
 let chat = "";
 /** When the person last moved the screen — the chat taking its address. */
 let movedAt = 0;
-/** When the agent's new page was on disk, and when its row turned up in the
- *  rail, or null when it never did within `ROW_NEVER`. */
-let wroteAt = 0;
-let rowSeen: Promise<number | null> = Promise.resolve(null);
 
 /** EVERY REQUEST THE WINDOW SENT, by kind, with the page it named and when —
  *  the walk's own calls (`call` below) left out. */
@@ -396,7 +388,7 @@ walk("5. the Agent screen, a first message, and the level the agent will write i
 
 const BRIEF = { name: "Invented Brief", uid: "inventedbrief001" };
 
-walk("6. a page the agent makes three levels down is brought up by the switcher within its bound, beside the chat with Go back to over it", "big-6.png", async () => {
+walk("6. a page the agent makes three levels down: its row in the level the rail holds, and the switcher bringing it up beside the chat with Go back to over it, each within its bound", "big-6.png", async () => {
   const id = `${made.under}/Invented_Brief`;
   const rel = join(dirOf(id), "content.yaml");
   const route = routeOf(id);
@@ -418,10 +410,10 @@ walk("6. a page the agent makes three levels down is brought up by the switcher 
     await new Promise((r) => setTimeout(r, 5));
   }
   const t0 = performance.now();
-  wroteAt = t0;
-  rowSeen = page.waitForFunction(railHas, [BRIEF.name], { polling: "raf", timeout: ROW_NEVER })
-    .then(() => performance.now() - t0, () => null);
-  await held("agent's new page → the switcher follows", t0, (want: string) => location.hash === want, route, BOUND.follow);
+  await Promise.all([
+    held("agent's new page → its row in the rail", t0, railHas, [BRIEF.name], BOUND.row),
+    held("agent's new page → the switcher follows", t0, (want: string) => location.hash === want, route, BOUND.follow),
+  ]);
 
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   expect(await page.locator("div.agentbox iframe").count()).toBe(1);
@@ -432,25 +424,6 @@ walk("6. a page the agent makes three levels down is brought up by the switcher 
   });
   await until("the new page drew", BOUNDS.draw, () => page.evaluate(drawnAt, route));
 });
-
-// A BUG THIS WALK FOUND, kept as `test.failing` until it is fixed — green while
-// the product is wrong, red the day it is right, which is the prompt to make it
-// a plain step. The settle's change names the page and NO LEVEL
-// (`{"pages":[…/Invented_Brief],"levels":[]}`, measured): the page is read
-// before the watcher settles — the window drawing it the moment the switcher
-// has brought it up — so the settle's baseline already knows its document and
-// reads its arrival as an edit; and the history's `uidOf` has put the page in
-// the index by then too, so `uidWas` would say the same. A level the rail
-// already holds is never listed again, and the page is missing from it until
-// something else relists it.
-(unix ? test.failing : test.skip)("6b. the page the agent made is listed in its level, already open in the rail, within its bound — FAILING: the change names no level, because the page was read before the watcher's settle asked whether it was new", async () => {
-  if (broke !== null) throw new Error(`skipped: an earlier step failed — ${broke}`);
-  expect(wroteAt).toBeGreaterThan(0);
-  const ms = await rowSeen;
-  table.push({ step: "agent's new page → its row in the rail", ms, bound: BOUND.row });
-  console.log(`[big vault] agent's new page → its row in the rail: ${ms === null ? "never" : `${Math.round(ms)} ms`} (bound ${BOUND.row} ms)`);
-  expect(ms !== null && ms <= BOUND.row).toBe(true);
-}, 30000);
 
 walk("7. a write from outside to another page redraws that page's row and leaves the open page's box standing, unread", "big-7.png", async () => {
   const open = decodeURIComponent((await hash()).replace(/^#\/page\//, ""));
