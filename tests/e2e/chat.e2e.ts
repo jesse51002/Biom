@@ -1362,9 +1362,20 @@ walk("20c", "a page on another localhost port gets nothing from this server with
 const lookView = (): Promise<string> => inLook(async (f) => (await f.locator(".g-look").getAttribute("data-view")) ?? "", "");
 const modeChip = async (): Promise<string> => ((await page.locator(".agentdock .chip[data-category=mode]").innerText().catch(() => "")) ?? "").trim();
 
+/** THE START SCREEN, and nothing else: a window just loaded may still put
+ *  back the chat it had open for the session as it comes up, so the address
+ *  is asked for again until the window shows the start screen's input. */
+async function startScreen(): Promise<void> {
+  await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+  await until("the start screen", BOUNDS.draw, async () => {
+    if ((await hash()) !== "#/agent") await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+    return (await hash()) === "#/agent" && (await page.locator("#agentta").getAttribute("placeholder")) === "Ask anything";
+  });
+}
+
 /** A new chat from the start screen, sent and come to rest: its id. */
 async function newChat(words: string): Promise<string> {
-  await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+  await startScreen();
   await until("the agent is Active", 30000, async () => (await agentState())?.state === "active");
   await until("the start screen is ready to send", BOUNDS.draw, async () =>
     (await page.locator("#agentta").isVisible()) && (await page.locator(".agentdock .agentchip").innerText()).includes("Claude Code"));
@@ -1400,7 +1411,7 @@ walk("20d", "the choices are kept: a mode and a view picked in a chat hold acros
   /** What a person sees after `what`: the start screen's mode chip on the
    *  kept mode, and a new chat started on it and drawn in the kept view. */
   const holds = async (what: string): Promise<void> => {
-    await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
+    await startScreen();
     await until(`${what}: the start screen's mode chip is the kept one`, 30000, async () => (await modeChip()) === "Plan (invented)");
     const chat = await newChat(`An invented new chat after ${what}`);
     const config = (await readChat(chat)).updates.filter((u) => u.kind === "config").pop() as { options: { id: string; value: unknown }[] } | undefined;
