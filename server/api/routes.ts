@@ -36,6 +36,7 @@ import type { EditReport, History } from "../domain/history.ts";
 import type { Agents } from "../workspace/agents.ts";
 import type { Chats } from "../workspace/chats.ts";
 import type { Settings } from "../workspace/settings.ts";
+import type { PageIndex } from "../domain/pageindex.ts";
 import { PAGE_DOC, pageDir } from "../domain/pages.ts";
 import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
 
@@ -54,7 +55,8 @@ export const mirrored = (what: Promise<unknown>): Promise<void> =>
 import { PROTOCOL } from "../../contracts/wire.js";
 import { fail } from "../../contracts/wire.js";
 import { DESIGN_PAGE } from "../../contracts/wire.js";
-import { isChatRequest, isHistoryRequest, isWindowId } from "../../contracts/guards.js";
+import { LOCATE_MAX, SEARCH_MAX, foldId } from "../../contracts/wire.js";
+import { isChatRequest, isHistoryRequest, isPageRequest, isWindowId } from "../../contracts/guards.js";
 
 // Undo is deliberately absent from this file. The vault is a git repo and the
 // server commits ahead of every write, but that belongs to the layer that knows
@@ -140,6 +142,13 @@ export interface Deps {
   /** THE CHAT'S KEPT CHOICES — `.biom/settings.json`. Optional, and absent
    *  answers `settings.*` `unsupported`: every caller from before them. */
   settings?: Settings;
+  /** THE INDEX OF PAGE HEADS — what a window asks about pages it has not
+   *  loaded: by id or identity (`page.locate`), by name (`page.search`), and
+   *  what a `[[wikilink]]` names. Built against a vault like `pages`, and told
+   *  here of every page the app moves or renames, so the page is found at its
+   *  new id without a sweep. Optional, and absent answers the three
+   *  `unsupported`: every caller from before it. */
+  index?: Pick<PageIndex, "locate" | "search" | "resolveLink" | "moved">;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -403,6 +412,47 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "children.all":
         return ok(id, await deps.pages.childrenAll());
 
+      /* ── pages the window has not loaded ─────────────────────────────── */
+
+      // ANSWERED FROM THE INDEX OF PAGE HEADS, never from a list of every page:
+      // a window over a two-thousand-page workspace holds the levels it has
+      // open and asks for anything else by id, by identity or by name. The
+      // guard narrows both first, so its bounds are the only ones.
+      case "page.locate":
+      case "page.search": {
+        if (!isPageRequest(req)) {
+          return err(id, "bad_request", (req as { kind: string }).kind === "page.locate"
+            ? `a locate names ids or uids, and at most ${LOCATE_MAX} of each`
+            : `a search is a few words, and asks for at most ${SEARCH_MAX} pages`);
+        }
+        const index = deps.index;
+        if (index === undefined) return refused(id, "finding a page by its id, identity or name");
+        if (req.kind === "page.locate") return ok(id, await index.locate({ ids: req.ids, uids: req.uids }));
+        return ok(id, await index.search(req.query, req.limit ?? SEARCH_MAX));
+      }
+
+      // WHAT A `[[wikilink]]` NAMES, asked by a box through the window, which
+      // no longer holds every page to answer it from. A page first — the
+      // design doc, the id exactly, folded, by its tail, by its name, each
+      // only where it is unambiguous — and then a table, by its name exactly
+      // and then folded. Null where nothing is named, which is a dead link
+      // and not an error.
+      case "link.resolve": {
+        if (typeof req.target !== "string" || req.target === "") return err(id, "bad_request", "a link names a page or a table");
+        const index = deps.index;
+        if (index === undefined) return refused(id, "following a link");
+        const page = await index.resolveLink(req.target);
+        if (page !== null) return ok(id, page);
+        const want = req.target.trim().replace(/^\/+|\/+$/g, "");
+        if (want === "") return ok(id, null);
+        const tables = deps.tables.list();
+        const only = (test: (name: string) => boolean): { kind: "table"; id: string } | null => {
+          const hits = tables.filter((t) => test(t.name));
+          return hits.length === 1 ? { kind: "table", id: hits[0]!.name } : null;
+        };
+        return ok(id, only((name) => name === want) ?? only((name) => foldId(name) === foldId(want)));
+      }
+
       // ANOTHER PAGE'S VARIABLES — the local-first join. A page can read what
       // another page knows and draw something richer than a table with it, and
       // reaching across a page boundary is a CALL rather than a template so that
@@ -516,6 +566,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
           const to = await deps.pages.rename(req.page, req.name);
           if (to !== req.page) restack(deps, req.page, to);
           if (to !== req.page) relocated(deps, req.page, to);
+          if (to !== req.page) indexed(deps, req.page, to);
           if (to !== req.page) deps.mirror.queue.rename(req.page, to);
           deps.mirror.queue.follow(to, true);
           return ok(id, to);
@@ -684,6 +735,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
           // reason: a run's row names its page, a page's id is where it sits,
           // and the registry is not told by the filesystem.
           if (to !== req.page) relocated(deps, req.page, to);
+          // AND THE INDEX'S ROWS, which are keyed by folder.
+          if (to !== req.page) indexed(deps, req.page, to);
           // The old path names nothing now and the new one names a page nobody
           // has drawn yet, so both halves are done here rather than waiting for
           // somebody to open it. The mirror is CARRIED rather than dropped and
@@ -1181,6 +1234,19 @@ function relocated(deps: Deps, from: PageId, to: PageId): void {
     deps.runs.relocate(from, to);
   } catch (e) {
     console.warn("the runs under a moved page", e);
+  }
+}
+
+/** Follow a page move with the index of page heads, by the same prefix rule:
+ *  its rows are keyed by folder, and a page found by its `uid` at the folder it
+ *  left would otherwise wait on a sweep of the workspace to be found at the
+ *  one it went to. THE INDEX NEVER FAILS A MOVE: a row it could not carry is
+ *  read again from disk when it is next asked. */
+function indexed(deps: Deps, from: PageId, to: PageId): void {
+  try {
+    deps.index?.moved(from, to);
+  } catch (e) {
+    console.warn("the page index, after a move", e);
   }
 }
 

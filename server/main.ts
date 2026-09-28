@@ -719,6 +719,8 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   // And the thirteenth's: the kept choices of a folder that will not open are
   // not somebody else's.
   settings: refuses<Settings>(why, code),
+  // And the twelfth's: a folder that will not open has no pages to find.
+  index: refuses<PageIndex>(why, code),
 });
 
 /** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
@@ -1457,7 +1459,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     };
     return {
       path, db, runsDb, pagesDb, ownWrites, ownPages, openedAt, index, runs, seen, history, agents, chats, jev: jevStatus, identities,
-      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings },
+      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings, index },
       settled: Promise.resolve(), files,
     };
   }
