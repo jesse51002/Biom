@@ -562,6 +562,12 @@ Agent screen walk then the startup walk still failed eleven in eleven with
 and passed three in three as two processes. A new file goes in `E2E_SERVER`
 and gets a process of its own.
 
+**A step that types into the input waits for the window's own Send.** A walk
+that waited for a turn to end on the server's word can type before the window
+has heard it — the chat gathers its pushes and the stream gathers them again —
+and Enter while the window still shows Stop sends nothing, by design. The chat
+walk's `send()` waits for Send; the Agent screen walk's step 10 does the same.
+
 ## 14. What is deliberately not built
 
 - **The door**: no MCP server is handed to an agent; runs and agents outside
