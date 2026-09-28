@@ -752,10 +752,10 @@
 
     /** THE SWAP IS AS WIDE AS THE WORD ARRIVING, AS IT IS DRAWN, and the line
      *  re-centres as its width moves there. Each word is its own width in the
-     *  swap, so the newest is watched rather than measured once: a face that
-     *  loads after it and a stage that takes the line under 620 pixels change
-     *  its size, and the swap follows without waiting for the next turn.
-     *  Without an observer the swap is as wide as what it holds. */
+     *  swap, so the newest is watched rather than measured once: the sheet's
+     *  face loading after it, or a stage that takes the line under 620 pixels,
+     *  changes its size, and the swap follows without waiting for the next
+     *  turn. Without an observer the swap is as wide as what it holds. */
     /** @type {any} */
     let fits = null;
     if (typeof win.ResizeObserver === "function") {
