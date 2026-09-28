@@ -710,11 +710,41 @@
     return { label: path || "a file", where: path, target: null, page: false };
   }
 
-  /** A page's own document is its `content.yaml`: the file whose creation is
-   *  the page's, whose removal removes it, whose move moves it. Within one
-   *  page's group only that page's own can be named so — a child page's
-   *  document is placed at the child. @param {any} path */
-  const ownDocument = (path) => typeof path === "string" && (path === "content.yaml" || path.endsWith("/content.yaml"));
+  /** THE PAGE FOLDER A PATH IS IN, read the way the server's address table
+   *  reads it (`addressOfPath` in server/domain/history.ts, which the box
+   *  cannot import): `pages/<seg>(/children/<seg>)*`, each segment a page
+   *  segment's grammar, the walk ending where one is not — and what is left
+   *  below is the page's own. `folder` is the folder's path, `id` the page's
+   *  id as the path names it, `last` its last segment. Null for a path that
+   *  is under no page folder, or that climbs out with `..`.
+   *  @param {any} path @returns {{ folder: string, id: string, last: string } | null} */
+  function pageFolderOf(path) {
+    if (typeof path !== "string") return null;
+    const parts = path.replace(/^\.\//, "").split("/").filter((p) => p !== "" && p !== ".");
+    if (parts.indexOf("..") >= 0 || parts[0] !== "pages") return null;
+    const SEG = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+    const head = parts[1];
+    if (head === undefined || !SEG.test(head)) return null;
+    const ids = [head];
+    let at = 2;
+    for (;;) {
+      const next = parts[at + 1];
+      if (parts[at] !== "children" || next === undefined || !SEG.test(next)) break;
+      ids.push(next);
+      at += 2;
+    }
+    return { folder: parts.slice(0, at).join("/"), id: ids.join("/"), last: String(ids[ids.length - 1]) };
+  }
+
+  /** A page's own document is ITS `content.yaml` — the file whose creation is
+   *  the page's, whose removal removes it, whose move moves it — and no
+   *  `content.yaml` further down: a child page's is the child's, and one
+   *  under a folder that is no page's is only a file of this page's.
+   *  @param {any} path */
+  const ownDocument = (path) => {
+    const f = pageFolderOf(path);
+    return f !== null && String(path).replace(/^\.\//, "") === f.folder + "/content.yaml";
+  };
 
   /** THE PAGES THE TURN CHANGED, one row each. The chat says what happened to
    *  each FILE; this says what happened to each PAGE, which is what the block
@@ -723,6 +753,13 @@
    *  new file inside a page that was already there makes the page Edited. A
    *  table's writes are one row per table; a file no screen shows is a row of
    *  its own, as the file it is. In the order each first appears.
+   *
+   *  A PAGE DELETED IN THE TURN COMES WITH NO PLACE: the server places a file
+   *  by the page's uid when the turn ends, and a page whose document is gone
+   *  has none by then. So a place-less file under `pages/` is grouped by the
+   *  page folder its path names, labelled by that folder's last segment, and
+   *  opens nothing — the page it names is not there to open, or is not known
+   *  to be.
    *  @param {any} edits @param {Record<string, any>} names
    *  @returns {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }[]} */
   function changedRows(edits, names) {
@@ -731,8 +768,10 @@
     for (const e of Array.isArray(edits) ? edits : []) {
       if (!e || typeof e !== "object") continue;
       const place = e.place;
+      const folder = place ? null : pageFolderOf(e.path);
       const key = place && place.view === "page" && typeof place.uid === "string" ? "page:" + place.uid
         : place && place.view === "table" && typeof place.id === "string" && place.id !== "" ? "table:" + place.id
+        : folder ? "folder:" + folder.id
         : "file:" + String(e.path || "");
       const had = groups.get(key);
       if (had) had.push(e); else groups.set(key, [e]);
@@ -740,12 +779,16 @@
     /** @type {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }[]} */
     const out = [];
     for (const [key, list] of groups) {
-      const doc = key.startsWith("page:") ? list.find((e) => ownDocument(e.path)) : undefined;
+      const isPage = key.startsWith("page:") || key.startsWith("folder:");
+      const doc = isPage ? list.find((e) => ownDocument(e.path)) : undefined;
       const ops = [...new Set(list.map((e) => e.op))];
-      const op = key.startsWith("page:")
+      const op = isPage
         ? (doc && (doc.op === "created" || doc.op === "deleted" || doc.op === "moved") ? doc.op : "edited")
         : ops.length === 1 ? String(ops[0]) : "edited";
-      const to = changedTarget({ path: (doc || list[0]).path, place: list[0].place, op: op }, names);
+      const folder = key.startsWith("folder:") ? pageFolderOf(list[0].path) : null;
+      const to = folder
+        ? { label: folder.last, where: folder.id, target: null, page: true }
+        : changedTarget({ path: (doc || list[0]).path, place: list[0].place, op: op }, names);
       /** @type {{ label: string, where: string, target: { kind: "page" | "table", id: string } | null, page: boolean, op: string, added?: number, removed?: number }} */
       const row = { label: to.label, where: to.where, target: to.target, page: to.page, op: op };
       const counted = list.filter((e) => typeof e.added === "number" || typeof e.removed === "number");

@@ -344,9 +344,11 @@ test("THE PAGES A TURN CHANGED ARE PAGES: a file made inside a page makes it Edi
     { path: "pages/home/children/Beta/children/Gamma/notes.md", place: gamma, op: "created", added: 2 },
     { path: "pages/home/children/Beta/content.yaml", place: beta, op: "edited", added: 1, removed: 1 },
   ])).toEqual([["Gamma", "Created", "+7", "home/Beta/Gamma"], ["Beta", "Edited", "+1 \u22121", "home/Beta"]]);
-  // A page whose document went is Deleted and opens nothing; a file removed
-  // from a page that stays leaves it Edited.
-  expect(rows([{ path: "pages/home/children/Beta/content.yaml", place: beta, op: "deleted" }, { path: "pages/home/children/Beta/a.md", place: beta, op: "deleted" }])).toEqual([["Beta", "Deleted", "", null]]);
+  // A page whose document went is Deleted and opens nothing — and its files
+  // come with NO place, because the page's uid went with its document by the
+  // time the turn ended: they are grouped by the page folder their path
+  // names. A file removed from a page that stays leaves it Edited.
+  expect(rows([{ path: "pages/home/children/Beta/content.yaml", place: null, op: "deleted", removed: 12 }, { path: "pages/home/children/Beta/a.md", place: null, op: "deleted", removed: 3 }])).toEqual([["Beta", "Deleted", "\u221215", null]]);
   expect(rows([{ path: "pages/home/children/Beta/a.md", place: beta, op: "deleted", removed: 4 }])).toEqual([["Beta", "Edited", "\u22124", "home/Beta"]]);
   // A table is one row; a file no screen shows is itself.
   expect(rows([
@@ -355,6 +357,49 @@ test("THE PAGES A TURN CHANGED ARE PAGES: a file made inside a page makes it Edi
     { path: "plugins/x/x.js", place: null, op: "created", added: 9 },
   ])).toEqual([["leads", "Edited", "", "leads"], ["plugins/x/x.js", "Created", "+9", null]]);
   expect(M.changedRows(null, names)).toEqual([]);
+});
+
+test("A PAGE DELETED IN THE TURN READS AS THE PAGE: its place-less files grouped by the folder their paths name, labelled by its segment, opening nothing", () => {
+  const rows = (/** @type {any[]} */ edits) => M.changedRows(edits, {}).map((/** @type {any} */ r) => [r.label, M.opWords(r.op), M.countWords(r.added, r.removed), r.target, r.page, r.where]);
+  // `rm -r` of a page and its child: two pages, each Deleted, each once.
+  expect(rows([
+    { path: "pages/home/children/Beta/content.yaml", place: null, op: "deleted", removed: 12 },
+    { path: "pages/home/children/Beta/notes.md", place: null, op: "deleted", removed: 3 },
+    { path: "pages/home/children/Beta/children/Gamma/content.yaml", place: null, op: "deleted", removed: 4 },
+    { path: "pages/home/children/Beta/automations/digest/automation.yaml", place: null, op: "deleted" },
+  ])).toEqual([
+    ["Beta", "Deleted", "\u221215", null, true, "home/Beta"],
+    ["Gamma", "Deleted", "\u22124", null, true, "home/Beta/Gamma"],
+  ]);
+  // A place-less file of a page whose own document is not among them is the
+  // page Edited; the root page is a page too.
+  expect(rows([{ path: "pages/home/old.md", place: null, op: "deleted", removed: 2 }])).toEqual([["home", "Edited", "\u22122", null, true, "home"]]);
+  // The walk is the address table's: a name that is no page segment ends it,
+  // and what is left is the page's own — so a content.yaml further down is
+  // NOT the page's document, and does not make the page Deleted.
+  expect(rows([{ path: "pages/home/children/.hidden/content.yaml", place: null, op: "deleted" }])).toEqual([["home", "Edited", "", null, true, "home"]]);
+  // A path under pages/ that names no page folder is the file it is.
+  for (const path of ["pages/content.yaml", "pages/../plugins/x.js", "pages", "pages/.git/HEAD"]) {
+    expect(rows([{ path, place: null, op: "deleted" }]).map((r) => [r[0], r[4]])).toEqual([[path, false]]);
+  }
+});
+
+test("the block of pages changed draws a page deleted in the turn as one row, Deleted, with nothing to open", () => {
+  const now = Date.now();
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  endsWith(w, [
+    { seq: 20, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null },
+    { seq: 21, at: now, turn: 2, kind: "changed", edits: [
+      { path: "pages/home/children/Beta/content.yaml", place: null, op: "deleted", removed: 12 },
+      { path: "pages/home/children/Beta/notes.md", place: null, op: "deleted", removed: 3 },
+    ] },
+  ]);
+  const second = byClass(w.root(), "turnw")[1];
+  expect(byClass(second, "chead").map((e) => e.textContent)).toEqual(["1 page changed"]);
+  expect(byClass(second, "crow").map((r) => r.textContent)).toEqual(["Beta" + "Deleted" + "\u221215"]);
+  expect(byClass(second, "copen").length).toBe(0);
+  w.teardown();
 });
 
 test("the transcript: blocks in the order they came, a tool line replaced by a later state only, a handover where it happened", () => {
