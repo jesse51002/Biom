@@ -545,6 +545,16 @@ This is the sharpest maintenance hazard in the format, and it must be named.
 is **not** a fifth reader: it goes through `docOf` and `drawSection` deliberately,
 so the design doc cannot drift from a page.
 
+`headOf` in `server/platform/yaml.ts` reads the file on its own, and it is kept
+from being a fifth reader by what it refuses to decide. It takes only the
+column-0 `name:`, `uid:` and `plugin:` lines of a document's first few
+kilobytes — so the page index can list a level without parsing a child — parses
+those lines alone with the codec's own parser, and answers *cannot say* for any
+shape that could read differently whole: a block scalar, an anchor, a quote
+left open, a key given twice, no `name:` at all. There one full parse is the
+answer. `tests/pageindex.test.ts` pins each shape it declines, and **a change
+to how any of those three keys may be written changes it in the same edit.**
+
 ---
 
 ## 11. Two properties of the writer, both load-bearing and both tested
