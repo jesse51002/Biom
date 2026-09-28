@@ -476,7 +476,7 @@ function wellFormed(v, allowed) {
     case "look.delete":
       return only(v, ["chat"]) && isOpaqueId(v.chat);
     case "look.unqueue":
-      return only(v, ["chat", "id"]) && isOpaqueId(v.chat) && isOpaqueId(v.id);
+      return only(v, ["chat", "queued"]) && isOpaqueId(v.chat) && isOpaqueId(v.queued);
 
     /* ── the agents and the chats (outer ring) ─────────────────────────── */
     case "agents.probe":
@@ -503,7 +503,7 @@ function wellFormed(v, allowed) {
     case "chat.sendQueued":
       return isOpaqueId(v.chat);
     case "chat.unqueue":
-      return isOpaqueId(v.chat) && isOpaqueId(v.id);
+      return isOpaqueId(v.chat) && isOpaqueId(v.queued);
     case "settings.set":
       return v.view === undefined || isChatView(v.view);
     case "chat.config":

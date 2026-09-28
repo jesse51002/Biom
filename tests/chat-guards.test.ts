@@ -53,7 +53,7 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
     // host after a question of the host's; a box asks, and never says them.
     env("chat.delete", { chat: CHAT }),
     env("chat.sendQueued", { chat: CHAT }),
-    env("chat.unqueue", { chat: CHAT, id: QUEUED }),
+    env("chat.unqueue", { chat: CHAT, queued: QUEUED }),
     env("settings.set", { view: "plain" }),
     env("settings.read"),
     // The look's own kinds with words smuggled onto them: the kind is admitted
@@ -78,7 +78,7 @@ test("the look's six kinds are inner ring, carry ids and words from a closed lis
     env("look.panel", { to: "beside" }),
     env("look.panel", { to: "closed" }),
     env("look.delete", { chat: CHAT }),
-    env("look.unqueue", { chat: CHAT, id: QUEUED }),
+    env("look.unqueue", { chat: CHAT, queued: QUEUED }),
   ];
   for (const r of good) expect([r.kind, isHostRequest(r), isRuntimeRequest(r)]).toEqual([r.kind, true, true]);
   const bad = [
@@ -100,9 +100,9 @@ test("the look's six kinds are inner ring, carry ids and words from a closed lis
     env("look.delete", { chat: "short" }),
     env("look.delete", { chat: CHAT, confirmed: true }),
     env("look.unqueue", { chat: CHAT }),
-    env("look.unqueue", { chat: CHAT, id: "" }),
-    env("look.unqueue", { chat: CHAT, id: 4 }),
-    env("look.unqueue", { chat: CHAT, id: QUEUED, text: "send this instead" }),
+    env("look.unqueue", { chat: CHAT, queued: "" }),
+    env("look.unqueue", { chat: CHAT, queued: 4 }),
+    env("look.unqueue", { chat: CHAT, queued: QUEUED, text: "send this instead" }),
   ];
   for (const r of bad) expect([JSON.stringify(r), isHostRequest(r)]).toEqual([JSON.stringify(r), false]);
   // THE WHOLE SET IS SIX, and none of them is an outer kind wearing a new name.
@@ -204,9 +204,9 @@ test("every chat and agents kind is admitted well-formed and refused otherwise",
     [env("chat.delete", { chat: "short" }), false],
     [env("chat.sendQueued", { chat: CHAT }), true],
     [env("chat.sendQueued"), false],
-    [env("chat.unqueue", { chat: CHAT, id: QUEUED }), true],
+    [env("chat.unqueue", { chat: CHAT, queued: QUEUED }), true],
     [env("chat.unqueue", { chat: CHAT }), false],
-    [env("chat.unqueue", { chat: CHAT, id: "has spaces in it" }), false],
+    [env("chat.unqueue", { chat: CHAT, queued: "has spaces in it" }), false],
 
     [env("settings.read"), true],
     [env("settings.set"), true],

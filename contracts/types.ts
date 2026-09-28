@@ -1600,10 +1600,11 @@ export type HostRequest = Envelope &
      *  deletes. */
     | { kind: "look.delete"; chat: ChatId }
     /** TAKE ONE MESSAGE OUT OF A CHAT'S QUEUE — the × on a *Queued* message,
-     *  by the chat and the id the server minted for it. The twelfth edit. It
+     *  by the chat and `queued`, the id the server minted for the message
+     *  (never `id`, which is the envelope's own). The twelfth edit. It
      *  removes words the person wrote and sends none: the look never says
      *  anything to an agent. */
-    | { kind: "look.unqueue"; chat: ChatId; id: string }
+    | { kind: "look.unqueue"; chat: ChatId; queued: string }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -2108,8 +2109,10 @@ export type ChatRequest = Envelope &
      *  end or a restart goes out again: its next message now, if no turn runs,
      *  and one a turn after that. The twelfth edit. */
     | { kind: "chat.sendQueued"; chat: ChatId }
-    /** TAKE ONE MESSAGE OUT OF THE QUEUE, by its id. The twelfth edit. */
-    | { kind: "chat.unqueue"; chat: ChatId; id: string }
+    /** TAKE ONE MESSAGE OUT OF THE QUEUE, by `queued`, the id the server
+     *  minted for it — never `id`, which is the envelope's own. The twelfth
+     *  edit. */
+    | { kind: "chat.unqueue"; chat: ChatId; queued: string }
     /** STOP: `session/cancel`. The turn ends `cancelled`. */
     | { kind: "chat.cancel"; chat: ChatId }
     /** SET ONE OF THE AGENT'S SESSION CONFIG OPTIONS — the model, mode and
