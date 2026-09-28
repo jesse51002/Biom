@@ -148,7 +148,7 @@ export interface Deps {
    *  here of every page the app moves or renames, so the page is found at its
    *  new id without a sweep. Optional, and absent answers the three
    *  `unsupported`: every caller from before it. */
-  index?: Pick<PageIndex, "locate" | "search" | "resolveLink" | "moved">;
+  index?: Pick<PageIndex, "locate" | "search" | "resolveLink" | "moved" | "invalidate">;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -549,6 +549,10 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
 
       case "page.remove":
         await deps.pages.remove(req.page);
+        // THE INDEX LETS GO OF IT NOW, and everything under it: the watcher's
+        // settle would otherwise find the rows' folder gone and take the app's
+        // own remove for a page deleted from outside.
+        await forgotten(deps, req.page);
         // The page is gone, so its projection is a file about nothing. The
         // parent is re-projected because it lists its children and has just lost
         // one.
@@ -1247,6 +1251,17 @@ function indexed(deps: Deps, from: PageId, to: PageId): void {
     deps.index?.moved(from, to);
   } catch (e) {
     console.warn("the page index, after a move", e);
+  }
+}
+
+/** Tell the index a page the app removed is gone. NEVER FAILS A REMOVE: the
+ *  page is already gone, and a row left behind is dropped the next time it is
+ *  asked about. */
+async function forgotten(deps: Deps, id: PageId): Promise<void> {
+  try {
+    await deps.index?.invalidate([pageDir(id)]);
+  } catch (e) {
+    console.warn("the page index, after a remove", e);
   }
 }
 

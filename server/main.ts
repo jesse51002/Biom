@@ -1778,6 +1778,23 @@ export async function makeHost(at: HostPaths): Promise<Host> {
           console.warn("the page index could not take in a change", e instanceof Error ? e.message : e);
         }
       }
+      // A PAGE DELETED FROM OUTSIDE THAT THIS PROCESS NEVER READ is nothing the
+      // watcher's baseline knew, so its verdict above said nothing of it; the
+      // index had its row, and says it is gone. It is a departure like any
+      // other: its projection goes, and its parent's level is named — the
+      // parent of the topmost page gone, not of every page under it. The app's
+      // own removes never reach here: the route tells the index at once.
+      const gone = new Set(news.gone.filter((id) => !news.moved.some((m) => m.from === id)));
+      for (const id of gone) {
+        const parent = parentOf(id);
+        const had = touched.get(id);
+        touched.set(id, {
+          structural: (had?.structural ?? false) || parent === null || !gone.has(parent),
+          dir: had?.dir ?? join(held.path, pageDir(id)),
+        });
+        held.deps.mirror.queue.drop(id);
+        held.deps.mirror.queue.follow(id, true);
+      }
       // A SETTLE THAT SAW A PAGE ARRIVE OR LEAVE GIVES AN IDENTITY TO EVERY PAGE
       // WITHOUT ONE — after the arrival was read as one above, and before the
       // windows are told, so the level they reread already carries it. What is
@@ -1820,7 +1837,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
           console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
         }
       }
-      if (!moved && news.moved.length === 0) return;
+      if (!moved && news.moved.length === 0 && gone.size === 0) return;
       const relisted: PageId[] = [];
       if (before.size > 0) {
         const after = headsOf(held, [...before.keys()]);

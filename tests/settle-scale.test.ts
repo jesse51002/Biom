@@ -4,7 +4,7 @@
 //
 // What is held: an outside write to one page costs at most two parses, names
 // that page and names no level; one that renames it names its parent's level
-// too; a page arriving names its parent's level, and
+// too; a page arriving, or deleted, names its parent's level, and
 // the index is told only about its folder; a folder moved in a file manager
 // names both parents and takes its runs with it by identity; a page whose
 // `uid` an outside save dropped is given one on the next settle where a page
@@ -136,6 +136,38 @@ test.if(unix)("A PAGE ARRIVING names its parent's level, and the index is told o
     // And the level the window rereads has it.
     const level = (await call(w.host, w.vault, { kind: "children", page: "home/Right" })) as { ok: true; value: { id: string }[] };
     expect(level.value.some((c) => c.id === "home/Right/Arrived")).toBe(true);
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
+test.if(unix)("A PAGE DELETED FROM OUTSIDE that this process never read names itself and its parent's level, and leaves the level", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    w.changes.length = 0;
+    await rm(dirOf(w.vault, "home/Right/P2"), { recursive: true, force: true });
+    expect(await until(() => w.changes.some((c) => c.levels.includes("home/Right")))).toBe(true);
+    expect(w.changes.find((c) => c.levels.includes("home/Right"))).toEqual({ pages: ["home/Right/P2"], levels: ["home/Right"] });
+    const level = (await call(w.host, w.vault, { kind: "children", page: "home/Right" })) as { ok: true; value: { id: string }[] };
+    expect(level.value.some((c) => c.id === "home/Right/P2")).toBe(false);
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
+test.if(unix)("a page the app removes, moves or renames says nothing on the stream: the window re-lists what it changed itself", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    w.changes.length = 0;
+    expect((await call(w.host, w.vault, { kind: "page.remove", page: "home/Right/P3" })).ok).toBe(true);
+    expect((await call(w.host, w.vault, { kind: "page.rename", page: "home/Right/P4", name: "Wanderer" })).ok).toBe(true);
+    expect((await call(w.host, w.vault, { kind: "page.move", page: "home/Right/Wanderer", parent: "home/Left" })).ok).toBe(true);
+    await Bun.sleep(1200);
+    expect(w.changes).toEqual([]);
   } finally {
     w.off();
     w.host.close();
