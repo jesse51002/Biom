@@ -293,7 +293,7 @@ eleventh contracts edit that may never move.** The Agent screen's look — the
 start screen, a chat, the list of chats — is a plugin a workspace can replace,
 drawn in a box on `@agent`, and what it may ask is six inner-ring kinds:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
-screen, beside the page or closed, and — the twelfth edit — `look.delete`, a
+screen, beside the page or closed, and — the thirteenth edit — `look.delete`, a
 request for Biom's OWN dialog asking whether to delete a chat, and
 `look.unqueue`, a queued message's ×: ids and words from a closed list,
 STRICTLY guarded so no field rides along — and a page a turn changed through

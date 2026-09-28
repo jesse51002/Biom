@@ -132,7 +132,7 @@ export const AGENT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 /** THE THREE VIEWS OF A CHAT, in the order the View chip lists them —
  *  `ChatView` in `types.ts` — and the one a workspace starts on: Tool calls.
- *  The twelfth contracts edit.
+ *  The thirteenth contracts edit.
  *  @type {readonly ["plain", "tools", "thinking"]} */
 export const CHAT_VIEWS = Object.freeze(/** @type {const} */ (["plain", "tools", "thinking"]));
 /** @type {"tools"} */

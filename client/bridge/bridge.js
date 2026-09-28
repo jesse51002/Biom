@@ -470,7 +470,7 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       //
       // NONE OF IT CARRIES WORDS TO AN AGENT, and nothing here could: the
       // guard admitted ids and closed words only, and the answer is the ui's.
-      // The twelfth edit's two ask the same way: `look.delete` for Biom's own
+      // The thirteenth edit's two ask the same way: `look.delete` for Biom's own
       // dialog, which alone may delete, and `look.unqueue` for a queued
       // message's ×, which takes the person's words out and sends none.
       case "look.open":

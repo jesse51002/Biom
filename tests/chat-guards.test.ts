@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE ELEVENTH AND TWELFTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
+// THE ELEVENTH AND THIRTEENTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
 //
 // An agent is a program allowed everything on this machine, so what may be
 // said to one is the most leveraged question the chat asks, and it is settled
@@ -8,7 +8,7 @@
 // carries a prompt, a command or a word to an agent. This file pins that, walks
 // every new kind through its guard both ways, holds the window id on the
 // envelope optional and checked, and holds the one new notice a box may send.
-// The twelfth edit's kinds — the kept choices, the queue, deleting a chat and
+// The thirteenth edit's kinds — the kept choices, the queue, deleting a chat and
 // the look's two new asks — are walked the same way. Ids and texts here are
 // invented and say so.
 

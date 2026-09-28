@@ -1076,7 +1076,7 @@ export type PickerCategory = Exclude<ConfigCategory, "other">;
  *  tool calls; `tools`, the default, adds each run of tool calls as ONE line
  *  that opens to them; `thinking` adds the agent's thinking written out where
  *  it came, rather than folded. None of them draws a wall of tool calls.
- *  `CHAT_VIEWS` in `wire.js` is the list. The twelfth contracts edit. */
+ *  `CHAT_VIEWS` in `wire.js` is the list. The thirteenth contracts edit. */
 export type ChatView = "plain" | "tools" | "thinking";
 
 /** THE CHAT'S CHOICES, AS THE WORKSPACE KEEPS THEM — in `.biom/settings.json`,
@@ -1090,7 +1090,7 @@ export type ChatView = "plain" | "tools" | "thinking";
  *  `chat.switchAgent` and `chat.config` — so they hold whichever window made
  *  it, and across a restart. A new chat with an agent starts on that agent's
  *  kept values that its list still offers; one it no longer offers is skipped
- *  without a word. The twelfth contracts edit. */
+ *  without a word. The thirteenth contracts edit. */
 export interface ChatSettings {
   view: ChatView;
   agent: AgentKey | null;
@@ -1213,7 +1213,7 @@ export interface PlanEntry {
  *
  *  `queued` is how many of the person's messages wait in the chat's queue, and
  *  `queueHeld` whether the queue waits for the person rather than for the turn
- *  (the twelfth edit): a queue goes out by itself, one message a turn, after a
+ *  (the thirteenth edit): a queue goes out by itself, one message a turn, after a
  *  turn that ends `end_turn`; after Stop, a red end or a restart it is held,
  *  and goes out only when the person asks (`chat.sendQueued`). */
 export interface ChatSummary {
@@ -1259,7 +1259,7 @@ export interface ChatSummary {
  *  turn was running, by an id the server minted; `unqueued` is one leaving it —
  *  `sent` when it went out as the next turn's `prompt`, which follows it, and
  *  not when the person removed it. The queue is those two read in order; the
- *  twelfth edit. */
+ *  thirteenth edit. */
 export type ChatUpdate = { seq: number; at: number; turn: number } & (
   | { kind: "prompt"; text: string }
   | { kind: "reply"; text: string }
@@ -1282,7 +1282,7 @@ export type ChatUpdate = { seq: number; at: number; turn: number } & (
 /** WHAT `chat.send` ANSWERS: the chat as it now stands, and — where the
  *  message waits in the chat's queue because a turn was running — its id and
  *  its place in the queue, 1 being next. Null where it went out, or is held
- *  for an agent to be ready. The twelfth edit; before it `chat.send` answered
+ *  for an agent to be ready. The thirteenth edit; before it `chat.send` answered
  *  the summary alone. */
 export interface ChatSent {
   chat: ChatSummary;
@@ -1299,7 +1299,7 @@ export interface ChatRead {
  *  streamed since the last event, batched. The summary is always there, so a
  *  light changing on a chat nobody has open is an event with no updates.
  *
- *  `deleted` says the chat is gone (`chat.delete`, the twelfth edit): the
+ *  `deleted` says the chat is gone (`chat.delete`, the thirteenth edit): the
  *  summary is as it last stood, there are no updates, and every window drops
  *  it from its list — one that had it open goes to the start screen. Absent
  *  on every other push. */
@@ -1332,7 +1332,7 @@ export interface LookInput {
  *  and where it now is: the look cannot resolve a `uid` itself, and a page it
  *  names it opens through `open`. `beside` is the page the panel sits beside,
  *  or the one the Agent screen would minimise to. `view` is which of a chat's
- *  three views the person picked (the twelfth edit): the look draws the chat
+ *  three views the person picked (the thirteenth edit): the look draws the chat
  *  that way, and a look that draws fewer views draws the nearest it has. */
 export interface LookState {
   mode: "screen" | "panel";
@@ -1593,7 +1593,7 @@ export type HostRequest = Envelope &
      *  page the history shows; `closed`, the panel shut. */
     | { kind: "look.panel"; to: "screen" | "beside" | "closed" }
     /** ASK FOR A CHAT TO BE DELETED — its row's three dots, then Delete. The
-     *  twelfth edit. The look deletes nothing: Biom answers with a dialog of
+     *  thirteenth edit. The look deletes nothing: Biom answers with a dialog of
      *  its own, *Delete this chat? It can't be undone.*, and only the person's
      *  Delete there says `chat.delete`, which no box can say. So a look that
      *  asks this unprompted, or on a loop, raises a question and never
@@ -1601,7 +1601,7 @@ export type HostRequest = Envelope &
     | { kind: "look.delete"; chat: ChatId }
     /** TAKE ONE MESSAGE OUT OF A CHAT'S QUEUE — the × on a *Queued* message,
      *  by the chat and `queued`, the id the server minted for the message
-     *  (never `id`, which is the envelope's own). The twelfth edit. It
+     *  (never `id`, which is the envelope's own). The thirteenth edit. It
      *  removes words the person wrote and sends none: the look never says
      *  anything to an agent. */
     | { kind: "look.unqueue"; chat: ChatId; queued: string }
@@ -2099,7 +2099,7 @@ export type ChatRequest = Envelope &
      *  agent can reload it. */
     | { kind: "chat.read"; chat: ChatId; since?: number }
     /** THE PERSON'S MESSAGE, answered as a `ChatSent`. One at a time: sent
-     *  while a turn runs, it WAITS IN THE CHAT'S QUEUE (the twelfth edit; it
+     *  while a turn runs, it WAITS IN THE CHAT'S QUEUE (the thirteenth edit; it
      *  was refused `limit` before), and the answer says its place. ACP has no
      *  queue, so the queue is Biom's, kept with the chat. A `/name` naming a
      *  workspace skill the agent did not list goes out with a pointer to its
@@ -2107,10 +2107,10 @@ export type ChatRequest = Envelope &
     | { kind: "chat.send"; chat: ChatId; text: string }
     /** SEND THE HELD QUEUE — **Send queued**. A queue held after Stop, a red
      *  end or a restart goes out again: its next message now, if no turn runs,
-     *  and one a turn after that. The twelfth edit. */
+     *  and one a turn after that. The thirteenth edit. */
     | { kind: "chat.sendQueued"; chat: ChatId }
     /** TAKE ONE MESSAGE OUT OF THE QUEUE, by `queued`, the id the server
-     *  minted for it — never `id`, which is the envelope's own. The twelfth
+     *  minted for it — never `id`, which is the envelope's own. The thirteenth
      *  edit. */
     | { kind: "chat.unqueue"; chat: ChatId; queued: string }
     /** STOP: `session/cancel`. The turn ends `cancelled`. */
@@ -2139,14 +2139,14 @@ export type ChatRequest = Envelope &
      *  where the agent offers `session/delete`, it is asked to delete its own
      *  record of the session too, best effort and in the background. The kept
      *  choices are left alone, and so is the history, which is history. Every
-     *  window hears it as a `chat` push saying `deleted`. The twelfth edit. */
+     *  window hears it as a `chat` push saying `deleted`. The thirteenth edit. */
     | { kind: "chat.delete"; chat: ChatId }
-    /** THE CHAT'S KEPT CHOICES, as `ChatSettings`. The twelfth edit. */
+    /** THE CHAT'S KEPT CHOICES, as `ChatSettings`. The thirteenth edit. */
     | { kind: "settings.read" }
     /** KEEP A CHOICE MADE IN THE HOST — the view — and answer the choices as
      *  they now stand. The agent, model, mode and effort are kept by the
      *  server as `chat.new`, `chat.switchAgent` and `chat.config` make them,
-     *  and are not set here. The twelfth edit. */
+     *  and are not set here. The thirteenth edit. */
     | { kind: "settings.set"; view?: ChatView }
   );
 

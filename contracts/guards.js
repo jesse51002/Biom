@@ -120,7 +120,7 @@ const HOST_KINDS = new Set([
   // holds both. The bridge answers them for the look's own box and refuses
   // every other. Same three-place rule as every line above it.
   "look.open", "look.new", "look.list", "look.panel",
-  // THE TWELFTH EDIT'S TWO: a chat's row asking for Biom's own delete dialog,
+  // THE THIRTEENTH EDIT'S TWO: a chat's row asking for Biom's own delete dialog,
   // and a queued message's × — ids only, like the four above. Neither deletes
   // nor sends anything by itself: the dialog is the host's and the words were
   // the person's.
@@ -158,7 +158,7 @@ const CHAT_KINDS = new Set([
   "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
   "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
   "chat.switchAgent", "chat.close", "chat.commands",
-  // The twelfth edit: deleting a chat, its queue, and the kept choices.
+  // The thirteenth edit: deleting a chat, its queue, and the kept choices.
   "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
 ]);
 

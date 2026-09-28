@@ -689,7 +689,7 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   history: refuses<History>(why, code),
   agents: refuses<Agents>(why, code),
   chats: refuses<Chats>(why, code),
-  // And the twelfth's: the kept choices of a folder that will not open are
+  // And the thirteenth's: the kept choices of a folder that will not open are
   // not somebody else's.
   settings: refuses<Settings>(why, code),
 });
