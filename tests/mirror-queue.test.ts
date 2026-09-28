@@ -7,8 +7,9 @@
 // a projection reads its page once, and a file whose bytes would not change is
 // not written; the mount's pass projects only a page newer than its `.md` and
 // prunes a page that has gone, so a mount after which nothing changed writes
-// nothing and commits nothing. The vaults are temporary folders, and every
-// page and word in them is invented.
+// nothing and commits nothing; a page made after the mount's walk keeps its
+// file, and the prune takes its turn on the queue. The vaults are temporary
+// folders, and every page and word in them is invented.
 
 import { test, expect } from "bun:test";
 import { mkdtemp, rm, readFile, stat, utimes, writeFile, mkdir } from "node:fs/promises";
@@ -240,6 +241,70 @@ test("A BOX'S PROJECTION LANDS AFTER A PROJECTION ALREADY UNDER WAY FOR ITS PAGE
     expect((await answered).ok).toBe(true);
     await mirror.queue.idle();
     expect(String(await v.files.read(board))).toContain("- a card only the box knows");
+  } finally {
+    await v.drop();
+  }
+});
+
+test("A PAGE MADE AFTER THE MOUNT'S WALK keeps the file the watcher wrote for it, and a page that has gone still loses its own", async () => {
+  // THE WALK IS TAKEN BEFORE THE PRUNE RUNS. The mount lists every page
+  // folder, stats every page against its `.md`, and only then takes away the
+  // files the list did not name — and all the while the watcher goes on
+  // projecting. A page an agent made after the walk had a file the watcher
+  // had already written, and the prune took it on the list's word: the page
+  // beside one the list held lost its `.md`, and the first child of a page
+  // the list never saw lost the folder its `.md` was in. The list handed in
+  // here is taken before those pages are made, which is the order the mount
+  // meets them in.
+  const v = await vault(1);
+  try {
+    const c = counted(v.files);
+    const mirror = makeMirror(v.files, c.pages, c.docs);
+    const walked = await pageDirs(v.files);
+    for (const [id, name] of [["home/Late", "Late"], ["home/Late/Deeper", "Deeper"]] as const) {
+      const dir = join(v.root, "pages", id.split("/").join("/children/"));
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "content.yaml"), `name: ${name}\nplugin: biom-doc\ncontents: []\n`);
+      mirror.queue.follow(id, true);
+    }
+    await mirror.queue.idle();
+    // And files about a page that is gone from disk, which the prune does take.
+    await v.files.write(mirrorPath("home/Gone"), "# Gone\n");
+    await v.files.write(mirrorPath("home/Gone/Under"), "# Under\n");
+
+    const done = await refresh(mirror, v.files, walked);
+    expect(done.wrote).toBe(true);
+    expect(await v.files.read(mirrorPath("home/Late"))).toContain("Late");
+    expect(await v.files.read(mirrorPath("home/Late/Deeper"))).toContain("Deeper");
+    expect(await v.files.read(mirrorPath("home/Note0"))).not.toBeNull();
+    expect(await v.files.read(mirrorPath("home/Gone"))).toBeNull();
+    expect(await v.files.read(mirrorPath("home/Gone/Under"))).toBeNull();
+  } finally {
+    await v.drop();
+  }
+});
+
+test("A PRUNE TAKES ITS TURN on the queue: after the projection asked before it, never beside it", async () => {
+  // So nothing the queue writes lands between the prune's look at the disk
+  // and its delete. Held here with the projection stopped at its page read.
+  const v = await vault(1);
+  try {
+    const order: string[] = [];
+    const files = new Proxy(v.files, {
+      get(target, key, receiver) {
+        if (key === "write") return async (rel: string, text: string) => { order.push(`write ${rel}`); await target.write(rel, text); };
+        if (key === "list") return async (rel: string) => { if (rel === "_markdown") order.push("prune"); return await target.list(rel); };
+        return Reflect.get(target, key, receiver);
+      },
+    }) as DiskFiles;
+    const c = counted(files);
+    const mirror = makeMirror(files, c.pages, c.docs);
+    const release = c.hold();
+    mirror.queue.follow("home/Note0");
+    const pruned = mirror.queue.prune(["home", "home/Note0"]);
+    release();
+    await pruned;
+    expect(order).toEqual([`write ${mirrorPath("home/Note0")}`, "prune"]);
   } finally {
     await v.drop();
   }

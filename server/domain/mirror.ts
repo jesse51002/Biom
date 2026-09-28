@@ -24,7 +24,10 @@
 // thread handed back between pages because a projection parses and the server
 // has one thread. So the mirror is current within seconds of a write rather
 // than at the moment it answers, and `queue.idle()` is when everything asked
-// so far is on disk — for a test, and for a full rebuild.
+// so far is on disk — for a test, and for the mount's pass. Every change to a
+// page's file here is a task on that queue — a projection, a box's own words,
+// a move, a drop, and the prune that takes away what is no longer a page — so
+// none of them lands in the middle of another.
 //
 // COMMITS. Nothing in here commits. A projection is swept into the next
 // commit anybody makes, which is the one before the next write. The mount's
@@ -48,12 +51,17 @@ export const MIRROR_DIR = "_markdown";
  *  segment is not a page and must never be turned into an id. */
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-/** The two spellings the page tree is laid out with, as `pages.ts` writes them.
+/** The spellings the page tree is laid out with, as `pages.ts` writes them.
  *  They are repeated here for the same reason `SEGMENT` is: this module is the
  *  one that walks a real directory path and decides whether it is a page, and
  *  `pages.ts` is a sibling it may not import. */
 const PAGES_DIR = "pages";
 const CHILDREN = "children";
+const PAGE_DOC = "content.yaml";
+
+/** `home/clients/ashgrove` → `pages/home/children/clients/children/ashgrove`,
+ *  vault-relative: the folder `pages.ts` keeps that page in. */
+const folderOf = (id: string): string => `${PAGES_DIR}/${id.split("/").join(`/${CHILDREN}/`)}`;
 
 /** WHICH PAGE A CHANGED FILE BELONGS TO, and what is left of the path below it.
  *
@@ -100,11 +108,16 @@ export interface MirrorQueue {
    *  cannot land after them and put the host's empty file back over them.
    *  Settles once they are on disk, and fails as `Mirror.write` fails. */
   write(id: PageId, markdown: string): Promise<void>;
+  /** TAKE AWAY WHAT IS NO LONGER A PAGE, in its turn: after every task
+   *  already asked and before any asked after it, so no projection lands
+   *  between its look at the disk and its delete. Answers what it took, and
+   *  fails as `Mirror.prune` fails. */
+  prune(ids: readonly PageId[]): Promise<string[]>;
   /** Settles when every task asked so far is done. */
   idle(): Promise<void>;
-  /** THE FOLDER CLOSED: every task not yet started is let go, a `write`
-   *  waiting among them fails, and nothing asked from now on is done. A task
-   *  under way finishes. */
+  /** THE FOLDER CLOSED: every task not yet started is let go, a `write` or a
+   *  `prune` waiting among them fails, and nothing asked from now on is done.
+   *  A task under way finishes. */
   stop(): void;
   /** Tasks asked and not yet done. */
   pending(): number;
@@ -125,8 +138,9 @@ export interface Mirror {
   drop(id: PageId): Promise<void>;
   /** Carry a moved page's files, and everything under it, to its new id. */
   rename(from: PageId, to: PageId): Promise<void>;
-  /** Remove every file in the mirror that no longer names a page; answers what
-   *  it took. */
+  /** Remove every file in the mirror that no longer names a page — one `ids`
+   *  does not name and whose page is not on disk either; answers what it
+   *  took. */
   prune(ids: readonly PageId[]): Promise<string[]>;
   /** Write the read-only notice where it differs; answers whether it wrote. */
   guide(): Promise<boolean>;
@@ -292,7 +306,7 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
     // LINE only: a `#` further down is a section heading, not the page's name.
     const heading = /^#\s+(.+)$/.exec(body.split("\n", 1)[0] ?? "")?.[1]?.trim() ?? "";
     const head = frontmatter(
-      id, page.name, `pages/${id.split("/").join("/children/")}/content.yaml`, page.variables, heading,
+      id, page.name, `${folderOf(id)}/${PAGE_DOC}`, page.variables, heading,
     );
     // THE PAGE'S OWN HEADING WINS WHERE IT HAS ONE.
     //
@@ -475,6 +489,23 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
       const live = new Set(ids);
       const gone: string[] = [];
 
+      /** WHAT THE DISK HAS OF A PAGE `ids` DID NOT NAME. The list is a walk
+       *  taken before this ran — the mount's, which then stats every page
+       *  while the watcher goes on projecting — so a page made after it has a
+       *  folder the list never saw and a file the watcher has already
+       *  written. Swept on the list's word alone, that file went, and the
+       *  page stayed without its markdown until its next edit or the next
+       *  mount. So a name the list does not hold is asked of disk before
+       *  anything of it is taken: its document, and whether a `children/`
+       *  could still hold pages. */
+      const standing = async (id: string): Promise<{ page: boolean; kids: boolean }> => {
+        const here = await files.list(folderOf(id));
+        return {
+          page: here.some((e) => !e.dir && e.name === PAGE_DOC),
+          kids: here.some((e) => e.dir && e.name === CHILDREN),
+        };
+      };
+
       const walk = async (rel: string, prefix: string): Promise<void> => {
         for (const entry of await files.list(rel)) {
           const path = `${rel}/${entry.name}`;
@@ -492,7 +523,7 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
             // still standing is not a shape this reaches, but a mirror that
             // deleted a live page's file would be.
             const holds = [...live].some((one) => one.startsWith(`${id}/`));
-            if (holds) await walk(path, `${id}/`);
+            if (holds || (await standing(id)).kids) await walk(path, `${id}/`);
             else { await files.remove(path); gone.push(path); }
             continue;
           }
@@ -501,7 +532,7 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
           // be swept as a stale one. See NOTICE.
           if (rel === MIRROR_DIR && NOTICE.includes(entry.name)) continue;
           const id = prefix + entry.name.slice(0, -3);
-          if (live.has(id)) continue;
+          if (live.has(id) || (await standing(id)).page) continue;
           await files.remove(path);
           gone.push(path);
         }
@@ -535,7 +566,8 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
       | { kind: "project"; id: PageId }
       | { kind: "drop"; id: PageId }
       | { kind: "rename"; from: PageId; to: PageId }
-      | { kind: "write"; id: PageId; markdown: string; done: () => void; failed: (e: unknown) => void };
+      | { kind: "write"; id: PageId; markdown: string; done: () => void; failed: (e: unknown) => void }
+      | { kind: "prune"; ids: readonly PageId[]; done: (gone: string[]) => void; failed: (e: unknown) => void };
     const tasks: Task[] = [];
     let running: Promise<void> | null = null;
     let stopped = false;
@@ -559,7 +591,13 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
       if (t.kind === "project") await mirror.project(t.id);
       else if (t.kind === "drop") await mirror.drop(t.id);
       else if (t.kind === "rename") await mirror.rename(t.from, t.to);
-      else {
+      else if (t.kind === "prune") {
+        try {
+          t.done(await mirror.prune(t.ids));
+        } catch (e) {
+          t.failed(e);
+        }
+      } else {
         // The caller's to report, as a refusal it chose the words of — never
         // a line in this log.
         try {
@@ -618,9 +656,16 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
           start();
         });
       },
+      prune(ids) {
+        if (stopped) return Promise.reject(closed());
+        return new Promise<string[]>((done, failed) => {
+          tasks.push({ kind: "prune", ids, done, failed });
+          start();
+        });
+      },
       stop() {
         stopped = true;
-        for (const t of tasks.splice(0)) if (t.kind === "write") t.failed(closed());
+        for (const t of tasks.splice(0)) if (t.kind === "write" || t.kind === "prune") t.failed(closed());
       },
       async idle() {
         while (running !== null) await running;
@@ -645,10 +690,10 @@ const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 export async function rebuild(mirror: Mirror, refs: readonly PageRef[]): Promise<boolean> {
   const wrote = await mirror.guide();
   // Through the queue, like every other projection, and waited for: this is
-  // the one caller that asks for every page on purpose.
+  // the one caller that asks for every page on purpose. The prune takes its
+  // turn after them.
   for (const ref of refs) mirror.queue.follow(ref.id);
-  await mirror.queue.idle();
-  const gone = await mirror.prune(refs.map((r) => r.id));
+  const gone = await mirror.queue.prune(refs.map((r) => r.id));
   return wrote || gone.length > 0 || refs.length > 0;
 }
 
@@ -660,8 +705,11 @@ export async function rebuild(mirror: Mirror, refs: readonly PageRef[]): Promise
  *  after which nothing had changed writes nothing at all.
  *
  *  `dirs` is every page folder, vault-relative — `pageDirs`, a readdir walk and
- *  never a parse. The projections go on the queue; this answers once they are
- *  asked for, with how many, and whether the notice or the prune wrote. */
+ *  never a parse, taken before this runs. The projections go on the queue and
+ *  the prune after them, in its turn, asking the disk about any file `dirs`
+ *  does not name — a page made since the walk is not gone; this answers once
+ *  the prune has run, with how many projections it asked for and whether the
+ *  notice or the prune wrote. */
 export async function refresh(
   mirror: Mirror,
   files: DiskFiles,
@@ -676,7 +724,7 @@ export async function refresh(
     const at = pageAt(dir);
     if (at === null || at.rest !== "") continue;
     ids.push(at.id);
-    const doc = await files.stat(`${dir}/content.yaml`);
+    const doc = await files.stat(`${dir}/${PAGE_DOC}`);
     if (doc === null) continue;
     const md = await files.stat(mirrorPath(at.id));
     const kids = await files.stat(`${dir}/${CHILDREN}`);
@@ -687,7 +735,7 @@ export async function refresh(
     }
     if (++n % 200 === 0) await pause();
   }
-  const gone = await mirror.prune(ids);
+  const gone = await mirror.queue.prune(ids);
   return { queued, wrote: wrote || gone.length > 0 };
 }
 
