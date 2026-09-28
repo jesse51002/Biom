@@ -12,16 +12,17 @@
 // invented. Every request is served by Playwright from this checkout; nothing
 // listens on a port.
 //
-// WHAT IT HOLDS: the start screen, and its word turning as one word on one
-// centre frame by frame, and the swap as wide as its word whatever size the
-// line is drawn at; a chat mid-turn, a finished one, a red one and the panel
-// draw; a patch appends where it belongs and leaves the rest of the thread's
-// nodes alone, and a stale one is dropped; the chat's ⋯ and its View menu,
-// worked from the keyboard, fit on a desktop, at the panel's narrowest and at
-// a phone's width; an agent's words never become markup; the look asks for
-// nothing but its own kinds and `open`; reduced motion rests still with faces
-// as text; and a pagehide leaves nothing behind. Pictures of each land in
-// `dist/e2e/`, or in `LOOK_SHOTS` if set.
+// WHAT IT HOLDS: the start screen, and its line frame by frame — the word
+// turning as one word on one centre, the swap as wide as its word at any size,
+// and nothing restarted by the start screen handed over again and again; a
+// chat mid-turn, a finished one, a red one and the panel draw; a patch appends
+// where it belongs and leaves the rest of the thread's nodes alone, and a
+// stale one is dropped; the chat's ⋯ and its View menu, worked from the
+// keyboard, fit on a desktop, at the panel's narrowest and at a phone's width;
+// an agent's words never become markup; the look asks for nothing but its own
+// kinds and `open`; reduced motion rests still with faces as text; and a
+// pagehide leaves nothing behind. Pictures of each land in `dist/e2e/`, or in
+// `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -310,6 +311,45 @@ test("THE SWAP IS ITS WORD'S WIDTH, and follows the word's size between turns: n
       expect([after.word, after.words]).toEqual([before.word, 1]);
       expect([width, after.size, Math.abs(after.swap - after.text) <= 1 ? "fits" : `${Math.round(after.swap - after.text)}px off`]).toEqual([width, after.size, "fits"]);
     }
+  } finally { await ctx.close(); }
+}, 60000);
+
+test("THE START SCREEN HANDED OVER WHOLE AGAIN AND AGAIN, as the host does whenever its shape moves, leaves the word turning on time and the ribbon drawn in every frame", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    await post(page, box, { kind: "look.state", state: lookState({}) });
+    // Inside the box: each word that arrives, and after each frame is painted
+    // whether the middle of the ribbon, which it always crosses, is dark.
+    await box.evaluate(() => {
+      const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
+      const w = window as any;
+      w.__turns = 0;
+      w.__dark = 0;
+      w.__frames = 0;
+      new MutationObserver((ms) => { for (const m of ms) w.__turns += m.addedNodes.length; }).observe(root.querySelector(".swap")!, { childList: true });
+      const c = root.querySelector(".fx canvas") as HTMLCanvasElement;
+      const g = c.getContext("2d")!;
+      const look = () => requestAnimationFrame(() => setTimeout(() => {
+        const px = g.getImageData(Math.round(c.width * 0.5) - 40, Math.round(c.height * 0.58) - 40, 80, 80).data;
+        let lit = 0;
+        for (let i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+        w.__frames++;
+        if (lit === 0) w.__dark++;
+        if (!w.__stop) look();
+      }, 0));
+      look();
+    });
+    // Every 700 milliseconds for 6.3 seconds: before the start screen took
+    // only what changed, each one restarted the word's 2.6 second wait and
+    // cleared the ribbon's canvas for the frame after.
+    for (let i = 0; i < 9; i++) {
+      await page.evaluate((m) => (window as any).__host.post(m), { kind: "look.state", state: lookState({ list: i % 2 === 0 }) } as any);
+      await page.waitForTimeout(700);
+    }
+    const seen = await box.evaluate(() => { const w = window as any; w.__stop = true; return { turns: w.__turns, dark: w.__dark, frames: w.__frames }; });
+    expect(seen.frames).toBeGreaterThan(100);
+    expect(seen.turns).toBeGreaterThanOrEqual(2);
+    expect(seen.dark).toBe(0);
   } finally { await ctx.close(); }
 }, 60000);
 

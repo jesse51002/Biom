@@ -468,9 +468,14 @@ test("the transcript: blocks in the order they came, a tool line replaced by a l
 /* ══ the look, mounted: a small fake DOM, the real shim ══════════════════ */
 
 /** THE FAKE DOM. Exactly the calls the look makes, and a record of every
- *  timer, frame, observer and listener it starts, so teardown can be held. */
-function fakeWorld(opts = /** @type {{ reduced?: boolean }} */ ({})) {
-  const live = { timers: new Set(), frames: new Set(), observers: new Set(), docListeners: 0, mediaListeners: 0, winListeners: 0 };
+ *  timer, frame, observer and listener it starts, so teardown can be held.
+ *  An interval is kept with what it runs, for a test to run it; `canvas`
+ *  gives the ribbon a context that counts how often it was sized. */
+function fakeWorld(opts = /** @type {{ reduced?: boolean, canvas?: boolean }} */ ({})) {
+  const live = { timers: new Set(), frames: new Set(), observers: new Set(), docListeners: 0, mediaListeners: 0, winListeners: 0,
+    /** @type {Map<number, Function>} */ intervals: new Map(), framesAsked: 0, sized: 0 };
+  /** @type {Function[]} */
+  const onMedia = [];
   /** Which element has the caret, as `focus()` last put it. @type {{ el: any }} */
   const focus = { el: null };
   let nextId = 1;
@@ -536,7 +541,7 @@ function fakeWorld(opts = /** @type {{ reduced?: boolean }} */ ({})) {
     attachShadow() { const r = new Element("#shadow"); r.parentNode = null; this.shadow = r; return r; }
     getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0 }; }
     focus() { focus.el = this; }
-    getContext() { return null; }
+    getContext() { return opts.canvas ? { setTransform() { live.sized++; }, clearRect() {} } : null; }
     /** @param {any} o */ scrollTo(o) { this.scrollTop = o.top; }
   }
   const doc = /** @type {any} */ ({
@@ -548,15 +553,17 @@ function fakeWorld(opts = /** @type {{ reduced?: boolean }} */ ({})) {
     removeEventListener() { live.docListeners--; },
   });
   doc.documentElement = new Element("html");
-  const media = { matches: !!opts.reduced, addEventListener() { live.mediaListeners++; }, removeEventListener() { live.mediaListeners--; } };
+  const media = { matches: !!opts.reduced, addEventListener(/** @type {string} */ _t, /** @type {Function} */ fn) { live.mediaListeners++; onMedia.push(fn); }, removeEventListener() { live.mediaListeners--; } };
+  /** Reduced motion asked for, or taken back. @param {boolean} on */
+  const reduce = (on) => { media.matches = on; for (const fn of onMedia.slice()) fn(); };
   const win = {
     addEventListener() { live.winListeners++; },
     removeEventListener() { live.winListeners--; },
     setTimeout: (/** @type {Function} */ fn, /** @type {number} */ ms) => { const id = nextId++; live.timers.add(id); const t = setTimeout(() => { live.timers.delete(id); fn(); }, Math.min(ms, 5)); timerOf.set(id, t); return id; },
     clearTimeout: (/** @type {number} */ id) => { live.timers.delete(id); clearTimeout(timerOf.get(id)); },
-    setInterval: (/** @type {Function} */ _fn, /** @type {number} */ _ms) => { const id = nextId++; live.timers.add(id); return id; },
-    clearInterval: (/** @type {number} */ id) => { live.timers.delete(id); },
-    requestAnimationFrame: (/** @type {Function} */ fn) => { const id = nextId++; live.frames.add(id); frameFns.set(id, fn); return id; },
+    setInterval: (/** @type {Function} */ fn, /** @type {number} */ _ms) => { const id = nextId++; live.timers.add(id); live.intervals.set(id, fn); return id; },
+    clearInterval: (/** @type {number} */ id) => { live.timers.delete(id); live.intervals.delete(id); },
+    requestAnimationFrame: (/** @type {Function} */ fn) => { const id = nextId++; live.framesAsked++; live.frames.add(id); frameFns.set(id, fn); return id; },
     cancelAnimationFrame: (/** @type {number} */ id) => { live.frames.delete(id); frameFns.delete(id); },
     matchMedia: () => media,
     getComputedStyle: () => ({ getPropertyValue: () => "", color: "" }),
@@ -568,7 +575,7 @@ function fakeWorld(opts = /** @type {{ reduced?: boolean }} */ ({})) {
   /** @type {Map<number, Function>} */
   const frameFns = new Map();
   doc.defaultView = win;
-  return { doc, win, live, focus, node: new Element("main") };
+  return { doc, win, live, focus, reduce, node: new Element("main") };
 }
 
 /** Every element under a root, shadow roots included, in document order. @param {any} root @returns {any[]} */
@@ -586,7 +593,7 @@ const one = (root, cls) => byClass(root, cls)[0];
 
 /** THE LOOK, MOUNTED: the real shim's `onLook`, the real model and sheet,
  *  the look's own file, a fake DOM and a `ctx.call` that records. */
-function mounted(opts = /** @type {{ reduced?: boolean }} */ ({})) {
+function mounted(opts = /** @type {{ reduced?: boolean, canvas?: boolean }} */ ({})) {
   const world = fakeWorld(opts);
   const s = shim();
   delete glob.__gAgentLook; delete glob.__gAgentLookSheet;
@@ -616,6 +623,50 @@ test("the look draws the start screen: the line, the history link with who is wo
   expect(byClass(root, "turnw").length).toBe(0);
   expect(look.hasAttribute("data-threads")).toBe(false);
   expect(look.props.get("--l-in")).toBe("118px");
+  w.teardown();
+});
+
+test("A STATE HANDED WHOLE AGAIN MOVES NOTHING ON THE START SCREEN: the word keeps its one interval and turns on it, and the ribbon is not entered again", () => {
+  const w = mounted({ canvas: true });
+  w.hear({ kind: "look.state", state: lookState({}) });
+  const words = [...w.live.intervals.keys()];
+  expect(words.length).toBe(1);
+  const sized = w.live.sized;
+  const asked = w.live.framesAsked;
+  expect(sized).toBe(1);
+  // The host hands the start screen over whole whenever its shape moves: the
+  // history opened and shut, the panel beside a page and back.
+  for (const over of [{ list: true }, { list: false }, { mode: "panel" }, { mode: "screen" }, {}]) w.hear({ kind: "look.state", state: lookState(over) });
+  expect([...w.live.intervals.keys()]).toEqual(words);
+  expect(w.live.sized).toBe(sized);
+  expect(w.live.framesAsked).toBe(asked);
+  const swap = one(w.root(), "swap");
+  /** @type {Function} */ (w.live.intervals.get(words[0]))();
+  expect(swap.lastElementChild.textContent).toBe("plan");
+  // Into a chat the word stops and the ribbon goes; back, each starts once.
+  w.hear({ kind: "look.state", state: chatState("done") });
+  w.hear({ kind: "look.state", state: chatState("done") });
+  expect(w.live.intervals.size).toBe(0);
+  w.hear({ kind: "look.state", state: lookState({}) });
+  w.hear({ kind: "look.state", state: lookState({ list: true }) });
+  expect(w.live.intervals.size).toBe(1);
+  expect(w.live.sized).toBe(sized + 1);
+  w.teardown();
+});
+
+test("reduced motion asked for while the start screen shows stops the word and rests the ribbon, and taken back starts the word once", () => {
+  const w = mounted({ canvas: true });
+  w.hear({ kind: "look.state", state: lookState({}) });
+  expect(w.live.intervals.size).toBe(1);
+  w.reduce(true);
+  expect(one(w.root(), "g-look").hasAttribute("data-still")).toBe(true);
+  expect(w.live.intervals.size).toBe(0);
+  expect(w.live.frames.size).toBe(0);
+  w.hear({ kind: "look.state", state: lookState({ list: true }) });
+  expect(w.live.intervals.size).toBe(0);
+  w.reduce(false);
+  expect(w.live.intervals.size).toBe(1);
+  expect(w.live.frames.size).toBe(1);
   w.teardown();
 });
 

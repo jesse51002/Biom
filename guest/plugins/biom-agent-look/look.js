@@ -313,6 +313,7 @@
         root.toggleAttribute("data-still", still);
         if (was === still) return;
         startScreen();
+        ribbon.replay();
         for (const v of views.values()) paintMood(v, true);
       };
       if (typeof media.addEventListener === "function") listen(media, "change", onMedia);
@@ -768,30 +769,41 @@
       if (old) { old.classList.add("word-out"); later(() => old.remove(), 500); }
     }
 
-    /** THE START SCREEN SHOWN OR CLEARED, and everything that moves on it
-     *  started or stopped with it. */
+    /** THE START SCREEN SHOWN OR CLEARED. Every state handed whole comes
+     *  through here, and the host hands one over whenever the shape moves —
+     *  the history opened or shut, the panel beside a page — so it changes
+     *  only what changed: while the start screen stays up, the word keeps its
+     *  schedule and the ribbon its frames. */
     function startScreen() {
       const empty = !S || S.chat === null;
       root.setAttribute("data-state", empty ? "empty" : "live");
-      if (wordTimer !== null) { win.clearInterval(wordTimer); timers.delete(wordTimer); wordTimer = null; }
-      if (empty) {
-        if (!startShown) {
-          startShown = true;
+      if (empty !== startShown) {
+        startShown = empty;
+        if (empty) {
           for (const hero of [heroTop, heroBot]) { hero.classList.remove("leaving"); hero.classList.remove("arriving"); void hero.offsetWidth; if (!still && settled) hero.classList.add("arriving"); }
+        } else if (!still && settled) {
+          for (const hero of [heroTop, heroBot]) hero.classList.add("leaving");
+          later(() => { heroTop.classList.remove("leaving"); heroBot.classList.remove("leaving"); }, 560);
         }
-        ribbon.enter();
-        if (!still) { wordTimer = win.setInterval(() => { if (!gone) nextWord(); }, 2600); timers.add(wordTimer); }
-      } else {
-        if (startShown) {
-          startShown = false;
-          if (!still && settled) {
-            for (const hero of [heroTop, heroBot]) hero.classList.add("leaving");
-            later(() => { heroTop.classList.remove("leaving"); heroBot.classList.remove("leaving"); }, 560);
-          }
-        }
-        ribbon.exit();
       }
+      runStart();
       drawStart();
+    }
+
+    /** What moves on the start screen, running while it shows: the word
+     *  turning, unless the reader asked for stillness, and the ribbon. Each is
+     *  started only where it is not running and stopped only where it is. */
+    function runStart() {
+      const turn = startShown && !still;
+      if (turn && wordTimer === null) {
+        wordTimer = win.setInterval(() => { if (!gone) nextWord(); }, 2600);
+        timers.add(wordTimer);
+      } else if (!turn && wordTimer !== null) {
+        win.clearInterval(wordTimer);
+        timers.delete(wordTimer);
+        wordTimer = null;
+      }
+      if (startShown) ribbon.enter(); else ribbon.exit();
     }
 
     /** "View chat history", with how many are working. */
@@ -888,27 +900,41 @@
         draw(now, pulseAt(now));
       }
       function stopFrames() { if (raf) { win.cancelAnimationFrame(raf); frames.delete(raf); raf = 0; } }
+      /** One frame drawn now, and the tick told it was. */
+      function paint() {
+        const now = win.performance ? win.performance.now() : 0;
+        draw(now, pulseAt(now));
+        last = now;
+      }
+      /** DRAWN AT ONCE, so no frame is painted between a resize clearing the
+       *  canvas and the next tick drawing it — then a frame at a time, or
+       *  once and left under reduced motion. */
+      function play() {
+        stopFrames();
+        if (still || typeof win.requestAnimationFrame !== "function") { draw(0, null); return; }
+        paint();
+        raf = win.requestAnimationFrame(tick);
+        frames.add(raf);
+      }
       /** @type {any} */
       let ro = null;
       if (g && typeof win.ResizeObserver === "function") {
         ro = new win.ResizeObserver(() => {
           if (gone || !running) return;
           size();
-          const now = win.performance ? win.performance.now() : 0;
-          if (still) draw(0, null); else { draw(now, pulseAt(now)); last = now; }
+          if (still) draw(0, null); else paint();
         });
         ro.observe(stage);
       }
       return {
+        /** Shown and drawing. A ribbon already running is left as it is:
+         *  entering again would clear its canvas and ask for its frames anew. */
         enter() {
-          if (!g) return;
+          if (!g || running) return;
           running = true;
           c.classList.remove("gone");
           size();
-          stopFrames();
-          if (still || typeof win.requestAnimationFrame !== "function") { draw(0, null); return; }
-          raf = win.requestAnimationFrame(tick);
-          frames.add(raf);
+          play();
         },
         exit() {
           if (!running) return;
@@ -916,6 +942,8 @@
           c.classList.add("gone");
           later(() => { if (!running) { stopFrames(); if (g) g.clearRect(0, 0, W, H); } }, still ? 0 : 520);
         },
+        /** Reduced motion asked for or taken back: running again, or still. */
+        replay() { if (running) play(); },
         recolour() { recolour(); if (running && still) draw(0, null); },
         destroy() { running = false; stopFrames(); if (ro) ro.disconnect(); },
       };
