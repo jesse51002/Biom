@@ -103,6 +103,14 @@ markup does **not** load over a `src` — it arrives inline in the `page.read`
 answer, because loading it would be a fetch and a fetch is exactly what the frame
 cannot do.
 
+**The box's first read of its own page is the host's.** The host read that very
+page a moment ago to mount the box, and asking the server again was half of
+every page switch, so the store hands it over once (`handoff` in
+`client/store/workspace.js`), within a few seconds of its read and only while
+nothing has changed the page since — a `section.write` from the box ends it,
+because a slot's text does not go through the store and its copy is behind the
+file from then on. Every other `page.read` goes to the server.
+
 ---
 
 ## 2. One box per page, and it never reports a height
@@ -611,7 +619,10 @@ locally.
   answer, touch-gated — and the `LookRequest` / `LookAnswer` typedefs,
   `route` / `routeRuntime`,
   `guarded` (the per-ring in-flight cap and the failure flattening), `codeOf`,
-  `SAYS`, `proseOf`, `scopeOfSection`, `forward`. Layer 10; never sees an iframe.
+  `SAYS`, `proseOf`, `scopeOfSection`, `forward` — which is how `link.resolve`
+  and `doc.list` reach the server's page index, since the window holds only the
+  pages on its screen — and the `page.read` case that takes the store's
+  `handoff`. Layer 10; never sees an iframe.
 - **The guest half:** `guest/biom.js` — the shim, the bootstrap and
   the `biom.*` surface, `touches()` (the `touch` notice) and the look's fold
   (`hearLook`, `biom.onLook`). Imports nothing; nothing imports it. Its wire

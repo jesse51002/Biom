@@ -578,22 +578,23 @@ of `#/agent/<chat>` wins over it.
 **One box serves the full screen and the panel, and it is never moved**, because
 moving an iframe reloads it. `client/views/agent.js` builds ONE element, the
 slot, which the shell puts in the bed beside the canvas once; its three shapes —
-the whole screen on `#/agent`, the panel beside whatever else is on screen
-while `panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps
-running. The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent`
-itself, the key a page of that id would be mounted under: the shell refuses
-`#/page/@agent`, and a box ever mounted there would be one of its own that is
-never fed — with ONE context object, whose identity is what `answer` checks.
-The look is posted
+the whole screen on `#/agent`, the panel beside whatever else is on screen while
+`panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps running.
+The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent` itself, the
+key a page of that id would be mounted under: the shell refuses `#/page/@agent`,
+and a box ever mounted there would be one of its own that is never fed — with
+ONE context object, whose identity is what `answer` checks. The look is posted
 `look.state` when its box says hello and whenever the shape moves — the mode,
-the list, the chat, the epoch — and `look.patch` for the rest, one a frame
-(a timer flushes a hidden window's), and a patch that would carry more than
+the list, the chat, the epoch — and `look.patch` for the rest, one a frame (a
+timer flushes a hidden window's), and a patch that would carry more than
 `PATCH_MAX` updates is posted as a state instead. It is handed `names`, the
-pages its places name; `input`, where the input box sits; and `beside`, the
-page the panel sits beside, or the last page this window's history shows,
-which is where the full screen minimises to. The look's document is read again
-when the workspace changes on disk, because a rung may have named another look.
-The panel's width is the grip's, kept per browser.
+pages its places name — from the window's directory, a page it does not know
+asked for by id or `uid` and named in a patch once the answer lands; `input`,
+where the input box sits; and `beside`, the page the panel sits beside, or the
+last page this window's history shows, which is where the full screen minimises
+to. The look's document is read again when the workspace changes on disk,
+because a rung may have named another look. The panel's width is the grip's,
+kept per browser.
 
 **The input box is `client/views/agent-input.js`, host DOM over the look's box,
 and the one place a chat's agent is handed words**: the text area's own value,
@@ -646,13 +647,13 @@ agent's own, a terminal one in the sign-in pop-up from the ticket, and an
 it, on the palette's tokens and its four lamps.
 
 **The shell's half**: a window whose address names no screen opens on the Agent
-screen; the rail's **Agent** row, in Dashboard's old slot, counts the chats
-working and returns to the chat last open; **Home** is the page tree's own
-heading; **Edit**, amber on the page bar, opens the panel beside the page on a
-new thread with `Edit <page id>: ` typed in, and the chat it makes when sent is
-that page's; the
-crumbs name the open chat with its lamp, and the strip counts the chats and the
-Active agents.
+screen, routed and drawn before the rail's first level is read, because nothing
+on it waits for the tree; the rail's **Agent** row, in Dashboard's old slot,
+counts the chats working and returns to the chat last open; **Home** is the page
+tree's own heading; **Edit**, amber on the page bar, opens the panel beside the
+page on a new thread with `Edit <page id>: ` typed in, and the chat it makes
+when sent is that page's; the crumbs name the open chat with its lamp, and the
+strip counts the chats and the Active agents.
 
 ## 13. Testing it with an agent
 

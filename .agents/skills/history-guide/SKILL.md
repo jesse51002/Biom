@@ -115,16 +115,19 @@ the vault's rules tell it never to type one — and one that wrote a document
 whole may drop the one it had. So the lookup is `makeIdentities` in
 `server/domain/pages.ts`: the first time the history, or the watcher's
 structural settle, meets a page without a `uid`, it gets the one this session
-already knew for that page or a new one, and it keeps that `uid` for the
-session however the file is written again. It goes into the file behind a
-commit as ONE `uid:` line under the first top-level `name:`, every other byte
-as it was, kept only if the document reads back as itself plus that `uid`;
-only where that cannot be verified is it written the way mount writes one.
-Either is a `replace` (`DiskFiles` in `server/platform/files.ts`), never a
-`write`: a page deleted from outside between the write-back's read and its
-write stays deleted, where a write made the folder again and brought the page
-back, `uid` and all. A page whose document will not parse — an unknown
-top-level key included — gets none and is never rewritten.
+already knew for that page — or the one its folder last carried, which the page
+index remembers — or a new one, and it keeps that `uid` for the session however
+the file is written again. A page that was there before the folder opened is
+given one the same way in the background after the mount, and the root in the
+mount itself. It goes into the file behind a commit as ONE `uid:` line under the
+first top-level `name:`, every other byte as it was, kept only if the document
+reads back as itself plus that `uid`; only where that cannot be verified is the
+document written whole with it. Either is a `replace` (`DiskFiles` in
+`server/platform/files.ts`), never a `write`: a page deleted from outside
+between the write-back's read and its write stays deleted, where a write made
+the folder again and brought the page back, `uid` and all. A page whose document
+will not parse — an unknown top-level key included — gets none and is never
+rewritten.
 
 **Bounded in every part**: a ring of `LIMIT` (5000) entries, oldest first out,
 which a reader sees as a gap in `seq`; typing coalesced into **one edit per
@@ -205,7 +208,10 @@ says which beside every route change:
 
 - **`open(view, id, screen?, panel?)`** — the person: the rail, a link, the
   crumbs, a pop-up, the tree, a page just made, a box's `open`, Back and Forward,
-  a typed hash. An `open` in the history, and a new entry in the browser's.
+  a typed hash — and a hash the browser moved while the window was still
+  booting, which the shell takes when it mounts rather than writing the
+  address it loaded with back over it. An `open` in the history, and a new
+  entry in the browser's.
   **Off the full Agent screen with a chat open, it brings that chat along** in
   the panel, in the same move — to any view but the workspace picker, which
   draws no panel, and never from the start screen, which has no chat. It is
@@ -263,21 +269,23 @@ open is reported once as a **`claim`**. A system move to a different screen is
 theirs too, as a claim; one to the same page under another id — a rename — is
 nobody's move and changes nothing.
 
-**It follows only live entries, and only the open chat's latest in a batch**,
-so a background chat writing in the same batch never stands in front of it,
-and a write read back after a reload is never followed. **A write to a page
-this window's tree has not listed yet is kept**: a page an agent has just made
-reaches the history about 30 ms after the write, and the tree only after the
-watcher's settle and a re-list, which grow with the workspace — on one of
-eighteen hundred pages the tree named the page twelve seconds after the
-history did. The latest such write is held — a newer write of the chat's,
-listed or not, replacing it — and decided every time the tree changes, as if it
-had been named on arrival. **It is dropped only once `UNLISTED_MS` (five
-seconds) has passed AND the tree has been re-listed `UNLISTED_LISTS` (two)
-times since without it**, because the first re-list may have been asked for
-before the page was on disk and the second is the tree's answer; a re-list is
-a new `pages` array, so a repaint does not count. `UNLISTED_CAP_MS` (a minute)
-drops it however slow the tree.
+**It follows only live entries, and only the open chat's latest in a batch**, so
+a background chat writing in the same batch never stands in front of it, and a
+write read back after a reload is never followed. **What it knows of pages is
+the window's directory** — `refOf` and `idOfUid` in `client/store/workspace.js`,
+filled by the levels the window has listed, the pages it has read and what it
+has asked for — and never a list of every page: a page an entry names that the
+directory does not know is asked for by id or `uid` with `want`, which batches
+the misses into `page.locate`, and the switcher decides again when the answer
+lands (`onPages`). **So a write to a page this window has not heard of is not
+dropped**: a page an agent has just made reaches the history, `uid` and all,
+about 30 ms after the write, before any level naming it has been listed again.
+Its `uid` is asked for at once, and the write is kept — the latest such one, a
+newer write of the chat's replacing it — and decided the moment the answer names
+the page, as if it had been named on arrival; it never waits for the tree. A
+`uid` the server answers absent is remembered as absent until the next change on
+disk, which asks again, and `UNLISTED_CAP_MS` (a minute) after the write arrived
+it is let go.
 
 **It is also what reports the context**: every change of address, panel or
 chat goes out as `window.report`, with `moved` saying who. On start it reads the
@@ -324,10 +332,12 @@ anything the person can with the data kinds.
 ## 11. Go back to, and Go to page
 
 **Go back to**, top left, names the person's work while an agent has the screen:
-the latest screen in the history that is theirs — reports still in flight
-first, then this window's views, newest first, skipping every one the switcher
-brought up and every page since deleted. Pressing it is an open. It shows only
-while the screen is not theirs and there is somewhere to go back to.
+the latest screen in the history that is theirs — reports still in flight first,
+then this window's views, newest first, skipping every one the switcher brought
+up and every page since deleted. A view of a page the window's directory does
+not know yet is passed over and its `uid` asked for, and the views are weighed
+again once the answer lands. Pressing it is an open. It shows only while the
+screen is not theirs and there is somewhere to go back to.
 `client/views/goback.js` draws it; the switcher decides it.
 
 **Go to page** belongs to one chat: the open chat's latest write the switcher
@@ -343,9 +353,8 @@ beside the page. A move by the switcher clears it.
 - A duplicated tab shares its window id, because it copies `sessionStorage`.
 - A write seen only in a catch-up read is never followed — by design, since it
   is the past.
-- A write to a page this window's tree has come back without twice, once
-  `UNLISTED_MS` has passed, is never followed; nor is one the tree lists more
-  than `UNLISTED_CAP_MS` after it came.
+- A write whose page the server has not found within `UNLISTED_CAP_MS` of the
+  write's arrival is never followed.
 - On the Agent screen only the open itself holds the screen against a move.
 
 ## Key files
@@ -358,12 +367,14 @@ server/domain/history.ts       makeHistory (report, attach, forget, edit, placeO
 server/api/routes.ts           writeOf, recorded, historyAnswer, and `own` on route()
 server/main.ts                 makeHistory per folder, uidOf through makeIdentities, events() with attach, the `own` check
 server/domain/pages.ts         makeIdentities, withUidLine: a page's uid given mid-session, stable for it
+server/domain/pageindex.ts     holders, uidWas: what the identities ask; locate: what page.locate answers
 client/transport/http.js       the window written onto every call
 client/transport/events.js     onNamed, onOpen, the stream's query
 client/transport/chat.js       isHistoryEntry, isPlace: the history event, checked whole
 client/store/ui.js             open, follow, go, cause, the Mover and Cause typedefs
 client/store/history.js        makeHistoryStore: take, catchUp, report, unanswered
-client/store/switcher.js       decide, TIMING, UNLISTED_MS, UNLISTED_LISTS, UNLISTED_CAP_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
+client/store/switcher.js       decide, TIMING, UNLISTED_CAP_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
+client/store/workspace.js      refOf, idOfUid, want: the window's directory, and a miss asked for by name
 client/bridge/bridge.js        OPEN_AFTER_TOUCH, OPEN_GRACE, touched, the `open` case
 client/frame/frame.js          the `touch` branch of fromGuest, a session's `top`, the `hear` argument
 client/shell/shell.js          syncHash, the hashchange handler, the canvas's touches, the backslot
