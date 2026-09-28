@@ -2176,6 +2176,27 @@ test("a framework screen's id as a page route is refused as not found, and never
   expect(g.ws.calls).toContain("loadPage:@design");
 });
 
+test("a page route naming a framework screen gets no page chrome, even after that screen was open (O52)", async () => {
+  // Map and Design leave their read in the store, `@map` or `@design`, so a
+  // page route naming that id must not take it for an open page: no Share, no
+  // Instructions or Automations, no Edit, no Sections, and a sentence's face.
+  const a = agentStub();
+  const g = harness(DOC, { view: "page", id: DOC.id }, false, undefined, false, "", { views: { agent: a.view } });
+  await tick();
+  for (const [view, id] of [["map", "@map"], ["design", "@design"]]) {
+    g.ui.open(/** @type {any} */ (view), "");
+    await tick();
+    expect(g.ws.state.page?.id).toBe(id);
+    g.ui.open("page", id);
+    await tick();
+    expect(flat(g.plate.firstChild)).toBe("There is no page called “" + id + "”.");
+    expect(g.plate.attrs["data-face"]).toBe("none");
+    expect(findAll(g.rail, (el) => has(el, "tool")).map(flat)).toEqual(["Reload"]);
+    expect(flat(g.strip)).not.toContain("Sections");
+  }
+  expect(a.asked).toEqual([]);
+});
+
 test("the Map is a route like Design, and it takes the canvas whole", async () => {
   const g = harness();
   await tick();

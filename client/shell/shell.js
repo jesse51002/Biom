@@ -466,12 +466,15 @@ export function makeShell(deps) {
 
   /**
    * The page on screen, or null. "On screen" is stricter than "in the store":
-   * the route may have moved on while the read is still in flight.
+   * the route may have moved on while the read is still in flight — and Map
+   * and Design leave their own read there, under `@map` or `@design`, which a
+   * page route naming that id must never take for a page: it is no page, and
+   * gets no Share, no page screens, no Edit and a sentence's face.
    * @returns {Page | null}
    */
   function openPage() {
     const { route } = ui.get();
-    if (route.view !== "page") return null;
+    if (route.view !== "page" || frameworkId(route.id)) return null;
     const page = ws.get().page;
     return page && page.id === route.id ? page : null;
   }
@@ -1005,7 +1008,9 @@ export function makeShell(deps) {
 
     // THE DESIGN DOC AND THE MAP ARE PAGE READS TOO, so the same report is
     // given for them: the design doc declares sections and the map none.
-    const shown = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
+    // Only through their own routes: a page route naming a reserved id reports
+    // nothing, whatever read the store still holds.
+    const shown = route.view === "page" ? (frameworkId(route.id) ? null : route.id) : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
     if (shown !== null && w.page && w.page.id === shown) {
       const page = w.page;
       // DECLARED, THEN DRAWN, and they are two items because they can disagree.
