@@ -263,12 +263,19 @@ const editsTo = async (path: string): Promise<Extract<HistoryEntry, { kind: "edi
 const editsBy = async (path: string, chat: string): Promise<Extract<HistoryEntry, { kind: "edit" }>[]> =>
   (await editsTo(path)).filter((e) => e.writer.kind === "agent" && e.writer.chat === chat);
 
-/** The look's box — whichever shape it is in, it is the one inside `.agentbox`. */
+/** The look's box — whichever shape it is in, it is the one inside `.agentbox`.
+ *  THE HANDLE IS LET GO AT ONCE: this is asked a few times a second for the
+ *  whole walk, and every element handle kept is a remote object held in the
+ *  runner for as long as the browser lives. */
 async function lookFrame(): Promise<Frame> {
   const handle = await page.locator("div.agentbox iframe").elementHandle();
-  const f = handle ? await handle.contentFrame() : null;
-  if (!f) throw new Error("the look's box has no frame yet");
-  return f;
+  try {
+    const f = handle ? await handle.contentFrame() : null;
+    if (!f) throw new Error("the look's box has no frame yet");
+    return f;
+  } finally {
+    await handle?.dispose().catch(() => {});
+  }
 }
 /** Read the look — it draws in a shadow root, which a locator pierces — or
  *  answer `fallback` while it is not there. */
