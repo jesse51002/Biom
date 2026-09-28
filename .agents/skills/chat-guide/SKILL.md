@@ -319,7 +319,7 @@ process that made it.
   pickers show them before anything starts. The view is the one choice a
   window keeps itself, through
   `settings.set`. A file that will not read is said once in the log, put aside
-  as `settings.json.bad`, and the defaults are used: Tool calls, no agent,
+  as `settings.json.bad`, and the defaults are used: Plain, no agent,
   nothing kept.
 - **Each chat keeps its own choices too** (`choices`, a record in its kept
   log): what the person picked in it, what it started on, and what the agent

@@ -33,8 +33,14 @@ const toggle = (id: string, category: ConfigOption["category"]): ConfigOption =>
 
 /* ── the shape ──────────────────────────────────────────────────────────── */
 
-test("a workspace that has kept nothing opens on Tool calls, with no agent and no choices", () => {
-  expect(defaults()).toEqual({ view: "tools", agent: null, agents: {} });
+test("a workspace that has kept nothing opens on Plain, with no agent and no choices", () => {
+  expect(defaults()).toEqual({ view: "plain", agent: null, agents: {} });
+});
+
+test("a view a workspace kept before Plain was the default is kept as it was", () => {
+  for (const view of ["tools", "thinking", "plain"] as const) {
+    expect(readChoices(JSON.parse(writeChoices({ view, agent: null, agents: {} })))?.view).toBe(view);
+  }
 });
 
 test("the file reads back what it wrote, and is two-space JSON a person can open", () => {
@@ -61,7 +67,7 @@ test("a field out of bounds is left out, and a file that is not a settings file 
       },
     },
   });
-  expect(read).toEqual({ view: "tools", agent: null, agents: { "codex-acp": { mode: "auto", thought_level: true }, constructor: { model: "invented" } } });
+  expect(read).toEqual({ view: "plain", agent: null, agents: { "codex-acp": { mode: "auto", thought_level: true }, constructor: { model: "invented" } } });
   for (const bad of [null, [], "text", 7, { version: 2, chat: {} }, { chat: { view: "plain" } }]) expect([bad, readChoices(bad)]).toEqual([bad, null]);
   // No more agents than the bound, however many the file lists.
   const many: Record<string, unknown> = {};
@@ -142,7 +148,7 @@ test("a choice out of bounds is not kept, and neither is one past the last agent
   await s.flushed();
   const read = s.read();
   expect(read.agent).toBe(null);
-  expect(read.view).toBe("tools");
+  expect(read.view).toBe("plain");
   expect(read.agents["claude-acp"]).toBeUndefined();
   expect(read.agents["one-too-many"]).toBeUndefined();
   expect(Object.keys(read.agents).length).toBe(MAX_AGENTS);
@@ -187,8 +193,8 @@ test("A BROKEN FILE IS PUT ASIDE, not written over: said once, moved to settings
   expect(readFileSync(join(f.dir, SETTINGS_ASIDE), "utf8")).toBe(broken);
   expect(existsSync(join(f.dir, SETTINGS_FILE))).toBe(false);
   // The next choice writes a good file, and the one put aside stays.
-  await s.set({ view: "plain" });
-  expect(readChoices(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8")))?.view).toBe("plain");
+  await s.set({ view: "thinking" });
+  expect(readChoices(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8")))?.view).toBe("thinking");
   expect(readFileSync(join(f.dir, SETTINGS_ASIDE), "utf8")).toBe(broken);
   // A file of another version is not this build's to write over either.
   const g = folder();

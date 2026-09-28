@@ -60,8 +60,8 @@ import { weaveRuntime } from "../platform/document.js";
 import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, nextId } from "../../contracts/wire.js";
 import { ROOT_PAGE } from "../store/workspace.js";
 
-/** ONE OF THE LOOK'S SIX REQUESTS, as the Agent screen answers it.
- *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" }>} LookRequest */
+/** ONE OF THE LOOK'S OWN REQUESTS, as the Agent screen answers it.
+ *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" | "look.view" }>} LookRequest */
 
 /** WHO ANSWERS THE LOOK: the Agent screen's host side, registered by the
  *  composition root through `answerLook`, handed each look request with the
@@ -77,7 +77,7 @@ import { ROOT_PAGE } from "../store/workspace.js";
  *  `touched` is the frame host telling it a box's `touch` notice arrived, which
  *  is what an `open` from that box is honoured on (see `open` below).
  *  `answerLook` is the composition root registering the Agent screen's answer
- *  to the look's six kinds; until it is, every one of them is refused.
+ *  to the look's own kinds; until it is, every one of them is refused.
  *  @typedef {Bridge & {
  *    runtime(req: RuntimeRequest, ctx: BridgeContext): Promise<HostResponse>,
  *    touched?(ctx: BridgeContext): void,
@@ -484,13 +484,16 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       // guard admitted ids and closed words only, and the answer is the ui's.
       // The thirteenth edit's two ask the same way: `look.delete` for Biom's own
       // dialog, which alone may delete, and `look.unqueue` for a queued
-      // message's ×, which takes the person's words out and sends none.
+      // message's ×, which takes the person's words out and sends none. So
+      // does the fifteenth's `look.view`, the view picked from the chat's ⋯,
+      // which the host keeps and posts back: a look on a loop cannot flip it.
       case "look.open":
       case "look.new":
       case "look.list":
       case "look.panel":
       case "look.delete":
-      case "look.unqueue": {
+      case "look.unqueue":
+      case "look.view": {
         if (ctx.page !== AGENT_PAGE || lookAnswer === null) {
           return no(req.id, ERRORS.IDENTITY, "only the Agent screen's own look may ask that");
         }

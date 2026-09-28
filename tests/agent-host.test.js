@@ -799,7 +799,7 @@ test("THE LOOK IS TOLD THE VIEW: whole with the state, and as a patch when the p
   await new Promise((r) => setTimeout(r, 0));
   s.hello();
   const state = s.posted.filter((p) => p.kind === "look.state").at(-1);
-  expect(state.state.view).toBe("tools");
+  expect(state.state.view).toBe("plain");
   s.posted.length = 0;
   void s.chats.setView("thinking").catch(() => {});
   s.tick();

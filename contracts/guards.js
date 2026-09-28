@@ -125,6 +125,11 @@ const HOST_KINDS = new Set([
   // nor sends anything by itself: the dialog is the host's and the words were
   // the person's.
   "look.delete", "look.unqueue",
+  // THE FIFTEENTH EDIT'S ONE: the view picked from the chat's ⋯, one of the
+  // three words `CHAT_VIEWS` holds. The one look kind that changes something
+  // kept, and it may be said from a box because it sends nothing to an agent
+  // and deletes nothing.
+  "look.view",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -477,6 +482,8 @@ function wellFormed(v, allowed) {
       return only(v, ["chat"]) && isOpaqueId(v.chat);
     case "look.unqueue":
       return only(v, ["chat", "queued"]) && isOpaqueId(v.chat) && isOpaqueId(v.queued);
+    case "look.view":
+      return only(v, ["view"]) && isChatView(v.view);
 
     /* ── the agents and the chats (outer ring) ─────────────────────────── */
     case "agents.probe":

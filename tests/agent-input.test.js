@@ -442,12 +442,11 @@ test("THE VIEW CHIP sits beside the effort in a chat and nowhere on the start sc
   chip.fire("click");
   expect(chip.getAttribute("aria-expanded")).toBe("true");
   const rows = /** @type {El[]} */ (s.menu()?.querySelectorAll("button.mi"));
-  expect(rows.map((r) => r.getAttribute("data-view"))).toEqual(["plain", "tools", "thinking"]);
-  expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+  expect(rows.map((r) => r.getAttribute("data-view"))).toEqual(["plain", "thinking", "tools"]);
+  expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false", "true"]);
   expect(doc.activeElement).toBe(rows[0]);
   press("ArrowDown");
-  press("ArrowDown");
-  expect(doc.activeElement).toBe(rows[2]);
+  expect(doc.activeElement).toBe(rows[1]);
   /** @type {El} */ (doc.activeElement).fire("click");
   // Shown at once, before the server answers, and kept by it.
   expect(s.chats.get().settings?.view).toBe("thinking");

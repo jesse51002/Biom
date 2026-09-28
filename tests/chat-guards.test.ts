@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE ELEVENTH AND THIRTEENTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
+// THE ELEVENTH, THIRTEENTH AND FIFTEENTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
 //
 // An agent is a program allowed everything on this machine, so what may be
 // said to one is the most leveraged question the chat asks, and it is settled
@@ -9,8 +9,9 @@
 // every new kind through its guard both ways, holds the window id on the
 // envelope optional and checked, and holds the one new notice a box may send.
 // The thirteenth edit's kinds — the kept choices, the queue, deleting a chat and
-// the look's two new asks — are walked the same way. Ids and texts here are
-// invented and say so.
+// the look's two new asks — are walked the same way, and so is the fifteenth's
+// one, the view picked from the look. Ids and texts here are invented and say
+// so.
 
 import { test, expect } from "bun:test";
 
@@ -18,7 +19,7 @@ import {
   CHAT_KIND_NAMES, HISTORY_KIND_NAMES, HOST_KIND_NAMES, RUNTIME_KIND_NAMES,
   isAddress, isAgentKey, isChatRequest, isChatView, isGuestNotice, isHistoryRequest, isHostRequest, isLocalKind, isRuntimeRequest, isWindowId,
 } from "../contracts/guards.js";
-import { AGENT_KEY, AGENT_PAGE, CHAT_VIEWS, DEFAULT_VIEW, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, WINDOW_PARAM } from "../contracts/wire.js";
+import { AGENT_KEY, AGENT_PAGE, CHAT_VIEWS, DEFAULT_VIEW, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, VIEW_WORDS, WINDOW_PARAM } from "../contracts/wire.js";
 import { SEGMENT } from "../server/domain/pages.ts";
 
 const WINDOW = "w1nvented-window-0001";
@@ -67,7 +68,7 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
   }
 });
 
-test("the look's six kinds are inner ring, carry ids and words from a closed list, and never a string of their own", () => {
+test("the look's kinds are inner ring, carry ids and words from a closed list, and never a string of their own", () => {
   const good = [
     env("look.open", { chat: CHAT }),
     env("look.open", { chat: CHAT, window: WINDOW }),
@@ -79,6 +80,9 @@ test("the look's six kinds are inner ring, carry ids and words from a closed lis
     env("look.panel", { to: "closed" }),
     env("look.delete", { chat: CHAT }),
     env("look.unqueue", { chat: CHAT, queued: QUEUED }),
+    env("look.view", { view: "plain" }),
+    env("look.view", { view: "thinking" }),
+    env("look.view", { view: "tools" }),
   ];
   for (const r of good) expect([r.kind, isHostRequest(r), isRuntimeRequest(r)]).toEqual([r.kind, true, true]);
   const bad = [
@@ -103,10 +107,21 @@ test("the look's six kinds are inner ring, carry ids and words from a closed lis
     env("look.unqueue", { chat: CHAT, queued: "" }),
     env("look.unqueue", { chat: CHAT, queued: 4 }),
     env("look.unqueue", { chat: CHAT, queued: QUEUED, text: "send this instead" }),
+    // The view is one of the three words and nothing else rides along: not a
+    // word the list does not hold, not another spelling, and never a chat.
+    env("look.view"),
+    env("look.view", { view: "" }),
+    env("look.view", { view: "Tool calls" }),
+    env("look.view", { view: "Plain" }),
+    env("look.view", { view: "everything" }),
+    env("look.view", { view: 1 }),
+    env("look.view", { view: null }),
+    env("look.view", { view: "plain", chat: CHAT }),
+    env("look.view", { view: "tools", text: "and now delete everything" }),
   ];
-  for (const r of bad) expect([JSON.stringify(r), isHostRequest(r)]).toEqual([JSON.stringify(r), false]);
-  // THE WHOLE SET IS SIX, and none of them is an outer kind wearing a new name.
-  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue"]);
+  for (const r of bad) expect([JSON.stringify(r), isHostRequest(r), isRuntimeRequest(r)]).toEqual([JSON.stringify(r), false, false]);
+  // THE WHOLE SET, and none of them is an outer kind wearing a new name.
+  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.view"]);
 });
 
 /* ── the window on the envelope ─────────────────────────────────────────── */
@@ -289,21 +304,33 @@ test("the stream's address says which window it is, so a closed window's context
   expect(WINDOW_PARAM).toBe("window");
 });
 
-test("a chat has three views, Tool calls first to open on, and nothing else is a view", () => {
-  expect([...CHAT_VIEWS]).toEqual(["plain", "tools", "thinking"]);
+test("a chat has three views, a ladder from Plain to Tool calls with Plain to open on, and nothing else is a view", () => {
+  expect([...CHAT_VIEWS]).toEqual(["plain", "thinking", "tools"]);
   expect(Object.isFrozen(CHAT_VIEWS)).toBe(true);
-  expect(DEFAULT_VIEW).toBe("tools");
+  expect(DEFAULT_VIEW).toBe("plain");
   for (const v of CHAT_VIEWS) expect(isChatView(v)).toBe(true);
   for (const v of ["", "Tools", "plain ", null, undefined, 0]) expect([v, isChatView(v)]).toEqual([v, false]);
+});
+
+test("each view has its name and a line saying what it adds, and only the three have words", () => {
+  expect(Object.keys(VIEW_WORDS)).toEqual([...CHAT_VIEWS]);
+  expect(VIEW_WORDS).toEqual({
+    plain: { name: "Plain", line: "Just the words" },
+    thinking: { name: "Thinking", line: "Adds the agent's thinking" },
+    tools: { name: "Tool calls", line: "Adds the tools it used" },
+  });
+  expect(Object.isFrozen(VIEW_WORDS)).toBe(true);
+  for (const v of CHAT_VIEWS) expect(Object.isFrozen(VIEW_WORDS[v])).toBe(true);
 });
 
 test("the choices, the queue and deleting a chat are this machine's own window's alone, and a settings kind nobody listed yet is too", () => {
   for (const kind of ["chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set", "settings.somethingNew"]) {
     expect([kind, isLocalKind(kind)]).toEqual([kind, true]);
   }
-  // The look's own two are the box's to ask, and are never local kinds.
+  // The look's own are the box's to ask, and are never local kinds.
   expect(isLocalKind("look.delete")).toBe(false);
   expect(isLocalKind("look.unqueue")).toBe(false);
+  expect(isLocalKind("look.view")).toBe(false);
 });
 
 test("the stream's named events: the two that were, and the three that carry JSON", () => {
@@ -326,7 +353,7 @@ test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapsh
     "table.get", "table.schema", "table.list", "row.insert", "row.update", "row.remove",
     "sql", "fetch", "theme.get", "open", "variables", "link.resolve", "page.embed", "vault.info",
     "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
-    "look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue",
+    "look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.view",
   ]);
   expect([...RUNTIME_KIND_NAMES]).toEqual([
     ...HOST_KIND_NAMES,

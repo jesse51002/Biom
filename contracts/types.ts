@@ -1087,13 +1087,15 @@ export interface ConfigOption {
  *  `other`, which is not drawn. */
 export type PickerCategory = Exclude<ConfigCategory, "other">;
 
-/** THE THREE VIEWS OF A CHAT (*Chat*, `screens`), picked beside the effort.
- *  `plain` is the words alone — the thinking folded to its one line and no
- *  tool calls; `tools`, the default, adds each run of tool calls as ONE line
- *  that opens to them; `thinking` adds the agent's thinking written out where
- *  it came, rather than folded. None of them draws a wall of tool calls.
- *  `CHAT_VIEWS` in `wire.js` is the list. The thirteenth contracts edit. */
-export type ChatView = "plain" | "tools" | "thinking";
+/** THE THREE VIEWS OF A CHAT (*Chat*, `screens`), picked from the ⋯ at the
+ *  chat's top right. A LADDER, each adding to the one before and the tools
+ *  last: `plain`, the default, is the words alone — the thinking folded to
+ *  its one line and no tool calls; `thinking` writes the agent's thinking out
+ *  where it came, rather than folded, and still draws no tool calls; `tools`
+ *  adds each run of tool calls as ONE line that opens to them. None of them
+ *  draws a wall of tool calls. `CHAT_VIEWS` in `wire.js` is the list, in that
+ *  order. The thirteenth contracts edit; the fifteenth made it a ladder. */
+export type ChatView = "plain" | "thinking" | "tools";
 
 /** THE CHAT'S CHOICES, AS THE WORKSPACE KEEPS THEM — in `.biom/settings.json`,
  *  beside the chats and never in git (*Chat*, `picker`: *the choices are
@@ -1349,7 +1351,9 @@ export interface LookInput {
  *  names it opens through `open`. `beside` is the page the panel sits beside,
  *  or the one the Agent screen would minimise to. `view` is which of a chat's
  *  three views the person picked (the thirteenth edit): the look draws the chat
- *  that way, and a look that draws fewer views draws the nearest it has. */
+ *  that way, and a look that draws fewer views draws the nearest it has. A
+ *  look that offers the views says the one picked with `look.view`, and draws
+ *  it when `view` comes back — the fifteenth edit. */
 export interface LookState {
   mode: "screen" | "panel";
   chat: ChatId | null;
@@ -1622,6 +1626,14 @@ export type HostRequest = Envelope &
      *  removes words the person wrote and sends none: the look never says
      *  anything to an agent. */
     | { kind: "look.unqueue"; chat: ChatId; queued: string }
+    /** SHOW THE CHAT ANOTHER WAY — one of the three views, picked from the ⋯
+     *  at the chat's top right. The fifteenth edit. The host keeps it for the
+     *  workspace, as `settings.set` does, and posts it back as `view` in
+     *  `look.patch`; the look draws it when it arrives and never ahead of
+     *  the answer, so the host is the one statement of which view is shown.
+     *  It is the one `look.*` kind that changes something kept, and a box
+     *  may say it because it sends nothing to an agent and deletes nothing. */
+    | { kind: "look.view"; view: ChatView }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -1716,8 +1728,8 @@ export type HostEvent =
    *  `ready`, and again whenever what it shows changes shape: another chat
    *  opened, the list opened or shut, the panel maximised. The look draws
    *  from this and from the patches after it and asks the host for nothing
-   *  but the four `look.*` kinds; the box cannot fetch, so everything it
-   *  needs arrives here. The eleventh edit. */
+   *  but its `look.*` kinds and `open`; the box cannot fetch, so everything
+   *  it needs arrives here. The eleventh edit. */
   | { kind: "look.state"; state: LookState }
   /** WHAT MOVED SINCE, BATCHED. The host coalesces the stream — a reply
    *  arrives a few characters at a time — into one patch per frame at most.
@@ -1727,7 +1739,8 @@ export type HostEvent =
    *  background is a new list rather than a diff anybody should apply; `input`
    *  and `beside` replace theirs when the input box moves or grows and when the
    *  page the panel sits beside changes; `view` replaces the view when the
-   *  person picks another. */
+   *  person picks another — from the look's own `look.view` or anywhere
+   *  else the workspace's kept view moves. */
   | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; names?: Record<string, PageName>; input?: LookInput; beside?: PageName | null; view?: ChatView };
 
 /** guest → host, unprompted. A null-origin frame's DOM cannot be read by the
@@ -2160,10 +2173,11 @@ export type ChatRequest = Envelope &
     | { kind: "chat.delete"; chat: ChatId }
     /** THE CHAT'S KEPT CHOICES, as `ChatSettings`. The thirteenth edit. */
     | { kind: "settings.read" }
-    /** KEEP A CHOICE MADE IN THE HOST — the view — and answer the choices as
-     *  they now stand. The agent, model, mode and effort are kept by the
-     *  server as `chat.new`, `chat.switchAgent` and `chat.config` make them,
-     *  and are not set here. The thirteenth edit. */
+    /** KEEP A CHOICE MADE IN THE HOST — the view, which the host keeps when
+     *  the look says `look.view` — and answer the choices as they now stand.
+     *  The agent, model, mode and effort are kept by the server as
+     *  `chat.new`, `chat.switchAgent` and `chat.config` make them, and are
+     *  not set here. The thirteenth edit. */
     | { kind: "settings.set"; view?: ChatView }
   );
 

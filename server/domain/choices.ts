@@ -37,7 +37,7 @@ export const PICKERS: readonly PickerCategory[] = Object.freeze(["model", "mode"
  *  a bound on a file somebody edited, not a number anybody reaches. */
 export const MAX_AGENTS = 128;
 
-/** A workspace that has kept nothing: Tool calls, no agent, no choices. */
+/** A workspace that has kept nothing: Plain, no agent, no choices. */
 export const defaults = (): ChatSettings => ({ view: DEFAULT_VIEW, agent: null, agents: {} });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
