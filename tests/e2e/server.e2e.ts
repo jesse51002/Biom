@@ -43,7 +43,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
 
-import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
+import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir, withoutAgents } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
 
 /* ── the run ────────────────────────────────────────────────────────────── */
@@ -121,9 +121,11 @@ beforeAll(async () => {
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
 
-  server = Bun.spawn(["bun", "run", join(HERE, "server", "main.ts")], {
+  // WITH NO AGENT ON ITS PATH: see `withoutAgents`. Bun by its own path,
+  // because that PATH is not the one it was found on.
+  server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
     cwd: HERE,
-    env: { ...box.env, PORT: String(port) },
+    env: { ...withoutAgents(box.env), PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
