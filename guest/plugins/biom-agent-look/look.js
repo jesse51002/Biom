@@ -744,12 +744,12 @@
     function nextWord() {
       wordAt = (wordAt + 1) % WORDS.length;
       const old = swap.lastElementChild;
-      const n = h("span", "in", WORDS[wordAt]);
+      const n = h("span", "word-in", WORDS[wordAt]);
       swap.appendChild(n);
       fitWord();
       void n.offsetWidth;
-      n.classList.remove("in");
-      if (old) { old.classList.add("out"); later(() => old.remove(), 500); }
+      n.classList.remove("word-in");
+      if (old) { old.classList.add("word-out"); later(() => old.remove(), 500); }
     }
     /** The word's own width, so the line re-centres as it turns. */
     function fitWord() {

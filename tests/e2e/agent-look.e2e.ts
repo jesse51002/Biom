@@ -12,14 +12,15 @@
 // invented. Every request is served by Playwright from this checkout; nothing
 // listens on a port.
 //
-// WHAT IT HOLDS: the start screen, a chat mid-turn, a finished one, a red one
-// and the panel draw; a patch appends where it belongs and leaves the rest of
-// the thread's nodes alone, and a stale one is dropped; the chat's ⋯ and its
-// View menu, worked from the keyboard, fit on a desktop, at the panel's
-// narrowest and at a phone's width; an agent's words never become markup; the
-// look asks for nothing but its own kinds and `open`;
-// reduced motion rests still with faces as text; and a pagehide leaves nothing
-// behind. Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
+// WHAT IT HOLDS: the start screen, and its word turning as one word frame by
+// frame; a chat mid-turn, a finished one, a red one and the panel draw; a
+// patch appends where it belongs and leaves the rest of the thread's nodes
+// alone, and a stale one is dropped; the chat's ⋯ and its View menu, worked
+// from the keyboard, fit on a desktop, at the panel's narrowest and at a
+// phone's width; an agent's words never become markup; the look asks for
+// nothing but its own kinds and `open`; reduced motion rests still with faces
+// as text; and a pagehide leaves nothing behind. Pictures of each land in
+// `dist/e2e/`, or in `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -217,6 +218,52 @@ test("the start screen: the line, its turning word, the ribbon behind it, and th
     await box.locator(".histlink").click();
     expect(await calls(page, 1)).toEqual([{ kind: "look.list", open: true }]);
     expect(await inLook<boolean>(box, `return root.querySelector(".g-look").hasAttribute("data-threads");`)).toBe(true);
+  } finally { await ctx.close(); }
+}, 60000);
+
+/** ONE TURN OF THE START LINE'S WORD, frame by frame, read inside the box:
+ *  from the frame the next word arrives until the one it replaced is gone.
+ *  Each frame has the line's lead-in ("What should we "), the swap's width,
+ *  and each word's line boxes, padding and colour, in the box's pixels. */
+async function turnFrames(box: Frame): Promise<any[]> {
+  return await box.evaluate((bound) => new Promise((done, fail) => {
+    const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
+    const swap = root.querySelector(".swap")!;
+    const lead = root.querySelector(".line")!.firstChild!;
+    const lines = (n: Node) => { const r = document.createRange(); r.selectNodeContents(n); return [...r.getClientRects()].map((q) => ({ x: q.x, y: q.y, w: q.width })); };
+    const frames: any[] = [];
+    const sample = () => frames.push({
+      lead: lines(lead)[0], swap: swap.getBoundingClientRect().width, size: parseFloat(getComputedStyle(swap).fontSize),
+      words: [...swap.children].map((s) => { const cs = getComputedStyle(s); return { word: s.textContent, cls: s.className, lines: lines(s), padding: cs.paddingLeft + " " + cs.paddingRight, colour: cs.color }; }),
+    });
+    const late = setTimeout(() => fail(new Error("no word turned within " + bound + "ms")), bound);
+    const watch = new MutationObserver(() => {
+      if (swap.children.length !== 2) return;
+      watch.disconnect();
+      const tick = () => { sample(); if (swap.children.length > 1) requestAnimationFrame(tick); else { clearTimeout(late); done(frames); } };
+      tick();
+    });
+    watch.observe(swap, { childList: true });
+  }), BOUND) as any[];
+}
+
+test("THE WORD TURNS AS ONE WORD: the leaving word takes no rule of the thread's, stays on its line in its colour, and the arriving one never leaves the line", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    await post(page, box, { kind: "look.state", state: lookState({ input: { at: "center", height: 118 } }) });
+    const frames = await turnFrames(box);
+    expect(frames.length).toBeGreaterThan(10);
+    const led = frames[0].words.at(-1).colour;
+    for (const f of frames) {
+      for (const w of f.words) {
+        // `.out` is the tool output's rule, and a word named `out` took its
+        // padding and its wrapping: the leaving word broke over lines.
+        expect([w.word, w.cls, w.padding, w.lines.length, w.colour]).toEqual([w.word, w.cls, "0px 0px", 1, led]);
+        // Each word moves a third of its size up or down as it turns, and no
+        // further: never lifted off the line by the other one.
+        expect([w.word, Math.abs(w.lines[0].y - f.lead.y) <= f.size * 0.3 + 1]).toEqual([w.word, true]);
+      }
+    }
   } finally { await ctx.close(); }
 }, 60000);
 

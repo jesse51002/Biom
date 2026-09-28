@@ -167,8 +167,10 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .line { margin: 0; text-shadow: 0 0 18px var(--stock), 0 0 5px var(--stock); font: 500 2.75rem/1.15 var(--l-sheet); letter-spacing: -.015em; color: var(--ink); text-align: center; white-space: nowrap; }
 .swap { display: inline-grid; grid-template-columns: minmax(0, 1fr); text-align: center; vertical-align: bottom; white-space: nowrap; color: var(--l-led); transition: width calc(.5s * var(--l-m)) var(--l-ease); }
 .swap span { grid-area: 1 / 1; min-width: 0; transition: transform calc(.45s * var(--l-m)) var(--l-ease), opacity calc(.3s * var(--l-m)) ease, filter calc(.3s * var(--l-m)) ease; }
-.swap span.out { transform: translateY(-.3em); opacity: 0; filter: blur(3px); }
-.swap span.in { transform: translateY(.3em); opacity: 0; filter: blur(3px); }
+/* the word's two states are named for the word: this sheet's rules are bare
+   classes, and a word called \`out\` took the tool output's padding and wrapping */
+.swap .word-out { transform: translateY(-.3em); opacity: 0; filter: blur(3px); }
+.swap .word-in { transform: translateY(.3em); opacity: 0; filter: blur(3px); }
 .histwrap { display: flex; justify-content: center; }
 .histlink { display: inline-flex; align-items: center; gap: 8px; padding: 4px 2px; font: 15px var(--l-sheet); color: var(--ink-2); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink-2) 40%, transparent); text-underline-offset: 4px; text-shadow: 0 0 12px var(--stock), 0 0 4px var(--stock); transition: color calc(.15s * var(--l-m)), text-decoration-color calc(.15s * var(--l-m)); }
 .histlink:hover, .histlink[aria-expanded=true] { color: var(--ink); text-decoration-color: var(--ink); }
