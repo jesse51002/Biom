@@ -316,7 +316,9 @@ test("a child is not lost by a reorder, because its entry is reconciled and not 
   expect(isNaN(Date.parse(part.child.created))).toBe(false);
   expect({ ...part, child: { ...part.child, created: undefined } }).toEqual({
     kind: "child",
-    child: { kind: "page", id: child.id, name: "Ashgrove", created: undefined },
+    // Its identity and whether it holds pages of its own ride along, off its
+    // head and its folder, so a window learns both without asking again.
+    child: { kind: "page", id: child.id, name: "Ashgrove", created: undefined, uid: expect.any(String), children: false },
   });
   second.db.close();
 });

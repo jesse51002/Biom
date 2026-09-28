@@ -339,9 +339,11 @@ test("children come off the directory, and a document claiming a parent says not
   // it. Nothing was declared and no page was asked who its parent is — reading
   // one directory is the whole of it. A child carries what it IS and what it is
   // called, and nothing about how it looks.
+  // Each page with its identity, off its head, and whether it holds pages of
+  // its own, off its folder.
   expect(await pages.children("home/Clients")).toEqual([
-    { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove" },
-    { kind: "page", id: "home/Clients/Fenton", name: "Fenton" },
+    { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove", uid: expect.any(String), children: false },
+    { kind: "page", id: "home/Clients/Fenton", name: "Fenton", uid: expect.any(String), children: false },
   ]);
   expect((await pages.children("home")).map((c) => c.id)).toEqual(["home/Archive", "home/Clients"]);
 
@@ -899,7 +901,7 @@ test("there is no folder, and a page that draws its children is what one was", a
   // a second call.
   expect(page!.sections[1]!.parts[DEFAULT_SLOT]).toEqual({
     kind: "child",
-    child: { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove" },
+    child: { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove", uid: expect.any(String), children: false },
   });
   // A table sits in the tree beside pages, under the page that uses it.
   expect(page!.sections[2]!.parts[DEFAULT_SLOT]).toEqual({

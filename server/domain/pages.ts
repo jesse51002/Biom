@@ -118,6 +118,7 @@ import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, pare
 import { foldId } from "../../contracts/wire.js";
 import { AGENT_PAGE, DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
+import { headOf } from "../platform/yaml.ts";
 import type { DiskFiles } from "../platform/files.ts";
 
 const PAGES_DIR = "pages";
@@ -837,6 +838,17 @@ function mintUid(): string {
   return out;
 }
 
+/** THE PAGE INDEX, AS THIS MODULE USES IT — typed by shape, because
+ *  `pageindex.ts` is a sibling and may not be imported. Handed in by the
+ *  composition root; left out, every answer is read off the folders as it
+ *  always was, with each child named from its head rather than a full parse. */
+export interface PageLevels {
+  level(id: PageId, given?: { order?: readonly string[]; tables?: readonly { name: string; rows: number; parent: PageId | null }[] }): Promise<Child[]>;
+  head(id: PageId): Promise<{ name: string; uid: string | null } | null>;
+  list(): Promise<PageRef[]>;
+  sweep(): Promise<{ noUid: PageId[] }>;
+}
+
 /**
  * @param defaultSection the shipped default section's markup, read by the
  *   composition root out of `DEFAULT_SECTION_FILE`. It is a string rather than a
@@ -863,6 +875,10 @@ function mintUid(): string {
  *   sibling and the layering rule forbids reaching it. It takes the page's
  *   directory, whose own `plugins/` is the nearest rung, and null for a page
  *   that has no directory. Left out, every page reads no extensions at all.
+ * @param index THE PAGE INDEX (`PageLevels`): a level, the list and the sweep
+ *   answered from page heads kept on disk, so neither the tree nor a page read
+ *   parses a child. Left out — every test that stands this module up alone —
+ *   the same answers are read off the folders.
  */
 export function makePages(
   files: Files,
@@ -873,6 +889,7 @@ export function makePages(
   rootPage: string = ROOT_PAGE_STANDIN,
   framework: Files | null = null,
   extensionsFor: ExtensionsFor = async () => ({}),
+  index: PageLevels | null = null,
 ): Pages {
   const dirOf = pageDir;
 
@@ -1030,23 +1047,76 @@ export function makePages(
    *  file that will not parse. */
   const brokenRef = (id: PageId): PageRef => ({ id, name: segmentOf(id) });
 
+  /** A PAGE'S NAME AND IDENTITY OFF ITS HEAD — `headOf`, the one head parser,
+   *  on the text this module reads — and one full parse only where the head
+   *  cannot say. Null where there is no document. A document that will not
+   *  parse is named by its segment, as the tolerant listing names it. */
+  const headAt = async (id: PageId): Promise<{ name: string; uid: string | null } | null> => {
+    const text = await files.read(`${dirOf(id)}/${DOC}`);
+    if (text === null) return null;
+    const head = headOf(text);
+    if (head !== null) return { name: head.name ?? segmentOf(id), uid: head.uid };
+    try {
+      const doc = docOf(yaml.parse(text), segmentOf(id));
+      return { name: doc.name, uid: typeof doc.uid === "string" ? doc.uid : null };
+    } catch {
+      return { name: segmentOf(id), uid: null };
+    }
+  };
+
+  /** Does this page's `children/` hold a page? One listing, and each candidate
+   *  looked into until one holds a document — nearly always the first. */
+  const holdsPages = async (id: PageId): Promise<boolean> => {
+    const under = `${dirOf(id)}/${CHILDREN}`;
+    for (const name of await dirsIn(under)) {
+      if ((await filesIn(`${under}/${name}`)).has(DOC)) return true;
+    }
+    return false;
+  };
+
+  /** Is there a page whose id FOLDS to this one? A table's parent is written by
+   *  hand, so its case may not be the folder's: the tree is walked a segment at
+   *  a time, folding each, and only as far as the id goes. */
+  const pageFolds = async (id: PageId): Promise<boolean> => {
+    const segs = id.split("/");
+    if (segs.length > 12 || !segs.every((seg) => SEGMENT.test(seg))) return false;
+    let dir = PAGES_DIR;
+    for (let i = 0; i < segs.length; i++) {
+      const want = foldId(segs[i] ?? "");
+      const under = i === 0 ? dir : `${dir}/${CHILDREN}`;
+      const hit = (await dirsIn(under)).find((name) => foldId(name) === want);
+      if (hit === undefined) return false;
+      dir = `${under}/${hit}`;
+    }
+    return (await filesIn(dir)).has(DOC);
+  };
+
   /** The direct children of a page, off the FILESYSTEM: the directories under
    *  `<dir>/children/` that hold a `content.yaml`. Nothing reads a claim about
    *  who a parent is, and nothing has to read every page in the vault to find out
    *  who claims this one — which is the whole point of the folder being the
-   *  hierarchy. */
-  const childPages = async (id: PageId): Promise<Child[]> => {
+   *  hierarchy.
+   *
+   *  EACH CHILD IS NAMED FROM ITS HEAD and never parsed whole to learn it: a
+   *  page of two hundred children used to parse two hundred documents to draw
+   *  their names. `detail` adds when each was made and whether it holds pages
+   *  of its own, which a level shows and a flat list does not. */
+  const childPages = async (id: PageId, detail = true): Promise<Child[]> => {
     const out: Child[] = [];
     for (const name of await dirsIn(`${dirOf(id)}/${CHILDREN}`)) {
       const childId = `${id}/${name}`;
-      const found = await readDoc(childId);
-      if (found === null) continue; // a directory is a page iff it holds content.yaml
-      const child: Child = { kind: "page", id: childId, name: "doc" in found ? found.doc.name : name };
-      // WHEN IT WAS MADE, off the directory, where the store keeps a clock. A
-      // page type that shows children newest first sorts on it; a store with
-      // no clock leaves the field out rather than inventing one.
-      const created = files.created ? await files.created(dirOf(childId)) : null;
-      if (created !== null) child.created = created;
+      const head = await headAt(childId);
+      if (head === null) continue; // a directory is a page iff it holds content.yaml
+      const child: Child = { kind: "page", id: childId, name: head.name };
+      if (head.uid !== null) child.uid = head.uid;
+      if (detail) {
+        // WHEN IT WAS MADE, off the directory, where the store keeps a clock. A
+        // page type that shows children newest first sorts on it; a store with
+        // no clock leaves the field out rather than inventing one.
+        const created = files.created ? await files.created(dirOf(childId)) : null;
+        if (created !== null) child.created = created;
+        child.children = await holdsPages(childId);
+      }
       out.push(child);
     }
     // BY ID, WHICH IS THE DIRECTORY NAME, and never by the page's name.
@@ -1068,8 +1138,16 @@ export function makePages(
    *  which is the same bottom the reader appends it to.
    *
    *  It reads and never writes: placement is persisted by `read`, so asking a
-   *  page what it holds cannot commit to the vault. */
-  const childrenOf = async (id: PageId): Promise<Child[]> => {
+   *  page what it holds cannot commit to the vault. `names` is this page's own
+   *  `contents` where the caller has just parsed it, and `tables` the
+   *  registry's list where it has just asked — so a read costs one parse and
+   *  one table listing, however many children it has. */
+  const childrenOf = async (
+    id: PageId,
+    names?: readonly string[],
+    tables?: readonly { name: string; rows: number; parent: PageId | null }[],
+  ): Promise<Child[]> => {
+    if (index !== null) return index.level(id, { ...(names ? { order: names } : {}), ...(tables ? { tables } : {}) });
     const kids = await childPages(id);
     // FOLDED, because a table's parent is the one page id in the system that did
     // not come out of the server's own tree — an agent writes it by hand when it
@@ -1077,19 +1155,32 @@ export function makePages(
     // would leave the table matching no parent, rescued to the root by the rail
     // as an orphan, and left behind when its page moves.
     const here = foldId(id);
-    for (const t of tableList()) {
+    const all = tables ?? tableList();
+    for (const t of all) {
       if (foldId(t.parent ?? ROOT_PAGE) !== here) continue;
       kids.push({ kind: "table", id: t.name, name: t.name, rows: t.rows });
+    }
+    // A TABLE WHOSE PARENT PAGE IS GONE is the root's, so it is still in the
+    // tree somewhere — the window used to rescue it, and the server does now.
+    if (id === ROOT_PAGE) {
+      for (const t of all) {
+        const parent = t.parent ?? ROOT_PAGE;
+        if (foldId(parent) === here || (await pageFolds(parent))) continue;
+        kids.push({ kind: "table", id: t.name, name: t.name, rows: t.rows });
+      }
     }
 
     // A page whose own document will not parse still HAS children — they are in
     // its `children/` directory, which is not the file that broke. It just has no
     // say in the order they come back in.
-    const found = await readDoc(id);
-    const names = found === null || !("doc" in found) ? [] : found.doc.contents.map((c) => c.name);
+    let order = names;
+    if (order === undefined) {
+      const found = await readDoc(id);
+      order = found === null || !("doc" in found) ? [] : found.doc.contents.map((c) => c.name);
+    }
     const at = (c: Child): number => {
-      const i = names.indexOf(childKey(c));
-      return i === -1 ? names.length : i;
+      const i = (order as readonly string[]).indexOf(childKey(c));
+      return i === -1 ? (order as readonly string[]).length : i;
     };
     // Stable, so children nobody has placed keep the order they were gathered
     // in — pages by id, then tables.
@@ -1098,23 +1189,22 @@ export function makePages(
 
   /** Depth first, parents before their children, siblings by id. A flat
    *  listing of a tree has to be ordered by something, and this is the order the
-   *  rail draws in. */
+   *  rail draws in. Every page named from its head. */
   const walk = async (id: PageId, out: PageRef[]): Promise<void> => {
-    for (const child of await childPages(id)) {
-      const found = await readDoc(child.id);
-      if (found === null) continue;
+    for (const child of await childPages(id, false)) {
       // Listed even when it is broken, so the rail still reaches it and the
       // fallback can repair it.
-      out.push("doc" in found ? refOf(child.id, found.doc) : brokenRef(child.id));
+      out.push(typeof child.uid === "string" ? { id: child.id, name: child.name, uid: child.uid } : { id: child.id, name: child.name });
       await walk(child.id, out);
     }
   };
 
   const listPages = async (): Promise<PageRef[]> => {
     await ensureRoot();
+    if (index !== null) return index.list();
     const out: PageRef[] = [];
-    const root = await readDoc(ROOT_PAGE);
-    if (root !== null) out.push("doc" in root ? refOf(ROOT_PAGE, root.doc) : brokenRef(ROOT_PAGE));
+    const root = await headAt(ROOT_PAGE);
+    if (root !== null) out.push(root.uid !== null ? { id: ROOT_PAGE, name: root.name, uid: root.uid } : { id: ROOT_PAGE, name: root.name });
     await walk(ROOT_PAGE, out);
     return out;
   };
@@ -1183,6 +1273,9 @@ export function makePages(
 
     async children(id: PageId): Promise<Child[]> {
       dirOf(id); // the id grammar, before anything is joined onto it
+      // THE ROOT IS GUARANTEED by asking for the top level, as the list always
+      // guaranteed it: a new vault's first question is what is at the top.
+      if (id === ROOT_PAGE) await ensureRoot();
       return childrenOf(id);
     },
 
@@ -1194,9 +1287,11 @@ export function makePages(
     async childrenAll(): Promise<Record<PageId, Child[]>> {
       const out: Record<PageId, Child[]> = {};
       const ids = [ROOT_PAGE, ...(await listPages()).map((p) => p.id).filter((id) => id !== ROOT_PAGE)];
+      // The registry asked once for the whole answer, not once a page.
+      const tables = tableList();
       for (const id of ids) {
         try {
-          out[id] = await childrenOf(id);
+          out[id] = await childrenOf(id, undefined, tables);
         } catch {
           out[id] = [];
         }
@@ -1266,7 +1361,9 @@ export function makePages(
       const doc = found.doc;
 
       const here = await filesIn(dir);
-      const kids = await childrenOf(id);
+      // THE DOCUMENT JUST PARSED IS THE ORDER, so listing the children parses
+      // nothing more: one parse for the page, however many children it has.
+      const kids = await childrenOf(id, doc.contents.map((c) => c.name));
       const byKey = new Map(kids.map((c) => [childKey(c), c]));
 
       // Layer two, and the whole of it. Additive only: a section already placed
@@ -1692,15 +1789,19 @@ export function makePages(
      *  it and the next mount identifies it. One commit ahead of the sweep, not
      *  one per page: the vault's history should say *identified* once. */
     async identify(): Promise<number> {
-      const refs = await listPages();
+      // THE PAGES WITH NO `uid`: off the index's sweep where there is one —
+      // stats, and a head only where a stat moved — and off the heads of a walk
+      // where there is not. Neither parses a page that has one.
+      const ids = index !== null
+        ? (await index.sweep()).noUid
+        : (await listPages()).filter((r) => typeof r.uid !== "string").map((r) => r.id);
       // Read first, commit second: a page that will not parse is listed with no
       // uid and is not a page to write, so it must not be what earns a commit.
       const missing: { id: PageId; doc: PageDoc }[] = [];
-      for (const ref of refs) {
-        if (typeof ref.uid === "string") continue;
-        const found = await readDoc(ref.id);
-        if (found === null || !("doc" in found)) continue;
-        missing.push({ id: ref.id, doc: found.doc });
+      for (const id of ids) {
+        const found = await readDoc(id);
+        if (found === null || !("doc" in found) || typeof found.doc.uid === "string") continue;
+        missing.push({ id, doc: found.doc });
       }
       if (missing.length === 0) return 0;
       await files.commit("Before every page was given an identity");
@@ -1962,7 +2063,27 @@ export interface Identities {
  * @param warn where a write-back that failed is said; the page keeps the `uid`
  *   in memory, and the next ask writes it again.
  */
-export function makeIdentities(files: DiskFiles, yaml: YamlCodec, warn: (what: string, e: unknown) => void = () => {}): Identities {
+/** What the page index tells the identities, typed by shape: `pageindex.ts` is
+ *  a sibling. */
+export interface IdentitiesFromIndex {
+  /** The pages holding this `uid` now, checked by stat and never waited for. */
+  holders(uid: string): Promise<PageId[]>;
+  /** The `uid` this page's folder last carried, whatever its document says. */
+  uidWas(id: PageId): Promise<string | null>;
+}
+
+/**
+ * @param from THE PAGE INDEX, where there is one: what a page nobody asked about
+ *   this session last carried, and who holds a `uid` now. Without it memory is
+ *   only what this session has seen, which the mount used to fill by parsing
+ *   every page; with it nothing has to be read ahead of the question.
+ */
+export function makeIdentities(
+  files: DiskFiles,
+  yaml: YamlCodec,
+  warn: (what: string, e: unknown) => void = () => {},
+  from: IdentitiesFromIndex | null = null,
+): Identities {
   /** THE `uid` EACH PAGE ID LAST HAD, and WHICH PAGE LAST HELD each `uid`, as
    *  seen or given. The two can disagree, and that is what they are for: a page
    *  that moved leaves its old id still knowing the `uid`, while the `uid`'s
@@ -2003,8 +2124,16 @@ export function makeIdentities(files: DiskFiles, yaml: YamlCodec, warn: (what: s
    *  cannot see. */
   const heldElsewhere = async (uid: string, id: PageId): Promise<boolean> => {
     const holder = owner.get(uid);
-    if (holder === undefined || holder === id) return false;
-    return (await read(holder))?.uid === uid;
+    if (holder === id) return false;
+    // WHERE MEMORY HAS NO HOLDER, THE INDEX IS ASKED: its rows by `uid`, each
+    // checked by stat. The document of each page it names is still read, as
+    // memory's is, before the `uid` is taken to be somebody else's.
+    const asked = holder !== undefined ? [holder] : from !== null ? await from.holders(uid) : [];
+    for (const other of asked) {
+      if (other === id) continue;
+      if ((await read(other))?.uid === uid) return true;
+    }
+    return false;
   };
 
   /** ONE COMMIT AHEAD, as mount does, then ONE LINE: `uid:` put in under the
@@ -2064,7 +2193,10 @@ export function makeIdentities(files: DiskFiles, yaml: YamlCodec, warn: (what: s
     // nothing, and nothing here writes into it.
     if (id.startsWith("@")) return null;
     const decided = deciding.then(async (): Promise<string | null> => {
-      const had = known.get(id);
+      // What this page last carried: this session's memory, or the index's row
+      // for its folder — which is how a page nobody has asked about since mount
+      // gets its own `uid` back when an agent writes it whole without it.
+      const had = known.get(id) ?? (from !== null ? (await from.uidWas(id)) ?? undefined : undefined);
       if (had !== undefined && pending.has(id)) return had;
       const again = await read(id);
       if (again === null) return null;
