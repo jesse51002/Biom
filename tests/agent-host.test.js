@@ -655,7 +655,7 @@ function h(spec, props, ...kids) {
 const PAGES = [{ id: "home", name: "Home", uid: "u1nvented-home" }, { id: "home/Specs", name: "Specs", uid: "u1nvented-specs" }];
 
 /** The Agent screen, stood up against doubles. */
-async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | null, chatList?: boolean, confirm?: (q: any) => Promise<boolean>, answers?: Record<string, (req: any) => any> }} */ at = {}) {
+async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | null, chatList?: boolean, confirm?: (q: any) => Promise<boolean>, answers?: Record<string, (req: any) => any>, known?: any[] }} */ at = {}) {
   /** @type {any[]} */
   const frames = [];
   /** @type {any[]} */
@@ -696,8 +696,25 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
   const raf = [];
   const win = /** @type {any} */ ({ addEventListener() {}, innerWidth: 1400, requestAnimationFrame: (/** @type {() => void} */ fn) => { raf.push(fn); } });
   const history = { get: () => /** @type {any[]} */ ([{ entry: { kind: "view", window: "w1nvented-window", place: { view: "page", uid: "u1nvented-specs", screen: "page" } } }]), on: () => () => {} };
+  // THE WINDOW'S DIRECTORY, as far as the look reads it: the pages it knows,
+  // and `want` recording what was asked for by name.
+  const known = [...(at.known ?? PAGES)];
+  /** @type {Set<() => void>} */
+  const wsHears = new Set();
+  /** @type {any[]} */
+  const wanted = [];
+  let knownView = [...known];
+  const ws = {
+    get: () => ({ pages: knownView }),
+    on: (/** @type {() => void} */ fn) => { wsHears.add(fn); return () => { wsHears.delete(fn); }; },
+    refOf: (/** @type {string} */ id) => known.find((p) => p.id === id) ?? null,
+    idOfUid: (/** @type {string} */ uid) => known.find((p) => p.uid === uid)?.id ?? null,
+    want: async (/** @type {any} */ q) => { wanted.push(q); },
+    /** The directory learning a page, and the store's emit. @param {any} ref */
+    learn(ref) { known.push(ref); knownView = [...known]; for (const fn of [...wsHears]) fn(); },
+  };
   const view = makeAgentView({
-    h, frameHost: /** @type {any} */ (frameHost), ui, ws: /** @type {any} */ ({ get: () => ({ pages: PAGES }), on: () => () => {} }),
+    h, frameHost: /** @type {any} */ (frameHost), ui, ws: /** @type {any} */ (ws),
     chats, switcher: null, history: /** @type {any} */ (history), window: "w1nvented-window", input, vault: "/invented/vault", win,
     ...(at.confirm ? { confirm: at.confirm } : {}),
   });
@@ -707,8 +724,22 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
   const frame = () => mounts[mounts.length - 1]?.frame;
   const hello = () => view.slot.fire("biom:notice", { detail: { kind: "hello" }, target: frame().el });
   const tick = () => { for (const fn of raf.splice(0)) fn(); };
-  return { view, ui, chats, posted, mounts, frame, hello, tick, said, calls };
+  return { view, ui, chats, posted, mounts, frame, hello, tick, said, calls, ws, wanted };
 }
+
+test("A PAGE THE LOOK NAMES THAT THE WINDOW DOES NOT KNOW is asked for by uid, and its name arrives as a patch when the answer lands", async () => {
+  const s = await stand({ route: { view: "agent", id: "", screen: "page" } });
+  s.chats.takeChat({ chat: summary({ id: OTHER, updated: 30, page: { view: "page", uid: "u1nvented-new", screen: "page" } }), updates: [] });
+  s.hello();
+  const state = s.posted.find((p) => p.kind === "look.state");
+  expect(state.state.names["u1nvented-new"]).toBeUndefined();
+  expect(s.wanted.flatMap((q) => q.uids ?? [])).toContain("u1nvented-new");
+  s.posted.length = 0;
+  s.ws.learn({ id: "home/New", name: "Invented new", uid: "u1nvented-new" });
+  s.tick();
+  const patch = s.posted.find((p) => p.kind === "look.patch" && p.names);
+  expect(patch?.names["u1nvented-new"]).toEqual({ id: "home/New", name: "Invented new" });
+});
 
 test("the look's box is mounted once, under a key no page view mounts, with a context it alone holds, and is appended once", async () => {
   const s = await stand();

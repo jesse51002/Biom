@@ -117,7 +117,7 @@ const REREAD_AFTER = 600;
  * @param {H} deps.h
  * @param {FrameHost} deps.frameHost
  * @param {Ui} deps.ui
- * @param {Pick<Workspace, "get" | "on">} deps.ws
+ * @param {Pick<Workspace, "get" | "on" | "refOf" | "idOfUid" | "want">} deps.ws
  * @param {ChatStore} deps.chats
  * @param {Pick<Switcher, "on"> | null} deps.switcher
  * @param {Pick<HistoryStore, "get" | "on"> | null} deps.history
@@ -270,20 +270,34 @@ export function makeAgentView(deps) {
     }
   }
 
-  /** @returns {Record<string, PageName>} */
+  /** THE PAGES THE LOOK NAMES, by uid, from the window's directory — and the
+   *  ones it does not know asked for by uid, so they arrive as a patch once
+   *  the answer lands (the store's emit schedules one).
+   *  @returns {Record<string, PageName>} */
   function namesNow() {
     const want = new Set(uids);
     for (const c of chats.get().chats) if (c.page && c.page.view === "page") want.add(c.page.uid);
     /** @type {Record<string, PageName>} */
     const out = {};
-    for (const p of ws.get().pages) if (typeof p.uid === "string" && want.has(p.uid)) out[p.uid] = { id: p.id, name: p.name };
+    /** @type {string[]} */
+    const unknown = [];
+    for (const uid of want) {
+      const id = ws.idOfUid(uid);
+      if (id === null) { unknown.push(uid); continue; }
+      out[uid] = { id, name: ws.refOf(id)?.name ?? id.slice(id.lastIndexOf("/") + 1) };
+    }
+    if (unknown.length) void ws.want({ uids: unknown });
     return out;
   }
 
   /** @param {string} uid */
-  const idOf = (uid) => ws.get().pages.find((p) => p.uid === uid)?.id ?? null;
+  const idOf = (uid) => ws.idOfUid(uid);
   /** @param {PageId} id @returns {PageName} */
-  const nameOf = (id) => ({ id, name: ws.get().pages.find((p) => p.id === id)?.name ?? id.slice(id.lastIndexOf("/") + 1) });
+  const nameOf = (id) => {
+    const ref = ws.refOf(id);
+    if (ref === null) void ws.want({ ids: [id] });
+    return { id, name: ref?.name ?? id.slice(id.lastIndexOf("/") + 1) };
+  };
 
   /** The last page this window showed, as the ui had it — what the history
    *  says before it has been read. @type {Address | null} */
@@ -294,16 +308,21 @@ export function makeAgentView(deps) {
    *  @returns {Address | null} */
   function lastPage() {
     const all = deps.history?.get() ?? [];
+    // The directory's own array, as a mark of whether it moved — never walked.
     const pages = ws.get().pages;
     const key = all.length + ":" + (all.length ? /** @type {any} */ (all[all.length - 1]).entry.seq : 0);
     if (lastSeen.all !== all || lastSeen.key !== key || lastSeen.pages !== pages) {
       lastSeen = { all, key, pages, found: null };
+      /** Newer views whose pages this window does not know, asked for by uid. @type {string[]} */
+      const unknown = [];
       for (let i = all.length - 1; i >= 0; i--) {
         const e = /** @type {any} */ (all[i]).entry;
         if (e.kind !== "view" || e.window !== deps.window || e.place.view !== "page") continue;
         const a = addressOfPlace(e.place, idOf);
         if (a !== null && a.id !== "") { lastSeen.found = a; break; }
+        if (a === null && unknown.length < 16) unknown.push(e.place.uid);
       }
+      if (unknown.length) void ws.want({ uids: unknown });
     }
     return lastSeen.found ?? lastRoute;
   }
