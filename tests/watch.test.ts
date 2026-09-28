@@ -361,6 +361,33 @@ test.if(!RECURSIVE)("a folder made the moment its parent has been listed is watc
   }
 });
 
+// Linux only, for the same reason.
+test.if(!RECURSIVE)("two folders made back to back in a watched directory are both watched, though only the first is reported", async () => {
+  // `fs.watch` CAN FOLD TWO ENTRIES MADE IN ONE DIRECTORY AT ONCE INTO ONE
+  // NOTIFICATION: under Bun 1.3 on Linux the second of two folders made back
+  // to back was not reported at all, every time. A folder nothing reported
+  // was never watched, and a page written into it never reached anybody — so
+  // an entry arriving has its directory read again. Where the platform
+  // reports both, this holds anyway.
+  const g = await ground();
+  const root = g.at("one");
+  const kids = join(pageDir(root, "home"), "children");
+  await mkdir(kids, { recursive: true });
+  const heard: string[] = [];
+  const w = watchTree(root, (abs) => void heard.push(abs));
+  try {
+    mkdirSync(join(kids, "alpha"));
+    mkdirSync(join(kids, "beta"));
+    expect(await until(() => ["alpha", "beta"].every((name) => w.handles().includes(join(kids, name))))).toBe(true);
+
+    await writeFile(join(kids, "beta", "content.yaml"), "name: Beta\nplugin: biom-doc\ncontents: []\n", "utf8");
+    expect(await until(() => heard.includes(join(kids, "beta", "content.yaml")))).toBe(true);
+  } finally {
+    w.close();
+    await g.drop();
+  }
+});
+
 test("two sibling pages created in one burst each get their markdown", async () => {
   const g = await ground();
   const host = await stand(g.at("one"), g.memory);

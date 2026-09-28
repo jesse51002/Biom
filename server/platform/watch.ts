@@ -21,7 +21,9 @@
 // directory that appears is picked up on the notification that announced it —
 // including a WATCHED ROOT that was not there when the watch started, which on a
 // fresh vault is `assets/` and `plugins/` and is the ordinary case rather than
-// the odd one.
+// the odd one. On Linux a notification is not trusted to announce every
+// directory, because two arriving together can come as one: an entry arriving
+// has its whole directory read again.
 //
 // A WATCH IS CHEAP AND A WATCHER IS NOT FOREVER. Nothing here starts on mount:
 // `main.ts` starts one when the first stream for a vault connects and closes it
@@ -176,11 +178,19 @@ export function watchTree(root: string, notify: Notify, list: (abs: string) => D
     if (shut || handles.has(abs)) return;
     let handle: { close(): void };
     try {
-      handle = watch(abs, { recursive: RECURSIVE && abs !== ROOT }, (_event: string, name: string | null) => {
+      handle = watch(abs, { recursive: RECURSIVE && abs !== ROOT }, (event: string, name: string | null) => {
         // The root's own watch is never recursive — `.git/` and `_markdown/`
         // live under it — so a name from there is one segment.
         const changed = name === null || name === "" ? abs : join(abs, ...String(name).split(/[\\/]/));
         hear(changed);
+        // AN ENTRY CAME OR WENT, SO THE DIRECTORY IS READ AGAIN for a folder
+        // nothing reported. `fs.watch` can fold two entries made in one
+        // directory within a millisecond into one notification — measured
+        // under Bun 1.3 on Linux, the second of two folders made back to back
+        // went unreported every time — and a folder whose arrival nobody heard
+        // was never watched, nor was the page written into it. Linux only, as
+        // `follow` is: elsewhere the kernel watches the tree.
+        if (event === "rename" && changed !== abs && !RECURSIVE) follow(abs, true);
       });
     } catch (e) {
       trouble(e);
