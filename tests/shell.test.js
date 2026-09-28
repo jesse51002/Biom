@@ -1061,6 +1061,15 @@ test("New names the page it is making inside by its name, not its id", async () 
   expect(flat(find(dlg, (el) => el.tagName === "H2"))).toBe("New inside Job board");
 });
 
+test("New inside a page the window does not know asks for it by id, and names it by its segment meanwhile", async () => {
+  const g = harness(DOC, { view: "page", id: "notes" });
+  g.ui.set({ dialog: true, dialogParent: "home/Far/Away" });
+  await tick();
+  const dlg = find(g.root, (el) => el.className === "dialog");
+  expect(flat(find(dlg, (el) => el.tagName === "H2"))).toBe("New inside Away");
+  expect(g.ws.calls).toContain("want:home/Far/Away");
+});
+
 test("Table makes one and lands you on it", async () => {
   const g = harness(DOC, { view: "page", id: "notes" });
   find(g.rack, (el) => el.className === "newpage").fire("click");
@@ -3064,9 +3073,10 @@ test("a table cell's page link and a run's page link are the person's opens", as
   const goes = src.split("\n").filter((line) => /\bui\.go\(/.test(line));
   expect(goes).toHaveLength(3);
   for (const line of goes) expect(line).toMatch(/rebase|ROOT_PAGE/);
-  expect(src).toContain('ui.open("page", at.value)');
+  // The table cell's page link (a page column's chosen page) and the run's.
+  expect(readFileSync(new URL("../client/views/table.js", import.meta.url), "utf8")).toContain('ui.open("page", id)');
   expect(src).toContain('ui.open("page", page.id)');
-  expect(src).toContain('ui.open("page", id)');
+  expect(readFileSync(new URL("../client/views/runs.js", import.meta.url), "utf8")).toContain('ui.open("page", id)');
 });
 
 test("the Agent screen routes in every build, and holds a sentence where there is no Agent view", async () => {

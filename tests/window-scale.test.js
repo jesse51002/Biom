@@ -19,6 +19,7 @@ import { makeShell, FIND_AFTER } from "../client/shell/shell.js";
 import { makeSwitcher, TIMING } from "../client/store/switcher.js";
 import { makeHistoryStore } from "../client/store/history.js";
 import { makeBridge } from "../client/bridge/bridge.js";
+import { makeRunsView } from "../client/views/runs.js";
 import { PROTOCOL } from "../contracts/wire.js";
 import { closePopover } from "../client/widgets/popover.js";
 
@@ -41,7 +42,7 @@ function uidFor(id) {
   return (a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0")).slice(0, 16);
 }
 
-/** @returns {{ pages: Map<string, { name: string, uid: string, kids: string[] }>, tables: any[] }} */
+/** @returns {{ pages: Map<string, { name: string, uid: string, kids: string[] }>, tables: any[], runs: any[] }} */
 function inventTree() {
   /** @type {Map<string, { name: string, uid: string, kids: string[] }>} */
   const pages = new Map();
@@ -67,7 +68,9 @@ function inventTree() {
   for (let i = 0; i < 60; i++) add(`home/Notes/Note_${i}`, `Invented note ${i}`);
   for (let i = 0; i < 40; i++) add(`home/Archive/Old_${i}`, `Invented old ${i}`);
   const tables = [{ name: "jobs", kind: "basic", rows: 3, parent: ROOT_PAGE }, { name: "leads", kind: "basic", rows: 0, parent: "home/People" }];
-  return { pages, tables };
+  /** Runs on record, each naming the page it was started on. @type {any[]} */
+  const runs = [];
+  return { pages, tables, runs };
 }
 
 /** A server over the invented tree, answering the kinds the window sends. */
@@ -97,6 +100,8 @@ function inventServer() {
       case "table.list": return t.tables;
       case "theme.get": return THEME;
       case "history.read": return { entries: [], head: 0 };
+      case "run.list": return t.runs;
+      case "run.read": return { text: "", next: 0, ended: true };
       case "window.report": return [];
       case "page.read": {
         const r = ref(req.page);
@@ -716,4 +721,29 @@ test("a box's link.resolve and doc.list go to the server, and its open of a page
   expect(went).toEqual([["page", "home/Historic/Day_9", undefined, undefined]]);
   // The one page.list here was the box's: nothing of the window's asked it.
   spies.splice(spies.indexOf(spy), 1);
+});
+
+/* ── the Automations screen: the pages its runs name ──────────────────── */
+
+test("the Automations screen asks for the pages its runs name in one batch, and calls a page gone only when the server says so", async () => {
+  const { ws, spy, t } = standUp();
+  await ws.loadTree();
+  /** @param {string} id @param {string} page */
+  const run = (id, page) => ({ id, page, uid: null, automation: "invented", by: null, command: [], inputs: {}, pid: null, pgid: null, born: null, started: 1, ended: 2, status: "done", exit: 0, signal: null });
+  t.runs.push(run("r1", "home/Historic/Day_3"), run("r2", "home/Gone/Page"), run("r3", "home/Historic/Day_3"));
+  // The screen's own few DOM calls: a class selector on its head, and whether it is on the page.
+  const hq = (/** @type {string} */ spec, /** @type {any} */ props, /** @type {any[]} */ ...kids) => {
+    const el = h(spec, props, ...kids);
+    return Object.assign(el, { isConnected: false, querySelector: (/** @type {string} */ sel) => find(el, (x) => has(x, sel.slice(1))) });
+  };
+  const view = makeRunsView({ h: /** @type {any} */ (hq), ws, ui: /** @type {any} */ ({ open() {} }) });
+  spy.clear();
+  const screen = view();
+  for (let i = 0; i < 8; i++) await tick();
+  expect(asked(spy.calls).filter((k) => k === "page.locate")).toEqual(["page.locate"]);
+  expect(/** @type {any} */ (spy.calls.find((c) => c.kind === "page.locate")).ids.sort()).toEqual(["home/Gone/Page", "home/Historic/Day_3"]);
+  const links = findAll(screen, (el) => has(el, "pagelink"));
+  expect(links.map((el) => [flat(el).split(" · ")[0], has(el, "gone")])).toEqual([
+    ["home/Historic/Day_3", false], ["home/Gone/Page", true], ["home/Historic/Day_3", false],
+  ]);
 });

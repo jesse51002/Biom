@@ -24,6 +24,8 @@
 
 /** @import { Cell, Column, ColumnType, Page, Palette, Row, RowId, RowInput, TableName, TableSchema, TableView, WorkspaceStore } from "../../contracts/types.ts" */
 /** @import { Ui } from "../store/ui.js" */
+/** @import { Workspace } from "../store/workspace.js" */
+/** @typedef {WorkspaceStore & Pick<Workspace, "refOf" | "want" | "search">} TableWorkspace */
 
 import { tokenOf } from "../theme/palettes.js";
 import { h, svg } from "../platform/dom.js";
@@ -370,8 +372,12 @@ const SEEN_TABLES = new Map();
  *  *refs*, which cannot answer whether a page shows this table. */
 const SEEN_PAGES = new Map();
 
+/** How long a page picker waits after the last keystroke before it asks the
+ *  server, in ms — the rail's finder's pause. */
+const FIND_AFTER_MS = 120;
+
 /**
- * @param {{ ws: WorkspaceStore, ui: Ui, production?: boolean }} deps
+ * @param {{ ws: TableWorkspace, ui: Ui, production?: boolean }} deps
  *   `production` is which build this is; absent means development. It decides
  *   one thing on this screen: whether the *Used by* pills are drawn.
  * @returns {(view: TableView | null) => HTMLElement}
@@ -398,7 +404,7 @@ export function makeTableView(deps) {
 }
 
 /**
- * @param {WorkspaceStore} ws
+ * @param {TableWorkspace} ws
  * @param {Ui} ui
  * @param {TableName} name
  * @param {boolean} [production]
@@ -735,6 +741,91 @@ function makeGrid(ws, ui, name, production = false) {
     return h("td.tc", h("span.pillwrap", btn, extra));
   }
 
+  /**
+   * A PAGE COLUMN'S CELL: the chosen page by its name, and a picker that
+   * SEARCHES rather than lists. The window holds only the pages on its screen,
+   * so the name comes from its directory — asked for by id where it is not
+   * there yet, and read as its id meanwhile — and the candidates are the
+   * server's answer to what is typed, `FIND_AFTER_MS` after the last key.
+   * @param {Row} row @param {Column} col @param {HTMLElement | null} extra
+   */
+  function pageCell(row, col, extra) {
+    const text = h("span");
+    const btn = h("button.pill.page", {
+      type: "button", "aria-haspopup": "true", "aria-expanded": "false", "aria-label": col.name,
+    }, h("i.pg"), text);
+    const current = () => {
+      const raw = row.cells[col.name] ?? null;
+      return raw === null ? "" : String(raw);
+    };
+    const refresh = () => {
+      const id = current();
+      const ref = id ? ws.refOf(id) : null;
+      if (id && ref === null) void ws.want({ ids: [id] });
+      const shown = ref ? ref.name : id;
+      text.textContent = shown || "Empty";
+      btn.classList.toggle("empty", !shown);
+    };
+    refresh();
+
+    if (editable()) btn.addEventListener("click", () => {
+      /** @type {import("../../contracts/types.ts").PageSearch | null} */
+      let found = null;
+      let asked = "";
+      let asking = 0;
+      /** @type {ReturnType<typeof setTimeout> | null} */
+      let timer = null;
+      const list = h("div.poplist");
+      const drawList = () => {
+        const id = current();
+        /** @type {HTMLElement[]} */
+        const items = [];
+        if (found !== null) {
+          for (const hit of found.hits) {
+            items.push(popItem(hit.name, () => {
+              setCell(row, col, hit.id === id ? null : hit.id);
+              refresh(); drawList();
+            }, { checked: hit.id === id, note: hit.id.slice(0, Math.max(0, hit.id.lastIndexOf("/"))) || undefined }));
+          }
+        }
+        const say = asked === "" ? "Type to find a page."
+          : found === null ? "Looking…"
+          : !found.hits.length ? "No page is called that."
+          : found.more ? "More pages match. Type more of the name."
+          : "";
+        list.replaceChildren(...items, ...(say ? [h("p.tsay.inpop", say)] : []));
+      };
+      const find = (/** @type {string} */ typed) => {
+        if (timer !== null) { clearTimeout(timer); timer = null; }
+        const q = typed.trim();
+        const my = ++asking;
+        asked = q;
+        found = null;
+        drawList();
+        if (!q) return;
+        timer = setTimeout(() => {
+          timer = null;
+          ws.search(q).then((res) => { if (my !== asking) return; found = res; drawList(); },
+            () => { if (my !== asking) return; found = { hits: [], more: false, complete: true }; drawList(); });
+        }, FIND_AFTER_MS);
+      };
+      const field = popInput({
+        placeholder: "Find a page",
+        oninput: (/** @type {any} */ e) => find(/** @type {HTMLInputElement} */ (e.currentTarget).value),
+      });
+      drawList();
+      openMenu(btn, () => [
+        popLabel("Choose a page"),
+        field,
+        list,
+        current() ? popSep() : null,
+        current() ? popItem("Clear", () => { setCell(row, col, null); refresh(); drawList(); }) : null,
+      ], { width: "15rem" });
+    });
+
+    return h("td.tc", h("span.pillwrap", btn, extra));
+  }
+
   /** @param {Column} col */
   function emptyPickerNote(col) {
     if (col.type === "person") return "No names in this column yet. Type one above.";
@@ -798,17 +889,16 @@ function makeGrid(ws, ui, name, production = false) {
     }
 
     if (col.type === "page") {
-      const pages = ws.get().pages;
-      const list = pages.map((p) => ({ value: p.id, label: p.name }));
-      const at = list.find((o) => o.value === String(value ?? ""));
-      const open = at
+      const id = value === null || value === undefined ? "" : String(value);
+      const ref = id ? ws.refOf(id) : null;
+      const open = ref
         ? h("button.goto", {
-            type: "button", "aria-label": `Open ${at.label}`,
+            type: "button", "aria-label": `Open ${ref.name}`,
             // The person, following the cell's page: an open.
-            onclick: () => { closePopover(); ui.open("page", at.value); },
+            onclick: () => { closePopover(); ui.open("page", id); },
           }, svg("0 0 16 16", OPEN, "arrow"))
         : null;
-      return pickerCell(row, col, list, open);
+      return pageCell(row, col, open);
     }
 
     if (col.type === "date") {

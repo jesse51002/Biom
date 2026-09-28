@@ -199,11 +199,14 @@ export function makeDialog(deps) {
 
   /** The parent BY ITS NAME. It printed the id, which is a path of folder
    *  segments nobody chose to read — `home/Boards/Open_Source_Release` for what
-   *  the rail calls Open source release. */
+   *  the rail calls Open source release. The name comes from the window's
+   *  directory, and a parent it does not know is asked for by id and reads as
+   *  its segment until the answer lands. */
   const head = () => {
     const inside = ui.get().dialogParent;
     if (!inside) return h("h2", "New");
-    const ref = ws.get().pages.find((p) => p.id === inside);
+    const ref = ws.refOf(inside);
+    if (ref === null) void ws.want({ ids: [inside] });
     return h("h2", "New inside " + (ref ? ref.name : segmentOf(inside)));
   };
 
