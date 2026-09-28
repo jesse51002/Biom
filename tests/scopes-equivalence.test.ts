@@ -25,7 +25,8 @@
 //
 // `test.failing` marks what holds only once the fourteenth edit is BUILT —
 // the server stops merging and the runtime rebuilds the content it hands a
-// slot plugin. Track F turns each into `test` and changes nothing else here.
+// slot plugin. Track F turns each into `test` and changes nothing else here:
+// not a golden, not the corpus, not what a check compares.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -189,10 +190,11 @@ test("every corpus page projects to the markdown it projected before, in both co
 });
 
 // THE BARRIER'S OWN FIX: `projectDoc` and its hand copy read a part's `vars`
-// ALONE, which is right only while it holds the merge — an own `{}` would win
-// and leave `{{rate}}` unfilled. Each reader merges now, so either shape
-// projects the same.
-test.failing("the answer spelled own-only projects to the same markdown, in both copies of the rule", () => {
+// ALONE, which was right only while it held the merge — an own `{}` would win
+// and leave `{{rate}}` unfilled. Each merges now, so either spelling projects
+// the same, and this held on the barrier's second commit and failed on its
+// first.
+test("the answer spelled own-only projects to the same markdown, in both copies of the rule", () => {
   const guest = guestProject();
   for (const id of CORPUS_PAGES) {
     const own = ownWire(old.get(id) as Wire) as unknown as Page;

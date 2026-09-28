@@ -44,6 +44,11 @@
   /** @param {any} child @returns {string} */
   const linkTo = (child) => `- [[${child.id}|${child.name}]]`;
 
+  /** A NEARER SCOPE OVER AN OUTER ONE, nearest last — the box's own `merge`. An
+   *  entry with no variables of its own is the outer scope unchanged. */
+  /** @param {Record<string, any>} outer @param {Record<string, any> | undefined} own @returns {Record<string, any>} */
+  const scope = (outer, own) => ({ ...outer, ...(own || {}) });
+
   /** One part, projected. `null` where the part contributes nothing.
    *
    *  AN HTML PART CONTRIBUTES NOTHING, and that is the honest answer rather than a
@@ -51,16 +56,23 @@
    *  beside it (R56 is exactly that rule), and stripping tags out of it would put
    *  a caption from an `<svg>` into the archive as a paragraph. A TABLE names
    *  itself and does not inline its rows: rows change without the page changing,
-   *  so a projection holding them would be stale in a way the page is not. */
+   *  so a projection holding them would be stale in a way the page is not.
+   *
+   *  `vars` is the scope AROUND the part — the page's under its section's — and
+   *  the part's own `vars` is merged over it, nearest last. A part's `vars` is
+   *  its own `variables:` since the fourteenth contracts edit, so reading it
+   *  alone would leave `{{rate}}` unfilled wherever the value is the section's
+   *  or the page's; merged, a part that still carries the three scopes already
+   *  merged projects exactly as it did. */
   /** @param {any} one @param {Record<string, any>} vars @returns {string | null} */
   function part(one, vars) {
-    if (one.kind === "markdown") return interpolate(one.md, one.vars || vars).trim() || null;
+    if (one.kind === "markdown") return interpolate(one.md, scope(vars, one.vars)).trim() || null;
     if (one.kind === "list") {
       const items = one.items.map((/** @type {any} */ item) => part(item, vars)).filter((/** @type {string | null} */ t) => t !== null);
       return items.length ? items.join("\n\n") : null;
     }
     if (one.kind === "table") return `*(table: ${one.table})*`;
-    if (one.kind === "grid") return grid(one.rows, one.head, one.vars || vars);
+    if (one.kind === "grid") return grid(one.rows, one.head, scope(vars, one.vars));
     if (one.kind === "child") {
       return one.child.kind === "page" ? linkTo(one.child) : `*(table: ${one.child.id})*`;
     }
@@ -93,11 +105,13 @@
     return [first, rule, ...body].join("\n");
   }
 
-  /** One section, projected, or null where it says nothing. */
+  /** One section, projected, or null where it says nothing. `vars` is the page's
+   *  scope, and the section's own is merged over it for every part inside. */
   /** @param {any} one @param {Record<string, any>} vars @returns {string | null} */
   function section(one, vars) {
+    const inner = scope(vars, one.vars);
     const parts = Object.values(one.parts || {})
-      .map((/** @type {any} */ p) => part(p, vars))
+      .map((/** @type {any} */ p) => part(p, inner))
       .filter((/** @type {string | null} */ t) => t !== null);
     return parts.length ? parts.join("\n\n") : null;
   }

@@ -188,7 +188,17 @@ export type Part =
    *  part is drawn rather than where it is read, because prose is editable in
    *  place and writes back: resolving on the server would round-trip `62` over
    *  the top of `{{rate}}` and destroy the variable the first time somebody
-   *  touched the paragraph it sits in. `vars` is what to resolve against. */
+   *  touched the paragraph it sits in.
+   *
+   *  `vars` — here, on `html` and on `grid`, and on each of a list's items — is
+   *  THIS PART'S OWN `variables:`, `{}` where it has none. It is not the scope
+   *  the part resolves against: that is `Page.variables` under the section's
+   *  `vars` under this one, merged nearest last by whoever draws or projects
+   *  the part. It carried the three already merged until the fourteenth
+   *  contracts edit, which put a copy of the page's variables into every
+   *  section and every part — 65 MB on the wire for a page of 649 sections
+   *  under 95 KB of them. A reader that uses `vars` alone is wrong wherever
+   *  the page or the section has variables; merge. */
   | { kind: "markdown"; md: string; vars: Variables }
   | { kind: "html"; file: string; html: string; vars: Variables }
   /** A table drawn inline as a grid. Not the same as a `child` pointing at one:
@@ -212,10 +222,10 @@ export type Part =
    *  particular arrangement and the child is not. */
   | { kind: "child"; child: Child; draw?: { file: string; html: string } }
   /** THE DOCUMENT'S OWN TABLE, resolved: the rows padded square, `head` settled,
-   *  and the scopes gathered because a cell is markdown and `{{name}}` in one
-   *  resolves where it is drawn, exactly as a markdown part's does. The cells
-   *  are RAW for the same reason `md` is: a cell opens under the caret and
-   *  writes back. */
+   *  and its own variables carried because a cell is markdown and `{{name}}` in
+   *  one resolves where it is drawn, against the merged scope, exactly as a
+   *  markdown part's does. The cells are RAW for the same reason `md` is: a
+   *  cell opens under the caret and writes back. */
   | { kind: "grid"; rows: string[][]; head: boolean; vars: Variables }
   /** A LIST, resolved. Each item is a `Part` in its own right, drawn in order
    *  into the one slot and edited as its own region — so adding, removing and
@@ -241,17 +251,23 @@ export interface DrawnSection {
   fallback: boolean;
   /** Slot id → what is in it, resolved. Keyed exactly as `Section.parts` was. */
   parts: Record<string, Part>;
+  /** THIS SECTION'S OWN `variables:`, `{}` where it has none — the fourteenth
+   *  contracts edit, which narrowed it from the page's and the section's
+   *  already merged. The section is drawn with `Page.variables` under this,
+   *  merged nearest last, and each part with that under the part's own `vars`;
+   *  the page's values travel once, in `Page.variables`, and never again per
+   *  section. */
   vars: Variables;
   /** THE STORED ENTRY THIS WAS DRAWN FROM, carried so the runtime can DUPLICATE
    *  a section.
    *
    *  Everything else here is resolved and therefore lossy in the one direction
-   *  that matters: `html` is the markup and not the filename that named it,
-   *  `parts` holds loaded content and not the `data:` that pointed at it, and
-   *  `vars` is the three scopes already merged rather than the section's own. A
-   *  copy rebuilt from those would name no file, inline what was a pointer, and
-   *  bake the page's variables into the section — which is three bugs to explain
-   *  rather than one field to send.
+   *  that matters: `html` is the markup and not the filename that named it, and
+   *  `parts` holds loaded content and not the `data:` that pointed at it. A copy
+   *  rebuilt from those would name no file and inline what was a pointer — two
+   *  bugs to explain rather than one field to send. (`vars` was a third, the
+   *  page's variables baked into the section, until the fourteenth contracts
+   *  edit made it the section's own.)
    *
    *  It is the entry as the reader was handed it, so for a child section drawn
    *  by its parent the `data` is the one the parent supplied. Nothing duplicates
