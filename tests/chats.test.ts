@@ -67,6 +67,9 @@ function world(opts: {
   cancelGraceMs?: number;
   /** Where the chosen agent and pickers are kept, and read back. */
   keep?: Pick<ChatsDeps, "saved" | "picked" | "chose">;
+  /** How long each commit waits before it starts — a commit queued behind a
+   *  slow one. */
+  commitDelayMs?: number;
 } = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
@@ -99,7 +102,7 @@ function world(opts: {
       connect: (launch, cwd) => connectAcp(launch, cwd, undefined, { log: () => {}, graceMs: 500 }),
       root,
       logDir: join(root, ".biom"),
-      files: makeFiles(root),
+      files: opts.commitDelayMs === undefined ? makeFiles(root) : slowCommits(makeFiles(root), opts.commitDelayMs),
       skills: async () => SKILLS,
       placeOf: async (p) => (p.startsWith("pages/") ? { view: "page", uid: `uid-${p.split("/")[1]}`, screen: "page" } : null),
       uidOf: async (id) => `uid-${id}`,
@@ -135,6 +138,16 @@ function world(opts: {
       return readFileSync(heardPath(key), "utf8").trim().split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as Record<string, unknown>);
     },
   };
+}
+
+/** Files whose every commit starts `ms` late, as one queued behind another. */
+function slowCommits<F extends { commit(message: string): Promise<void> }>(files: F, ms: number): F {
+  return new Proxy(files, {
+    get(target, key, receiver) {
+      if (key === "commit") return async (message: string) => { await wait(ms); await target.commit(message); };
+      return Reflect.get(target, key, receiver);
+    },
+  });
 }
 
 const summaryOf = (chats: Chats, id: string): ChatSummary => chats.list().find((c) => c.id === id) as ChatSummary;
@@ -493,6 +506,29 @@ only("every write is reported once — fs and the tool call that made it are one
   // twice (a.md, b.md).
   expect(log.filter((m) => m === "Before Fake Agent wrote in a chat").length).toBe(1);
   expect(log.length).toBe(2);
+});
+
+only("THE COMMIT BEFORE A TURN'S WRITES HOLDS NONE OF THEM, however they are asked: two at once, behind a commit that is slow to start", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
+  const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "Test");
+  writeFileSync(join(root, "seed.md"), "seed\n");
+  const w = world({
+    root,
+    commitDelayMs: 300,
+    scenarios: { fake: { turns: [[{ writes: [{ path: "first.md", content: "invented one\n" }, { path: "second.md", content: "invented two\n" }] }, { reply: "wrote both" }]] } },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "write two files at once" });
+  await settled(w.chats, s.id, 1);
+  expect(readFileSync(join(root, "first.md"), "utf8")).toBe("invented one\n");
+  expect(readFileSync(join(root, "second.md"), "utf8")).toBe("invented two\n");
+  expect(git("log", "-1", "--format=%s").stdout.trim()).toBe("Before Fake Agent wrote in a chat");
+  // The undo point is the folder as it was before the turn wrote anything.
+  const kept = git("ls-tree", "--name-only", "HEAD").stdout.trim().split("\n");
+  expect(kept).toContain("seed.md");
+  expect(kept.filter((f) => f === "first.md" || f === "second.md")).toEqual([]);
 });
 
 only("a switch mints a new agent id, and the new session is handed the chat so far", async () => {

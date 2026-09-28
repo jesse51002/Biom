@@ -446,7 +446,9 @@ interface TurnState {
   changes: Map<string, Contribution[]>;
   /** `fs` writes no tool call has claimed yet, by path. */
   unclaimed: Map<string, number>;
-  committed: boolean;
+  /** The commit before the turn's first write, once asked — which EVERY write
+   *  of the turn waits for, not only the one that asked it. */
+  committed: Promise<void> | null;
 }
 
 interface Chat {
@@ -1348,7 +1350,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     clearGreen(c);
     // Tool calls older than the last turn are nobody's any more.
     for (const [id, rec] of c.tools) if (rec.turn < c.turn - 1) c.tools.delete(id);
-    c.turnState = { turn: c.turn, changes: new Map(), unclaimed: new Map(), committed: false };
+    c.turnState = { turn: c.turn, changes: new Map(), unclaimed: new Map(), committed: null };
     emit(c, { kind: "prompt", text });
     if (c.name === "") rename(c, nameFrom(text, NAME_MAX));
     signal({ kind: "start", chat: c.id, turn: c.turn, text });
@@ -2016,14 +2018,17 @@ export function makeChats(deps: ChatsDeps): Chats {
         old = null;
       }
     }
+    // ONCE A TURN, AND BEFORE ANY OF ITS WRITES. An agent asks for writes in
+    // parallel as readily as in turn, and a commit waits its turn behind any
+    // other on the folder — so the second write of a pair used to go straight
+    // to disk while the first waited on the commit, and the undo point held
+    // it. Every write of the turn waits for the one commit.
     const ts = c.turnState;
-    if (ts && !ts.committed) {
-      ts.committed = true;
-      try {
-        await deps.files.commit(`Before ${live.harness} wrote in a chat`);
-      } catch (e) {
+    if (ts) {
+      ts.committed ??= deps.files.commit(`Before ${live.harness} wrote in a chat`).catch((e: unknown) => {
         say(`chats: the commit before an agent's write failed: ${said(e)}`);
-      }
+      });
+      await ts.committed;
     }
     if (live.gone) throw stopped();
     try {

@@ -38,6 +38,9 @@ export type Step =
   | { toolUpdate: Record<string, unknown> }
   /** `fs/write_text_file`, waiting for the answer; the answer is logged. */
   | { write: { path: string; content: string } }
+  /** Several `fs/write_text_file` asked at once, as an agent's parallel tool
+   *  calls ask them; each answer is logged once all are in. */
+  | { writes: { path: string; content: string }[] }
   /** `fs/read_text_file`, waiting for the answer; the answer is logged. */
   | { read: { path: string; line?: number; limit?: number } }
   /** `session/request_permission`; the chosen option is logged. */
@@ -236,6 +239,9 @@ function run(scenario: Scenario): void {
         const p = resolve(cwd, step.write.path);
         const r = await ask("fs/write_text_file", { sessionId, path: p, content: step.write.content });
         log({ fake: "write", path: p, answer: r });
+      } else if ("writes" in step) {
+        const answers = await Promise.all(step.writes.map((w) => ask("fs/write_text_file", { sessionId, path: resolve(cwd, w.path), content: w.content })));
+        for (const [i, w] of step.writes.entries()) log({ fake: "write", path: resolve(cwd, w.path), answer: answers[i] });
       } else if ("read" in step) {
         const r = await ask("fs/read_text_file", { sessionId, path: resolve(cwd, step.read.path), line: step.read.line, limit: step.read.limit });
         log({ fake: "read", answer: r });
