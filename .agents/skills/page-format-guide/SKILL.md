@@ -344,10 +344,16 @@ Two layers, and keeping them apart is the point.
 directories under `<dir>/children/` that hold a `content.yaml`, plus every table
 whose registry parent is this page — normalised into `Child`. Nothing reads a
 claim about who a parent is, and nothing has to read every page in the vault to
-find out who claims this one. It is available to every page through
-`biom.children()` **whether or not the page draws any of them**, which is
-what makes the built-in drawing replaceable rather than privileged: a replacement
-reads the same data through the same call.
+find out who claims this one. **Nor is a child parsed to be listed**: each is
+named from its document's head — the first few kilobytes, kept in the page index
+in `.biom/pages.db` and believed only while a stat agrees — with its `uid` and
+whether it holds pages of its own, and parsed whole only where the head cannot
+say; the parent's `contents` is parsed once and kept by its stat. The root's
+level also lists every table whose parent page is gone, so a table is always
+somewhere in the tree. It is available to every page through `biom.children()`
+**whether or not the page draws any of them**, which is what makes the built-in
+drawing replaceable rather than privileged: a replacement reads the same data
+through the same call.
 
 **Layer two, the drawing.** On every read, each child is guaranteed a **section**
 whose name is `childKey(child)`, holding one part of type `child` in the slot the

@@ -2,10 +2,11 @@
 // Rebuild a workspace's markdown mirror, with no server and no port.
 //
 // WHY IT EXISTS. `_markdown/` is derived, and NOTHING WATCHES THE FILESYSTEM
-// when no server is up. It is rewritten on mount, in the same request as a
-// write through the app, and when a page reports its own markdown after being
-// drawn — so an agent that writes twenty `content.yaml` files in an editor with
-// nothing running has changed twenty pages and no markdown. Anything that reads
+// when no server is up. It is brought up to date in the background after a
+// mount, a moment after a write through the app or a change the watcher
+// hears, and when a page reports its own markdown after being drawn — so an
+// agent that writes twenty `content.yaml` files in an editor with nothing
+// running has changed twenty pages and no markdown. Anything that reads
 // markdown then reads what the mirror said before those pages existed.
 //
 // So this is the step between writing pages with no server up and pointing a

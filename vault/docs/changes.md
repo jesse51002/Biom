@@ -4,7 +4,10 @@
 
 **The server watches this folder while it runs.** Save a `content.yaml` or a
 section's HTML file in any editor and the page it belongs to is re-read and drawn
-again, a moment later, without anybody pressing anything.
+again, a moment later, without anybody pressing anything. **Only that page**: a
+write to another page leaves the one you are reading alone, and the page tree
+is listed again only where the change moved it — a page added, removed, moved,
+renamed or reordered.
 
 What it watches is the workspace's **authored input** — the files a person or an
 agent writes. A burst of writes is coalesced into one redraw, so saving four files
@@ -22,12 +25,12 @@ same distance from the top when there is one, otherwise the bottom. Opening a
 page afresh, or coming back to it from the rail, still starts at the top.
 
 **The app's own writes do not trigger it.** A write through the app lands in
-`pages/` and looks exactly like an agent's, so the server keeps the hash of what it
-last wrote into or last read out of every file. Equal, and the notification is
-dropped; different, and the page redraws. A file re-read in the middle of somebody
-else's save — so it does not parse yet — leaves the drawn page alone **and** leaves
-the baseline where it was, so the completed write reads as changed on the next
-notification.
+`pages/` and looks exactly like an agent's, so the server keeps the hash of what
+it last wrote into every file, and of what it last reported from one. Equal, and
+the notification is dropped; different, and the page redraws. A file re-read in
+the middle of somebody else's save — so it does not parse yet — leaves the drawn
+page alone **and** leaves the baseline where it was, so the completed write
+reads as changed on the next notification.
 
 ## A markdown table in a paragraph is rewritten on the next draw
 
@@ -47,7 +50,8 @@ not drawn again for it, so the next cell opens on the next click.
 
 ## The Reload button is still there
 
-It re-reads the page on demand and does exactly what the watcher's redraw does,
+It re-reads the page you are on, and every part of the page tree the window has
+open, on demand — what the watcher's redraw does for a page a change names —
 keeping your place the same way. It is for when you want to be certain, not for
 the ordinary loop.
 
@@ -78,7 +82,7 @@ omission: reverting is a sentence you hand the agent, like everything else here.
 Snapshot and rollback are deliberately not features.
 
 A workspace whose `git init` failed still works completely — pages read and write,
-the seed lands, the mirror rebuilds. The only thing missing is undo.
+the seed lands, the mirror is written. The only thing missing is undo.
 
 ## Two failures worth recognising
 
@@ -100,11 +104,17 @@ workspace whose prose lives in `content.yaml`.
 **Nothing is ever authored by editing a file in there.** It is rewritten from the
 pages, and an edit made in it is lost.
 
-**Nothing watches it into existence, so it is written at three moments:**
+**It is written in the background, and nothing waits for it**, so it is behind a
+write by a few seconds:
 
-- on mount, when a workspace is opened;
-- in the same request as a write through the app;
+- after a workspace is opened — only the pages whose `content.yaml`, or whose
+  children, changed since their `.md` was written, and the files of pages that
+  are gone taken away;
+- a moment after a write through the app, or a change on disk the server heard;
 - when a page reports its own markdown after being drawn.
+
+**Nothing watches it into existence while the app is closed**: pages written with
+no server running have no markdown until the workspace is next opened.
 
 **The one thing that cannot be projected without being drawn is a page a plugin
 draws.** Only the code that draws a board can say what that board says in words,

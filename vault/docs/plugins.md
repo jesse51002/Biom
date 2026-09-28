@@ -258,6 +258,12 @@ alone. A `ctx.use("items")` in a plugin of your own is code, so the tool names
 the file and the line rather than editing it; the framework's is
 `ctx.use("biom-items")`. The checker says the same as R69.
 
+**The server checks once per workspace for each version of Biom**, and
+remembers that it has in `.biom/format`, because the check reads every page. So
+a page in the old spelling copied into a workspace that has already passed is
+not refused at the door: it opens saying no plugin of that name is there, and
+the checker's R69 names it.
+
 ## Five names are spoken for
 
 `markdown`, `html`, `table`, `child` and `grid` are the **part kinds** — a slot's plugin

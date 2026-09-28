@@ -286,6 +286,10 @@ no folder under `<word>` — the page's own `plugins/` counted — is the tell.
 `tools/migrate-format-5.ts` rewrites exactly those words and names a
 `ctx.use("<word>")` in code for a person to fix; `tests/migrate-format-5.test.ts`
 runs it as the command it is. R69 in the checker says the same per page.
+**The walk runs once per workspace per build** — `checkVaultFormatOnce` stamps
+`.biom/format` once it has passed — so a format 4 page dropped into a workspace
+already stamped opens saying no plugin of that name is there, and R69 is what
+reports it.
 
 **A part kind is reserved to its file under either name.** `markdown` to
 `plugins/markdown/`, `biom-markdown` to the framework's `biom-markdown/` — `isKind` in the
@@ -550,10 +554,11 @@ that was done once and taken out again. **This is a breaking change, and it is
 said as one**: whoever owns the folder moves the scripts into folders and
 deletes the copies they did not mean to keep.
 
-**Neither job is on the mount path.** `afterMount` in `server/main.ts` starts
-the skills rewrite and the mirror once `hold` has the mount, a page draws from
-the rung the instant the vault is open, and each failure is a sentence in the
-log rather than a mount that did not happen. `Host.settled(path)` is the promise
+**Neither job is on the mount path.** `afterMount` in `server/main.ts` runs
+the skills rewrite and the mirror last in `afterMountAll`, the work that follows
+the mount in the background once `hold` has it; a page draws from the rung the
+instant the vault is open, and each failure is a sentence in the log rather
+than a mount that did not happen. `Host.settled(path)` is the promise
 a test waits on.
 
 **THE LOADER ANSWERS THE DIRECTORY ON THE ROUTE IT ALREADY SERVES THE FILES
@@ -565,9 +570,15 @@ builds to reach one file, with nothing appended — is `pluginBundle` in
 > `guest/plugins/`, then the vault's `plugins/`, then every page's own
 > `plugins/` in page-id order — `pageDirs` in `pages.ts` walks positions, not
 > documents — and within a folder its own scripts in name order, then its inner
-> plugins. Each segment is preceded by a comment naming its path and its root
-> and wrapped in a FUNCTION of its own. The client weaves **one** tag for it,
-> and there is no list of plugin ids anywhere in the client.
+> plugins. **Which pages have a `plugins/` is remembered between two bundles**
+> (`pagePluginBases`), checked by the modification time of every folder the walk
+> looked at and walked again only where one moved, because every box asks for
+> the bundle and a page switch on two thousand pages listed every page folder to
+> find the one or two with a plugin; each page's own `plugins/` is still walked
+> every time, so an edit inside one is always in the bundle. Each segment is
+> preceded by a comment naming its path and its root and wrapped in a FUNCTION
+> of its own. The client weaves **one** tag for it, and there is no list of
+> plugin ids anywhere in the client.
 >
 > **A page-level plugin's script loads on every page**, and only that page's
 > rung names it — the cost of one tag that is byte-identical per vault, and

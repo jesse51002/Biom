@@ -114,11 +114,15 @@ the page's.
 
 **`.biom/` is the framework's folder inside your workspace and it ignores
 itself**: the registry `runs.db`, every run directory, each chat's own record
-of what was said in it (`chats/<id>.jsonl`, one record per line), and
+of what was said in it (`chats/<id>.jsonl`, one record per line),
 `settings.json` — the chat's choices kept for the next chat: the agent last
-picked, each agent's last model, mode and effort, and the view — are this
-machine's, and never in git. A `settings.json` that will not read is put aside
-as `settings.json.bad` and the defaults are used.
+picked, each agent's last model, mode and effort, and the view — `pages.db`,
+the name and identity of every page, kept so a large workspace opens and lists
+without reading every page, and `format`, which says this build has already
+checked the workspace's format, are this machine's, and never in git. A
+`settings.json` that will not read is put aside as `settings.json.bad` and the
+defaults are used; `pages.db` is a cache, thrown away and built again whenever
+it cannot be used, and your pages stay the truth.
 
 ## What a row says
 
