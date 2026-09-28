@@ -34,7 +34,7 @@
 // with no sections, which is what it now says. Every file the old server WROTE
 // carries `kind:` and `render:`, so every vault that was ever used is caught.
 
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /** THE VAULT FORMAT THIS SERVER READS.
@@ -264,6 +264,45 @@ export async function checkVaultFormat(root: string, shipped: Shipped): Promise<
       `workspace.`,
     found.map((f) => join(f.rel, DOC)),
   );
+}
+
+/** WHERE A VAULT SAYS IT HAS PASSED THE GATE, and for which build: inside the
+ *  framework's own folder, which ignores itself in git. */
+export const FORMAT_STAMP = ".biom/format";
+
+/**
+ * THE GATE, ONCE PER VAULT PER BUILD. The full walk reads every page's
+ * document and every markup file beside it — a read of the whole vault on
+ * every start, before anything could be served. So a vault that passed it
+ * under this build says so in `FORMAT_STAMP`, `{format, build}`, and the next
+ * start skips the walk; any other build, or another format, walks again.
+ *
+ * WHAT THAT TRADES: a page in an older format dropped into a vault that has
+ * already passed is not refused on the next start. It opens, saying in words
+ * that no plugin of that name is there, and the checker's rule on bare plugin
+ * names reports it — the vault is not half-opened, one page is.
+ *
+ * Answers whether the walk ran. The stamp is written only after the walk
+ * passed; one that cannot be written means the walk runs again next time.
+ *
+ * @param build the build this server is — its version and the framework's
+ */
+export async function checkVaultFormatOnce(root: string, shipped: Shipped, build: string): Promise<boolean> {
+  const at = join(root, FORMAT_STAMP);
+  try {
+    const was = JSON.parse(await readFile(at, "utf8")) as { format?: unknown; build?: unknown };
+    if (was.format === VAULT_FORMAT && was.build === build) return false;
+  } catch {
+    // Absent, unreadable or not JSON: the walk decides.
+  }
+  await checkVaultFormat(root, shipped);
+  try {
+    await mkdir(join(root, ".biom"), { recursive: true });
+    await writeFile(at, `${JSON.stringify({ format: VAULT_FORMAT, build })}\n`, "utf8");
+  } catch {
+    // Not stamped: the next start walks again, which is only slower.
+  }
+  return true;
 }
 
 /** Every directory in the vault that holds a page-shaped `content.yaml`: the

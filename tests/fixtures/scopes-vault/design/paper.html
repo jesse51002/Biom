@@ -1,0 +1,368 @@
+<!-- design/paper.html — the second world: a field notebook.
+
+     THE SAME TEN VARIABLES, A DIFFERENT TEN VALUES, and the same three type
+     roles combined the other way round: the furniture face reads long and slow
+     here and the sheet face is kept for the asides, which is the opposite of
+     the band above. Nothing in this file names a colour or a family.
+
+     THE FIGURE IS THE SAME WEEK, plotted rather than counted — a traced line
+     and open circles, because a notebook records a shape and a newspaper counts
+     a total. The last point is drawn open: it is the day still open, found as
+     the last of the week rather than marked in the document. -->
+<style>
+  :scope {
+    display: block;
+    container-type: inline-size;
+
+    --stock: {{stock}};
+    --stock-lo: {{stockLo}};
+    --ink: {{ink}};
+    --ink-2: {{ink2}};
+    --ink-3: {{ink3}};
+    --rule: {{rule}};
+    --rule-soft: {{ruleSoft}};
+    --spot: {{spot}};
+    --spot-2: {{spot2}};
+
+    background: var(--stock);
+    color: var(--ink);
+  }
+
+  [data-g-part] { max-inline-size: none; }
+
+  .said {
+    padding: 1.15rem 3rem;
+    border-block-end: 1px solid var(--rule-soft);
+    font-family: var(--furniture-face);
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+  }
+
+  .said p { margin-block: 0; }
+  .said strong { color: var(--ink); font-weight: 400; }
+
+  .said p::before {
+    content: "";
+    display: inline-block;
+    inline-size: 0.9rem;
+    block-size: 2px;
+    margin-inline-end: 0.6rem;
+    vertical-align: 0.24em;
+    background: var(--spot);
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);
+    gap: 4.5rem;
+    padding: 5.5rem 6rem;
+  }
+
+  .main { min-inline-size: 0; }
+
+  .main h2 {
+    margin-block: 0 1.5rem;
+    max-inline-size: 18ch;
+    font-family: var(--furniture-face);
+    font-weight: 700;
+    font-size: 2.35rem;
+    line-height: 1.16;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+  }
+
+  .hair {
+    block-size: 1px;
+    margin-block-end: 1.5rem;
+    background: var(--rule);
+    transform-origin: left;
+  }
+
+  .prose p {
+    margin-block: 0 1.3rem;
+    max-inline-size: 64ch;
+    font-family: var(--furniture-face);
+    font-size: 1.0625rem;
+    line-height: 1.85;
+    color: var(--ink-2);
+  }
+
+  .prose strong { color: var(--ink); }
+
+  /* The note is a blockquote inside the prose rather than a slot of its own:
+     one passage, one region, and a reader can move a sentence into or out of it. */
+  .prose blockquote {
+    margin: 2.2rem 0 0;
+    padding: 1.3rem 1.6rem;
+    background: var(--stock-lo);
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--ink-2);
+  }
+
+  .prose blockquote p { margin-block: 0; max-inline-size: none; font-family: var(--sheet-face); font-size: 1rem; line-height: 1.7; color: var(--ink-2); }
+
+  .prose blockquote p:first-child {
+    margin-block-end: 0.5rem;
+    font-style: normal;
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--spot);
+  }
+
+  .side {
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2.6rem;
+    padding-block-start: 0.5rem;
+  }
+
+  .lab p,
+  .tab h3 {
+    margin-block: 0 1rem;
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 1rem;
+    color: var(--ink-3);
+  }
+
+  .plot {
+    position: relative;
+    block-size: 9.5rem;
+    background:
+      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 100% / 100% 1px no-repeat,
+      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 66% / 100% 1px no-repeat,
+      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 33% / 100% 1px no-repeat,
+      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 0 / 100% 1px no-repeat;
+  }
+
+  .plot svg {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    overflow: visible;
+  }
+
+  .plot .trace {
+    fill: none;
+    stroke: var(--spot);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .plot .dot { fill: var(--stock); stroke: var(--spot); stroke-width: 1.5; }
+  .plot .dot.open { stroke: var(--spot-2); }
+
+  .days { display: flex; margin-block-start: 0.55rem; }
+
+  .days span {
+    flex: 1;
+    text-align: center;
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+  }
+
+  .tab { overflow-x: auto; }
+
+  .tab table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-family: var(--furniture-face);
+    font-size: 0.9375rem;
+    color: var(--ink-2);
+  }
+
+  .tab th {
+    padding-block: 0 0.7rem;
+    text-align: left;
+    border-block-end: 1px solid var(--rule);
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 0.9375rem;
+    color: var(--ink-3);
+  }
+
+  .tab td {
+    padding-block: 0.72rem;
+    border-block-end: 1px solid var(--rule-soft);
+  }
+
+  .tab tr:last-child td { border-block-end: 0; }
+
+  .tab th:nth-child(2) { text-align: right; }
+  .tab td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .tab td:last-child,
+  .tab th:last-child { text-align: right; color: var(--ink-3); }
+
+  .tab td strong { color: var(--spot); }
+
+  .sw { display: flex; gap: 0.85rem; }
+
+  .sw .chip {
+    position: relative;
+    flex: 1;
+    block-size: 3.1rem;
+    border-radius: 3px;
+    background: var(--c);
+  }
+
+  .sw .chip:nth-child(1) { --c: var(--stock); }
+  .sw .chip:nth-child(2) { --c: var(--stock-lo); }
+  .sw .chip:nth-child(3) { --c: var(--rule); }
+  .sw .chip:nth-child(4) { --c: var(--ink); }
+  .sw .chip:nth-child(5) { --c: var(--spot); }
+  .sw .chip:nth-child(6) { --c: var(--spot-2); }
+
+  .sw .nm {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: calc(100% + 0.5rem);
+    font-family: var(--sheet-face);
+    font-style: italic;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+  }
+
+  .swwrap { padding-block-end: 1.8rem; }
+
+  @container (width <= 62rem) {
+    .board { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; padding: 3rem 1.5rem; }
+    .said { padding-inline: 1.5rem; }
+    .main h2 { font-size: 1.9rem; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .rise {
+      opacity: 0;
+      transform: translateY(0.55rem);
+      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);
+    }
+
+    :scope.set .rise { opacity: 1; transform: none; }
+
+    .main h2 {
+      opacity: 0;
+      letter-spacing: 0.34em;
+      filter: blur(0.9px);
+      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;
+    }
+
+    :scope.set .main h2 { opacity: 1; letter-spacing: -0.018em; filter: none; }
+
+    .hair { transform: scaleX(0); transition: transform .8s cubic-bezier(.16, 1, .3, 1) .12s; }
+    :scope.set .hair { transform: scaleX(1); }
+
+    .plot .trace { stroke-dasharray: 1000; stroke-dashoffset: 1000; transition: stroke-dashoffset 1.15s cubic-bezier(.16, 1, .3, 1) .25s; }
+    :scope.set .plot .trace { stroke-dashoffset: 0; }
+
+    .plot .dot { opacity: 0; transition: opacity .4s ease-out var(--d, 0s); }
+    :scope.set .plot .dot { opacity: 1; }
+  }
+</style>
+
+<div class="said" data-g-part="said"></div>
+<div class="board">
+  <div class="main">
+    <div data-g-part="headline"></div>
+    <div class="hair"></div>
+    <div class="prose rise" data-g-part="body"></div>
+  </div>
+
+  <div class="side">
+    <div>
+      <div class="lab rise" data-g-part="plotlabel"></div>
+      <div class="plot"></div>
+      <div class="days"></div>
+    </div>
+    <div>
+      <div class="tab rise" data-g-part="table"></div>
+    </div>
+    <div class="swwrap"><div class="sw rise"></div></div>
+  </div>
+</div>
+
+<script>
+  /* THE SAME WEEK, TRACED. The plot is drawn in its own coordinates and stretched
+     to the box, so nothing here measures anything. */
+  var days = ctx.vars.day || [];
+  var out = (ctx.vars.out || []).map(Number);
+  var top = Math.max.apply(null, out.concat([1]));
+  var NS = "http://www.w3.org/2000/svg";
+  var W = 300;
+  var H = 120;
+
+  var plot = section.querySelector(".plot");
+  var axis = section.querySelector(".days");
+
+  var at = out.map(function (n, i) {
+    var x = out.length < 2 ? W / 2 : 20 + (i * (W - 40)) / (out.length - 1);
+    return [x, H - 14 - (n / top) * (H - 28)];
+  });
+
+  var line = document.createElementNS(NS, "svg");
+  line.setAttribute("viewBox", "0 0 " + W + " " + H);
+  line.setAttribute("preserveAspectRatio", "none");
+  line.setAttribute("aria-hidden", "true");
+
+  var trace = document.createElementNS(NS, "polyline");
+  trace.setAttribute("class", "trace");
+  trace.setAttribute("points", at.map(function (p) { return p[0] + "," + p[1]; }).join(" "));
+  line.appendChild(trace);
+
+  var marks = document.createElementNS(NS, "svg");
+  marks.setAttribute("viewBox", "0 0 " + W + " " + H);
+  marks.setAttribute("aria-hidden", "true");
+
+  at.forEach(function (p, i) {
+    var dot = document.createElementNS(NS, "circle");
+    /* The last of the week is the one still open, and it is the LAST rather
+       than a day named in the document. */
+    dot.setAttribute("class", "dot" + (i === at.length - 1 ? " open" : ""));
+    dot.setAttribute("cx", String(p[0]));
+    dot.setAttribute("cy", String(p[1]));
+    dot.setAttribute("r", "4.5");
+    dot.style.setProperty("--d", (0.5 + i * 0.08) + "s");
+    marks.appendChild(dot);
+
+    var day = document.createElement("span");
+    day.textContent = String(days[i] === undefined ? "" : days[i]);
+    axis.appendChild(day);
+  });
+
+  plot.appendChild(line);
+  plot.appendChild(marks);
+
+  var strip = section.querySelector(".sw");
+  (ctx.vars.paperSwatch || []).forEach(function (name) {
+    var chip = document.createElement("i");
+    chip.className = "chip";
+    var nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = String(name);
+    chip.appendChild(nm);
+    strip.appendChild(chip);
+  });
+
+  var io = new IntersectionObserver(function (rows) {
+    rows.forEach(function (row) {
+      if (!row.isIntersecting) return;
+      section.classList.add("set");
+      io.disconnect();
+    });
+  }, { root: document, threshold: 0.12 });
+
+  io.observe(section);
+  onTeardown(function () { io.disconnect(); });
+</script>

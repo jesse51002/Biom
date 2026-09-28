@@ -26,7 +26,7 @@
 //   make fresh    →  drop the per-user default vault; the next run reseeds
 
 import { hasHistory, initVault, makeFiles, makeSeen, within } from "./platform/files.ts";
-import type { Seen } from "./platform/files.ts";
+import type { DiskFiles, Seen } from "./platform/files.ts";
 import { SETTLE, insideOf, watchTree, watched } from "./platform/watch.ts";
 import type { Watcher } from "./platform/watch.ts";
 import {
@@ -36,30 +36,34 @@ import {
   readEmbedded,
 } from "./platform/embedded.ts";
 import type { EmbeddedMap } from "./platform/embedded.ts";
-import { DOC_PLUGIN } from "../contracts/types.ts";
-import { SKILL_PREFIX, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
+import { DOC_PLUGIN, ROOT_PAGE, parentOf } from "../contracts/types.ts";
+import { SKILL_PREFIX, keepHarness, mirrorPlugins, rewriteOwned } from "./workspace/framework.ts";
 import { makeDb } from "./platform/db.ts";
 import { parse, parseAny, format, formatAny } from "./platform/yaml.ts";
 import { makeProcessRunner } from "./platform/process.ts";
 import { makeRunFs } from "./platform/rundir.ts";
 import { scaleOf } from "../contracts/scale.ts";
 import { makeDesign } from "./domain/design.ts";
-import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makePages, pageDir, pageDirs } from "./domain/pages.ts";
+import { DEFAULT_SECTION, DEFAULT_SECTION_FILE, OURS, PAGE_DOC, PAGE_DOCUMENT, PLUGINS_DIR, PLUGINS_DIR_VAULT, ROOT_PAGE_FILE, ROOT_PAGE_STANDIN, frameworkPlugin, makeIdentities, makePages, pageDir, pageDirs } from "./domain/pages.ts";
+import type { Identities } from "./domain/pages.ts";
 import { makePlugins, walkPlugins } from "./domain/plugins.ts";
 import type { PluginWalk } from "./domain/plugins.ts";
 import { makeDocs } from "./domain/docs.ts";
-import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
+import { makeMirror, pageAt, refresh } from "./domain/mirror.ts";
 import { makeSharer } from "./domain/share.ts";
 import { capturePage } from "./platform/capture.ts";
 import { makeBucket } from "./platform/bucket.ts";
 import { makeTables } from "./domain/tables.ts";
 import { BIOM_DIR, RUNS_DB, VAULT_SKILLS, makeRuns } from "./domain/runs.ts";
-import { checkVaultFormat } from "./workspace/migrate.ts";
+import { checkVaultFormatOnce } from "./workspace/migrate.ts";
+import { makePageIndex } from "./domain/pageindex.ts";
+import type { IndexNews, PageIndex, PageIndexDeps } from "./domain/pageindex.ts";
 import { makePresets, makeTheme } from "./workspace/presets.ts";
 import {
   bootVault,
   browse,
   createVault,
+  dataHome,
   infoOf,
   makeVaultMemory,
   memoryFile,
@@ -68,10 +72,24 @@ import {
   seeded,
   usable,
 } from "./workspace/vault.ts";
-import { spawnPty } from "./platform/pty.ts";
+import { findShell, scrubEnv, spawnPty } from "./platform/pty.ts";
+import { executable, makeLoginEnv, whichIn } from "./platform/loginenv.ts";
+import { connectAcp } from "./platform/acp.ts";
+import type { AcpConnection } from "./platform/acp.ts";
+import { makeHistory } from "./domain/history.ts";
+import type { History } from "./domain/history.ts";
+import { JEV_ENDPOINT, JEV_KEY_VAR, SYSTEM_CLOCK, makeJev, makeJevStatus } from "./domain/jev.ts";
+import type { JevStatus } from "./domain/jev.ts";
+import { makeAgents } from "./workspace/agents.ts";
+import type { Agents } from "./workspace/agents.ts";
+import { makeChats, readSkills } from "./workspace/chats.ts";
+import type { Chats } from "./workspace/chats.ts";
+import { makeSettings } from "./workspace/settings.ts";
+import type { Settings } from "./workspace/settings.ts";
 import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
 import type { Attachment } from "./workspace/terminals.ts";
-import { mirrored, route } from "./api/routes.ts";
+import type { Tickets } from "./workspace/terminals.ts";
+import { route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
 import type { Files } from "../contracts/types.ts";
@@ -79,11 +97,22 @@ import type { Runs } from "../contracts/types.ts";
 import type { RunRow } from "../contracts/types.ts";
 import type { DirListing } from "../contracts/types.ts";
 import type { PageId } from "../contracts/types.ts";
+import type { PageRef } from "../contracts/types.ts";
+import type { YamlCodec } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
-import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import type { AgentInfo } from "../contracts/types.ts";
+import type { AgentLaunch } from "../contracts/types.ts";
+import type { ChatId } from "../contracts/types.ts";
+import type { ChatPush } from "../contracts/types.ts";
+import type { ChatUpdate } from "../contracts/types.ts";
+import type { HistoryEntry } from "../contracts/types.ts";
+import type { WindowId } from "../contracts/types.ts";
+import type { ChangeEvent } from "../contracts/types.ts";
+import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, LOCATE_MAX, fail, vaultBase, vaultOf } from "../contracts/wire.js";
+import { isLocalKind, isWindowId } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -113,7 +142,6 @@ declare const Bun: {
       closeOnBackpressureLimit?: boolean;
       open?(ws: TerminalSocket): void;
       message?(ws: TerminalSocket, message: string | Uint8Array): void;
-      drain?(ws: TerminalSocket): void;
       close?(ws: TerminalSocket): void;
     };
   }): BunServer;
@@ -123,9 +151,12 @@ interface BunServer {
   upgrade(request: Request, options: { data: TerminalSocketData }): boolean;
   requestIP(request: Request): { address: string } | null;
 }
-/** What a terminal socket carries from the upgrade to its handlers. */
+/** What a terminal socket carries from the upgrade to its handlers: the
+ *  vault's root it runs in, and the sign-in state its ticket is redeemed
+ *  against. */
 interface TerminalSocketData {
-  vault: string;
+  cwd: string;
+  tickets: Tickets;
   attachment: Attachment | null;
 }
 interface TerminalSocket {
@@ -142,8 +173,8 @@ interface TerminalSocket {
 // the server may name the key.
 // `exit` is beside it because the one thing this process does about a parent
 // that has gone is stop being a process.
-// `on` is beside them because a shell this process started must not outlive it:
-// the exit handler is where every terminal tree is killed — and every run is
+// `on` is beside them because a command this process started must not outlive
+// it: the exit handler is where every sign-in's tree is killed — and every run is
 // ended before the process is, on the three signals that still run a handler;
 // see `endRunsOn`.
 declare const process: {
@@ -199,6 +230,14 @@ const VERSION = (process.env.BIOM_VERSION ?? "").trim() || "development";
  *  is what the founders' machines and CI set so the count is strangers only. */
 const CHECK_UPDATES = PRODUCTION && (process.env.BIOM_NO_UPDATE_CHECK ?? "").trim() === "";
 const VERSION_URL = "https://biom.dev/version.json";
+
+/** WHERE JEV IS ASKED, and it is deployment configuration rather than the
+ *  person's: `BIOM_JEV_ENDPOINT` names another — Kev on this machine, or an
+ *  endpoint we host — and unset is TypeSafe's own. Read here, once, because no
+ *  module below may ask the environment a question. The KEY is not read here
+ *  and never from this process's environment: it is the person's, and it
+ *  comes out of their login shell (`makeHost`). */
+const JEV_AT = (process.env.BIOM_JEV_ENDPOINT ?? "").trim() || JEV_ENDPOINT;
 
 // THE INSTALL DIRECTORY, AND IT IS A PATH RATHER THAN A URL. `.pathname` off a
 // `file:` URL is percent-ENCODED, so an install under `/My Documents/` came out
@@ -408,6 +447,22 @@ export interface HostPaths {
    *  the map instead. Defaults to whatever this build embedded, which is nothing
    *  at all when it was run from source. */
   carried?: EmbeddedMap;
+  /** THE PAGE INDEX EACH FOLDER IS GIVEN — `makePageIndex` over its
+   *  `.biom/pages.db`. A test hands a fake, to say what a sweep found or to
+   *  hold one. */
+  pageIndex?: (deps: PageIndexDeps) => PageIndex;
+  /** The YAML codec every folder's modules parse with; a test counts its
+   *  parses. */
+  yaml?: YamlCodec & { formatAny: (value: unknown) => string };
+  /** WHERE THE AGENTS BIOM INSTALLS ARE KEPT: `agents/` under the per-user
+   *  data directory, shared by every vault and never inside one. A test names
+   *  a folder of its own, so nothing it does reaches the person's. */
+  agentsHome?: string;
+  /** THE ENVIRONMENT EVERY AGENT IS STARTED WITH, and where Jev's key is
+   *  read: the person's login shell's, asked once per server and never at
+   *  construction. A test hands its own, so no login shell is asked and no
+   *  agent of the person's is found. */
+  agentEnv?: () => Promise<Record<string, string>>;
   /** WHICH BUILD THIS IS, as the only thing the API layer needs to know about
    *  it: production refuses kinds that every other build answers. Which ones is
    *  not stated here and must not be — `server/api/routes.ts` is where the
@@ -476,7 +531,7 @@ export interface Host {
    *  folder, which is a reason to reread `run.list` and never to redraw.
    *
    *  Answers the function that unsubscribes. Calling it twice is harmless. */
-  watch(path: string, hear: () => void, hearRun?: () => void): Promise<() => void>;
+  watch(path: string, hear: (change: ChangeEvent) => void, hearRun?: () => void): Promise<() => void>;
   /** The vaults with a live watcher on them right now, absolute, and the
    *  directories each one holds open. The tests read it; nothing else does. */
   watching(): { path: string; handles: string[] }[];
@@ -493,6 +548,17 @@ export interface Host {
   /** KILL EVERY RUN NOW, synchronously, for the process's `exit` handler —
    *  the one ending every route passes through, where nothing can be awaited. */
   killRuns(): void;
+  /** END EVERY AGENT, on the way out, where there is time: every chat's turn
+   *  ended `crashed` and its log flushed, every agent process TERM, a grace,
+   *  then KILL — in every mounted folder. */
+  endAgents(): Promise<void>;
+  /** KILL EVERY AGENT PROCESS NOW, synchronously, for the `exit` handler: a
+   *  chat's, a probe's, an install's, and one still ending from a switch or
+   *  a close. No child this server started for an agent outlives it. */
+  killAgents(): void;
+  /** Agent processes started and not yet gone, across every folder — for a
+   *  test, and for the log. */
+  agentProcesses(): number;
   /** Release every database handle. The server never calls it; a test that
    *  stood a host up does. */
   close(): void;
@@ -506,7 +572,37 @@ interface Mounted {
   /** The registry of runs, `.biom/runs.db`, the second database under a
    *  vault. Closed with the first. */
   runsDb: Db;
+  /** The page index's cache, `.biom/pages.db`, the third database. */
+  pagesDb: Db;
+  /** THE SERVER'S OWN IDENTITY WRITE-BACKS, by absolute path: the bytes each
+   *  replaced and the bytes it wrote. The watcher bringing exactly those bytes
+   *  back, over exactly those, is not a change — see `consider`. Bounded; a
+   *  write-back nobody reports simply ages out. */
+  ownWrites: Map<string, OwnWrite>;
+  /** Documents whose `uid` write-back is the server's own even where the
+   *  watcher's baseline does not hold the bytes it replaced: pages the
+   *  background identify found already there when the folder opened, and
+   *  pages a settle gave one just after taking their arrival. Never a page
+   *  whose arrival is still to be taken — its write-back would be all the
+   *  watcher saw of it. */
+  ownPages: Set<string>;
+  /** When this mount began, by this server's clock: a document older than
+   *  this was there before the folder opened, and one newer is arriving. */
+  openedAt: number;
+  /** Every page's head, kept and trusted only while a stat agrees. */
+  index: PageIndex;
   runs: Runs;
+  /** WHAT EACH WINDOW HAS OPEN AND WHAT CHANGED, in memory. */
+  history: History;
+  /** What agents this machine has, as this folder's probes see them. */
+  agents: Agents;
+  /** Every chat in this folder, and the agent process each has running. */
+  chats: Chats;
+  /** Jev's faces for this folder's chats. */
+  jev: JevStatus;
+  /** EVERY PAGE'S `uid` FOR THE SESSION: a page arriving without one gets one
+   *  when the history or the watcher's structural settle first meets it. */
+  identities: Identities;
   /** THIS VAULT'S CONTENT BASELINE — what this process last wrote into, or last
    *  read out of, every file under it. It is how the watcher tells an agent's
    *  write from the app's own: `files.ts` keeps it current, and the settle below
@@ -515,8 +611,11 @@ interface Mounted {
   deps: Omit<Deps, "vault" | "production" | "live" | "envNames">;
   /** See `Host.settled`. Set by `hold` once the mount has answered. */
   settled: Promise<void>;
+  /** The host closed this folder: the work after the mount stops where it
+   *  stands, and writes, commits and says nothing more about it. */
+  closed: boolean;
   /** The vault's own files, held for the work `hold` starts after the mount. */
-  files: Files;
+  files: DiskFiles;
 }
 
 /** Does this file parse? A half-written `content.yaml` is a normal intermediate
@@ -618,6 +717,16 @@ const refusing = (why: string, code?: string): Omit<Deps, "vault" | "production"
   mirror: refuses(why, code),
   runs: refuses(why, code),
   share: refuses(why, code),
+  // The eleventh edit's three, so `agents.list` on a folder that will not
+  // open says why it will not, rather than that this build has no agents.
+  history: refuses<History>(why, code),
+  agents: refuses<Agents>(why, code),
+  chats: refuses<Chats>(why, code),
+  // And the thirteenth's: the kept choices of a folder that will not open are
+  // not somebody else's.
+  settings: refuses<Settings>(why, code),
+  // And the twelfth's: a folder that will not open has no pages to find.
+  index: refuses<PageIndex>(why, code),
 });
 
 /** THE NAMES IN THIS PROCESS'S ENVIRONMENT, and nothing else about them. Read
@@ -667,6 +776,69 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  directory, and which folder that directory is under is the registry's
    *  business. */
   const PROCESS = makeProcessRunner();
+
+  /* ── the agents' half, once per server ─────────────────────────────── */
+
+  /** THE PERSON'S LOGIN ENVIRONMENT, ONE READING PER SERVER: two workspaces
+   *  open at once are one person with one login. Built here and never read
+   *  here — the shell is asked the first time an agent is looked for or
+   *  started, not while the server is coming up. The shell and its starting
+   *  environment are the terminal's own answers, `findShell` and `scrubEnv`. */
+  const LOGIN = makeLoginEnv({ shell: findShell(process.env, osPlatform(), executable)?.path ?? null, base: scrubEnv(process.env) });
+  const readLogin = at.agentEnv ?? (() => LOGIN.read());
+  /** The reading, once it has landed — for Jev's key, which is asked for
+   *  synchronously and is simply absent (Jev off) until then. Held here and
+   *  never logged, sent or written anywhere. */
+  let login: Record<string, string> | null = null;
+  const loginEnv = async (): Promise<Record<string, string>> => {
+    const env = await readLogin();
+    login = env;
+    return env;
+  };
+  /** Biom's own folder of installed agents, shared by every vault. */
+  const agentsHome = at.agentsHome ?? join(dataHome(), "agents");
+  /** JEV, ONCE PER SERVER: one engine, one key, one pause after an outage,
+   *  shared by every folder's chats. The key is the login shell's
+   *  `TYPESAFE_API_KEY`, read on every ask, and with none Jev is off. */
+  const jev = makeJev({ fetch, key: () => login?.[JEV_KEY_VAR] ?? null, endpoint: JEV_AT, now: Date.now });
+  /** EVERY AGENT CONNECTION THIS SERVER HAS OPENED AND NOT YET SEEN CLOSE —
+   *  a chat's, a probe's, a sign-in's — across every folder, kept here rather
+   *  than asked of the modules that opened them. A chat's agent that is still
+   *  on its way out after a switch or a close is no longer that chat's, and
+   *  the chats' own `killAll` cannot reach it; this set can, so the exit
+   *  handler's KILL reaches every process an agent ever was. */
+  const connections = new Set<AcpConnection>();
+  const connect = (launch: AgentLaunch, cwd: string): AcpConnection => {
+    const conn = connectAcp(launch, cwd);
+    connections.add(conn);
+    void conn.closed.then(() => connections.delete(conn));
+    return conn;
+  };
+  /** HOW OFTEN EVERY FOLDER'S CHATS ARE ASKED TO END THEIR IDLE AGENTS, in
+   *  ms. Idle is thirty minutes (`IDLE_MS` in the chats), so once a minute
+   *  ends one at most a minute late. One timer for the host, unref'd so it
+   *  never keeps a process alive, and cleared by `close`. */
+  const REAP_EVERY_MS = 60_000;
+  const reaper = setInterval(() => {
+    for (const held of settledMounts) {
+      try {
+        held.chats.reap();
+      } catch (e) {
+        console.warn("idle agents could not be ended", e instanceof Error ? e.name : typeof e);
+      }
+    }
+  }, REAP_EVERY_MS);
+  (reaper as { unref?: () => void }).unref?.();
+  const killConnections = (): void => {
+    for (const conn of [...connections]) {
+      try {
+        conn.kill();
+      } catch {
+        /* gone already */
+      }
+    }
+  };
+
   /** Where this server answers, once it does. Before `listen` is called — a
    *  host stood up by a test, or the moment between mount and serve — a run
    *  gets the development address, which is where a server run from source is. */
@@ -735,10 +907,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  from a stale seed and does not try. Each failure is a sentence in the log
    *  and never a mount that did not happen — a folder whose `docs/` cannot be
    *  written is still a workspace. */
-  async function afterMount(files: Files): Promise<void> {
+  async function afterMount(files: Files, root: string): Promise<void> {
     try {
-      if (await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed)) {
-        await files.commit(`The framework's guide, docs, skills and checker, as ${await frameworkVersion()} ships them`);
+      const wrote = await rewriteOwned(files, skillsSeed, checkerSeed, checkerLibSeed);
+      // THE HARNESSES' OWN NAMES FOR THE GUIDE AND THE SKILLS, after the guide
+      // and the skills they name: a chat's agent starts at this root and
+      // reads `CLAUDE.md` or `.gemini/settings.json`, never `AGENTS.md` by
+      // itself. Made where nothing stands and never written over, so what the
+      // person keeps under one of those names is theirs and is said here once.
+      const harness = keepHarness(makeRunFs(root));
+      for (const rel of harness.left) console.log(`harness            →  ${rel} is the workspace's own, and was left as it is`);
+      for (const rel of harness.failed) console.warn(`harness            →  ${rel} could not be made`);
+      if (wrote || harness.wrote.length > 0) {
+        await files.commit(`The framework's guide, docs, skills, checker and harness links, as ${await frameworkVersion()} ships them`);
       }
     } catch (e) {
       console.warn("the framework's skills could not be written into .agents/skills/", e);
@@ -747,6 +928,150 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       await mirrorPlugins(files, pluginRoot);
     } catch (e) {
       console.warn("the plugin mirror in docs/plugins/ could not be written", e);
+    }
+  }
+
+  /** THE MARKDOWN MIRROR, BROUGHT UP TO DATE AFTER A MOUNT, off the mount path
+   *  and in the background: a page is projected only where its document or its
+   *  children changed since its `.md` was written, and what is no longer a
+   *  page is taken away. The walk of page folders is a readdir walk, never a
+   *  parse; the projections go through the mirror's queue, which yields
+   *  between pages. Committed only where something changed, because a mount
+   *  that writes nothing should leave no trace — `git add -A` here would
+   *  otherwise sweep whatever the person was in the middle of. */
+  async function mirrorOnMount(held: Mounted): Promise<void> {
+    try {
+      const done = await refresh(held.deps.mirror, held.files, await pageDirs(held.files), async () => {
+        if (held.closed) throw CLOSED;
+        await breathe();
+      });
+      await held.deps.mirror.queue.idle();
+      if (held.closed) return;
+      if (done.wrote || done.queued > 0) await held.files.commit("The markdown mirror, brought up to date on mount");
+    } catch (e) {
+      if (e === CLOSED || held.closed) return;
+      // A mirror that cannot be written is not a workspace that cannot be
+      // opened. It is derived, and the next write of any page rewrites its file.
+      console.warn("the markdown mirror could not be brought up to date", e);
+    }
+  }
+
+  /** THE PAGE INDEX FOR ONE FOLDER, over `.biom/pages.db`: the one a test
+   *  hands in, else `makePageIndex`. A cache and never the truth, so a file it
+   *  cannot use is thrown away — closed by the index, deleted here with its
+   *  `-wal` and `-shm`, and opened fresh. */
+  function openIndex(deps: PageIndexDeps, file: string): PageIndex {
+    const reset = (): Db => {
+      for (const f of [file, `${file}-wal`, `${file}-shm`]) rmSync(f, { force: true });
+      return makeDb(file);
+    };
+    return (at.pageIndex ?? makePageIndex)({ ...deps, reset });
+  }
+
+  /** THE WORK THE MOUNT USED TO DO BEFORE ANYTHING COULD BE SERVED, done
+   *  after it, in the background, in order, each step's failure a line in the
+   *  log and never a stopped server:
+   *
+   *    1. the index's sweep — every page folder stat'ed, a head read only
+   *       where it moved;
+   *    2. an identity for every page it found without one, behind one commit;
+   *    3. the runs of every page whose folder moved re-pointed by identity —
+   *       what the sweep saw move, and every row whose folder is gone, found
+   *       by its `uid`;
+   *    4. the markdown mirror brought up to date;
+   *    5. the framework's guide, skills and harness links, and the plugin
+   *       mirror.
+   *
+   *  Each yields as it goes, so a request waiting is answered in between. */
+  async function afterMountAll(held: Mounted): Promise<void> {
+    let news: IndexNews = { noUid: [], moved: [], gone: [] };
+    try {
+      news = await held.index.sweep();
+    } catch (e) {
+      if (!held.closed) console.warn("the page index could not be swept", e instanceof Error ? e.message : e);
+    }
+    // A FOLDER CLOSED WHILE THIS RAN is let go between steps, and inside the
+    // long ones: its databases are closed, and a test's folder may already be
+    // gone from the disk — a write now would put a folder back, and a warning
+    // would land in whatever runs next.
+    if (held.closed) return;
+    await identify(held, news.noUid);
+    if (held.closed) return;
+    await relocateRuns(held, news.moved);
+    if (held.closed) return;
+    await mirrorOnMount(held);
+    if (held.closed) return;
+    await afterMount(held.files, held.path);
+  }
+
+  /** An identity for each page found without one, behind ONE commit taken
+   *  first — so a vault with a hundred such pages is one commit and not a
+   *  hundred. */
+  async function identify(held: Mounted, noUid: readonly PageId[]): Promise<void> {
+    if (noUid.length === 0) return;
+    try {
+      // ONLY A PAGE THAT WAS THERE BEFORE THE FOLDER OPENED. One made since —
+      // an agent's, while the sweep ran — is arriving: the watcher's settle
+      // gives it its identity after taking its arrival, or the history does
+      // when it is first named, and its document here is all the watcher has
+      // to tell of it. What this writes back is the server's own, and the
+      // watcher is told so (`ownPages`).
+      const there: PageId[] = [];
+      for (const id of noUid) {
+        const was = await held.files.stat(`${pageDir(id)}/${PAGE_DOC}`);
+        if (was !== null && was.mtimeMs < held.openedAt) there.push(id);
+      }
+      if (there.length === 0 || held.closed) return;
+      await held.files.commit("Before every page was given an identity");
+      for (const id of there) {
+        if (held.closed) return;
+        held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
+        await held.identities.of(id);
+        await breathe();
+      }
+      await held.identities.written();
+      // A WINDOW THAT READ ITS TREE BEFORE THIS FINISHED holds these pages with
+      // no identity, and the server's own write-back is not a change the
+      // watcher reports. So the windows holding the stream are told, once,
+      // which pages have one now and which levels show them.
+      const hears = live.get(held.path)?.hears;
+      if (hears !== undefined && hears.size > 0) {
+        const parents = there.map(parentOf).filter((p): p is PageId => p !== null);
+        const change = changeOf(new Map(there.map((id) => [id, { structural: false }])), [], false, parents);
+        for (const hear of [...hears]) {
+          try {
+            hear(change);
+          } catch (e) {
+            console.warn("a live-change subscriber threw", e);
+          }
+        }
+      }
+    } catch (e) {
+      if (!held.closed) console.warn("pages could not be given an identity", e instanceof Error ? e.message : e);
+    }
+  }
+
+  /** The runs of pages that moved while nothing watched: the moves the index
+   *  saw, and every row whose page folder is gone, found where its identity
+   *  is now. */
+  async function relocateRuns(held: Mounted, moved: IndexNews["moved"]): Promise<void> {
+    try {
+      for (const m of moved) held.runs.relocate(m.from, m.to);
+      const lost = new Map<string, PageId>();
+      for (const row of held.runs.list()) {
+        if (row.uid === null || lost.has(row.uid)) continue;
+        let dir: string;
+        try {
+          dir = pageDir(row.page);
+        } catch {
+          continue;
+        }
+        if ((await held.files.stat(`${dir}/${PAGE_DOC}`)) === null) lost.set(row.uid, row.page);
+      }
+      if (lost.size === 0) return;
+      held.runs.relocateAll(await held.index.locate({ uids: [...lost.keys()] }));
+    } catch (e) {
+      if (!held.closed) console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
     }
   }
 
@@ -759,6 +1084,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // thing to type, and the path is compared against a resolved one every time
     // a vault is opened — two spellings of one folder would swap it for itself.
     const path = resolve(where);
+    const openedAt = Date.now();
     // Asked BEFORE anything is written, because seeding is what makes it true
     // and the answer decides whether this run gets a base commit.
     const fresh = !seeded(path);
@@ -785,8 +1111,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // IS its markup and that markup lived in the render layer rather than in the
     // vault; so an old workspace refuses out loud instead of half-opening.
     // migrate.ts carries the whole of that argument.
+    //
+    // ONCE PER VAULT PER BUILD: the walk reads every document and every
+    // markup file, so a vault that passed it under this build says so in
+    // `.biom/format` and the next start skips it.
     try {
-      await checkVaultFormat(path, await shipped);
+      await checkVaultFormatOnce(path, await shipped, `${VERSION} ${await frameworkVersion()}`);
     } catch (e) {
       // Named here rather than in the message, which crosses into the API and
       // must never carry a path. This is the log, and the log is where somebody
@@ -805,8 +1135,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const biom = join(path, BIOM_DIR);
     if (!existsSync(join(biom, ".gitignore"))) await Bun.write(join(biom, ".gitignore"), "*\n");
     const runsDb = makeDb(join(biom, RUNS_DB));
+    // THE THIRD: every page's head, a cache the page index keeps and never the
+    // truth — beside the runs, in the folder git never sees.
+    const pagesDbFile = join(biom, PAGES_DB);
+    const pagesDb = makeDb(pagesDbFile);
     try {
-      return await build(path, db, runsDb, seen, files, fresh);
+      return await build(path, db, runsDb, pagesDb, pagesDbFile, seen, files, fresh, openedAt);
     } catch (e) {
       // THE HANDLES GO BACK WHEN THE MOUNT DOES NOT HAPPEN. Everything below
       // this line can throw — a database locked by another process, one written
@@ -815,6 +1149,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // the process against a folder the person is about to try again.
       db.close();
       runsDb.close();
+      pagesDb.close();
       throw e;
     }
   }
@@ -822,15 +1157,21 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   /** THE REST OF THE MOUNT, once the database is open. It is a function of its
    *  own for one reason: everything in it may throw, and the one thing that has
    *  to happen when it does is above. */
-  async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
-    const yaml = { parse, parseAny, format, formatAny };
+  async function build(path: string, db: Db, runsDb: Db, pagesDb: Db, pagesDbFile: string, seen: Seen, files: DiskFiles, fresh: boolean, openedAt: number): Promise<Mounted> {
+    const yaml = at.yaml ?? { parse, parseAny, format, formatAny };
     const tables = makeTables(db);
+    // THE PAGE INDEX: every page's head, kept in `.biom/pages.db` and trusted
+    // only while a stat agrees, so a level, a lookup and a search read the
+    // rows they need rather than parsing every page. Read through `Files` with
+    // NO BASELINE, so nothing it reads silences the watcher. Swept once after
+    // the mount, in the background; nothing here waits for it.
+    const index = openIndex({ db: pagesDb, disk: makeFiles(path), yaml, tables: () => tables.list(), now: Date.now }, pagesDbFile);
     // THE THREE RUNGS OF EVERY PLUGIN'S VARIABLES, merged per page. Built here
     // and handed to the page reader as a function, because `domain/plugins.ts`
     // and `domain/pages.ts` are siblings and the layering rule forbids one
     // reaching the other.
     const plugins = makePlugins(files, pluginRoot, parseAny);
-    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, plugins.extensionsFor);
+    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, plugins.extensionsFor, index);
     // Rooted at `design/` rather than at the vault: the design doc is ONE page
     // and it sits beside `pages/`, so the module reads its `content.yaml` and
     // its sections from the root of what it is handed. That placement is what
@@ -889,7 +1230,26 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // THE MARKDOWN MIRROR. `_markdown/` is deliberately NOT in that .gitignore:
     // the whole point of it is to be readable by something that reads a repo of
     // markdown, and a mirror nobody clones is a mirror of nothing.
-    const mirror = makeMirror(files, pages);
+    //
+    // IT READS THE PAGES AS A STRANGER WOULD — through `Files` with NO
+    // BASELINE, its own pages, docs and plugin rungs over them. It works in the
+    // background now, beside the watcher, and a read through the vault's own
+    // files makes the path KNOWN: a page an agent has just made, projected
+    // before the watcher's settle had taken its verdict, then read as a page it
+    // already had — no arrival, no identity, no rail. What it writes is under
+    // `_markdown/`, which the watcher never looks at.
+    //
+    // AND IT NEVER WRITES A PAGE. Reading a page can reconcile it — a child
+    // that arrived gets its section, and the document is written — and a read
+    // in the background writing a page is a read-modify-write racing the
+    // person's own: measured, a rename lost to a projection that read the page
+    // a moment before it. So the pages it reads through are a view that writes
+    // nothing; its own writes are under `_markdown/`, through `quiet`.
+    const quiet = makeFiles(path);
+    const looking = readOnly(quiet);
+    const quietPages = makePages(looking, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, makePlugins(looking, pluginRoot, parseAny).extensionsFor, index);
+    const quietDocs = makeDocs(looking, yaml);
+    const mirror = makeMirror(quiet, quietPages, quietDocs);
 
     // Idempotent by observation: a folder with a page or a table in it has been
     // used, and re-seeding would overwrite somebody's work with fixtures. So
@@ -902,14 +1262,6 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // happened months ago.
     if (fresh) await files.commit("The workspace as it was seeded");
 
-    // EVERY PAGE GETS AN IDENTITY, on mount, file by file, never touching a
-    // page that has one. The commit ahead of the sweep is the page module's.
-    // A vault that cannot be written is still a vault that opens.
-    try {
-      await pages.identify();
-    } catch (e) {
-      console.warn("pages could not be identified", e);
-    }
 
     // AUTOMATIONS AND RUNS, over the second database. Handed the walk of a page
     // directory and the page list because `pages.ts` is its sibling and there
@@ -923,7 +1275,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       yaml,
       process: PROCESS,
       dirOf: pageDir,
-      refOf: async (id) => (await pages.list()).find((p) => p.id === id) ?? null,
+      // ONE PAGE'S HEAD, never the page list: this is asked once per page
+      // holding automations on the Automations screen, and it was a full list
+      // each time.
+      refOf: async (id) => {
+        const head = await index.head(id);
+        return head === null ? null : { id: head.id, name: head.name, ...(head.uid === null ? {} : { uid: head.uid }) };
+      },
       env: () => Bun.env,
       templates: seedRoot(TEMPLATES_DIR, at.templates ?? TEMPLATES),
       api: () => apiFor(path),
@@ -939,30 +1297,167 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // not update reads `lost` here.
     const lost = runs.reconcile();
     if (lost > 0) console.log(`runs               →  ${lost} marked lost from a previous run of the server`);
-    // AND EVERY ROW NAMES ITS PAGE WHERE THE PAGE IS NOW. A page moved while
-    // this server was not running — by an agent, by hand — kept its identity
-    // and lost its id; the row is re-pointed by identity here, once, and
-    // again after every structural change the watcher settles.
-    try {
-      runs.relocateAll(await pages.list());
-    } catch (e) {
-      console.warn("runs could not be re-pointed at their pages", e);
-    }
+    // A ROW WHOSE PAGE MOVED while this server was not running is re-pointed
+    // by identity after the mount, in the background, from what the index's
+    // sweep finds — `relocateRuns` in `afterMountAll` — and never by a list of
+    // every page here.
 
-    // EVERY PAGE'S PROJECTION, REBUILT. A doc page is pure data, so the local
-    // process can render one without the box — which is what answers the page
-    // nobody has opened since the mirror shipped, and the page removed while
-    // this process was not running. It commits only where something changed,
-    // because a mount that writes nothing should leave no trace: `git add -A`
-    // here would otherwise sweep whatever the person was in the middle of.
+    /* ── the history, the agents and the chats ──────────────────────── */
+
+    // A PAGE'S UID, READ OFF A `Files` WITH NO BASELINE. The vault's own would
+    // make every path it reads KNOWN, and the watcher would then take a page an
+    // agent has just made for one it already had — the rail would never learn
+    // it arrived. So the history's and the chats' one lookup reads the disk as
+    // a stranger would.
+    //
+    // AND A PAGE WITH NONE IS GIVEN ONE, STABLE FOR THE SESSION: a page an
+    // agent made — which the vault's rules tell it never to give a `uid` — or
+    // one whose document it wrote whole without the `uid` it had. The first
+    // time the page reaches the history, or the watcher's structural settle,
+    // whichever is sooner, it gets the `uid` this session already knew for it —
+    // or, for a page this session has not met, the one its folder last
+    // carried, which the page index remembers — or a new one, and that goes
+    // into the file as one `uid:` line under `name:`, every other byte kept.
+    // Nothing is read ahead of the question: the session learns a page's `uid`
+    // as it meets the page, and the index answers for the rest. The pages that
+    // were there before the folder opened and have none are given theirs the
+    // same way, in the background after the mount. Written through the same
+    // baseline-free files, for the same reason.
+    const ownWrites = new Map<string, OwnWrite>();
+    const ownPages = new Set<string>();
+    // THROUGH FILES WITH NO BASELINE, as ever — a read that made an agent's new
+    // page known would lose its arrival — AND EVERY WRITE REMEMBERED, so the
+    // watcher bringing the server's own write-back of a `uid` back is known for
+    // what it is rather than taken for a second change of the page.
+    const identities = makeIdentities(remembering(makeFiles(path), path, ownWrites), yaml, (what, e) => console.warn(what, e instanceof Error ? e.message : e), index);
+    // THE ROOT'S IDENTITY IS GIVEN HERE, before the mount answers: every other
+    // page without one is given it in the background, and the root is the one
+    // every window reads first — a folder opened empty conjured it a moment
+    // ago, with none. One head, and one write where it has none.
     try {
-      const changed = await rebuild(mirror, await pages.list());
-      if (changed) await files.commit("The markdown mirror, rebuilt on mount");
+      const root = await index.head(ROOT_PAGE);
+      if (root !== null && root.uid === null) {
+        await identities.of(ROOT_PAGE);
+        await identities.written();
+      }
     } catch (e) {
-      // A mirror that cannot be written is not a workspace that cannot be
-      // opened. It is derived, and the next draw of any page rewrites its file.
-      console.warn("the markdown mirror could not be rebuilt", e);
+      console.warn("the root page could not be given an identity", e instanceof Error ? e.message : e);
     }
+    // ONE HEAD, and an identity given only where the page has none — never a
+    // list of every page, at mount or at any append.
+    const uidOf = async (id: PageId): Promise<string | null> => {
+      try {
+        const head = await index.head(id);
+        if (head !== null && head.uid !== null) return head.uid;
+        return await identities.of(id);
+      } catch {
+        return null;
+      }
+    };
+    // THE HISTORY NEEDS THE CHATS AND THE CHATS NEED THE HISTORY: the history
+    // derives a window's agent from its chat, and the chats report every
+    // write into the history. So the chats are bound late, and until they
+    // are, no chat is running an agent — which is true.
+    let chatsNow: Chats | null = null;
+    const history = makeHistory({
+      now: Date.now,
+      uidOf,
+      agentOfChat: (chat) => {
+        const agent = chatsNow?.agentOfChat(chat) ?? null;
+        const of = agent === null || chatsNow === null ? null : chatsNow.agentOf(agent);
+        return agent === null || of === null ? null : { agent, harness: of.harness, turn: of.turn };
+      },
+    });
+    const agents = makeAgents({
+      connect,
+      env: loginEnv,
+      // Check again on an agent signed in by a variable reads the login shell
+      // again, because the person has just set that variable in their
+      // profile; Jev's key then comes from that reading too.
+      forgetEnv: () => LOGIN.forget(),
+      which: async (command, env) => whichIn(command, env),
+      fetch,
+      home: agentsHome,
+      cwd: path,
+      now: Date.now,
+      processes: PROCESS,
+      // SIGN-IN IS THE PERSON'S, NOT THIS FOLDER'S: a sign-in that worked here
+      // lifts the refusal every other open workspace heard, and looks again
+      // there. That look is never reported back, so it cannot echo.
+      onSignedIn: (key, method) => {
+        for (const m of settledMounts) {
+          if (m.path === path) continue;
+          try {
+            m.agents.signedInElsewhere(key, method);
+          } catch (e) {
+            console.warn("a sign-in could not be told to another workspace", e instanceof Error ? e.name : typeof e);
+          }
+        }
+      },
+    });
+    const jevStatus = makeJevStatus({
+      jev,
+      clock: SYSTEM_CLOCK,
+      face: (chat, turn, face) => chatsNow?.face(chat, turn, face),
+    });
+    // AN AGENT'S WRITES GO THROUGH A `Files` OF THEIR OWN, built WITHOUT this
+    // vault's baseline: the watcher then takes an agent's write for what it is
+    // — a change this process did not make — and the page redraws. And the
+    // history hears of it through `onEdit` and NOTHING ELSE: never the API
+    // route's stamping, which is the person's.
+    const agentFiles = makeFiles(path);
+    // THE CHAT'S KEPT CHOICES, in `.biom/settings.json`: a `Files` rooted at
+    // the framework's own folder, with no baseline — the watcher skips
+    // `.biom` by name, and git ignores it — read before any chat is made.
+    const settings = makeSettings({ files: makeFiles(join(path, BIOM_DIR)) });
+    await settings.loaded;
+    const chats = makeChats({
+      launch: (key) => agents.launch(key),
+      agents: () => agents.list(),
+      onAgents: (fn) => agents.on(fn),
+      refused: (key) => agents.refused(key),
+      // Grok Build, Cursor and Junie: `authenticate` in every process, with
+      // the method that last signed each in. Null for every other agent.
+      signedInWith: (key) => agents.signedInWith(key),
+      // THE CHATS A WINDOW HAS OPEN, as the windows with a stream open report
+      // them: an idle agent is ended only for a chat nobody is looking at.
+      openIn: () => {
+        const open: ChatId[] = [];
+        for (const w of history.windows()) if (w.chat !== null) open.push(w.chat);
+        return open;
+      },
+      connect,
+      root: path,
+      logDir: join(path, BIOM_DIR),
+      files: agentFiles,
+      skills: () => readSkills(agentFiles),
+      placeOf: (p) => history.placeOf(p),
+      uidOf,
+      onEdit: (p, via, writer) => {
+        history.edit({ path: p, via, writer }).catch((e: unknown) => console.warn("the history", e));
+      },
+      onTurn: (signal) => jevStatus.signal(signal),
+      // What a new chat starts on, and every choice the person makes, kept.
+      saved: (key) => settings.saved(key),
+      picked: (key) => settings.picked(key),
+      chose: (key, category, value) => settings.chose(key, category, value),
+      now: Date.now,
+    });
+    chatsNow = chats;
+    // A CHAT NAMED IS A CHAT JEV PICKS A FACE FOR, ONCE — after the login
+    // environment has landed, because that is where the key is and the one
+    // ask a name gets would otherwise be spent while Jev still looked off.
+    chats.on((push) => {
+      for (const u of push.updates) {
+        if (u.kind !== "name" || u.face !== null || u.name === "") continue;
+        const chat = push.chat.id;
+        const name = u.name;
+        const ask = (): void => jevStatus.named(chat, name);
+        loginEnv().then(ask, ask);
+      }
+    });
+    // Every kept log scanned before anybody lists the chats.
+    await chats.loaded;
 
     await memory.remember(path);
     // SHARE A PAGE. The capture opens THIS server's own address, which is not
@@ -1002,7 +1497,26 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       upload: makeBucket(shareEnv()),
     });
 
-    return { path, db, runsDb, runs, seen, deps: { pages, design, docs, tables, presets, theme, mirror, runs, share }, settled: Promise.resolve(), files };
+    // THE CHATS AS THE ROUTE SEES THEM: the same module, with a chat's close
+    // also letting go of Jev's schedule for it — its timers, and any ask in
+    // flight — because the route knows nothing of Jev and should not.
+    const routed: Chats = {
+      ...chats,
+      close: async (chat) => {
+        const now = await chats.close(chat);
+        jevStatus.close(chat);
+        return now;
+      },
+      delete: async (chat) => {
+        await chats.delete(chat);
+        jevStatus.close(chat);
+      },
+    };
+    return {
+      path, db, runsDb, pagesDb, ownWrites, ownPages, openedAt, index, runs, seen, history, agents, chats, jev: jevStatus, identities,
+      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings, index },
+      settled: Promise.resolve(), closed: false, files,
+    };
   }
 
   /** THE REGISTRY. One entry per folder this process has been asked for, holding
@@ -1041,7 +1555,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
       // caller awaits resolves with the mount; the rewrite and the mirror start
       // from here and are reachable through `settled` for whoever has to wait.
-      m.settled = afterMount(m.files);
+      m.settled = afterMountAll(m);
       return m;
     });
     mounted.set(abs, started);
@@ -1085,7 +1599,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  somebody can actually observe. */
   interface Live {
     watcher: Watcher;
-    hears: Set<() => void>;
+    hears: Set<(change: ChangeEvent) => void>;
     /** Told when a run starts or ends, on the same stream as a second, named
      *  event — so a page is NOT redrawn for it. A file changing is a reason to
      *  reread the page; a run's row moving is a reason to reread `run.list`,
@@ -1131,9 +1645,20 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // A DIRECTORY, or a path that is gone. The two are told apart by whether
       // anything is still there, and only one of them is a change.
       if (await Bun.file(doc).exists()) {
-        // A page directory. One this process already knows reports through its
-        // own files; one it has never seen is a page that has just arrived.
-        return held.seen.known(doc) ? null : { structural: true };
+        // A PAGE DIRECTORY, NAMED BY ITS PARENT'S `children/`: an entry there
+        // came, which is a page arriving — whoever has read it since. A
+        // window following an agent's write, or the history naming the page,
+        // reads it before this runs, so "has this process seen it" said an
+        // arrival was an edit and no level was named. Only the process's own
+        // write — a page it made, moved or renamed, whose document it NOTED
+        // with these very bytes — is not news; a sighting is.
+        let text: string | null = null;
+        try {
+          text = await Bun.file(doc).text();
+        } catch {
+          text = null;
+        }
+        return text !== null && held.seen.matches(doc, text) ? null : { structural: true };
       }
       // GONE, OR A DIRECTORY THAT IS NOT A PAGE — and the question asked here
       // has to be one the baseline can answer. It is keyed by FILE and is never
@@ -1164,11 +1689,40 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // a read that landed between the outside write and this verdict saw the
     // new bytes, and the screen may not have — `Seen.sight` in `files.ts`.
     if (held.seen.matches(abs, text)) return null;
+    // THE SERVER'S OWN WRITE-BACK OF A `uid`, exactly as it wrote it, to a page
+    // the watcher already knew — or one the background identify found already
+    // there, or one whose arrival a settle had just taken (`ownPages`). It is
+    // not a change of the page, and a second redraw for it was a second full
+    // reload in every window. A page the watcher has never seen arriving with
+    // those bytes is still an arrival, below.
+    // ONLY where the watcher's baseline still holds the bytes the write-back
+    // replaced: an outside save that landed between the identity's read and
+    // its write is in the file too, has never been reported, and is reported.
+    const own = held.ownWrites.get(abs);
+    const over = own !== undefined && own.before !== null && held.seen.matches(abs, own.before);
+    if (own !== undefined && own.after === text && (over || held.ownPages.has(abs))) {
+      held.ownWrites.delete(abs);
+      held.ownPages.delete(abs);
+      held.seen.note(abs, text);
+      return null;
+    }
     if (!parses(rel, text)) return null;
     const fresh = !held.seen.known(abs);
     // REPORTED, from here on: the same bytes notified again are nothing new.
     held.seen.note(abs, text);
-    return { structural: fresh || (page !== null && page.rest === "") };
+    // AN ARRIVAL IS A PAGE'S DOCUMENT THAT NOTHING KNEW. Never seen by this
+    // process's baseline is most pages now — nothing reads every page through
+    // it at mount any more — so the page index is asked too: a document of a
+    // page it already had is that page changing, not arriving. Any other file
+    // inside a page is that page's own.
+    if (page === null || page.rest !== PAGE_DOC || !fresh) return { structural: false };
+    let had: string | null = null;
+    try {
+      had = await held.index.uidWas(page.id);
+    } catch {
+      had = null;
+    }
+    return { structural: had === null };
   }
 
   /** The burst has stopped. Read what it named, refresh the mirror for whatever
@@ -1177,31 +1731,47 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     if (now.busy) return;
     now.busy = true;
     try {
-      const burst = [...now.pending];
+      // A FOLDER BEFORE WHAT IS IN IT. A page made in one go — its folder and
+      // its document, as an agent's write through Biom makes them — is named by
+      // both, and the folder's verdict is what says it arrived: the document's
+      // can only ask the index, which the history or the switcher may already
+      // have told of the page by then. Taken after the document, which it
+      // finds already noted, the folder said nothing.
+      const burst = [...now.pending].sort((a, b) => depthOf(a) - depthOf(b));
       now.pending.clear();
 
-      // EVERY VERDICT IN THE BURST IS TAKEN BEFORE ANY PROJECTION RUNS, and that
-      // ordering is the whole of this loop rather than a tidy-up. The baseline
-      // is what this process last wrote or last READ, and projecting a page
-      // reads: `follow` re-projects the PARENT, because a parent lists its
-      // children, and reading a parent reads every child's `content.yaml`. Taken
-      // one path at a time, the first of two siblings created in the same burst
-      // rebaselines the second before it has been considered — so the second
-      // reads as nothing that happened, and its markdown is never written.
-      // Measured on two pages created together.
+      // EVERY VERDICT IN THE BURST IS TAKEN BEFORE ANYTHING BELOW TOUCHES A
+      // PAGE, and that ordering is the whole of this loop rather than a tidy-up.
+      // A document's verdict asks the page index what it last knew of the page
+      // (`uidWas`), and the index hears the burst only after every verdict: told
+      // first, it would already hold the head of a page that has just arrived,
+      // and the arrival would read as an edit of a page it had. The identities
+      // given below write into the pages that arrived, and the mirror's queue
+      // projects them later still, so both follow the verdicts too; neither
+      // reads through the watcher's baseline, and nor does the index.
       //
       // Deduplicated by page id in the same pass: a burst touching three files
       // of one page is one projection rather than three.
       const touched = new Map<PageId, { structural: boolean; dir: string }>();
       let moved = false;
+      /** Something changed that is no page's — the theme, the design doc, a
+       *  plugin the whole vault loads, an asset: no window can tell which of
+       *  its pages that touches, so it rereads what it shows. */
+      let beyond = false;
+      /** Every watched path the burst named, vault-relative, for the index. */
+      const rels: string[] = [];
       for (const abs of burst) {
         const rel = insideOf(held.path, abs);
         if (rel === null || rel === "" || !watched(rel)) continue;
+        rels.push(rel);
         const verdict = await consider(held, abs, rel);
         if (verdict === null) continue;
         moved = true;
         const page = pageAt(rel);
-        if (page === null) continue;
+        if (page === null) {
+          beyond = true;
+          continue;
+        }
         // THE PAGE'S OWN DIRECTORY, taken off the path that named it rather than
         // rebuilt from the id: `rest` is what `pageAt` left over, so cutting it
         // off is the inverse of that walk without a second spelling of how the
@@ -1220,30 +1790,126 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // `_markdown/` goes stale: a file edited outside the app.
       for (const [id, what] of touched) {
         // A PAGE DELETED FROM OUTSIDE LOSES ITS MARKDOWN. `project` returns on a
-        // page it cannot read, so `follow` on its own leaves a file about
+        // page it cannot read, so a projection on its own leaves a file about
         // nothing behind — the app's own path in `server/api/routes.ts` drops
         // first for exactly this reason, and this one has to do the same. Asked
         // of DISK rather than of the baseline, so the answer cannot depend on
         // which of a deleted page's paths the burst happened to report first.
         const gone = !(await Bun.file(`${what.dir}/${PAGE_DOC}`).exists());
-        if (gone) await mirrored(held.deps.mirror.drop(id));
+        if (gone) held.deps.mirror.queue.drop(id);
         // A page arriving or leaving changes the page above it as much as
-        // itself, so a departure is structural whatever named it.
-        await mirrored(follow(held.deps.mirror, id, what.structural || gone));
+        // itself, so a departure is structural whatever named it. ASKED, NOT
+        // AWAITED: the projection follows in the background.
+        held.deps.mirror.queue.follow(id, what.structural || gone);
       }
-      if (!moved) return;
-      // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
-      // re-pointed by identity once per structural settle, not once per list.
-      if ([...touched.values()].some((t) => t.structural)) {
+      // THE INDEX HEARS EVERY PATH THE BURST NAMED — the app's own writes as
+      // well as an outside one, so its rows stay current — and says what it
+      // learned: pages that arrived with no identity, identities whose folder
+      // moved. What it re-reads is those paths' pages and the levels they
+      // name, never the vault.
+      // WHAT A PAGE'S PARENT SHOWS OF IT — its name, its plugin, its `uid` —
+      // and the order it gives its own children, as the index held them before
+      // the burst: a page renamed from outside is a change to the level above
+      // it as well as to itself, and only the rows can say it was renamed. A
+      // burst too big to name is `all` anyway, and asks nothing.
+      const before = touched.size <= LOCATE_MAX ? headsOf(held, [...touched.keys()]) : new Map<PageId, HeadRow>();
+      let news: IndexNews = { noUid: [], moved: [], gone: [] };
+      if (rels.length > 0) {
         try {
-          held.runs.relocateAll(await held.deps.pages.list());
+          news = await held.index.invalidate(rels);
+          news.moved.push(...(await movedFromNowhere(held, touched, news)));
         } catch (e) {
-          console.warn("runs could not be re-pointed at their pages", e);
+          console.warn("the page index could not take in a change", e instanceof Error ? e.message : e);
         }
       }
+      // A PAGE DELETED FROM OUTSIDE THAT THIS PROCESS NEVER READ is nothing the
+      // watcher's baseline knew, so its verdict above said nothing of it; the
+      // index had its row, and says it is gone. It is a departure like any
+      // other: its projection goes, and its parent's level is named — the
+      // parent of the topmost page gone, not of every page under it. The app's
+      // own removes never reach here: the route tells the index at once.
+      const gone = new Set(news.gone.filter((id) => !news.moved.some((m) => m.from === id)));
+      for (const id of gone) {
+        const parent = parentOf(id);
+        const had = touched.get(id);
+        touched.set(id, {
+          structural: (had?.structural ?? false) || parent === null || !gone.has(parent),
+          dir: had?.dir ?? join(held.path, pageDir(id)),
+        });
+        held.deps.mirror.queue.drop(id);
+        held.deps.mirror.queue.follow(id, true);
+      }
+      // A SETTLE THAT SAW A PAGE ARRIVE OR LEAVE GIVES AN IDENTITY TO EVERY PAGE
+      // WITHOUT ONE — after the arrival was read as one above, and before the
+      // windows are told, so the level they reread already carries it. What is
+      // written back into a page whose arrival this settle took is the server's
+      // own, and the next settle says nothing of it (`ownPages`); into any
+      // other, only where the watcher already holds the bytes it replaced,
+      // below. A settle of edits alone gives none: writing into a page
+      // somebody is editing, on every edit, would make their next save a change
+      // of ours, and such a page is given one where the history first names it.
+      // Every page without one, as the structural settle always gave them, but
+      // off the index's rows rather than a list of every page: what arrived in
+      // this burst, a page inside a folder that did, a page whose `uid` an
+      // outside save dropped, and one made while the mount's sweep was still
+      // running — which the sweep met, and gave no identity to because it was
+      // newer than the mount.
+      const arrivals = new Set<PageId>();
+      if ([...touched.values()].some((w) => w.structural)) {
+        for (const id of news.noUid) arrivals.add(id);
+        for (const id of uidless(held)) arrivals.add(id);
+      }
+      if (arrivals.size > 0) {
+        for (const id of arrivals) {
+          try {
+            // MARKED THE SERVER'S OWN ONLY WHERE THIS SETTLE TOOK THE ARRIVAL.
+            // Any other page without a `uid` may be one whose own notification
+            // is still on its way — written while this settle ran, and listed
+            // by the index when something read its level in between — and
+            // marked, its write-back was all the next settle saw of it: its
+            // arrival, its markdown and its name on the stream were dropped as
+            // nothing that happened. Unmarked, its write-back is silent only
+            // where the watcher's baseline holds the bytes it replaced
+            // (`consider`), and a page the watcher never took is taken now.
+            if (touched.get(id)?.structural === true) held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
+            await held.identities.of(id);
+          } catch (e) {
+            console.warn("a page that arrived could not be given an identity", e instanceof Error ? e.message : e);
+          }
+        }
+        try {
+          await held.identities.written();
+        } catch (e) {
+          console.warn("pages that arrived could not be given an identity", e instanceof Error ? e.message : e);
+        }
+      }
+      // A PAGE MOVED FROM OUTSIDE takes its runs with it, by identity: only
+      // the identities the index saw move.
+      for (const m of news.moved) {
+        try {
+          held.runs.relocate(m.from, m.to);
+        } catch (e) {
+          console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
+        }
+      }
+      if (!moved && news.moved.length === 0 && gone.size === 0) return;
+      const relisted: PageId[] = [];
+      if (before.size > 0) {
+        const after = headsOf(held, [...before.keys()]);
+        for (const [id, was] of before) {
+          const now = after.get(id);
+          if (now === undefined) continue;
+          if (now.name !== was.name || now.plugin !== was.plugin || now.uid !== was.uid) {
+            const parent = parentOf(id);
+            if (parent !== null) relisted.push(parent);
+          }
+          if (now.order_json !== was.order_json) relisted.push(id);
+        }
+      }
+      const change = changeOf(touched, news.moved, beyond, relisted);
       for (const hear of [...now.hears]) {
         try {
-          hear();
+          hear(change);
         } catch (e) {
           console.warn("a live-change subscriber threw", e);
         }
@@ -1255,6 +1921,69 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
   }
 
+  /** EVERY PAGE THE INDEX HOLDS WITH NO `uid`, off its table: one query and
+   *  no page read. Nothing where the table cannot be asked. */
+  function uidless(held: Mounted): PageId[] {
+    try {
+      return held.pagesDb.all<{ id: string }>("SELECT id FROM pages WHERE uid IS NULL").map((r) => r.id);
+    } catch {
+      return [];
+    }
+  }
+
+  /** THE INDEX'S ROWS FOR THESE PAGES, as they stand, read straight off its
+   *  table: `head` would read a page whose stat moved, and what is wanted here
+   *  is what the index held before it heard. Nothing where the table cannot
+   *  be asked. */
+  function headsOf(held: Mounted, ids: readonly PageId[]): Map<PageId, HeadRow> {
+    const out = new Map<PageId, HeadRow>();
+    try {
+      for (const id of ids) {
+        const row = held.pagesDb.all<HeadRow>("SELECT name, plugin, uid, order_json FROM pages WHERE id = ?", [id])[0];
+        if (row !== undefined) out.set(id, row);
+      }
+    } catch {
+      // A cache thrown away and made again: nothing to compare against.
+    }
+    return out;
+  }
+
+  /** A FOLDER MOVED IN A FILE MANAGER ARRIVES FROM NOWHERE. Bun's watcher
+   *  reports a directory arriving in a watched folder and never one leaving
+   *  one, so the index hears the page at its new place and nothing about the
+   *  old: no departure to match, no move. Where it came from is still in the
+   *  index's rows — the row that held its `uid` before, whose folder is gone —
+   *  so each page that arrived carrying a `uid` is looked up there, and a row
+   *  found that way is let go by the index and answered as the move it was. */
+  async function movedFromNowhere(
+    held: Mounted,
+    touched: ReadonlyMap<PageId, { structural: boolean }>,
+    news: IndexNews,
+  ): Promise<IndexNews["moved"]> {
+    const found: IndexNews["moved"] = [];
+    const gone: string[] = [];
+    for (const [id, what] of touched) {
+      if (!what.structural || news.moved.some((m) => m.to === id)) continue;
+      const head = await held.index.head(id);
+      if (head === null || head.uid === null) continue;
+      // A cache that was thrown away and made again is a handle this does not
+      // hold: then there is simply no earlier row to find.
+      let rows: { id: string; dir: string }[] = [];
+      try {
+        rows = held.pagesDb.all<{ id: string; dir: string }>("SELECT id, dir FROM pages WHERE uid = ? AND id != ?", [head.uid, id]);
+      } catch {
+        rows = [];
+      }
+      for (const row of rows) {
+        if ((await held.files.stat(`${row.dir}/${PAGE_DOC}`)) !== null) continue;
+        found.push({ uid: head.uid, from: row.id, to: id });
+        gone.push(row.dir);
+      }
+    }
+    if (gone.length > 0) await held.index.invalidate(gone);
+    return found;
+  }
+
   function arm(held: Mounted, now: Live): void {
     if (now.timer !== null) clearTimeout(now.timer);
     now.timer = setTimeout(() => {
@@ -1263,7 +1992,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }, SETTLE);
   }
 
-  async function subscribe(where: string, hear: () => void, hearRun?: () => void): Promise<() => void> {
+  async function subscribe(where: string, hear: (change: ChangeEvent) => void, hearRun?: () => void): Promise<() => void> {
     const held = await acquire(where);
     let now = live.get(held.path);
     if (now === undefined) {
@@ -1493,19 +2222,85 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         }
       }
     },
+    async endAgents() {
+      const ends: Promise<unknown>[] = [];
+      for (const held of mounted.values()) {
+        ends.push(held.then(async (m) => {
+          m.jev.stop();
+          await m.chats.endAll();
+          m.agents.killAll();
+        }).catch(() => {
+          // A mount that failed started nothing.
+        }));
+      }
+      await Promise.allSettled(ends);
+    },
+    killAgents,
+    agentProcesses: () => connections.size,
     open: () => [...mounted.keys()],
     watch: subscribe,
     watching: () => [...live.entries()].map(([path, now]) => ({ path, handles: now.watcher.handles() })),
     close: () => {
+      clearInterval(reaper);
+      // NO AGENT OUTLIVES ITS FOLDER'S CLOSING, which is the whole host's
+      // here: nothing is evicted while the server runs, so this and the exit
+      // are the two moments a folder stops being served.
+      killAgents();
       for (const now of live.values()) {
         if (now.timer !== null) clearTimeout(now.timer);
         now.watcher.close();
       }
       live.clear();
-      for (const held of mounted.values()) void held.then((m) => { m.db.close(); m.runsDb.close(); }).catch(() => {});
+      for (const held of mounted.values()) {
+        void held.then((m) => {
+          // THE WORK AFTER THE MOUNT STOPS HERE, before a database it reads
+          // is closed under it.
+          m.closed = true;
+          m.deps.mirror.queue.stop();
+          // One still mounting when this ran: what it started goes now.
+          stopAgents(m);
+          m.db.close();
+          m.runsDb.close();
+          try {
+            m.index.close();
+          } catch {
+            /* a cache; nothing to keep */
+          }
+          m.pagesDb.close();
+        }).catch(() => {});
+      }
       mounted.clear();
     },
   };
+
+  /** One folder's agents, stopped where they stand: Jev's timers, every
+   *  chat's agent and every probe and install, KILLed. */
+  function stopAgents(m: Mounted): void {
+    try {
+      m.jev.stop();
+    } catch {
+      /* nothing to stop */
+    }
+    try {
+      m.chats.killAll();
+    } catch {
+      /* nothing to kill */
+    }
+    try {
+      m.agents.killAll();
+    } catch {
+      /* nothing to kill */
+    }
+  }
+
+  /** EVERY AGENT PROCESS, KILLED NOW — synchronously, because the `exit`
+   *  handler runs no timer again. Each settled folder's own first, so their
+   *  bookkeeping knows; then every connection this server ever opened and has
+   *  not seen close, which is what reaches a process still on its way out. */
+  function killAgents(): void {
+    for (const held of settledMounts) stopAgents(held);
+    killConnections();
+  }
 
   /** Runs alive in every folder mounted so far. Only settled mounts are
    *  counted: one still mounting has started nothing. */
@@ -1515,6 +2310,131 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     return n;
   }
 }
+
+/**
+ * WHAT A SETTLE SAYS ON THE STREAM: the pages whose own files changed, and the
+ * levels — parents — whose children changed: the parent of a page that arrived
+ * or departed, both parents of one that moved, the parent of one whose name,
+ * plugin or `uid` changed, and a page itself where the order it gives its
+ * children did (`relisted`). Ids only; the window reads
+ * every word from the server. Past `LOCATE_MAX` names, or where something that
+ * is no page's changed, it says `all` and names nothing, and the window rereads
+ * what it shows.
+ */
+export function changeOf(
+  touched: ReadonlyMap<PageId, { structural: boolean }>,
+  moved: readonly { from: PageId; to: PageId }[],
+  beyond: boolean,
+  relisted: readonly PageId[] = [],
+): ChangeEvent {
+  const pages = new Set<PageId>();
+  const levels = new Set<PageId>(relisted);
+  // A PAGE ARRIVING OR LEAVING changes its parent's level, and the level above
+  // that too: the parent's row there says whether it holds anything, and its
+  // first child arriving, or its last leaving, is what draws or takes away its
+  // caret.
+  const around = (id: PageId): void => {
+    const parent = parentOf(id);
+    if (parent === null) return;
+    levels.add(parent);
+    const above = parentOf(parent);
+    if (above !== null) levels.add(above);
+  };
+  for (const [id, what] of touched) {
+    pages.add(id);
+    if (what.structural) around(id);
+  }
+  for (const m of moved) {
+    pages.add(m.from);
+    pages.add(m.to);
+    around(m.from);
+    around(m.to);
+  }
+  if (beyond || pages.size + levels.size > LOCATE_MAX) return { pages: [], levels: [], all: true };
+  return { pages: [...pages], levels: [...levels] };
+}
+
+/** How deep a path is, by its separators: a folder sorts before what is in it. */
+const depthOf = (path: string): number => path.split(/[\\/]/).length;
+
+/** What the mirror's pass on mount is stopped with when its folder closes. */
+const CLOSED = new Error("the folder closed");
+
+/** How many of the server's own write-backs are remembered at once. */
+const OWN_WRITES_MAX = 4096;
+
+/** FILES THAT READ AND NEVER WRITE: every write, replace, removal and commit
+ *  answered as done and nothing done — for a reader in the background whose
+ *  reads may try to tidy what they read. */
+export function readOnly(files: DiskFiles): DiskFiles {
+  return new Proxy(files, {
+    get(target, key, receiver) {
+      if (key === "write" || key === "remove" || key === "commit") return async () => {};
+      if (key === "replace") return async () => false;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+/** What a level shows of a page, and the order it gives its children, as the
+ *  index's table holds them. */
+interface HeadRow {
+  name: string;
+  plugin: string | null;
+  uid: string | null;
+  order_json: string | null;
+}
+
+/** One write-back: what was in the file just before it, and what it wrote. */
+interface OwnWrite {
+  before: string | null;
+  after: string;
+}
+
+/** FILES THAT REMEMBER WHAT THEY WROTE, by absolute path — the bytes of every
+ *  `write` and `replace`, and what the file held just before — and are
+ *  otherwise the files they wrap. */
+function remembering(files: DiskFiles, root: string, into: Map<string, OwnWrite>): DiskFiles {
+  const keep = async (target: DiskFiles, rel: string, after: string): Promise<void> => {
+    let before: string | null = null;
+    try {
+      before = await target.read(rel);
+    } catch {
+      before = null;
+    }
+    const abs = join(root, rel);
+    into.delete(abs);
+    into.set(abs, { before, after });
+    if (into.size > OWN_WRITES_MAX) {
+      const oldest = into.keys().next();
+      if (!oldest.done) into.delete(oldest.value);
+    }
+  };
+  return new Proxy(files, {
+    get(target, key, receiver) {
+      if (key === "write") {
+        return async (rel: string, text: string) => {
+          await keep(target, rel, text);
+          return await target.write(rel, text);
+        };
+      }
+      if (key === "replace") {
+        return async (rel: string, text: string) => {
+          await keep(target, rel, text);
+          return await target.replace(rel, text);
+        };
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+/** The page index's cache file, under `.biom/`. */
+export const PAGES_DB = "pages.db";
+
+/** Hand the thread back for a moment, so a request waiting is answered
+ *  before the next page of background work. */
+const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 /* ── everything else the server serves is static ────────────────────────── */
 
@@ -1625,6 +2545,9 @@ const TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
   ico: "image/x-icon",
+  // Jev's faces, `vendor/noto/*.webp`: served as what they are, so a face is
+  // drawn as a picture rather than refused as a download.
+  webp: "image/webp",
 };
 
 /** Resolve `rel` under `base`, or null if it escapes. No route may leave its
@@ -1734,10 +2657,10 @@ export async function pluginBundle(vault: string, framework: Files | null = null
     }
   };
   for (const { base, files, walk } of await plugins.walks(null)) await take(files, base, walk);
-  // EVERY PAGE'S OWN FOLDER, in page-id order. A readdir per page and never a
-  // document parsed: `pageDirs` walks positions, not content.
-  for (const dir of await pageDirs(own)) {
-    const base = `${dir}/${PLUGINS_DIR_VAULT}`;
+  // EVERY PAGE'S OWN FOLDER, in page-id order — of the pages that have one,
+  // which `pagePluginBases` remembers between two bundles. Each is walked
+  // again every time, so an edit inside one is always in the bundle.
+  for (const base of await pagePluginBases(vault, own)) {
     const walk = await walkPlugins(own, base, "page", base);
     if (walk.folders.length === 0 && walk.faults.length === 0) continue;
     await take(own, base, walk);
@@ -1783,6 +2706,70 @@ function compiled(name: string, root: string, source: string, broken: string | n
   if (broken === null) return `file(${JSON.stringify(name)}, ${JSON.stringify(root)}, function () {\n${source}\n});`;
   return `fail(${JSON.stringify(name)}, ${JSON.stringify(root)}, ${JSON.stringify(broken)});`;
 }
+
+/** WHICH PAGES HAVE A `plugins/` OF THEIR OWN, per vault, and the time every
+ *  folder the walk that found them looked at last changed. Every box asks for
+ *  the bundle, so a page switch listed every page's folder — two thousand of
+ *  them, most of the switch — to find the one or two pages with a plugin.
+ *
+ *  CHECKED BY STAT, NEVER TOLD: the watcher runs only while a window holds the
+ *  stream, and a folder changed with none open is still changed. A page gaining
+ *  a `plugins/`, a page arriving or leaving, a folder added inside a page's
+ *  `plugins/` — each changes the time of a folder recorded here, and one that
+ *  differs walks the pages again. A few thousand stats, a few milliseconds.
+ *
+ *  AND NEVER TRUSTED WHILE IT MAY BE MOVING: a folder whose time is later than
+ *  `RACY_MS` before the walk began may have changed during it, after it was
+ *  listed, within one tick of the clock, so a walk that recorded one is not
+ *  remembered — the next bundle walks again. */
+const pagePlugins = new Map<string, { stamps: [string, number][]; bases: string[] }>();
+const RACY_MS = 2000;
+
+/** A folder's modification time, or -1 where nothing is there. */
+function stampOf(abs: string): number {
+  try {
+    return statSync(abs, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+  } catch {
+    return -1;
+  }
+}
+
+/** The vault-relative `plugins/` folders of every page that has one, in
+ *  page-id order: remembered where every folder's time still agrees, and found
+ *  by walking the pages where one does not. */
+async function pagePluginBases(vault: string, own: Files): Promise<string[]> {
+  const had = pagePlugins.get(vault);
+  if (had !== undefined && had.stamps.every(([abs, ms]) => stampOf(abs) === ms)) return had.bases;
+  const began = Date.now();
+  // A readdir per page and never a document parsed: `pageDirs` walks
+  // positions, not content.
+  const dirs = await pageDirs(own);
+  const stamps: [string, number][] = [];
+  const bases: string[] = [];
+  const stamp = (rel: string): number => {
+    const ms = stampOf(join(vault, rel));
+    stamps.push([join(vault, rel), ms]);
+    return ms;
+  };
+  stamp(PAGES_ROOT);
+  for (const dir of dirs) {
+    stamp(dir);
+    const kids = join(vault, dir, PAGE_CHILDREN);
+    if (stampOf(kids) !== -1) stamp(`${dir}/${PAGE_CHILDREN}`);
+    const base = `${dir}/${PLUGINS_DIR_VAULT}`;
+    if (stampOf(join(vault, base)) === -1) continue;
+    stamp(base);
+    bases.push(base);
+  }
+  if (stamps.every(([, ms]) => ms < began - RACY_MS)) pagePlugins.set(vault, { stamps, bases });
+  else pagePlugins.delete(vault);
+  return bases;
+}
+
+/** Where every page folder is, and the folder under a page that holds its
+ *  children — the two names the walk above stamps. */
+const PAGES_ROOT = "pages";
+const PAGE_CHILDREN = "children";
 
 /** The largest a single plugin script may be. Generous for a file somebody is
  *  meant to read and far under what would sit in memory unnoticed. */
@@ -1856,6 +2843,28 @@ function inVault(rest: string, vault: string): string | null {
   if (rest.startsWith(PLUGIN_DIR_ROUTE)) return under(join(vault, PLUGINS_DIR_VAULT), rest.slice(PLUGIN_DIR_ROUTE.length));
   if (rest.startsWith("/asset/")) return under(join(vault, "assets"), rest.slice("/asset/".length));
   return null;
+}
+
+/** WHAT A FILE SERVED OUT OF A WORKSPACE IS ALLOWED TO BE, wherever it ends up
+ *  being opened. The box takes these files as subresources — a picture, a
+ *  stylesheet, a font, the loader's script — and a document's policy does not
+ *  reach a subresource, so none of that changes. What it changes is a file
+ *  OPENED as a document, in a tab or in a frame: it runs at an OPAQUE origin,
+ *  the one the box already gives every page's own code, so its requests say
+ *  `Origin: null`, the browser sends it no `SameSite` cookie, and the local
+ *  gate and the route refuse it. `allow-scripts`, because an HTML file a page
+ *  links to may be somebody's own chart with its own script, and in the box it
+ *  always ran; never `allow-same-origin`, which would hand the origin back.
+ *  No `frame-ancestors`: a page may frame its own asset, and the opaque origin
+ *  is what closes the hole. `nosniff`, so a file is only ever the type its name
+ *  says — a `.txt` is never read as a page. */
+export const VAULT_FILE_POLICY = "sandbox allow-scripts";
+
+/** The two headers every vault-served response carries. */
+function fromVault(res: Response): Response {
+  res.headers.set("content-security-policy", VAULT_FILE_POLICY);
+  res.headers.set("x-content-type-options", "nosniff");
+  return res;
 }
 
 /** ONE PLUGIN FILE, the vault's if it has it and the framework's if not.
@@ -2097,6 +3106,16 @@ let TROUBLE: () => string | null = () => null;
  *  says nothing, and the next load says it. */
 let NEWER: string | null = null;
 
+/** THE OPENING OF THE WORKSPACE THIS LAUNCH OPENS, as `/` waits on it: the run
+ *  below sets it; a caller that stood the routes up without one has nothing to
+ *  wait for. */
+let BOOTED: Promise<unknown> = Promise.resolve();
+
+/** How long the composed document waits for that opening's verdict, in ms,
+ *  before it is served without one. Opening a workspace is well under a second
+ *  now; a folder that will not open refuses faster than that. */
+const ROOT_WAIT_MS = 3000;
+
 /** The framework's own files: the client, the box's code, the contracts, the
  *  fonts and the vendored scripts. One url whichever folder is being looked at,
  *  and one lookup whether they are carried or on disk.
@@ -2107,11 +3126,16 @@ let NEWER: string | null = null;
  *  this is. */
 async function serveStatic(pathname: string, grant?: string): Promise<Response> {
   const key = locate(pathname);
+  // THE COMPOSED DOCUMENT WAITS FOR THE OPENING'S VERDICT, and no longer than
+  // `ROOT_WAIT_MS`: a workspace that cannot open is said on the page the
+  // window loads, and one that is merely slow does not hold the window.
+  if (key === INDEX) await Promise.race([BOOTED.catch(() => {}), new Promise((r) => setTimeout(r, ROOT_WAIT_MS))]);
   const response = await deliver(source(key), key ?? undefined, key === INDEX ? composeRoot : undefined);
-  // THE TERMINAL CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE —
-  // a cookie rather than a third meta tag, because a script on the page never
+  // THIS MACHINE'S CAPABILITY RIDES ON THE COMPOSED DOCUMENT AND NOTHING ELSE
+  // — a cookie rather than a third meta tag, because a script on the page never
   // needs to read it and an HttpOnly cookie is one no script can. See
-  // `terminalRefusal`.
+  // `LOCAL_COOKIE`: `terminalRefusal` spends it for the sign-in terminal, and
+  // `localRefusal` for the agent and chat kinds and the live stream.
   if (key === INDEX && grant !== undefined && response.status === 200) response.headers.append("set-cookie", grant);
   return response;
 }
@@ -2182,21 +3206,23 @@ const mintToken = (): string => crypto.randomUUID().replaceAll("-", "");
 
 /** Does this request carry the token the server minted?
  *
- *  WHAT IT IS ASKED OF IS THE HALF WORTH WRITING DOWN, AND IT IS ASKED OF ONE
- *  ROUTE. `API_ROUTE`, because the box cannot carry a token on anything it
+ *  WHAT IT IS ASKED OF IS THE HALF WORTH WRITING DOWN, AND IT IS ASKED OF TWO
+ *  ROUTES. `API_ROUTE`, and since the eleventh contracts edit the live stream,
+ *  because the box cannot carry a token on anything it
  *  loads: the artifact frame has an opaque origin and pulls fonts, vendored
  *  scripts and the workspace's own plugins in by URL with no way to set a header
  *  or edit one. The framework's own read-only static roots therefore stay open,
  *  and they cost nothing to leave open — they are the published repository's
  *  files, and the chokepoint has always been about data rather than about code.
  *
- *  THE LIVE STREAM IS UNGUARDED TOO, and it is the cheapest of the three to
- *  say out loud: `/v/<vault>/events` carries no payload at all — the event says
- *  *something under this vault changed* and nothing else, and a reader has to
- *  come back through `API_ROUTE` to learn what. What it leaks is that a folder
- *  is being written to. It could carry the token, because nothing inside a box
- *  resolves its url relatively; it does not yet because the route itself only
- *  reaches `contracts/` at the barrier, and one change at a time.
+ *  THE LIVE STREAM TAKES IT NOW, and this machine's capability beside it. It
+ *  used to be unguarded on the argument that `/v/<vault>/events` carried no
+ *  payload — *something under this vault changed*, and a reader had to come
+ *  back through `API_ROUTE` to learn what. Since the eleventh contracts edit it
+ *  carries the chats and the history — an agent's words and diffs, what the
+ *  person has open — so it is guarded like the route that answers them. The
+ *  token can ride it because nothing inside a box resolves its url: the client
+ *  builds it, as it builds the API route's.
  *
  *  THAT ARGUMENT DOES NOT COVER `/v/<vault>/asset/` AND `/v/<vault>/plugin/`,
  *  and saying so is the honest half. Those two serve the PERSON'S OWN FOLDER,
@@ -2224,14 +3250,100 @@ export function tokenOk(expected: string | null, url: URL): boolean {
   return url.searchParams.get(TOKEN_PARAM) === expected;
 }
 
-/* ── the terminal, and who may open one ─────────────────────────────────── */
+/* ── this machine's own window, and the terminal ──────────────────────────── */
+
+/** THE CAPABILITY THAT SAYS *THIS MACHINE'S OWN WINDOW*, and three things spend
+ *  it: the sign-in terminal, the agent and chat kinds on the API route, and the
+ *  live stream. It was the terminal's alone until the eleventh contracts edit, when
+ *  talking to an agent became as much command execution as a shell is — an
+ *  agent answered `allow_always` does whatever it is told — and so it
+ *  generalised rather than being minted twice.
+ *
+ *  ONE COOKIE, minted once per launch in every build, set `HttpOnly` and
+ *  `SameSite=Strict` on the document this server composes and ONLY for a
+ *  loopback peer. What it stops that the headers cannot: in a source run a page
+ *  in the box can make the server itself fetch anything through the `fetch`
+ *  proxy in `server/api/routes.ts`, with any Host and any Origin it likes and
+ *  from a loopback peer — but it can never PRESENT this cookie. It cannot read
+ *  it (HttpOnly, and the proxy drops `set-cookie` on the way back), its own
+ *  requests are cross-site so the browser never sends it (Strict), and the
+ *  proxy drops any `cookie` header a page hands it. A machine on the network is
+ *  refused by the peer address before any of that.
+ *
+ *  WHAT IT DOES NOT STOP ALONE: a page on ANOTHER LOCALHOST PORT. A site
+ *  ignores the port, so every `localhost` origin is the same site as this one,
+ *  and the person's browser sends that page this cookie — `SameSite=Strict`
+ *  included. Such a page is any other development server, a static preview of
+ *  a downloaded file, or a project an agent is running. So `localRefusal` asks
+ *  the two headers a browser never lets a page forge as well: the Origin must
+ *  be this server's own where one is sent, and `Sec-Fetch-Site` must say
+ *  `same-origin` or `none` where it is sent — which is `terminalRefusal`'s
+ *  Origin check, on every local kind and on the stream. The proxy forges both
+ *  and still has no cookie; the other port has the cookie and forges neither. */
+export const LOCAL_COOKIE = "biom-local";
+
+/** Named per port, because a cookie ignores the port and two servers on one
+ *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
+ *  other's. */
+export const localCookie = (port: number): string => `${LOCAL_COOKIE}-${port}`;
+
+/** WHETHER A REQUEST IS THIS MACHINE'S OWN WINDOW, or the sentence saying why
+ *  not — for the log and a test, and never for the caller, who is told only
+ *  that it was refused. FIVE CHECKS, each stopping its own forger:
+ *
+ *    · a loopback peer — a machine on the network;
+ *    · a Host that is a loopback name on this server's port — a DNS-rebinding
+ *      page resolving its own name to 127.0.0.1;
+ *    · an Origin that is this server's own, WHERE ONE IS SENT — a page on
+ *      another localhost port, which the browser hands this server's cookie
+ *      because a site ignores the port (see `LOCAL_COOKIE`), and the box,
+ *      whose origin is `null`. Absent is allowed: a same-origin `EventSource`
+ *      sends none, and neither does a program that is not a browser;
+ *    · `Sec-Fetch-Site` of `same-origin` or `none`, WHERE ONE IS SENT — the
+ *      same page on another port when it makes a request that names no
+ *      Origin, a no-cors GET of the stream;
+ *    · the capability cookie — the page proxy, which forges the headers above
+ *      from a loopback peer and can never present it. */
+export function localRefusal(
+  asked: { address: string | null; host: string | null; origin: string | null; site: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if (!isLoopback(asked.address)) return "offered only to this machine";
+  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
+  const origin = asked.origin ?? null;
+  if (origin !== null && !ownOrigin(origin, asked.host)) return "the Origin is not this server's own page";
+  const site = asked.site ?? null;
+  if (site !== null && site !== "same-origin" && site !== "none") return "the request came from another page, on another port or another site";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "this machine's capability is missing";
+  return null;
+}
+
+/** An Origin naming exactly the address this request was made to — which, once
+ *  the Host has passed `loopbackHost`, is this server on this machine. `null`,
+ *  the box's opaque origin, is never one. */
+function ownOrigin(origin: string, host: string | null): boolean {
+  const h = host ?? "";
+  return origin === `http://${h}` || origin === `https://${h}`;
+}
+
+/** A Host header naming a loopback name on this server's own port. */
+function loopbackHost(host: string | null, port: number): boolean {
+  const h = host ?? "";
+  const cut = h.lastIndexOf(":");
+  const name = cut < 0 ? h : h.slice(0, cut);
+  const at = cut < 0 ? "" : h.slice(cut + 1);
+  return LOOPBACK_NAMES.has(name.toLowerCase()) && at === String(port);
+}
 
 /** THE TERMINAL IS LOCAL COMMAND EXECUTION, AND IT IS GUARDED LIKE IT. The API
  *  route above is open in a source run because what it reaches is a workspace;
- *  what `/v/<vault>/terminal` reaches is a shell running as the person, so no
- *  build answers it without every check below — a development server that
- *  became an unauthenticated terminal service would be a remote shell for
- *  anybody on the same network, because `Bun.serve` listens on every interface.
+ *  what `/v/<vault>/terminal` reaches is a command running as the person — only
+ *  ever the one a server-minted sign-in ticket stands for, which is
+ *  `server/workspace/terminals.ts`'s rule, and never one the socket names — so
+ *  no build answers it without every check below: a development server that
+ *  became an unauthenticated terminal service would be a way to run an agent's
+ *  sign-in for anybody on the same network, because `Bun.serve` listens on
+ *  every interface.
  *
  *  FIVE CHECKS, AND EACH STOPS SOMETHING THE OTHERS DO NOT:
  *
@@ -2263,12 +3375,19 @@ export function tokenOk(expected: string | null, url: URL): boolean {
  *
  *  Pure, and exported: the refusal is a sentence for the log and a test, and the
  *  socket itself is never told which check failed. */
-export const TERMINAL_COOKIE = "biom-terminal";
-
-/** Named per port, because a cookie ignores the port and two servers on one
- *  machine — `make dev` beside `make dev PORT=4401` — would overwrite each
- *  other's. */
-export const terminalCookie = (port: number): string => `${TERMINAL_COOKIE}-${port}`;
+export function terminalRefusal(
+  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
+  expected: { port: number; capability: string },
+): string | null {
+  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
+  if (!asked.tokenOk) return "this launch's token is missing";
+  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
+  if (!loopbackHost(asked.host, expected.port)) return "the Host is not this server on this machine";
+  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
+  if (!ownOrigin(asked.origin, asked.host)) return "a terminal is offered only to this server's own pages";
+  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
+  return null;
+}
 
 const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -2286,24 +3405,6 @@ export function cookieValue(header: string | null, name: string): string | null 
     if (at < 0) continue;
     if (part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
   }
-  return null;
-}
-
-export function terminalRefusal(
-  asked: { upgrade: string | null; tokenOk: boolean; address: string | null; host: string | null; origin: string | null; cookie: string | null },
-  expected: { port: number; capability: string },
-): string | null {
-  if ((asked.upgrade ?? "").toLowerCase() !== "websocket") return "a terminal is opened as a WebSocket";
-  if (!asked.tokenOk) return "this launch's token is missing";
-  if (!isLoopback(asked.address)) return "a terminal is offered only to this machine";
-  const host = asked.host ?? "";
-  const cut = host.lastIndexOf(":");
-  const name = cut < 0 ? host : host.slice(0, cut);
-  const port = cut < 0 ? "" : host.slice(cut + 1);
-  if (!LOOPBACK_NAMES.has(name.toLowerCase()) || port !== String(expected.port)) return "the Host is not this server on this machine";
-  if (asked.origin === null || asked.origin === "null") return "a terminal is not offered to an opaque or missing origin";
-  if (asked.origin !== `http://${host}` && asked.origin !== `https://${host}`) return "a terminal is offered only to this server's own pages";
-  if (asked.cookie === null || asked.cookie !== expected.capability) return "the terminal capability is missing";
   return null;
 }
 
@@ -2329,30 +3430,109 @@ export function terminalRefusal(
 const KEEPALIVE = 20000;
 const IDLE = 255;
 
+/** HOW LONG A STREAM GATHERS WHAT CARRIES WORDS before writing it, in ms:
+ *  about two frames. A streaming reply is a chunk every few milliseconds, the
+ *  history's edits come in bursts and a probe round moves the agents list a
+ *  dozen times in a second; gathered, each tab is written at most this often
+ *  however fast any of it arrives, and a chat's reply reads as one push per
+ *  frame rather than one per token. `change` and `run` are never held: they
+ *  carry nothing and say *reread*, and holding one would only delay the
+ *  redraw it asks for. */
+export const GATHER_MS = 30;
+
+/** THE MOST ONE STREAM WRITES BEFORE IT IS CLOSED: 32 MB since it opened.
+ *
+ *  Bun gives a streamed response NO BACKPRESSURE: a reader that has stopped
+ *  reading — a tab frozen, a window on a machine asleep — has everything
+ *  written to it buffered in this process without bound, and neither the
+ *  controller's `desiredSize` nor a direct stream's `flush` says so (measured
+ *  on Bun 1.3.13: 27 MB a second to a paused reader, and every write taken).
+ *  What this stream has written is the one thing it can count. So at this
+ *  bound it is closed: the client's `EventSource` reconnects, and rereads —
+ *  `history.read`, `chat.read`, `agents.list`, its context reported again —
+ *  which the stream's protocol requires after any reopen anyway. A live tab
+ *  pays a reconnect per 32 MB of chat, which is a great deal of chat; a dead
+ *  one costs the server at most this. */
+export const STREAM_MAX_BYTES = 32 * 1024 * 1024;
+
+/** One named event, as the stream writes it. JSON has no raw line break in
+ *  it, so one `data:` line is the whole of the payload. */
+const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+/** A chat's push gathered onto the one before it: the chat as it stands now,
+ *  and every update since, in order — a tool line's newer state taking the
+ *  place of its older one, as the chats module keeps its own. */
+export function gatherPush(had: ChatPush | undefined, push: ChatPush): ChatPush {
+  // A CHAT DELETED IS THE LAST WORD on it: whatever it said before is moot.
+  if (push.deleted === true) return { chat: push.chat, updates: [], deleted: true };
+  if (had?.deleted === true) return had;
+  if (had === undefined) return { chat: push.chat, updates: [...push.updates] };
+  const updates: ChatUpdate[] = [...had.updates];
+  for (const u of push.updates) {
+    const at = u.kind === "tool" ? updates.findIndex((v) => v.kind === "tool" && v.tool.id === u.tool.id) : -1;
+    if (at >= 0) updates[at] = u;
+    else updates.push(u);
+  }
+  return { chat: push.chat, updates };
+}
+
 /** One tab's stream over one vault.
  *
- *  THE EVENT CARRIES NOTHING. It says *something under this vault changed*; the
- *  client answers by reading disk. A payload naming files would be a second,
- *  faster description of the workspace that can disagree with the first.
+ *  `change` AND `run` CARRY NOTHING. They say *something under this vault
+ *  changed* and *a run started or ended*; the client answers by reading disk
+ *  or the registry. A payload naming files would be a second, faster
+ *  description of the workspace that can disagree with the first.
+ *
+ *  THE OTHER THREE CARRY WHAT IS NOT ON DISK TO BE REREAD: `history`, the
+ *  entries just appended; `chat`, one chat as it now stands and what it
+ *  streamed since; `agents`, the whole list of what this machine has. Each is
+ *  gathered for `GATHER_MS` and written in one go, and each is only what
+ *  happened AFTER the stream opened: a reader catches up by `history.read`,
+ *  `chat.read` and `agents.list` — which is why a reconnect is itself a reason
+ *  to reread.
+ *
+ *  `window` IS WHICH WINDOW THIS STREAM IS (`?window=`). Its context is kept
+ *  while any stream of it is open and dropped when the last one closes, so
+ *  `window.list` answers the windows still there.
  *
  *  THERE IS NO REPLAY AND NO EVENT ID. `EventSource` reconnects on its own and
- *  the client treats the reconnect itself as a reason to reread — the current
- *  state of disk is the whole of the answer, and a log would be a second
- *  description of it again.
+ *  the client treats the reconnect itself as a reason to reread.
  *
- *  Exported for the test that pins the cancel-before-the-watch-resolves
- *  ordering below. Nothing else calls it; the route in `fetch` does. */
-export function events(host: Host, path: string): Response {
+ *  NOTHING IS WRITTEN AFTER THE STREAM HAS GONE: every subscription is let go
+ *  when it goes, the gathered words with it, and one that arrives after is
+ *  dropped at the door.
+ *
+ *  AND NO STREAM WRITES MORE THAN `limit` — `STREAM_MAX_BYTES` — before it is
+ *  closed and the client reconnects, because a reader that stopped reading is
+ *  one this process cannot see.
+ *
+ *  Exported for the tests that pin the cancel-before-the-watch-resolves
+ *  ordering and the gathering. Nothing else calls it; the route in `fetch`
+ *  does. */
+export function events(host: Host, path: string, window: WindowId | null = null, limit: number = STREAM_MAX_BYTES): Response {
   const bytes = new TextEncoder();
-  /** @type {(() => void) | null} */
+  /** What this stream has written since it opened, in bytes. */
+  let written = 0;
   let release: (() => void) | null = null;
   let beat: ReturnType<typeof setInterval> | null = null;
+  let gather: ReturnType<typeof setTimeout> | null = null;
   let shut = false;
+  // WHAT IS GATHERED FOR THE NEXT WRITE: the history's entries in the order
+  // they were appended, each chat's push merged by chat, and only the latest
+  // agents list — each carries the whole of it.
+  let entries: HistoryEntry[] = [];
+  const pushes = new Map<ChatId, ChatPush>();
+  let agents: AgentInfo[] | null = null;
 
   const stop = () => {
     shut = true;
     if (beat !== null) clearInterval(beat);
     beat = null;
+    if (gather !== null) clearTimeout(gather);
+    gather = null;
+    entries = [];
+    pushes.clear();
+    agents = null;
     if (release !== null) release();
     release = null;
   };
@@ -2361,17 +3541,47 @@ export function events(host: Host, path: string): Response {
     async start(controller: ReadableStreamDefaultController<Uint8Array>) {
       const send = (text: string): void => {
         if (shut) return;
+        const chunk = bytes.encode(text);
         try {
-          controller.enqueue(bytes.encode(text));
+          controller.enqueue(chunk);
         } catch {
           // The tab went away between the notification and the write. `cancel`
           // is what releases the watch; this is only the frame that missed.
           stop();
+          return;
+        }
+        written += chunk.byteLength;
+        // AT THE BOUND, CLOSED — after the write that crossed it, so every
+        // frame that went out is whole. See `STREAM_MAX_BYTES`.
+        if (written >= limit) {
+          stop();
+          try {
+            controller.close();
+          } catch {
+            /* the tab had already gone */
+          }
         }
       };
+      /** Everything gathered, in one write. */
+      const flush = (): void => {
+        gather = null;
+        if (shut) return;
+        let text = "";
+        if (entries.length > 0) text += frame(STREAM.HISTORY, entries);
+        for (const push of pushes.values()) text += frame(STREAM.CHAT, push);
+        if (agents !== null) text += frame(STREAM.AGENTS, agents);
+        entries = [];
+        pushes.clear();
+        agents = null;
+        if (text !== "") send(text);
+      };
+      const soon = (): void => {
+        if (!shut && gather === null) gather = setTimeout(flush, GATHER_MS);
+      };
+
       let got: () => void;
       try {
-        got = await host.watch(path, () => send("event: change\ndata: 1\n\n"), () => send("event: run\ndata: 1\n\n"));
+        got = await host.watch(path, (change) => send(`event: change\ndata: ${JSON.stringify(change)}\n\n`), () => send("event: run\ndata: 1\n\n"));
       } catch {
         // A folder that cannot be a workspace. The stream ends rather than
         // hanging, and the tab's own reconnect will keep asking — which is
@@ -2396,7 +3606,61 @@ export function events(host: Host, path: string): Response {
         got();
         return;
       }
-      release = got;
+      // THE SAME ORDERING, ONCE MORE, for the folder's modules: asking for
+      // them is a second await, and the tab may go during it too.
+      let deps: Deps | null = null;
+      try {
+        deps = await host.deps(path);
+      } catch {
+        deps = null;
+      }
+      if (shut) {
+        got();
+        return;
+      }
+      const offs: (() => void)[] = [got];
+      release = () => {
+        for (const off of offs.splice(0).reverse()) {
+          try {
+            off();
+          } catch (e) {
+            console.warn("a live-stream subscription could not be let go", e);
+          }
+        }
+      };
+      // A folder that will not mount answers modules that refuse every call,
+      // and then this stream carries `change` and `run` alone.
+      try {
+        const history = deps?.history;
+        if (history !== undefined) {
+          offs.push(history.on((more) => {
+            if (shut) return;
+            for (const e of more) entries.push(e);
+            soon();
+          }));
+          // THIS WINDOW IS HERE while this stream is open — a count, so a
+          // second tab of the same window closing does not forget the first.
+          if (window !== null) offs.push(history.attach(window));
+        }
+        const chats = deps?.chats;
+        if (chats !== undefined) {
+          offs.push(chats.on((push) => {
+            if (shut) return;
+            pushes.set(push.chat.id, gatherPush(pushes.get(push.chat.id), push));
+            soon();
+          }));
+        }
+        const found = deps?.agents;
+        if (found !== undefined) {
+          offs.push(found.on((list) => {
+            if (shut) return;
+            agents = list;
+            soon();
+          }));
+        }
+      } catch {
+        /* a module that refuses has nothing to say on a stream */
+      }
       // A COMMENT, not an event. The browser reports the connection open on the
       // first byte, and a page must not redraw merely because it connected.
       send(": open\n\n");
@@ -2455,26 +3719,49 @@ export const PARENT_ENV = "BIOM_SHELL";
  *  `/dev/null` — which is what a great many launchers do — would read end of file
  *  immediately and exit before it had served a single request. Only a parent that
  *  actually holds the pipe sets it. */
+/** HOW LONG THE AGENTS ARE GIVEN TO END GRACEFULLY on the way out, in ms. Each
+ *  process has its own TERM, a grace and a KILL, well inside this; the bound is
+ *  for what is not a process — a chat's log that will not flush to a disk that
+ *  has stopped answering — so that a server whose window has gone cannot wait
+ *  on it for ever. Past it the process exits, and the `exit` handler KILLs
+ *  whatever an agent still was. */
+export const AGENTS_ENDING_MS = 10_000;
+
+/** The agents' graceful end, bounded by `AGENTS_ENDING_MS`. Never rejects. */
+function endAgentsWithin(host: Host): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((done) => {
+    timer = setTimeout(done, AGENTS_ENDING_MS);
+  });
+  return Promise.race([host.endAgents().catch(() => {}), late]).finally(() => clearTimeout(timer));
+}
+
 /** END EVERY RUN, THEN EXIT, on the signals that still run a handler. Armed
  *  once; a second signal while the first is being honoured exits at once
  *  rather than waiting again, because somebody pressing Ctrl-C twice means it. */
-function endRunsOn(host: Host, signals: ("SIGINT" | "SIGTERM")[]): void {
+function endRunsOn(hostNow: () => Host | null, signals: ("SIGINT" | "SIGTERM")[]): void {
   let ending = false;
   for (const sig of signals) {
     process.on(sig, () => {
       // Pressed twice means it: the `exit` handler kills what is left.
       if (ending) process.exit(130);
       ending = true;
+      // Still opening its workspace: there is nothing of a run or an agent to
+      // end yet, and the `exit` handler takes whatever the opening started.
+      const host = hostNow();
+      if (host === null) process.exit(sig === "SIGINT" ? 130 : 143);
       const alive = host.live();
       if (alive > 0) console.log(`ending ${alive} run${alive === 1 ? "" : "s"} before stopping`);
+      // The runs and the agents together: each has its own TERM–grace–KILL,
+      // and neither waits on the other.
       // The exit codes main's terminal handlers used to answer with, so a
       // signal still reads as the signal it was.
-      void host.endRuns().finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
+      void Promise.allSettled([host.endRuns(), endAgentsWithin(host)]).finally(() => process.exit(sig === "SIGINT" ? 130 : 143));
     });
   }
 }
 
-function exitWhenTheParentGoes(host: Host): void {
+function exitWhenTheParentGoes(hostNow: () => Host | null): void {
   if (Bun.env[PARENT_ENV] !== "1") return;
   void (async () => {
     try {
@@ -2490,11 +3777,10 @@ function exitWhenTheParentGoes(host: Host): void {
     // or never got one, and either way nothing of an automation is left
     // behind. Then the same abrupt ending `kill()` gives it, for the same
     // reason: there is nothing else to flush.
-    try {
-      await host.endRuns();
-    } catch {
-      /* nothing left to end, or nothing that can be */
-    }
+    // And every chat's agent beside them, each turn in flight ended `crashed`
+    // and its log flushed, so the next launch reads what happened.
+    const host = hostNow();
+    if (host !== null) await Promise.allSettled([host.endRuns(), endAgentsWithin(host)]);
     process.exit(0);
   })();
 }
@@ -2526,23 +3812,36 @@ if (import.meta.main) {
   // trade for a start-up that never waits on a network.
   if (CHECK_UPDATES) fetchNewer(VERSION).then((newer) => { NEWER = newer; });
 
-  const start = await bootVault(Bun.env.VAULT, await memory.last());
-  const host = await makeHost({
-    vault: start.path ?? undefined,
-    memory: MEMORY,
-    presets: PRESETS,
-    vaultSeed: VAULT_SEED,
-    skill: SKILL,
-    production: PRODUCTION,
-    pluginRoot: PLUGIN_ROOT,
+  // LISTEN FIRST. The workspace this launch opens is opened BESIDE the
+  // server, not before it: the port answers, the ready line is said and the
+  // document, the client and the box's code are served while it opens, and
+  // everything that is about a workspace — the API, the stream, the sign-in
+  // terminal, a folder's own files — waits for it, as a request naming a
+  // folder not yet open always has. On two thousand pages the opening held the
+  // whole server for twenty seconds, with nothing on the window at all.
+  const booting = (async () => {
+    const start = await bootVault(Bun.env.VAULT, await memory.last());
+    const opened = await makeHost({
+      vault: start.path ?? undefined,
+      memory: MEMORY,
+      presets: PRESETS,
+      vaultSeed: VAULT_SEED,
+      skill: SKILL,
+      production: PRODUCTION,
+      pluginRoot: PLUGIN_ROOT,
+    });
+    return { start, host: opened };
+  })();
+  // A host is always built — a folder that will not open is its `trouble`, not
+  // a throw — so this is the machine itself failing, as a top-level throw was.
+  booting.catch((e: unknown) => {
+    console.error("the server could not start", e);
+    process.exit(1);
   });
-
-  // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
-  // host on every request rather than captured here, so it decays the moment a
-  // folder opens — see the getter on `Host.trouble`. `start.why` is a remembered
-  // entry refused before it was tried and never changes; `host.trouble` is a
-  // mount that failed anyway and does.
-  TROUBLE = () => (host.open().length > 0 ? null : start.why ?? host.trouble);
+  const hosted = booting.then((b) => b.host);
+  /** The host, once the opening has answered; null until then. */
+  let host: Host | null = null;
+  BOOTED = booting;
 
   // MINTED ONLY WHERE THERE IS SOMETHING TO TELL IT TO. The compiled build is
   // opened by the shell, which reads this off stdout and puts it in the window's
@@ -2551,14 +3850,15 @@ if (import.meta.main) {
   // a step in it.
   const TOKEN = STANDALONE ? mintToken() : null;
 
-  // THE TERMINAL'S CAPABILITY, minted in EVERY build — unlike the token above —
-  // because the terminal is guarded in every build. See `terminalRefusal`.
-  const TERMINAL_CAP = mintToken();
-  // Every workspace's terminal sessions. Constructed here like everything else,
-  // handed the one capability it spawns with and the environment it scrubs.
-  const terminals = makeTerminals({ spawn: spawnPty, env: process.env });
-  // A SHELL NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the one
-  // place every ending passes through — the window closing, the parent pipe
+  // THIS MACHINE'S OWN WINDOW, minted in EVERY build — unlike the token above —
+  // because the terminal, the agent and chat kinds and the live stream are
+  // guarded in every build. See `localRefusal`.
+  const LOCAL_CAP = mintToken();
+  // The sign-in terminal, handed the one capability it spawns with. Which
+  // command it may run is a vault's sign-in state, handed per socket below.
+  const terminals = makeTerminals({ spawn: spawnPty });
+  // A SIGN-IN NEVER OUTLIVES THE SERVER THAT STARTED IT. The exit handler is the
+  // one place every ending passes through — the window closing, the parent pipe
   // reaching end of file, Ctrl-C in `make dev` — so every tree is killed there,
   // synchronously, because no timer runs after it. The two signals are turned
   // into an exit so that handler runs; without one a signal ends the process and
@@ -2570,7 +3870,11 @@ if (import.meta.main) {
   // there is time — a signal, the parent's pipe closing — `endRunsOn` and
   // `exitWhenTheParentGoes` below end them gracefully first, TERM then KILL,
   // and this handler finds nothing left to do.
-  process.on("exit", () => { terminals.killAll(); host.killRuns(); });
+  // AND EVERY AGENT: a chat's, a probe's, an install's, and one still on its
+  // way out after a switch — each a process group of its own, which a signal
+  // to this process reaches none of. `endAgents` below ends them gracefully
+  // where there is time; this is the KILL for whatever that did not reach.
+  process.on("exit", () => { terminals.killAll(); host?.killRuns(); host?.killAgents(); });
 
   const server = Bun.serve({
     port: PORT,
@@ -2579,10 +3883,22 @@ if (import.meta.main) {
     idleTimeout: IDLE,
     async fetch(request, server) {
       const url = new URL(request.url);
-      /** The terminal capability, for a document served to this machine only. */
+      /** This machine's capability, for a document served to this machine only. */
       const grant = isLoopback(server.requestIP(request)?.address)
-        ? `${terminalCookie(server.port)}=${TERMINAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
+        ? `${localCookie(server.port)}=${LOCAL_CAP}; Path=/; HttpOnly; SameSite=Strict`
         : undefined;
+      /** Whether this request is this machine's own window — asked lazily,
+       *  because only three routes spend it. */
+      const local = (): string | null => localRefusal(
+        {
+          address: server.requestIP(request)?.address ?? null,
+          host: request.headers.get("host"),
+          origin: request.headers.get("origin"),
+          site: request.headers.get("sec-fetch-site"),
+          cookie: cookieValue(request.headers.get("cookie"), localCookie(server.port)),
+        },
+        { port: server.port, capability: LOCAL_CAP },
+      );
       // WHICH FOLDER, read off the front of the path. `null` means the request
       // named none, which is legal: the picker has to be reachable before
       // anything has been chosen, and `vault.browse`, `vault.open` and
@@ -2608,12 +3924,33 @@ if (import.meta.main) {
         // wrong with it. `deps` no longer rejects — it answers a set that
         // refuses with the mount's own sentence and still answers the kinds that
         // are about vaults — so there is nothing left to catch here.
-        return await route(request, await host.deps(named === null ? undefined : named.path));
+        //
+        // THE AGENT AND CHAT KINDS, AND A WINDOW'S REPORT, ANSWER ONLY THIS
+        // MACHINE'S OWN WINDOW, in every build: `isLocalKind` names them and
+        // `localRefusal` is the whole of the check — peer, Host, Origin,
+        // `Sec-Fetch-Site` and the cookie, because a page on another localhost
+        // port is handed the cookie too. The token above is a source run's
+        // nothing, and an agent answered `allow_always` is command execution.
+        // The reason goes to the log; the caller is told `identity`.
+        //
+        // AND A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD REPORT FOR IT:
+        // `own` is the same check without a kind, and a request that fails it
+        // has its envelope's `window` dropped, so nothing holding the launch
+        // token — a run's script, which can read every window's id off
+        // `window.list` — can put its writes in the history as the person's.
+        const host = await hosted;
+        return await route(request, await host.deps(named === null ? undefined : named.path), (kind) => {
+          if (!isLocalKind(kind)) return null;
+          const why = local();
+          if (why !== null) console.warn(`${kind} refused   →  ${why}`);
+          return why;
+        }, () => local() === null);
       }
 
-      // THE TERMINAL, and nothing about it is reachable without every check in
-      // `terminalRefusal`. The refusal goes to the log and never to the socket:
-      // telling a caller which check failed is telling it which to forge next.
+      // THE SIGN-IN TERMINAL, and nothing about it is reachable without every
+      // check in `terminalRefusal`. The refusal goes to the log and never to the
+      // socket: telling a caller which check failed is telling it which to
+      // forge next.
       if (rest === TERMINAL_ROUTE) {
         if (named === null) return new Response("This request names no workspace", { status: 404 });
         const refused = terminalRefusal(
@@ -2623,24 +3960,35 @@ if (import.meta.main) {
             address: server.requestIP(request)?.address ?? null,
             host: request.headers.get("host"),
             origin: request.headers.get("origin"),
-            cookie: cookieValue(request.headers.get("cookie"), terminalCookie(server.port)),
+            cookie: cookieValue(request.headers.get("cookie"), localCookie(server.port)),
           },
-          { port: server.port, capability: TERMINAL_CAP },
+          { port: server.port, capability: LOCAL_CAP },
         );
         if (refused !== null) {
           console.warn(`terminal refused   →  ${refused}`);
           return new Response("Forbidden", { status: 403 });
         }
-        // THE FOLDER A SHELL STARTS IN IS THE MOUNT'S OWN PATH, resolved here and
+        // THE FOLDER A SIGN-IN RUNS IN IS THE MOUNT'S OWN PATH, resolved here and
         // never defaulted: a workspace that will not open is a refusal, not a
-        // terminal in the home directory.
+        // command in the home directory.
+        const host = await hosted;
+        let deps: Deps;
         let cwd: string;
         try {
-          cwd = (await (await host.deps(named.path)).vault.info()).path;
+          deps = await host.deps(named.path);
+          cwd = (await deps.vault.info()).path;
         } catch {
           return new Response("That workspace is not open", { status: 404 });
         }
-        if (server.upgrade(request, { data: { vault: cwd, attachment: null } })) return undefined;
+        // WHICH COMMAND MAY RUN is that vault's sign-in state and nothing the
+        // socket says: its agents mint a ticket when they answer a terminal
+        // sign-in and redeem it once, and the command's end is a look at the
+        // agent again. THAT VAULT'S agents, so a ticket minted in one folder
+        // can never run in another.
+        const agents = deps.agents;
+        if (agents === undefined) return new Response("That workspace is not open", { status: 404 });
+        const tickets: Tickets = { redeem: (t) => agents.redeem(t), ended: (t) => agents.signedIn(t) };
+        if (server.upgrade(request, { data: { cwd, tickets, attachment: null } })) return undefined;
         return new Response("Expected a WebSocket", { status: 400 });
       }
 
@@ -2657,7 +4005,25 @@ if (import.meta.main) {
         // vault — that is the whole point of the prefix — so this is a 404
         // rather than a stream that never fires.
         if (named === null) return new Response("This request names no workspace", { status: 404 });
-        return events(host, named.path);
+        // IT CARRIES THE CHATS AND THE HISTORY NOW — an agent's words, its
+        // diffs, what the person has open — so it answers only this launch's
+        // window: the token where the build has one, and this machine's
+        // capability in every build. An `EventSource` sends the same-origin
+        // cookie by itself — and no Origin, and `Sec-Fetch-Site: same-origin`,
+        // which is what `localRefusal` lets through where another port's page
+        // is refused — and its url is built by the client, not resolved
+        // against a box's base, so the token rides it as a query.
+        if (!tokenOk(TOKEN, url)) return new Response("Not authorised", { status: 401 });
+        const why = local();
+        if (why !== null) {
+          console.warn(`events refused   →  ${why}`);
+          return new Response("Forbidden", { status: 403 });
+        }
+        // WHICH WINDOW THIS STREAM IS, when the client said: its context is
+        // kept while the stream is open and dropped when it closes. Anything
+        // that is not a window's id is no window, and the stream is still one.
+        const w = url.searchParams.get(WINDOW_PARAM);
+        return events(await hosted, named.path, isWindowId(w) ? w : null);
       }
 
       if (named !== null) {
@@ -2665,14 +4031,24 @@ if (import.meta.main) {
         // framework's own files keep one url whichever folder you are looking at,
         // so a module is fetched and cached once rather than once per vault.
         const rel = decodeURIComponent(named.rest);
-        // THE FOLDER, BEFORE ANY FILE IN IT. `/plugin/` with nothing after it is
-        // the loader's answer — every plugin this vault has, as one script — and
-        // it has to be caught here, because `under()` resolves it to the folder
-        // itself and `deliver` cannot read a directory.
-        if (rel === PLUGIN_DIR_ROUTE) return await pluginBundle(named.path, host.pluginRoot);
-        if (rel.startsWith(PLUGIN_DIR_ROUTE)) return await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot);
         const inside = inVault(rel, named.path);
-        if (inside !== null) return await deliver(inside);
+        if (rel === PLUGIN_DIR_ROUTE || rel.startsWith(PLUGIN_DIR_ROUTE) || inside !== null) {
+          // ONLY A WORKSPACE THIS SERVER HAS OPEN. The prefix names any absolute
+          // folder, and a file served from one is served at this server's own
+          // origin: an attacker's page left in some folder's `assets/` would
+          // otherwise be "this server's own page" to the local gate. Nothing
+          // asks for a folder's files before it is open — the box is drawn from
+          // a page the API has already read, and that read opened the folder.
+          const host = await hosted;
+          if (!host.open().includes(resolve(named.path))) return new Response("Not found", { status: 404 });
+          // THE FOLDER, BEFORE ANY FILE IN IT. `/plugin/` with nothing after it
+          // is the loader's answer — every plugin this vault has, as one script
+          // — and it has to be caught here, because `under()` resolves it to
+          // the folder itself and `deliver` cannot read a directory.
+          if (rel === PLUGIN_DIR_ROUTE) return fromVault(await pluginBundle(named.path, host.pluginRoot));
+          if (rel.startsWith(PLUGIN_DIR_ROUTE)) return fromVault(await pluginFile(rel.slice(PLUGIN_DIR_ROUTE.length), named.path, host.pluginRoot));
+          return fromVault(await deliver(inside));
+        }
         // Anything else under the prefix is the client itself: a deep link like
         // /v/<vault>/ is somebody opening a tab, and it must answer with the app
         // rather than a 404 they cannot navigate out of — and `serveStatic` is
@@ -2683,27 +4059,26 @@ if (import.meta.main) {
 
       return await serveStatic(decodeURIComponent(url.pathname), grant);
     },
-    // ONE SOCKET PER WINDOW PER WORKSPACE, and all it does is hand bytes to the
-    // registry and back. Every decision about a session is in
+    // ONE SOCKET PER SIGN-IN, and all it does is hand bytes to the terminal and
+    // back. Every decision about the command is in
     // `server/workspace/terminals.ts`; this is the wire.
     websocket: {
-      // Above the registry's own input limit, so an oversized paste is refused
+      // Above the terminal's own input limit, so an oversized paste is refused
       // with a sentence rather than by the socket closing under the person.
       maxPayloadLength: 4 * 1024 * 1024,
+      // Above the terminal's own lag bound, past which it drops output itself.
       backpressureLimit: 16 * 1024 * 1024,
       closeOnBackpressureLimit: false,
       open(ws) {
-        ws.data.attachment = terminals.attach(ws.data.vault, {
+        ws.data.attachment = terminals.attach(ws.data.cwd, ws.data.tickets, {
           send: (text) => void ws.send(text),
           sendBinary: (bytes) => void ws.send(bytes),
           buffered: () => ws.getBufferedAmount(),
+          close: () => ws.close(),
         });
       },
       message(ws, message) {
         ws.data.attachment?.receive(message);
-      },
-      drain(ws) {
-        ws.data.attachment?.drained();
       },
       close(ws) {
         ws.data.attachment?.detach();
@@ -2719,9 +4094,6 @@ if (import.meta.main) {
   // the application is killed.
   served = { origin: `http://localhost:${server.port}`, token: TOKEN };
   if (TOKEN !== null) console.log(`biom ready ${JSON.stringify({ port: server.port, token: TOKEN })}`);
-  // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
-  // this launch's token, into every run's `BIOM_API` from here on.
-  host.listen(server.port, TOKEN);
   // AND NO RUN OUTLIVES THE SERVER. Every automation is a process group of its
   // own, so a Ctrl-C at the terminal does not reach it and a shell quitting
   // this process does not either — the registry has to end them. These two
@@ -2732,13 +4104,24 @@ if (import.meta.main) {
   // stdin pipe, is `exitWhenTheParentGoes` below and ends them too; the
   // `exit` handler kills whatever any of those did not reach. An abort runs
   // nothing, and what that leaves is marked `lost` on the next mount.
-  endRunsOn(host, ["SIGINT", "SIGTERM"]);
+  endRunsOn(() => host, ["SIGINT", "SIGTERM"]);
   // AND THE LIFETIME, from this end. Armed after the port is open so a launch
   // that ends the moment it begins still says what it was — see
   // `exitWhenTheParentGoes`, which does nothing at all unless a parent said it
   // is holding the other end of stdin.
-  exitWhenTheParentGoes(host);
+  exitWhenTheParentGoes(() => host);
   console.log(`Biom framework  →  http://localhost:${server.port}   (${ENV})`);
+  const { start, host: opened } = await booting;
+  host = opened;
+  // THE ONE COMPOSED ROUTE LEARNS WHY THERE IS NO WORKSPACE. Read through the
+  // host on every request rather than captured here, so it decays the moment a
+  // folder opens — see the getter on `Host.trouble`. `start.why` is a remembered
+  // entry refused before it was tried and never changes; `host.trouble` is a
+  // mount that failed anyway and does.
+  TROUBLE = () => (opened.open().length > 0 ? null : start.why ?? opened.trouble);
+  // WHERE A RUN FINDS THIS SERVER: the port the operating system answered and
+  // this launch's token, into every run's `BIOM_API` from here on.
+  opened.listen(server.port, TOKEN);
   // NOTHING OPEN IS A STATE AND IT SAYS SO. A first launch has no folder, and a
   // line saying which workspace is being served would be a line about nothing.
   //
@@ -2749,8 +4132,8 @@ if (import.meta.main) {
   // the folder never existed. `bootVault` refuses a remembered folder before it
   // is tried and `Host.trouble` carries a mount that failed anyway; one of the
   // two is set at most, and the sentence is the same shape either way.
-  const why = start.why ?? host.trouble;
-  if (host.open().length === 0) {
+  const why = start.why ?? opened.trouble;
+  if (opened.open().length === 0) {
     console.log(
       why === null
         ? "vault              →  none yet — pick or create one in the app"
@@ -2758,7 +4141,7 @@ if (import.meta.main) {
           "                      pick or create one in the app",
     );
   }
-  for (const path of host.open()) {
+  for (const path of opened.open()) {
     // A VAULT WITH NO HISTORY SAYS SO, once, next to its own path. It is not the
     // place this belongs — the person who needs to know is looking at the app,
     // not at a terminal — and the UI cannot be told until `VaultInfo` can carry

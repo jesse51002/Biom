@@ -36,7 +36,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import type { Browser } from "playwright";
 
-import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
+import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir, withoutAgents } from "./harness.ts";
 
 shotsDir();
 import type { Sandbox } from "./harness.ts";
@@ -135,9 +135,10 @@ function walk(name: string, spec: Launch, ms = 90000): void {
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
     const said = { out: "", err: "" };
-    const server = Bun.spawn(["bun", "run", join(HERE, "server", "main.ts")], {
+    // WITH NO AGENT ON ITS PATH: see `withoutAgents`.
+    const server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
       cwd: HERE,
-      env: { ...box.env, PORT: String(port) },
+      env: { ...withoutAgents(box.env), PORT: String(port) },
       stdout: "pipe",
       stderr: "pipe",
     });

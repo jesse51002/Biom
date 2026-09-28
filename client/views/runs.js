@@ -14,7 +14,9 @@
 // automation is made and where what it wrote is drawn; this is only where it
 // is watched.
 
-/** @import { Automation, RunRow, VarScalar, WorkspaceStore, UiStore } from "../../contracts/types.ts" */
+/** @import { Automation, RunRow, VarScalar, WorkspaceStore } from "../../contracts/types.ts" */
+/** @import { Ui } from "../store/ui.js" */
+/** @import { Workspace } from "../store/workspace.js" */
 import { clock, followLog, lastLine } from "../widgets/runsui.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
@@ -44,8 +46,9 @@ export const FOLLOW_EVERY = 1000;
 /**
  * @typedef {object} RunsViewDeps
  * @property {H} h
- * @property {WorkspaceStore} ws
- * @property {UiStore} ui
+ * @property {WorkspaceStore & Pick<Workspace, "refOf" | "want">} ws The pages a
+ *   run names are the window's to know or to ask for by id.
+ * @property {Ui} ui A run's page link is the person's open.
  * @property {{ on: (hear: () => void) => () => void }} [events]
  */
 
@@ -95,7 +98,10 @@ export function makeRunsView(deps) {
         body.replaceChildren(h("p.hold", e instanceof Error ? e.message : "the runs could not be listed"));
         return;
       }
-      await Promise.all(list.map(follow));
+      // THE PAGES THE RUNS NAME, asked for by id in one batch where the window
+      // does not know them — it holds only the pages on its screen — so a page
+      // is said to be gone only when the server says so.
+      await Promise.all([...list.map(follow), ws.want({ ids: [...new Set(list.map((r) => r.page))] })]);
       const running = list.filter((r) => r.status === "running");
       const finished = list.filter((r) => r.status !== "running");
       /** @type {HTMLElement} */ (head.querySelector(".count")).textContent = running.length > 0 ? String(running.length) : "";
@@ -185,9 +191,9 @@ export function makeRunsView(deps) {
     /** The page's id, as a link to the page — or, for a run whose page is
      *  gone, the id dimmed with a word beside it. */
     function pageLink(/** @type {string} */ id) {
-      const there = ws.get().pages.some((p) => p.id === id);
+      const there = ws.refOf(id) !== null;
       if (!there) return h("span.pagelink.gone", id, " · " + WORDS.orphan);
-      return h("a.pagelink", { href: "#", onclick: (/** @type {Event} */ e) => { e.preventDefault(); e.stopPropagation(); ui.go("page", id); } }, id);
+      return h("a.pagelink", { href: "#", onclick: (/** @type {Event} */ e) => { e.preventDefault(); e.stopPropagation(); ui.open("page", id); } }, id);
     }
 
     if (deps.events) off = deps.events.on(() => void draw());

@@ -138,6 +138,16 @@ look, because the document asked for it. And the board is an ordinary plugin,
 so a section may place it where it likes with `<div data-g-plugin="biom-holds">`
 and the page's rung empties `foot`.
 
+**The Agent screen is the same arrangement, and its whole look is one variable.**
+`biom-agent` draws one node and mounts the plugin its `look` variable names —
+the framework's `biom-agent-look` unless you say otherwise. A look of your own is
+`look: my-look` in `plugins/biom-agent/extensions.yaml` and a plugin of yours
+called `my-look`; it hears the chats through `biom.onLook(fn)`, as the state
+stands and what just moved, and may ask the host to open a chat, start a new one,
+show the list or move the panel — never to say anything to an agent. The box
+where you type to an agent is the workspace's own and no look draws it. There is
+no page under the Agent screen, so the workspace's rung is the only one.
+
 **The order to try things in**: change a variable where the plugin declares
 one; name a plugin of your own in a variable where the plugin reads one; write a
 plugin of your own under a bare name where you want the whole thing. The first
@@ -248,6 +258,12 @@ alone. A `ctx.use("items")` in a plugin of your own is code, so the tool names
 the file and the line rather than editing it; the framework's is
 `ctx.use("biom-items")`. The checker says the same as R69.
 
+**The server checks once per workspace for each version of Biom**, and
+remembers that it has in `.biom/format`, because the check reads every page. So
+a page in the old spelling copied into a workspace that has already passed is
+not refused at the door: it opens saying no plugin of that name is there, and
+the checker's R69 names it.
+
 ## Five names are spoken for
 
 `markdown`, `html`, `table`, `child` and `grid` are the **part kinds** — a slot's plugin
@@ -330,8 +346,9 @@ registering three plugins keeps the two that were fine — a refusal is about on
 plugin, not about the file.
 
 **`node` is the element to fill**, and nothing outside it is the plugin's
-business. **`content` is the resolved part the server sent** — `{ kind, md, vars }`
-for markdown, `{ kind, file, html, vars }` for an html part, `{ kind, table }`, or
+business. **`content` is the resolved part the server sent**, its `vars` the
+three scopes merged nearest first — `{ kind, md, vars }` for markdown,
+`{ kind, file, html, vars }` for an html part, `{ kind, table }`, or
 `{ kind: "child", child, draw? }` — and it is **`null` for a `data-g-plugin`
 node**. Both cases go through the same `mount`, because a plugin with two entry
 points would be two plugins wearing one name.

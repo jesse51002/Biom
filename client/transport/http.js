@@ -12,7 +12,7 @@
 // because a pipe that throws makes every caller write a try/catch around a type
 // that already has a failure case inside it.
 
-/** @import { ApiRequest, ApiResponse, HostError, Transport } from "../../contracts/types.ts" */
+/** @import { ApiRequest, ApiResponse, HostError, Transport, WindowId } from "../../contracts/types.ts" */
 
 import { API_ROUTE, CALL_TIMEOUT, ERRORS, fail } from "../../contracts/wire.js";
 
@@ -51,10 +51,27 @@ export const SHARE_TIMEOUT = 90000;
  *   artifact could set, and an artifact has no business holding the key to the
  *   process hosting it. So this is the whole client-side change, and `contracts/`
  *   has no type for it.
+ * @param {WindowId | null} [windowId] WHICH WINDOW THIS IS, written onto EVERY
+ *   call's envelope OVER whatever the request carried (`Envelope.window`, the
+ *   eleventh contracts edit). The server stamps the person's writes with it,
+ *   and `window.report` is refused without it. It is the transport's to write
+ *   and nobody else's — the rule `run.start`'s `by` already follows: provenance
+ *   a caller could claim is overwritten with the truth rather than refused. With
+ *   none, a `window` a request carried is taken OFF, because a request that
+ *   names a window this transport is not is a claim nothing here can make true.
  * @returns {Transport}
  */
-export function makeHttp(baseUrl, token = null) {
+export function makeHttp(baseUrl, token = null, windowId = null) {
   const url = baseUrl + API_ROUTE + (token === null || token === "" ? "" : `?${TOKEN_PARAM}=${encodeURIComponent(token)}`);
+
+  /** The envelope as it leaves: this window's id over whatever was there.
+   *  @param {ApiRequest} req @returns {ApiRequest} */
+  const stamped = (req) => {
+    if (windowId !== null && windowId !== "") return { ...req, window: windowId };
+    if (!("window" in req)) return req;
+    const { window: _dropped, ...rest } = req;
+    return /** @type {ApiRequest} */ (rest);
+  };
 
   return {
     async call(req) {
@@ -64,7 +81,7 @@ export function makeHttp(baseUrl, token = null) {
         res = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(req),
+          body: JSON.stringify(stamped(req)),
           // Without this a hung request hangs the surface that awaited it, with
           // nothing on screen to say so. The demo failure this actually catches
           // is the server being restarted underneath a running page.

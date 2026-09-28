@@ -194,25 +194,39 @@
 /* the reload button IS the change loop — Claude Code writes the file, you press
    this — so it says so while it is working rather than sitting inert */
 .tool.busy{color:var(--cyan-t)}
-
-/* THE PRIMARY CONTROL ON THE BAR, in the palette's primary accent — `cyan` is
-   the fill the picker's Open and Make, a table's `.op.on` and `.tick.on` all
-   take; `magenta` is deliberately the SECOND accent, kept for the close control
-   and a person pill, so that a page pill and a person pill never share a
-   colour. Agent Terminal is the one action on the bar that starts something,
-   so it is the one drawn this way. */
-.tool.prime{
-  background:var(--cyan); color:var(--on-spot); margin-left:.35rem;
-  padding:.3rem .65rem; font-weight:500;
+/* EDIT, the one lit control on the bar (*Chat*, `screens`): amber, where
+   Agent Terminal was, because it is the one that hands the page to an agent.
+   Its own rule: the `.tool.prime` the terminal wore went with it. The amber is
+   the palette's lamp. */
+.tool.edit{
+  margin-left:.35rem; padding:.3rem .7rem .3rem .6rem; font-weight:500;
+  background:var(--led); color:var(--on-spot);
 }
-.tool.prime:hover, .tool.prime[aria-pressed="true"]{background:var(--cyan-t); color:var(--on-spot)}
+.tool.edit:hover{background:color-mix(in srgb, var(--led) 86%, var(--ink)); color:var(--on-spot)}
+/* THE THREE GLYPHS THE CHROME DRAWS FOR THE CHATS — the Agent's bubble, Home's
+   house, Edit's pencil — the mockup's, as masks in the ink, because `h()`
+   makes HTML elements and an `<svg>` made that way is not an SVG. The mask
+   uses only the drawing's shape; `currentColor` is the only colour it names,
+   and the ink it shows is the element's own. */
+.glyph{
+  display:inline-block; flex:none; width:15px; height:15px; background:currentColor;
+  -webkit-mask:var(--glyph) center / contain no-repeat; mask:var(--glyph) center / contain no-repeat;
+}
+.glyph[data-glyph="chat"]{--glyph:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3.25h10A1.25 1.25 0 0 1 14.25 4.5v6A1.25 1.25 0 0 1 13 11.75H8.4L5 14.25v-2.5H3A1.25 1.25 0 0 1 1.75 10.5v-6A1.25 1.25 0 0 1 3 3.25Z'/%3E%3C/svg%3E")}
+.glyph[data-glyph="home"]{--glyph:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 7.4 8 2.75l5.75 4.65'/%3E%3Cpath d='M3.75 6.2v7.05h3.1V9.9h2.3v3.35h3.1V6.2'/%3E%3C/svg%3E")}
+.glyph[data-glyph="pencil"]{--glyph:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.6 2.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L6 12.8l-3.3.8.8-3.3Z'/%3E%3Cpath d='m9.4 3.8 2.8 2.8'/%3E%3C/svg%3E")}
+.homerow .glyph{width:14px; height:14px; color:var(--ink-2)}
+.tool.edit .glyph{width:14px; height:14px}
+
+/* A lamp beside a crumb: the open chat's, on the Agent screen. */
+.crumb .led{margin-right:7px}
 
 /* ---------- the bed ---------- */
 
 /* `position:relative` for the grip, which hangs off the rail's right edge and is
    a sibling of the rack rather than a child of it — the rack scrolls, and a
    handle that scrolls away is a handle nobody finds twice. */
-.bed{display:grid; grid-template-columns:var(--rack-w) minmax(0,1fr); min-height:0; position:relative}
+.bed{display:grid; grid-template-columns:var(--rack-w) minmax(0,1fr) auto; min-height:0; position:relative}
 
 /* ---------- the rail's width ---------- */
 
@@ -252,62 +266,50 @@
   border-right:1px solid var(--stock-edge); background:var(--stock-lo);
   padding:.5rem .5rem .5rem; overflow-y:auto; font-size:.875rem;
 }
-/* THE WAY TO THE DASHBOARD, and the one control in the rail that is a BUTTON
-   rather than a row. Everything under it is a list: plain text, hover-lit,
-   left-aligned. This one is set in the accent, outlined, centred, and given
-   its own zone above the tree with the same hairline that sets the settings
-   zone off at the foot — so the rail reads top to bottom as: the button, the
-   pages, the settings.
+/* THE AGENT, and the one control in the rail that is a BUTTON rather than a
+   row — in the slot and the look the Dashboard had (*Chat*, `screens`).
+   Everything under it is a list: plain text, hover-lit, left-aligned. This one
+   is outlined, centred, and given its own zone above the tree with the same
+   hairline that sets the settings zone off at the foot — so the rail reads top
+   to bottom as: the button, the pages, the settings.
 
    NO ACCENT. The rail is neutral by design, and a coloured button here would be
    the one thing in it with a hue. Emphasis comes from VALUE instead: an outline
    well clear of the rail's own value says "press", and "you are here" inverts it
    — ink ground, stock text — which is the strongest thing a surface with no hue
-   can say. A fill one step off the rail in a border one step off that was tried
-   first and read as a disabled field. Value is also why this survives a light
-   vault untouched: it is stated as ink and stock rather than as light and dark,
-   so it inverts with the palette instead of arguing with it. */
-.dashboardlink{
-  display:flex; align-items:center; justify-content:center; gap:.5rem; width:100%;
+   can say. The one lit thing on it is the lamp of a chat working, and its
+   count. */
+.agentlink{
+  position:relative; display:flex; align-items:center; justify-content:center; gap:.5rem; width:100%;
   padding:.5rem .75rem; margin:0;
   background:transparent; border:1px solid var(--ink-3); border-radius:6px;
   color:var(--ink); cursor:pointer; font-size:.875rem; font-weight:600; letter-spacing:.01em;
   transition:background .12s ease, color .12s ease, border-color .12s ease;
 }
-.dashboardlink:hover{background:var(--ink-wash); border-color:var(--ink-2)}
-.dashboardlink:active{background:var(--field)}
+.agentlink:hover{background:var(--ink-wash); border-color:var(--ink-2)}
+.agentlink:active{background:var(--field)}
 /* you are here: the outline fills, in ink */
-.dashboardlink[aria-current="page"]{background:var(--ink); border-color:var(--ink); color:var(--stock)}
-.dashboardlink[aria-current="page"]:hover{background:color-mix(in srgb, var(--ink) 88%, var(--stock)); border-color:transparent}
+.agentlink[aria-current="page"]{background:var(--ink); border-color:var(--ink); color:var(--stock)}
+.agentlink[aria-current="page"]:hover{background:color-mix(in srgb, var(--ink) 88%, var(--stock)); border-color:transparent}
+.agentlink .busy{display:inline-flex; align-items:center; gap:6px; margin-left:2px; font:500 12px var(--gauge-face); color:var(--ink-2)}
+.agentlink[aria-current="page"] .busy{color:color-mix(in srgb, var(--stock) 70%, var(--ink))}
 
-/* The zone under it: the workspace heading starts a new block, the way the
-   settings block at the foot does, with one hairline and a breath of space. */
-.dashboardlink + .railhead{margin-top:.6rem; padding-top:.5rem; border-top:1px solid var(--stock-edge)}
+/* The zone under it: Home starts a new block, the way the settings block at
+   the foot does, with one hairline and a breath of space. */
+.agentlink + .railhead{margin-top:.6rem; padding-top:.5rem; border-top:1px solid var(--stock-edge)}
 
-/* THE GLYPH: a dashboard is a grid of things, so the mark is four squares —
-   one drawn square and three copies of it, in currentColor, the way every
-   other row's kind is drawn rather than typed. */
-.dashglyph{position:relative; flex:none; width:.8rem; height:.8rem}
-.dashglyph::before{
-  content:""; position:absolute; top:0; left:0; width:.32rem; height:.32rem; border-radius:1.5px;
-  background:currentColor;
-  box-shadow:.48rem 0 0 currentColor, 0 .48rem 0 currentColor, .48rem .48rem 0 currentColor;
-}
-
-/* the top level is a real page, so its heading is a way into it rather than a
-   label over it. It reads as the workspace's name, because it is. The sort
-   control sits on the same line: it is the control FOR this list, and a row of
-   its own above the tree would read as another page. */
+/* HOME IS THE TREE'S OWN HEADING: one row that opens the root page, with the
+   sort control on the same line — it is the control FOR this list, and a row
+   of its own above the tree would read as another page. */
 .railhead{display:flex; align-items:center; gap:.25rem}
-.railhead h3{flex:1; min-width:0}
-.rack h3{
-  margin:0 0 .35rem; padding:.3rem .5rem; font-size:.875rem; font-weight:600;
-  color:var(--ink); border-radius:4px;
+.homerow{
+  flex:1; min-width:0; display:flex; align-items:center; gap:.6rem; margin:0 0 .35rem; padding:.36rem .5rem;
+  border:0; border-radius:4px; background:none; color:var(--ink); cursor:pointer; text-align:left;
+  font-size:.875rem; font-weight:600;
 }
-.rack h3 a{color:inherit; text-decoration:none; display:block; border-radius:4px}
-.rack h3 a:hover{background:var(--field)}
-.rack h3 a[aria-current="page"]{color:var(--ink)}
-
+.homerow .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.homerow:hover{background:var(--field)}
+.homerow[aria-current="page"]{background:var(--field)}
 /* WHICH WAY THE RAIL READS. Always visible and quiet, like `New page` at the
    foot: it is a control for the whole rail rather than for a row, and a
    rail-level control that only appears on hover is one nobody finds. The
@@ -394,6 +396,29 @@
 /* the box every view is drawn into. `.sheet` in the mock; renamed because
    page.css owns that name for something else entirely. */
 .plate{padding:2.5rem 3.5rem 3.5rem; min-height:100%}
+
+/* GO BACK TO, top left, while an agent has the screen (*History and View
+   Switcher*, `popups`) — after the Chat mockup's `#goback`, on the palette's
+   tokens. The slot holds it and nothing else, and takes no room of its own.
+   WHILE IT SHOWS THE SCREEN UNDER IT MOVES DOWN, so it never sits over a
+   page's heading: the canvas says `data-back` and the plate takes the band
+   inside its own height, so nothing below it grows a scrollbar. */
+.backslot{position:absolute; left:16px; top:14px; z-index:4; max-width:calc(100% - 32px)}
+.backslot:empty{display:none}
+.canvas[data-back] > .plate{padding-top:3.5rem; box-sizing:border-box}
+.goback{
+  display:inline-flex; align-items:center; gap:10px; height:34px; max-width:100%;
+  padding:0 12px 0 4px; border:1px solid var(--stock-edge); background:var(--stock-hi);
+  font:13.5px var(--sheet-face); color:var(--ink-2); cursor:pointer;
+  animation:goback-in .25s ease-out;
+}
+.goback .ft{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.goback .ft b{font:400 12.5px var(--gauge-face); color:var(--ink)}
+.goback .go{flex:none; font:11.5px var(--gauge-face); color:var(--on-spot); background:var(--cyan); padding:5px 9px}
+.goback:hover .go{background:color-mix(in srgb, var(--cyan) 88%, var(--ink))}
+.goback:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+@keyframes goback-in{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.goback{animation:none}}
 
 /* A PAGE IS ONE BOX AND IT ALWAYS FILLS. There is no second treatment and no
    measure: the box is handed the canvas height, scrolls inside itself, and never

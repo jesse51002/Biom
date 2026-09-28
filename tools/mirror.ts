@@ -2,10 +2,11 @@
 // Rebuild a workspace's markdown mirror, with no server and no port.
 //
 // WHY IT EXISTS. `_markdown/` is derived, and NOTHING WATCHES THE FILESYSTEM
-// when no server is up. It is rewritten on mount, in the same request as a
-// write through the app, and when a page reports its own markdown after being
-// drawn — so an agent that writes twenty `content.yaml` files in an editor with
-// nothing running has changed twenty pages and no markdown. Anything that reads
+// when no server is up. It is brought up to date in the background after a
+// mount, a moment after a write through the app or a change the watcher
+// hears, and when a page reports its own markdown after being drawn — so an
+// agent that writes twenty `content.yaml` files in an editor with nothing
+// running has changed twenty pages and no markdown. Anything that reads
 // markdown then reads what the mirror said before those pages existed.
 //
 // So this is the step between writing pages with no server up and pointing a
@@ -30,6 +31,7 @@ import { makeFiles } from "../server/platform/files.ts";
 import { makeDb } from "../server/platform/db.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makePages } from "../server/domain/pages.ts";
+import { makeDocs } from "../server/domain/docs.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makeMirror, rebuild } from "../server/domain/mirror.ts";
 import { walkPlugins } from "../server/domain/plugins.ts";
@@ -69,9 +71,13 @@ async function mirrorOf(path: string, shipped: Shipped): Promise<number | null> 
   const db = makeDb(`${root}/workspace.db`);
   try {
     const tables = makeTables(db);
-    const pages = makePages(files, { parse, parseAny, format }, () => tables.list());
-    const mirror = makeMirror(files, pages);
+    const yaml = { parse, parseAny, format };
+    const pages = makePages(files, yaml, () => tables.list());
+    const mirror = makeMirror(files, pages, makeDocs(files, yaml));
 
+    // THE FULL REBUILD, on purpose: every page projected through the mirror's
+    // queue, and `rebuild` answers once the queue is idle — so what is
+    // committed below is the whole of it.
     const refs = await pages.list();
     const changed = await rebuild(mirror, refs);
     // COMMITTED, or an indexer that follows commits cannot see it.

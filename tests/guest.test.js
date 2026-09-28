@@ -420,6 +420,72 @@ test("a page that fills itself later can ask for its projection to be taken agai
   expect(mindmap).toContain('new CustomEvent("biom:rendered")');
 });
 
+/** BOOT.JS, RUN AGAINST TWO STAND-IN PORTS, for what a doc page's draw, a slot
+ *  write and the projection after it touch. The runtime port answers
+ *  `page.read` with `answer`, every other call with null, and keeps each
+ *  markdown the box reports. The stack's drawing is a stand-in, because what is
+ *  looked at is the projection, and that is the real `project.js`.
+ *  @param {any} answer */
+async function bootBox(answer) {
+  const was = { rt: glob.__gRuntime, g: glob.__g };
+  glob.__gRuntime = {};
+  new Function(readFileSync(new URL("../guest/runtime/project.js", import.meta.url), "utf8"))();
+  const rt = glob.__gRuntime;
+  rt.sections = { draw() {}, interpolate: (/** @type {string} */ t) => t };
+  rt.effects = { disposeAll() {} };
+  /** @type {string[]} */
+  const reported = [];
+  const runtimePort = {
+    /** @type {any} */
+    onmessage: null,
+    /** @param {any} m */
+    postMessage(m) {
+      if (typeof m.id !== "string") return; // `ready` and `error` are not calls
+      if (m.kind === "page.projection") reported.push(m.markdown);
+      const value = m.kind === "page.read" ? structuredClone(answer) : null;
+      queueMicrotask(() => runtimePort.onmessage({ data: { id: m.id, g: 1, ok: true, value } }));
+    },
+  };
+  const guestPort = { addEventListener() {}, start() {}, postMessage() {} };
+  const root = { textContent: "", isConnected: true };
+  const doc = { readyState: "complete", addEventListener() {}, getElementById: () => root, body: { innerText: "" } };
+  glob.__g = { runtime: runtimePort, guest: guestPort, page: answer.id };
+  try {
+    new Function("document", "window", readFileSync(new URL("../guest/runtime/boot.js", import.meta.url), "utf8"))(
+      doc, { addEventListener() {} });
+    for (let i = 0; i < 50 && reported.length === 0; i++) await Bun.sleep(0);
+    return { page: rt.page, reported };
+  } finally {
+    glob.__gRuntime = was.rt;
+    glob.__g = was.g;
+  }
+}
+
+test("a list written from the box projects each item against its own scope, under the section's, under the page's", async () => {
+  // The held copy a write patches is what the projection after it reads, and a
+  // list is written whole. An item the list already had keeps its own
+  // variables; one the write added has none of its own — so it resolves against
+  // the section's `rate` and never the page's.
+  const { page, reported } = await bootBox({
+    id: "home/Rates",
+    name: "Rates",
+    plugin: "biom-doc",
+    variables: { rate: 62 },
+    sections: [{
+      name: "cards",
+      html: "",
+      fallback: true,
+      vars: { rate: 70 },
+      parts: { items: { kind: "list", items: [{ kind: "markdown", md: "First at {{rate}}.", vars: { rate: 80 } }] } },
+    }],
+  });
+  expect(reported).toEqual(["First at 80."]);
+
+  await page.write("cards", "items", ["First at {{rate}}.", "Second at {{rate}}."]);
+
+  expect(reported.at(-1)).toBe("First at 80.\n\nSecond at 70.");
+});
+
 /* ── wikilinks ─────────────────────────────────────────────────────────── */
 
 // A `[[wikilink]]` IS A PARSER RULE and not a pass over the rendered output.

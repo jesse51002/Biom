@@ -59,7 +59,9 @@ const PAGE = {
 
 /** A doc, with the values grouped where they are used. `calc` carries its own
  *  `heading` and the page carries `rate`, so the scope `calc` sees is both —
- *  nearest last — and that is what a slot in `calc.html` reads and writes.
+ *  nearest last — and that is what a slot in `calc.html` reads and writes. The
+ *  answer spells each scope once, as its own: the page's in `variables`, a
+ *  section's and a part's in their `vars`, merged where they are drawn.
  *
  *  `split` is the shape the old flat list could not express at all: ONE section
  *  holding two markdown slots. It is here because `doc.get` has to walk slots as
@@ -70,20 +72,19 @@ const NOTES = {
   variables: { rate: 62, heading: "The page's own" },
   sections: [
     section("intro", {
-      body: { kind: "markdown", md: "# Notes\n\nThe rate is {{rate}}.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      body: { kind: "markdown", md: "# Notes\n\nThe rate is {{rate}}.", vars: {} },
+    }),
     section("split", {
-      left: { kind: "markdown", md: "Left column.", vars: { rate: 62, heading: "The page's own" } },
-      right: { kind: "markdown", md: "Right column.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      left: { kind: "markdown", md: "Left column.", vars: {} },
+      right: { kind: "markdown", md: "Right column.", vars: {} },
+    }),
     section("grid", { body: { kind: "table", table: "jobs" } }),
     section("calc", {
-      body: { kind: "html", file: "calc.html", html: "<p></p>",
-              vars: { rate: 62, heading: "What a job costs", done: "Done" } },
-    }, { vars: { rate: 62, heading: "What a job costs", done: "Done" } }),
+      body: { kind: "html", file: "calc.html", html: "<p></p>", vars: {} },
+    }, { vars: { heading: "What a job costs", done: "Done" } }),
     section("outro", {
-      body: { kind: "markdown", md: "Last.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      body: { kind: "markdown", md: "Last.", vars: {} },
+    }),
   ],
   page: [],
   ports: null,
@@ -150,6 +151,12 @@ function doubles(overrides = {}) {
       return sections;
     },
     removeSection: async (page, name) => { calls.push({ kind: "removeSection", page, section: name }); },
+    // THE WINDOW'S DIRECTORY: the pages it knows, and `want` asking for the
+    // rest — which this double answers from nothing, so a miss stays a miss.
+    refOf: (id) => store.pages.find((p) => p.id === id) ?? null,
+    want: async (q) => { calls.push({ kind: "want", ...q }); },
+    // No page just read for a box to be handed, unless a test says so.
+    handoff: () => null,
     insertRow: async () => 7,
     updateRow: async () => {},
     removeRow: async () => {},
@@ -258,8 +265,10 @@ test("variables is forwarded, and an omitted page means the one you are mounted 
   expect(calls.filter((c) => c.kind === "variables").map((c) => c.page)).toEqual(["home/Rates", NOTES_CTX.page]);
 });
 
-test("doc.get answers prose, and doc.list answers the tree the user sees", async () => {
-  const { ws, transport } = doubles();
+test("doc.get answers prose, and doc.list is asked of the server, which alone knows every page", async () => {
+  const { ws, transport, calls } = doubles({
+    answer: (r) => ({ id: r.id, g: PROTOCOL, ok: true, value: r.kind === "page.list" ? [{ id: "job-board", name: "Job board" }, { id: "home/Far", name: "Far" }] : r.kind === "page.read" ? NOTES : null }),
+  });
   const bridge = makeBridge(ws, transport);
   const doc = await bridge.resolve(req({ kind: "doc.get", page: "notes" }), CTX);
   // RAW, with the braces still in it. Every MARKDOWN slot of every section, in
@@ -271,14 +280,18 @@ test("doc.get answers prose, and doc.list answers the tree the user sees", async
   // explicit rather than to smuggle into a string.
   expect(doc.value).toBe(
     "# Notes\n\nThe rate is {{rate}}.\n\nLeft column.\n\nRight column.\n\nLast.");
+  // THE WINDOW HOLDS ONLY THE PAGES ON ITS SCREEN, so a box asking for every
+  // page — the Map's case — is answered by the server, from its index.
   const list = await bridge.resolve(req({ kind: "doc.list" }), CTX);
-  expect(list.value).toEqual([{ id: "job-board", name: "Job board" }]);
+  expect(list.value).toEqual([{ id: "job-board", name: "Job board" }, { id: "home/Far", name: "Far" }]);
+  expect(calls.filter((c) => c.kind === "page.list")).toHaveLength(1);
   // A page drawn by its own document has no sections; its words are the
   // page-level `input` slots, strings and lists of strings alike, and they come
   // first — the H1 the runs bar names a slide by is read from here. A map in
   // `input` is the plugin's configuration and never prose. The server's
   // `doc.get` answers the same, so the two cannot drift.
-  const scene = await bridge.resolve(req({ kind: "doc.get", page: "scene" }), CTX);
+  const other = doubles();
+  const scene = await makeBridge(other.ws, other.transport).resolve(req({ kind: "doc.get", page: "scene" }), CTX);
   expect(scene.value).toBe("# A burst, then a fade\n\none\n\ntwo");
 });
 
@@ -1159,9 +1172,13 @@ test("an answer that outlives its realm is dropped, never delivered to the one t
 // artifact cannot reach, so replacing it with child.html silently LOST the
 // click. A row you cannot follow is not a row.
 
+// A PAGE'S `open` IS THE PERSON'S, honoured only in answer to a click on that
+// box — a `touch` it reported — so every test below that follows one touches
+// first, as the shim does before a page's own click handler runs. The refusal
+// is in `tests/touch.test.js`, with the rest of the touch.
 const uiSpy = () => {
   const went = [];
-  return { went, go: (view, id) => went.push(view + ":" + id) };
+  return { went, open: (view, id) => went.push(view + ":" + id) };
 };
 
 test("open navigates the host to a page, and to a table", async () => {
@@ -1169,6 +1186,7 @@ test("open navigates the host to a page, and to a table", async () => {
   const { ws, transport, store } = doubles();
   store.pages = [{ id: "notes", name: "Notes" }];
   const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
 
   const toPage = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "notes" } }), CTX);
   expect(toPage.ok).toBe(true);
@@ -1207,36 +1225,18 @@ test("page.embed answers the target page's woven document, and not_found for a p
 // A `[[wikilink]]` IS THE OTHER HALF OF `open`. A box has no page list, so what
 // a link names is a question for the host — and the answer is shaped like what
 // `open` takes, so following one is resolve-then-open with nothing in between.
-test("link.resolve answers what a wikilink names, four ways, and refuses an ambiguous one", async () => {
-  const { ws, transport, store } = doubles();
-  store.pages = [
-    { id: "home/Companies/Airtable", name: "Airtable" },
-    { id: "home/Companies/Notion", name: "Notion" },
-    { id: "home/Research/Notion", name: "Notion" },
-  ];
-  store.tables = [{ name: "contacts", kind: "basic", rows: 2 }];
+test("link.resolve is asked of the server, which alone knows every page's id and name", async () => {
+  // THE FOUR UNAMBIGUOUS TRIES — the id, folded, its tail, the name — need
+  // every page, and the window holds only the pages on its screen, so they are
+  // the server's, answered from its index; the box gets exactly its answer.
+  const { ws, transport, calls } = doubles({
+    answer: (r) => ({ id: r.id, g: PROTOCOL, ok: true, value: r.kind === "link.resolve" && r.target === "airtable" ? { kind: "page", id: "home/Companies/Airtable" } : null }),
+  });
   const bridge = makeBridge(ws, transport, uiSpy());
-  const ask = async (target) =>
-    (await bridge.resolve(req({ kind: "link.resolve", target }), CTX)).value;
-
-  // 1. the id, exactly — what the mirror writes and what an import produces.
-  expect(await ask("home/Companies/Airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 2. the id, folded. An id KEEPS its case, so this is the one place a link
-  //    typed in another spelling is allowed to find it.
-  expect(await ask("HOME/companies/airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 3. the id's tail. A vault's own links are written from the vault root, so
-  //    the root page on the front of the id is exactly what nobody types.
-  expect(await ask("Companies/Airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // 4. the page's name, which is what somebody reading the page can see.
+  const ask = async (target) => (await bridge.resolve(req({ kind: "link.resolve", target }), CTX)).value;
   expect(await ask("airtable")).toEqual({ kind: "page", id: "home/Companies/Airtable" });
-  // A table is named rather than pathed, and answers in the same shape.
-  expect(await ask("contacts")).toEqual({ kind: "table", id: "contacts" });
-
-  // AMBIGUOUS IS NO ANSWER. Two pages are called Notion; opening one of them at
-  // random is worse than a link that visibly went nowhere.
   expect(await ask("Notion")).toBeNull();
-  // And so is nothing at all.
-  expect(await ask("nowhere-at-all")).toBeNull();
+  expect(calls.filter((c) => c.kind === "link.resolve").map((c) => c.target)).toEqual(["airtable", "Notion"]);
 });
 
 // THE DESIGN DOC IS THE ONE PAGE NO SNAPSHOT HOLDS. It lives at `design/`,
@@ -1250,6 +1250,7 @@ test("a page may link to the design doc, and following it opens the design view"
   store.pages = [{ id: "notes", name: "Notes" }];
   store.tables = [];
   const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
 
   // Resolve first, then open — the two halves of following a `[[wikilink]]`,
   // with nothing in between, exactly as any other link is followed.
@@ -1275,10 +1276,155 @@ test("the host decides: an id nothing holds is refused, not navigated to", async
   const { ws, transport, store } = doubles();
   store.pages = [];
   store.tables = [];
-  const res = await makeBridge(ws, transport, ui).resolve(
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(
     req({ kind: "open", target: { kind: "page", id: "nowhere" } }), CTX);
 
   expect(res.ok).toBe(false);
   expect(res.error.code).toBe("not_found");
   expect(ui.went).toEqual([]);
+});
+
+test("open of the root page asks for nothing: the root is always there, because the tree is its children", async () => {
+  const ui = uiSpy();
+  const { ws, transport, store, calls } = doubles();
+  store.pages = [];
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "home" } }), CTX);
+  expect(res.ok).toBe(true);
+  expect(calls.filter((c) => c.kind === "want")).toEqual([]);
+  expect(ui.went.length).toBe(1);
+});
+
+test("open of a page this window does not know asks for it by id, and goes there when the answer names it", async () => {
+  const ui = uiSpy();
+  const { ws, transport, store, calls } = doubles();
+  store.pages = [];
+  ws.want = async (q) => { calls.push({ kind: "want", ...q }); store.pages.push({ id: "home/Far/Away", name: "Away" }); };
+  const bridge = makeBridge(ws, transport, ui);
+  bridge.touched(CTX);
+  const res = await bridge.resolve(req({ kind: "open", target: { kind: "page", id: "home/Far/Away" } }), CTX);
+  expect(res.ok).toBe(true);
+  expect(calls.filter((c) => c.kind === "want")).toEqual([{ kind: "want", ids: ["home/Far/Away"] }]);
+  expect(ui.went.length).toBe(1);
+});
+
+test("THE BOX'S FIRST READ OF ITS OWN PAGE is the host's read handed over; a read after it, or after a slot write, asks the server", async () => {
+  const { ws, transport, calls } = doubles();
+  let held = /** @type {any} */ ({ ...NOTES, id: "notes" });
+  ws.handoff = (id) => { const h = id === "notes" ? held : null; held = null; return h; };
+  const bridge = makeBridge(ws, transport);
+  const first = await bridge.runtime(req({ kind: "page.read", page: "notes" }), NOTES_CTX);
+  expect(first.ok).toBe(true);
+  expect(first.value.id).toBe("notes");
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(0);
+  await bridge.runtime(req({ kind: "page.read", page: "notes" }), NOTES_CTX);
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(1);
+  // Another page's read is never handed this box's page.
+  held = { ...NOTES, id: "notes" };
+  await bridge.runtime(req({ kind: "page.read", page: "job-board" }), NOTES_CTX);
+  expect(calls.filter((c) => c.kind === "page.read")).toHaveLength(2);
+});
+
+/* ── the Agent screen's box: the eleventh contracts edit ───────────────────── */
+
+test("A BOX CAN NEVER DRAW A FRAMEWORK SCREEN INSIDE ITSELF — `@agent`, `@map`, `@design` are refused before a session is minted", async () => {
+  const dom = fakeDom();
+  const { makeFrameHost } = await import("../client/frame/frame.js");
+  const { ws, transport, calls } = doubles();
+  // The REAL bridge behind the frame host, so the refusal is the guard's own.
+  const host = makeFrameHost(makeBridge(ws, transport, uiSpy()), "http://h/v/x/assets/");
+  host.setShim("");
+  const frame = host.for("k", "<main></main>", CTX);
+  const hs = sayHello(dom, frame);
+  for (const page of ["@agent", "@map", "@design"]) {
+    const e = await embed(hs.guest, page, "e-" + page);
+    expect([page, e.res.ok, e.res.error?.code, e.runtime, e.guest]).toEqual([page, false, ERRORS.UNKNOWN_KIND, null, null]);
+  }
+  // Nothing reached the server on the way to being refused.
+  expect(calls.filter((c) => c.kind === "page.read")).toEqual([]);
+  // An ordinary page still embeds.
+  const ok = await embed(hs.guest, "notes", "e-notes");
+  expect(ok.res.ok).toBe(true);
+});
+
+test("THE AGENT SCREEN'S EVENTS ARE NEVER BROADCAST: one frame's own post reaches that box and no other", async () => {
+  const dom = fakeDom();
+  const { makeFrameHost } = await import("../client/frame/frame.js");
+  const host = makeFrameHost({ resolve: mock(async () => ({})), runtime: mock(async () => ({})) });
+  host.setShim("");
+  const look = host.for("agent", "<main id=\"g-agent\"></main>", { page: "@agent" });
+  const lookHs = sayHello(dom, look);
+  const page = host.for("page", "<main></main>", CTX);
+  const pageHs = sayHello(dom, page);
+  const heardLook = [];
+  const heardPage = [];
+  lookHs.guest.onmessage = (ev) => heardLook.push(ev.data.kind);
+  pageHs.guest.onmessage = (ev) => heardPage.push(ev.data.kind);
+
+  const state = { mode: "screen", chat: null, list: false, chats: [], updates: [], names: {}, input: { at: "center", height: 120 }, beside: null };
+  expect(() => host.broadcast({ kind: "look.state", state })).toThrow(/never broadcast/);
+  expect(() => host.broadcast({ kind: "look.patch", chat: null })).toThrow(/never broadcast/);
+  // A refresh of the look's page does not carry the chats either: it is a
+  // `refresh`, and `look.*` has no path but a frame's own post.
+  host.refresh({ page: "@agent" });
+  look.post({ kind: "look.state", state });
+  await settle();
+  expect(heardLook).toEqual(["refresh", "look.state"]);
+  expect(heardPage).toEqual([]);
+});
+
+test("NOTHING A BOX SAYS BECOMES A CHAT, AGENTS, WINDOW OR HISTORY CALL — every inner kind, fuzzed, through a spy transport", async () => {
+  const { HOST_KIND_NAMES, RUNTIME_KIND_NAMES, CHAT_KIND_NAMES, HISTORY_KIND_NAMES } = await import("../contracts/guards.js");
+  const forbidden = new Set([...CHAT_KIND_NAMES, ...HISTORY_KIND_NAMES]);
+  const outer = /^(chat|agents|window|history)\./;
+  /** A well-formed payload per kind, so the case behind the guard really runs. */
+  const valid = {
+    "data.set": { patch: { a: 1 } }, "doc.get": { page: "notes" }, children: { page: "notes" },
+    "table.get": { name: "jobs" }, "table.schema": { name: "jobs" },
+    "row.insert": { name: "jobs", row: { a: 1 } }, "row.update": { name: "jobs", row: 1, patch: { a: 2 } },
+    "row.remove": { name: "jobs", row: 1 }, sql: { query: "select 1" }, fetch: { url: "https://example.com" },
+    open: { target: { kind: "page", id: "job-board" } }, variables: { page: "notes" },
+    "link.resolve": { target: "Notes" }, "page.embed": { page: "notes" },
+    "automation.list": {}, "run.start": { page: "notes", automation: "daily" }, "run.list": {},
+    "run.get": { run: "r1" }, "run.read": { run: "r1", stream: "stdout" }, "run.kill": { run: "r1" },
+    "look.open": { chat: "c1nvented-chat-0001" }, "look.list": { open: true }, "look.panel": { to: "screen" },
+    "page.read": { page: "notes" }, "section.write": { page: "notes", section: "intro", part: "body", data: "x" },
+    "section.order": { page: "notes", sections: [] }, "section.remove": { page: "notes", section: "intro" },
+    "variables.patch": { page: "notes", section: null, patch: { a: 1 } },
+    "page.projection": { page: "notes", markdown: "x" },
+  };
+  // Junk a page might try to smuggle an agent call in on: an outer kind in
+  // every field name that could be read as one, words, and nested requests.
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const junk = () => {
+    const pick = [...forbidden][Math.floor(rand() * forbidden.size)];
+    return {
+      sub: { kind: pick, text: "delete everything" }, then: pick, method: pick, text: "delete everything",
+      chat: "c1nvented-chat-0001", agent: "claude-acp", context: {}, moved: { by: "you" },
+      init: { method: "POST", body: JSON.stringify({ kind: pick }) },
+    };
+  };
+  const { ws, transport, calls } = doubles();
+  // A clock that never moves and a box that was just clicked, so `open` gets
+  // past its touch and the case behind it really runs.
+  const bridge = makeBridge(ws, transport, uiSpy(), "", { now: () => 0, wait: async () => {} });
+  bridge.touched(NOTES_CTX);
+  let sent = 0;
+  for (let round = 0; round < 6; round++) {
+    for (const [ring, kinds, say] of [["guest", HOST_KIND_NAMES, bridge.resolve], ["runtime", RUNTIME_KIND_NAMES, bridge.runtime]]) {
+      for (const kind of kinds) {
+        const body = round === 0 ? (valid[kind] ?? {}) : { ...junk(), ...(valid[kind] ?? {}), ...(round % 2 ? junk() : {}) };
+        await say(req({ id: `f${round}-${ring}-${kind}`, kind, ...body }), NOTES_CTX);
+        sent++;
+      }
+    }
+  }
+  expect(sent).toBeGreaterThan(100);
+  const reached = calls.map((c) => c && c.kind).filter((k) => typeof k === "string");
+  expect(reached.length).toBeGreaterThan(0);
+  expect(reached.filter((k) => forbidden.has(k) || outer.test(k))).toEqual([]);
 });

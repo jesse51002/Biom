@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Hand-written narrowing predicates. Layer 0: imports only wire.js constants.
 //
-// Only three things cross a trust boundary in the framework, and these guard
-// exactly those. Nothing else is validated, because nothing else crosses one —
-// a validation library here would be larger than the thing it validated and
-// would imply the rest of the codebase is checked, which it is not.
+// Only a few things cross a trust boundary in the framework, and these guard
+// exactly those: what a box may ask, what a box may say unprompted, and — since
+// the eleventh contracts edit — what may be said to an agent or about a window,
+// because an agent is a program allowed everything on this machine. Nothing
+// else is validated, because nothing else crosses one — a validation library
+// here would be larger than the thing it validated and would imply the rest of
+// the codebase is checked, which it is not.
 
-/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice } from "./types.ts" */
+/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue, ChatView } from "./types.ts" */
+/** @import { PageRequest } from "./types.ts" */
 
-import { PROTOCOL } from "./wire.js";
+import { AGENT_KEY, CHAT_VIEWS, OPAQUE_ID, PROTOCOL } from "./wire.js";
+import { LOCATE_MAX, SEARCH_MAX, SEARCH_QUERY_MAX } from "./wire.js";
+import { PAGE_SCREENS, VIEW_NAMES } from "./address.js";
 
 /**
  * @param {unknown} v
@@ -107,6 +113,23 @@ const HOST_KINDS = new Set([
   // filter when the sync engine has one, and nothing filters today. Same
   // three-place rule: HostRequest, the bridge case, and this line.
   "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
+  // THE AGENT SCREEN'S LOOK — the eleventh contracts edit, 2026-09-25. A chat,
+  // a new thread, the list of chats, where the panel goes: the look may ask to be
+  // SHOWN something and may never SAY anything, so not one of these carries
+  // text, and no `chat.*` or `agents.*` kind is ever on this list — a test
+  // holds both. The bridge answers them for the look's own box and refuses
+  // every other. Same three-place rule as every line above it.
+  "look.open", "look.new", "look.list", "look.panel",
+  // THE THIRTEENTH EDIT'S TWO: a chat's row asking for Biom's own delete dialog,
+  // and a queued message's × — ids only, like the four above. Neither deletes
+  // nor sends anything by itself: the dialog is the host's and the words were
+  // the person's.
+  "look.delete", "look.unqueue",
+  // THE FIFTEENTH EDIT'S ONE: the view picked from the chat's ⋯, one of the
+  // three words `CHAT_VIEWS` holds. The one look kind that changes something
+  // kept, and it may be said from a box because it sends nothing to an agent
+  // and deletes nothing.
+  "look.view",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -132,6 +155,78 @@ const RUNTIME_KINDS = new Set([
   "variables.patch",
   "page.projection",
 ]);
+
+/** THE AGENTS AND THE CHATS — outer ring, and the eleventh edit. Everything
+ *  the host's input box, pickers and pop-ups say. Never on either list above,
+ *  and never a box's to say: an agent does whatever it is told. */
+const CHAT_KINDS = new Set([
+  "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
+  "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
+  "chat.switchAgent", "chat.close", "chat.commands",
+  // The thirteenth edit: deleting a chat, its queue, and the kept choices.
+  "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
+]);
+
+/** WHAT EACH WINDOW HAS OPEN, AND THE HISTORY — outer ring, the same edit. */
+const HISTORY_KINDS = new Set(["window.report", "window.list", "history.read"]);
+
+/** THE KINDS THAT ANSWER ONLY THIS MACHINE'S OWN WINDOW, in every build: every
+ *  agent and chat kind, and a window's report of what it has open. The server
+ *  answers them only to a request carrying the capability cookie it minted for
+ *  a loopback peer, with a loopback Host — `localRefusal` in `server/main.ts`.
+ *  An agent answered `allow_always` does whatever it is told, so saying one of
+ *  these is command execution, and the launch token alone — absent in every
+ *  source run — is not enough. `history.read` and `window.list` are not here:
+ *  they are reads a run may make, and they stay on the token. */
+const LOCAL_KINDS = new Set([...CHAT_KINDS, "window.report"]);
+
+/**
+ * Whether a kind answers only this machine's own window. A kind nobody has
+ * listed yet that starts `chat.`, `agents.` or `settings.` is local too, so a
+ * kind added without this list still cannot reach an agent, or the choices
+ * the next chat starts on, past the gate.
+ * @param {unknown} kind
+ */
+export function isLocalKind(kind) {
+  return typeof kind === "string" && (LOCAL_KINDS.has(kind) || kind.startsWith("chat.") || kind.startsWith("agents.") || kind.startsWith("settings."));
+}
+
+/** Every kind the two inner rings admit, as a list nobody can change — for
+ *  the test that pins what a box may never say. */
+export const HOST_KIND_NAMES = Object.freeze([...HOST_KINDS]);
+export const RUNTIME_KIND_NAMES = Object.freeze([...RUNTIME_KINDS]);
+/** And the eleventh edit's outer-ring kinds, for the same test's other half. */
+export const CHAT_KIND_NAMES = Object.freeze([...CHAT_KINDS]);
+export const HISTORY_KIND_NAMES = Object.freeze([...HISTORY_KINDS]);
+export const LOCAL_KIND_NAMES = Object.freeze([...LOCAL_KINDS]);
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** PAGES BY ID, BY IDENTITY AND BY NAME — outer ring, and reads: not local-
+ *  gated, because a run may ask them, and never a box's, because a box asks
+ *  about its own page and nothing wider. */
+const PAGE_KINDS = new Set(["page.locate", "page.search"]);
+export const PAGE_KIND_NAMES = Object.freeze([...PAGE_KINDS]);
+
+/**
+ * True when `v` is a well-formed request for pages the window has not loaded:
+ * a bounded list of ids or identities, or a bounded name search.
+ * @param {unknown} v
+ * @returns {v is PageRequest}
+ */
+export function isPageRequest(v) {
+  return wellFormed(v, PAGE_KINDS);
+}
+
+/** A page id as a caller may name one: a non-empty path of at most 1024
+ *  characters with no null byte. Its grammar is the server's to check — a
+ *  malformed one is simply not found — so this only keeps junk off the wire.
+ *  @param {unknown} v */
+const isPageIdish = (v) => typeof v === "string" && v !== "" && v.length <= 1024 && !v.includes("\u0000");
+
+/** A bounded list: an array of at most `max` items, each passing `one`.
+ *  @param {unknown} v @param {number} max @param {(x: unknown) => boolean} one */
+const isBounded = (v, max, one) => Array.isArray(v) && v.length <= max && v.every(one);
 
 /**
  * True when `v` is a well-formed request an artifact is allowed to make.
@@ -160,6 +255,113 @@ export function isRuntimeRequest(v) {
   return wellFormed(v, RUNTIME_KINDS);
 }
 
+/**
+ * True when `v` is a well-formed request to an agent or about one — the only
+ * way anything reaches an agent, and it is the host's input box that says it.
+ * The server narrows with this before it answers any of them.
+ * @param {unknown} v
+ * @returns {v is ChatRequest}
+ */
+export function isChatRequest(v) {
+  return wellFormed(v, CHAT_KINDS);
+}
+
+/**
+ * True when `v` is a well-formed report of a window's context, or a read of
+ * the history or of every window's context.
+ * @param {unknown} v
+ * @returns {v is HistoryRequest}
+ */
+export function isHistoryRequest(v) {
+  return wellFormed(v, HISTORY_KINDS);
+}
+
+/**
+ * An id nobody typed: a window's, a chat's, a running agent's, a ticket's.
+ * @param {unknown} v
+ * @returns {v is string}
+ */
+export const isOpaqueId = (v) => typeof v === "string" && OPAQUE_ID.test(v);
+
+/** A window's id is one of those; named for what the envelope carries. */
+export const isWindowId = isOpaqueId;
+
+/**
+ * An agent's key: the registry's id, or Biom's own word for one it lacks.
+ * @param {unknown} v
+ * @returns {v is string}
+ */
+export const isAgentKey = (v) => typeof v === "string" && AGENT_KEY.test(v);
+
+/** @type {ReadonlySet<unknown>} */
+const VIEWS = new Set(CHAT_VIEWS);
+
+/**
+ * One of a chat's three views.
+ * @param {unknown} v
+ * @returns {v is ChatView}
+ */
+export const isChatView = (v) => VIEWS.has(v);
+
+/**
+ * An address as a window reports it: a view the vocabulary holds, an id, and
+ * a page screen. Whether it is NORMAL is the receiver's to settle — the
+ * server runs it through `address()` — because refusing a report over a
+ * spelling it can correct would lose the window's place for nothing.
+ * @param {unknown} v
+ * @returns {v is Address}
+ */
+export function isAddress(v) {
+  return isObj(v) &&
+    typeof v.view === "string" && VIEW_NAMES.has(/** @type {Address["view"]} */ (v.view)) &&
+    typeof v.id === "string" &&
+    typeof v.screen === "string" && PAGE_SCREENS.has(/** @type {Address["screen"]} */ (v.screen));
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is WindowReport}
+ */
+function isWindowReport(v) {
+  return isObj(v) && isAddress(v.address) && typeof v.panel === "boolean" &&
+    (v.chat === null || isOpaqueId(v.chat)) &&
+    (v.agent === null || isOpaqueId(v.agent));
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is Move}
+ */
+function isMove(v) {
+  if (!isObj(v)) return false;
+  if (v.by === "you" || v.by === "claim") return true;
+  return v.by === "switcher" && isOpaqueId(v.agent) && isOpaqueId(v.chat);
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is ConfigValue}
+ */
+const isConfigValue = (v) => typeof v === "string" || typeof v === "boolean";
+
+/** Words to an agent: a string with something in it. @param {unknown} v */
+const isWords = (v) => typeof v === "string" && v.trim() !== "";
+
+/** An offset into a stream: a whole number, zero or more. @param {unknown} v */
+const isSeq = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
+/** The envelope's own keys, which every request may carry. */
+const ENVELOPE = new Set(["id", "g", "kind", "window"]);
+
+/**
+ * STRICT: `v` carries its envelope and these keys and nothing else. For the
+ * look's kinds, which may never carry words: a field this does not name is a
+ * field somebody meant to smuggle something in.
+ * @param {Record<string, unknown>} v
+ * @param {string[]} keys
+ */
+const only = (v, keys) => Object.keys(v).every((k) => ENVELOPE.has(k) || keys.includes(k));
+
 /** The shared body. One envelope check and one payload switch for both rings,
  *  because a second copy is a second thing to forget to update — which is the
  *  exact failure the comment on HOST_KINDS is about.
@@ -171,6 +373,10 @@ function wellFormed(v, allowed) {
   if (typeof id !== "string" || id === "") return false;
   if (g !== PROTOCOL) return false;
   if (typeof kind !== "string" || !allowed.has(kind)) return false;
+  // WHICH WINDOW ASKED — the transport's to write, over whatever was there.
+  // Absent is every caller from before it; malformed is refused, because a type
+  // is not a parse and this one names who typed.
+  if (v.window !== undefined && !isOpaqueId(v.window)) return false;
 
   switch (kind) {
     case "data.set":
@@ -186,8 +392,14 @@ function wellFormed(v, allowed) {
       return (t.kind === "page" || t.kind === "table") && typeof t.id === "string" && t.id !== "";
     }
     case "doc.get":
-    case "page.embed":
       return typeof v.page === "string" && v.page !== "";
+    case "page.embed":
+      // NEVER A RESERVED SCREEN. `@agent` is the Agent screen's look, `@map`
+      // the rail's map, `@design` the design doc: each is a screen of the
+      // framework's, and a page that could draw one inside itself would hold a
+      // box the host treats as that screen's — the Agent screen's is fed the
+      // chats. `@` is outside a page segment's grammar, so no page is refused.
+      return typeof v.page === "string" && v.page !== "" && !v.page.startsWith("@");
     case "automation.list":
       return v.page === undefined || (typeof v.page === "string" && v.page !== "");
     case "run.start":
@@ -256,8 +468,80 @@ function wellFormed(v, allowed) {
       return typeof v.page === "string" && v.page !== "" &&
         (v.section === null || (typeof v.section === "string" && v.section !== "")) &&
         isVarPatch(v.patch);
+    /* ── the look (inner ring): ids and words from a closed list, never
+       free text — and STRICT, so no field rides along ──────────────────── */
+    case "look.open":
+      return only(v, ["chat"]) && isOpaqueId(v.chat);
+    case "look.new":
+      return only(v, []);
+    case "look.list":
+      return only(v, ["open"]) && typeof v.open === "boolean";
+    case "look.panel":
+      return only(v, ["to"]) && (v.to === "screen" || v.to === "beside" || v.to === "closed");
+    case "look.delete":
+      return only(v, ["chat"]) && isOpaqueId(v.chat);
+    case "look.unqueue":
+      return only(v, ["chat", "queued"]) && isOpaqueId(v.chat) && isOpaqueId(v.queued);
+    case "look.view":
+      return only(v, ["view"]) && isChatView(v.view);
+
+    /* ── the agents and the chats (outer ring) ─────────────────────────── */
+    case "agents.probe":
+    case "agents.start":
+    case "agents.install":
+      return isAgentKey(v.agent);
+    case "agents.signIn":
+      return isAgentKey(v.agent) && typeof v.method === "string" && v.method !== "" && v.method.length <= 256;
+    case "chat.new":
+      // A first message is optional — the start screen may make a chat before
+      // anything is typed — and has something in it where it is there.
+      // No agent named is a first message held for whichever becomes Active.
+      return (v.agent === undefined || isAgentKey(v.agent)) &&
+        (v.text === undefined || isWords(v.text)) &&
+        (v.page === undefined || (typeof v.page === "string" && v.page !== "")) &&
+        (v.config === undefined || (isObj(v.config) && Object.values(v.config).every(isConfigValue)));
+    case "chat.read":
+      return isOpaqueId(v.chat) && (v.since === undefined || isSeq(v.since));
+    case "chat.send":
+      return isOpaqueId(v.chat) && isWords(v.text);
+    case "chat.cancel":
+    case "chat.close":
+    case "chat.delete":
+    case "chat.sendQueued":
+      return isOpaqueId(v.chat);
+    case "chat.unqueue":
+      return isOpaqueId(v.chat) && isOpaqueId(v.queued);
+    case "settings.set":
+      return v.view === undefined || isChatView(v.view);
+    case "chat.config":
+      return isOpaqueId(v.chat) && typeof v.option === "string" && v.option !== "" && isConfigValue(v.value);
+    case "chat.switchAgent":
+      return isOpaqueId(v.chat) && isAgentKey(v.agent);
+    case "chat.commands":
+      return (v.chat === undefined || isOpaqueId(v.chat)) && (v.agent === undefined || isAgentKey(v.agent));
+
+    /* ── the context and the history (outer ring) ──────────────────────── */
+    case "window.report":
+      // A report IS a window speaking, so the envelope has to say which one.
+      return v.window !== undefined && isWindowReport(v.context) &&
+        (v.moved === undefined || isMove(v.moved));
+    case "history.read":
+      return v.since === undefined || isSeq(v.since);
+
+    /* ── pages a window has not loaded (outer ring) ────────────────────── */
+    case "page.locate":
+      // At least one list, each bounded; a `uid` has an opaque id's grammar.
+      return (v.ids !== undefined || v.uids !== undefined) &&
+        (v.ids === undefined || isBounded(v.ids, LOCATE_MAX, isPageIdish)) &&
+        (v.uids === undefined || isBounded(v.uids, LOCATE_MAX, isOpaqueId));
+    case "page.search":
+      return typeof v.query === "string" && v.query.trim() !== "" && v.query.length <= SEARCH_QUERY_MAX &&
+        (v.limit === undefined || (typeof v.limit === "number" && Number.isInteger(v.limit) && v.limit >= 1 && v.limit <= SEARCH_MAX));
+
     default:
-      // data.get, doc.list, table.list, theme.get — no parameters to check.
+      // data.get, doc.list, table.list, theme.get, agents.list,
+      // agents.registry, chat.list, settings.read, window.list — no
+      // parameters to check.
       return true;
   }
 }
@@ -286,6 +570,10 @@ export function isGuestNotice(v) {
       // A finite number at or above zero; the clamp to the new run is the
       // box's, because only the box can measure it.
       return Number.isInteger(v.g) && typeof v.top === "number" && Number.isFinite(v.top) && v.top >= 0;
+    case "touch":
+      // The person touched the page — which way, and nothing else: no place,
+      // no key, no text. The eleventh edit, for the switcher.
+      return Number.isInteger(v.g) && (v.what === "click" || v.what === "key" || v.what === "select" || v.what === "scroll");
     default:
       return false;
   }

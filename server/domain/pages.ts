@@ -116,8 +116,10 @@
 import type { BlockId, Child, Content, ContentType, DrawnSection, Files, HostErrorCode, MarkdownScale, Page, PageDoc, PageId, PageInit, PageRef, Pages, Part, PluginName, PartValue, Section, TableName, VarValue, Variables, YamlCodec, PluginExtension } from "../../contracts/types.ts";
 import { DEFAULT_PLUGIN, DOC_PLUGIN, PLUGIN_NAME, ROOT_PAGE, UID, childKey, parentOf, segmentOf } from "../../contracts/types.ts";
 import { foldId } from "../../contracts/wire.js";
-import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
+import { AGENT_PAGE, DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
 import { scaleOf } from "../../contracts/scale.ts";
+import { headOf } from "../platform/yaml.ts";
+import type { DiskFiles } from "../platform/files.ts";
 
 const PAGES_DIR = "pages";
 /** A workspace's OWN plugins, a root sibling of `pages/`. The server serves
@@ -162,6 +164,8 @@ const CHILD_DRAW = "child.html";
  *  identity; the second is a document's texture, and a brief and a reference
  *  page reasonably disagree about it. */
 const SCALE = "markdown.yaml";
+/** How many parsed type scales a pages domain keeps, the most recently read. */
+const SCALES_KEPT = 256;
 /** The bundled default, IN THE VAULT, put there by the seeder along with the
  *  rest of `base/`. `pages.create` copies it into every new page so an agent
  *  working in a vault finds the file already written and edits it rather than
@@ -221,6 +225,13 @@ export const frameworkPlugin = (id: string): string => `${id}/index.html`;
  *  A vault changes how it draws through a rung over `biom-mindmap`; a map of
  *  the vault's own is a page saying `plugin: <its own>`. */
 export const MAP_PLUGIN = "biom-mindmap";
+
+/** The document the Agent screen draws with: the framework's `biom-agent`, one
+ *  node the host feeds the chats into. What draws inside it is its `look`
+ *  variable — a plugin id, the framework's own by default — which a vault
+ *  changes through a rung over `biom-agent`, `plugins/biom-agent/extensions.yaml`,
+ *  and never by copying this document. */
+export const AGENT_PLUGIN = "biom-agent";
 
 /** The page's own document, when it draws itself. */
 export const PAGE_DOCUMENT = "index.html";
@@ -287,7 +298,7 @@ export const DEFAULT_SLOT = "body";
  *  costs is one rule, enforced in `create` and `move` and nowhere else: two
  *  siblings may not differ only in case, because a case-insensitive filesystem
  *  would make them one directory. See `foldId`. */
-const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+export const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 /** A section name, and a slot name: lowercase, no dot, no `@`. A section may
  *  also be a child key, which is the one form that starts with `@`; the two
  *  namespaces cannot collide because this cannot match the character that
@@ -455,17 +466,19 @@ function rowsOf(v: unknown): string[][] {
  *  THE MARKDOWN COMES BACK RAW, with `{{name}}` still in it. Interpolation
  *  happens where the part is drawn, because prose is editable in place and
  *  writes back: resolving here would round-trip `62` over the top of `{{rate}}`
- *  the first time somebody touched the paragraph it sits in. `vars` is what to
- *  resolve against, NEAREST FIRST — the part's own values over the section's
- *  over the page's. */
+ *  the first time somebody touched the paragraph it sits in. `vars` is the
+ *  section's OWN values, and each part's is the part's own: the page's travel
+ *  once, in `Page.variables`, and whoever draws or projects a part merges the
+ *  three, nearest last. Merging here wrote the page's values into every section
+ *  and every part of the answer, which is how a page of 649 child rows came to
+ *  be 65 MB on the wire. */
 export async function drawSection(
   section: Section,
-  pageVars: Variables,
   read: (file: string) => Promise<string | null>,
   fallbackHtml: string,
   child: (content: Content) => Promise<Part | null> = async () => null,
 ): Promise<DrawnSection> {
-  const vars: Variables = { ...pageVars, ...(section.variables ?? {}) };
+  const vars: Variables = { ...(section.variables ?? {}) };
 
   // The section's own markup, or the shipped default. A file NAMED here that is
   // not on disk takes the default too: the slots still draw, so the words are
@@ -490,7 +503,7 @@ export async function drawSection(
       for (const one of held) {
         const content = contentOf(one);
         if (content === null) continue;
-        const item = await partOf(content, vars, read, child);
+        const item = await partOf(content, read, child);
         if (item !== null) items.push(item);
       }
       parts[slot] = { kind: "list", items };
@@ -499,7 +512,7 @@ export async function drawSection(
 
     const content = contentOf(held);
     if (content === null) continue;
-    const part = await partOf(content, vars, read, child);
+    const part = await partOf(content, read, child);
     if (part !== null) parts[slot] = part;
   }
 
@@ -508,11 +521,10 @@ export async function drawSection(
 
 async function partOf(
   content: Content,
-  sectionVars: Variables,
   read: (file: string) => Promise<string | null>,
   child: (content: Content) => Promise<Part | null>,
 ): Promise<Part | null> {
-  const vars: Variables = { ...sectionVars, ...(content.variables ?? {}) };
+  const vars: Variables = { ...(content.variables ?? {}) };
 
   switch (content.type) {
     case "markdown":
@@ -693,6 +705,11 @@ export function pageDir(id: PageId): string {
   // `@design` cannot collide with anything: SEGMENT forbids `@`, so no page a
   // person creates can ever be called this.
   if (id === DESIGN_PAGE) return DESIGN_DIR;
+  // EVERY OTHER RESERVED ID IS A SCREEN, NOT A PAGE, AND HOLDS NO FILE. `@map`
+  // and `@agent` are answered by `read` as bare plugin pages and have no
+  // directory, so a write addressed to one — a slot, the order, the variables,
+  // the raw document, a file — is refused here, by name, whichever kind asked.
+  if (id.startsWith("@")) throw bad("bad_request", "that is one of the framework's screens, not a page, and it holds no files");
   const parts = id.split("/");
   // A depth nothing legitimate reaches, and a cheap end to a pathological id.
   if (parts.length > 12 || !parts.every((p) => SEGMENT.test(p))) {
@@ -809,6 +826,32 @@ export const ROOT_PAGE_STANDIN =
   '  <div data-g-part="asks"></div>\n' +
   "</main>\n";
 
+/** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
+ *  platform's random source — long enough that two pages never share one and
+ *  short enough to read in a file. It is minted here and in no second place:
+ *  `create` writes one into a new page, `identify` into every page that has
+ *  none on mount, and `makeIdentities` into one that arrives without one while
+ *  the server runs. */
+function mintUid(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
+
+/** THE PAGE INDEX, AS THIS MODULE USES IT — typed by shape, because
+ *  `pageindex.ts` is a sibling and may not be imported. Handed in by the
+ *  composition root; left out, every answer is read off the folders as it
+ *  always was, with each child named from its head rather than a full parse. */
+export interface PageLevels {
+  level(id: PageId, given?: { order?: readonly string[]; tables?: readonly { name: string; rows: number; parent: PageId | null }[] }): Promise<Child[]>;
+  head(id: PageId): Promise<{ name: string; uid: string | null } | null>;
+  list(): Promise<PageRef[]>;
+  sweep(): Promise<{ noUid: PageId[] }>;
+}
+
 /**
  * @param defaultSection the shipped default section's markup, read by the
  *   composition root out of `DEFAULT_SECTION_FILE`. It is a string rather than a
@@ -835,6 +878,10 @@ export const ROOT_PAGE_STANDIN =
  *   sibling and the layering rule forbids reaching it. It takes the page's
  *   directory, whose own `plugins/` is the nearest rung, and null for a page
  *   that has no directory. Left out, every page reads no extensions at all.
+ * @param index THE PAGE INDEX (`PageLevels`): a level, the list and the sweep
+ *   answered from page heads kept on disk, so neither the tree nor a page read
+ *   parses a child. Left out — every test that stands this module up alone —
+ *   the same answers are read off the folders.
  */
 export function makePages(
   files: Files,
@@ -845,6 +892,7 @@ export function makePages(
   rootPage: string = ROOT_PAGE_STANDIN,
   framework: Files | null = null,
   extensionsFor: ExtensionsFor = async () => ({}),
+  index: PageLevels | null = null,
 ): Pages {
   const dirOf = pageDir;
 
@@ -996,43 +1044,82 @@ export function makePages(
   const refOf = (id: PageId, doc: PageDoc): PageRef =>
     typeof doc.uid === "string" ? { id, name: doc.name, uid: doc.uid } : { id, name: doc.name };
 
-  /** A NEW IDENTITY. Sixteen characters of lowercase letters and digits off the
-   *  platform's random source — long enough that two pages never share one and
-   *  short enough to read in a file. It is minted here and in no second place:
-   *  `create` writes one into a new page and `identify` into every page that
-   *  has none. */
-  const mintUid = (): string => {
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    let out = "";
-    for (const b of bytes) out += alphabet[b % alphabet.length];
-    return out;
-  };
-
   /** What a page that cannot be read looks like in the tree. Its name is its own
    *  segment — the same thing a page with no `name:` already shows — and it is
    *  exactly where the folder says it is, because that fact never lived in the
    *  file that will not parse. */
   const brokenRef = (id: PageId): PageRef => ({ id, name: segmentOf(id) });
 
+  /** A PAGE'S NAME AND IDENTITY OFF ITS HEAD — `headOf`, the one head parser,
+   *  on the text this module reads — and one full parse only where the head
+   *  cannot say. Null where there is no document. A document that will not
+   *  parse is named by its segment, as the tolerant listing names it. */
+  const headAt = async (id: PageId): Promise<{ name: string; uid: string | null } | null> => {
+    const text = await files.read(`${dirOf(id)}/${DOC}`);
+    if (text === null) return null;
+    const head = headOf(text);
+    if (head !== null) return { name: head.name ?? segmentOf(id), uid: head.uid };
+    try {
+      const doc = docOf(yaml.parse(text), segmentOf(id));
+      return { name: doc.name, uid: typeof doc.uid === "string" ? doc.uid : null };
+    } catch {
+      return { name: segmentOf(id), uid: null };
+    }
+  };
+
+  /** Does this page's `children/` hold a page? One listing, and each candidate
+   *  looked into until one holds a document — nearly always the first. */
+  const holdsPages = async (id: PageId): Promise<boolean> => {
+    const under = `${dirOf(id)}/${CHILDREN}`;
+    for (const name of await dirsIn(under)) {
+      if ((await filesIn(`${under}/${name}`)).has(DOC)) return true;
+    }
+    return false;
+  };
+
+  /** Is there a page whose id FOLDS to this one? A table's parent is written by
+   *  hand, so its case may not be the folder's: the tree is walked a segment at
+   *  a time, folding each, and only as far as the id goes. */
+  const pageFolds = async (id: PageId): Promise<boolean> => {
+    const segs = id.split("/");
+    if (segs.length > 12 || !segs.every((seg) => SEGMENT.test(seg))) return false;
+    let dir = PAGES_DIR;
+    for (let i = 0; i < segs.length; i++) {
+      const want = foldId(segs[i] ?? "");
+      const under = i === 0 ? dir : `${dir}/${CHILDREN}`;
+      const hit = (await dirsIn(under)).find((name) => foldId(name) === want);
+      if (hit === undefined) return false;
+      dir = `${under}/${hit}`;
+    }
+    return (await filesIn(dir)).has(DOC);
+  };
+
   /** The direct children of a page, off the FILESYSTEM: the directories under
    *  `<dir>/children/` that hold a `content.yaml`. Nothing reads a claim about
    *  who a parent is, and nothing has to read every page in the vault to find out
    *  who claims this one — which is the whole point of the folder being the
-   *  hierarchy. */
-  const childPages = async (id: PageId): Promise<Child[]> => {
+   *  hierarchy.
+   *
+   *  EACH CHILD IS NAMED FROM ITS HEAD and never parsed whole to learn it: a
+   *  page of two hundred children used to parse two hundred documents to draw
+   *  their names. `detail` adds when each was made and whether it holds pages
+   *  of its own, which a level shows and a flat list does not. */
+  const childPages = async (id: PageId, detail = true): Promise<Child[]> => {
     const out: Child[] = [];
     for (const name of await dirsIn(`${dirOf(id)}/${CHILDREN}`)) {
       const childId = `${id}/${name}`;
-      const found = await readDoc(childId);
-      if (found === null) continue; // a directory is a page iff it holds content.yaml
-      const child: Child = { kind: "page", id: childId, name: "doc" in found ? found.doc.name : name };
-      // WHEN IT WAS MADE, off the directory, where the store keeps a clock. A
-      // page type that shows children newest first sorts on it; a store with
-      // no clock leaves the field out rather than inventing one.
-      const created = files.created ? await files.created(dirOf(childId)) : null;
-      if (created !== null) child.created = created;
+      const head = await headAt(childId);
+      if (head === null) continue; // a directory is a page iff it holds content.yaml
+      const child: Child = { kind: "page", id: childId, name: head.name };
+      if (head.uid !== null) child.uid = head.uid;
+      if (detail) {
+        // WHEN IT WAS MADE, off the directory, where the store keeps a clock. A
+        // page type that shows children newest first sorts on it; a store with
+        // no clock leaves the field out rather than inventing one.
+        const created = files.created ? await files.created(dirOf(childId)) : null;
+        if (created !== null) child.created = created;
+        child.children = await holdsPages(childId);
+      }
       out.push(child);
     }
     // BY ID, WHICH IS THE DIRECTORY NAME, and never by the page's name.
@@ -1054,8 +1141,16 @@ export function makePages(
    *  which is the same bottom the reader appends it to.
    *
    *  It reads and never writes: placement is persisted by `read`, so asking a
-   *  page what it holds cannot commit to the vault. */
-  const childrenOf = async (id: PageId): Promise<Child[]> => {
+   *  page what it holds cannot commit to the vault. `names` is this page's own
+   *  `contents` where the caller has just parsed it, and `tables` the
+   *  registry's list where it has just asked — so a read costs one parse and
+   *  one table listing, however many children it has. */
+  const childrenOf = async (
+    id: PageId,
+    names?: readonly string[],
+    tables?: readonly { name: string; rows: number; parent: PageId | null }[],
+  ): Promise<Child[]> => {
+    if (index !== null) return index.level(id, { ...(names ? { order: names } : {}), ...(tables ? { tables } : {}) });
     const kids = await childPages(id);
     // FOLDED, because a table's parent is the one page id in the system that did
     // not come out of the server's own tree — an agent writes it by hand when it
@@ -1063,19 +1158,32 @@ export function makePages(
     // would leave the table matching no parent, rescued to the root by the rail
     // as an orphan, and left behind when its page moves.
     const here = foldId(id);
-    for (const t of tableList()) {
+    const all = tables ?? tableList();
+    for (const t of all) {
       if (foldId(t.parent ?? ROOT_PAGE) !== here) continue;
       kids.push({ kind: "table", id: t.name, name: t.name, rows: t.rows });
+    }
+    // A TABLE WHOSE PARENT PAGE IS GONE is the root's, so it is still in the
+    // tree somewhere — the window used to rescue it, and the server does now.
+    if (id === ROOT_PAGE) {
+      for (const t of all) {
+        const parent = t.parent ?? ROOT_PAGE;
+        if (foldId(parent) === here || (await pageFolds(parent))) continue;
+        kids.push({ kind: "table", id: t.name, name: t.name, rows: t.rows });
+      }
     }
 
     // A page whose own document will not parse still HAS children — they are in
     // its `children/` directory, which is not the file that broke. It just has no
     // say in the order they come back in.
-    const found = await readDoc(id);
-    const names = found === null || !("doc" in found) ? [] : found.doc.contents.map((c) => c.name);
+    let order = names;
+    if (order === undefined) {
+      const found = await readDoc(id);
+      order = found === null || !("doc" in found) ? [] : found.doc.contents.map((c) => c.name);
+    }
     const at = (c: Child): number => {
-      const i = names.indexOf(childKey(c));
-      return i === -1 ? names.length : i;
+      const i = (order as readonly string[]).indexOf(childKey(c));
+      return i === -1 ? (order as readonly string[]).length : i;
     };
     // Stable, so children nobody has placed keep the order they were gathered
     // in — pages by id, then tables.
@@ -1084,23 +1192,22 @@ export function makePages(
 
   /** Depth first, parents before their children, siblings by id. A flat
    *  listing of a tree has to be ordered by something, and this is the order the
-   *  rail draws in. */
+   *  rail draws in. Every page named from its head. */
   const walk = async (id: PageId, out: PageRef[]): Promise<void> => {
-    for (const child of await childPages(id)) {
-      const found = await readDoc(child.id);
-      if (found === null) continue;
+    for (const child of await childPages(id, false)) {
       // Listed even when it is broken, so the rail still reaches it and the
       // fallback can repair it.
-      out.push("doc" in found ? refOf(child.id, found.doc) : brokenRef(child.id));
+      out.push(typeof child.uid === "string" ? { id: child.id, name: child.name, uid: child.uid } : { id: child.id, name: child.name });
       await walk(child.id, out);
     }
   };
 
   const listPages = async (): Promise<PageRef[]> => {
     await ensureRoot();
+    if (index !== null) return index.list();
     const out: PageRef[] = [];
-    const root = await readDoc(ROOT_PAGE);
-    if (root !== null) out.push("doc" in root ? refOf(ROOT_PAGE, root.doc) : brokenRef(ROOT_PAGE));
+    const root = await headAt(ROOT_PAGE);
+    if (root !== null) out.push(root.uid !== null ? { id: ROOT_PAGE, name: root.name, uid: root.uid } : { id: ROOT_PAGE, name: root.name });
     await walk(ROOT_PAGE, out);
     return out;
   };
@@ -1120,17 +1227,43 @@ export function makePages(
     }
   };
 
+  /** THE TYPE SCALES ALREADY PARSED, by path, each with the stat it was read
+   *  under — every page read asks for two, the house's and its own, and a
+   *  scale changes about never. Kept only where the files can be stat'd, and
+   *  only while the stat agrees; the oldest go past `SCALES_KEPT`. */
+  const scales = new Map<string, { ino: number; size: number; mtime: number; scale: MarkdownScale }>();
+  const statOf = typeof (files as Partial<DiskFiles>).stat === "function" ? (files as DiskFiles).stat.bind(files) : null;
+
   /** One `markdown.yaml`, or nothing. A file that will not parse is nothing too:
    *  a broken type scale must not be the reason a page stops opening, and the
    *  checker is where it is said out loud. */
   async function oneScale(path: string): Promise<MarkdownScale> {
+    const st = statOf === null ? null : await statOf(path).catch(() => null);
+    if (statOf !== null) {
+      if (st === null || st.dir) {
+        scales.delete(path);
+        return {};
+      }
+      const had = scales.get(path);
+      if (had !== undefined && had.ino === st.ino && had.size === st.size && had.mtime === st.mtimeMs) return had.scale;
+    }
     const text = await files.read(path);
     if (text === null) return {};
+    let scale: MarkdownScale;
     try {
-      return scaleOf(yaml.parseAny(text));
+      scale = scaleOf(yaml.parseAny(text));
     } catch {
-      return {};
+      scale = {};
     }
+    if (st !== null && !st.dir) {
+      scales.delete(path);
+      scales.set(path, { ino: st.ino, size: st.size, mtime: st.mtimeMs, scale });
+      if (scales.size > SCALES_KEPT) {
+        const oldest = scales.keys().next();
+        if (!oldest.done) scales.delete(oldest.value);
+      }
+    }
+    return scale;
   }
 
   /** The house scale with this page's own merged over it, one property at a
@@ -1169,6 +1302,9 @@ export function makePages(
 
     async children(id: PageId): Promise<Child[]> {
       dirOf(id); // the id grammar, before anything is joined onto it
+      // THE ROOT IS GUARANTEED by asking for the top level, as the list always
+      // guaranteed it: a new vault's first question is what is at the top.
+      if (id === ROOT_PAGE) await ensureRoot();
       return childrenOf(id);
     },
 
@@ -1180,9 +1316,11 @@ export function makePages(
     async childrenAll(): Promise<Record<PageId, Child[]>> {
       const out: Record<PageId, Child[]> = {};
       const ids = [ROOT_PAGE, ...(await listPages()).map((p) => p.id).filter((id) => id !== ROOT_PAGE)];
+      // The registry asked once for the whole answer, not once a page.
+      const tables = tableList();
       for (const id of ids) {
         try {
-          out[id] = await childrenOf(id);
+          out[id] = await childrenOf(id, undefined, tables);
         } catch {
           out[id] = [];
         }
@@ -1212,6 +1350,28 @@ export function makePages(
           extensions: await extensionsFor(null),
         };
       }
+      // THE AGENT SCREEN IS THE MAP'S SIBLING: a bare plugin page with no
+      // directory, drawn by `biom-agent`'s document, the chats posted into it
+      // by the host. What draws the chats is the look its `look` variable
+      // names, and the variable reaches the box the way every plugin's does —
+      // through `extensions`, the three rungs merged, the vault's own
+      // `plugins/biom-agent/extensions.yaml` over the framework's defaults. A
+      // page has no rung here because there is no page. Nothing is written for
+      // it, and every write addressed to it is refused by `pageDir`.
+      if (id === AGENT_PAGE) {
+        return {
+          id,
+          name: "Agent",
+          markdown: await scaleFor(DESIGN_DIR),
+          variables: {},
+          sections: [],
+          plugin: AGENT_PLUGIN,
+          html: await pluginDocument(AGENT_PLUGIN),
+          input: {},
+          ports: null,
+          extensions: await extensionsFor(null),
+        };
+      }
       const dir = dirOf(id);
       const found = await readDoc(id);
       // NO `content.yaml`, NO PAGE. A directory under `children/` that holds no
@@ -1230,7 +1390,9 @@ export function makePages(
       const doc = found.doc;
 
       const here = await filesIn(dir);
-      const kids = await childrenOf(id);
+      // THE DOCUMENT JUST PARSED IS THE ORDER, so listing the children parses
+      // nothing more: one parse for the page, however many children it has.
+      const kids = await childrenOf(id, doc.contents.map((c) => c.name));
       const byKey = new Map(kids.map((c) => [childKey(c), c]));
 
       // Layer two, and the whole of it. Additive only: a section already placed
@@ -1304,7 +1466,6 @@ export function makePages(
 
         const drawn = await drawSection(
           asked,
-          doc.variables,
           (f) => files.read(`${dir}/${f}`),
           defaultSection,
           async (content) => {
@@ -1656,15 +1817,19 @@ export function makePages(
      *  it and the next mount identifies it. One commit ahead of the sweep, not
      *  one per page: the vault's history should say *identified* once. */
     async identify(): Promise<number> {
-      const refs = await listPages();
+      // THE PAGES WITH NO `uid`: off the index's sweep where there is one —
+      // stats, and a head only where a stat moved — and off the heads of a walk
+      // where there is not. Neither parses a page that has one.
+      const ids = index !== null
+        ? (await index.sweep()).noUid
+        : (await listPages()).filter((r) => typeof r.uid !== "string").map((r) => r.id);
       // Read first, commit second: a page that will not parse is listed with no
       // uid and is not a page to write, so it must not be what earns a commit.
       const missing: { id: PageId; doc: PageDoc }[] = [];
-      for (const ref of refs) {
-        if (typeof ref.uid === "string") continue;
-        const found = await readDoc(ref.id);
-        if (found === null || !("doc" in found)) continue;
-        missing.push({ id: ref.id, doc: found.doc });
+      for (const id of ids) {
+        const found = await readDoc(id);
+        if (found === null || !("doc" in found) || typeof found.doc.uid === "string") continue;
+        missing.push({ id, doc: found.doc });
       }
       if (missing.length === 0) return 0;
       await files.commit("Before every page was given an identity");
@@ -1682,6 +1847,7 @@ export function makePages(
       // the whole point of the id; its existence is not.
       if (init.parent === DESIGN_PAGE) throw bad("bad_request", "the design doc holds no pages");
       if (init.parent === MAP_PAGE) throw bad("bad_request", "the map holds no pages");
+      if (init.parent === AGENT_PAGE) throw bad("bad_request", "the Agent screen holds no pages");
       const name = typeof init.name === "string" ? init.name.trim() : "";
       if (name === "") throw bad("bad_request", "a page needs a name");
 
@@ -1739,6 +1905,7 @@ export function makePages(
     async remove(id: PageId): Promise<void> {
       if (id === DESIGN_PAGE) throw bad("bad_request", "the design doc cannot be removed");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be removed");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be removed");
       const dir = dirOf(id);
       // The top level is this page's children. Removing it would leave every
       // ordering in the workspace with nowhere to live.
@@ -1779,6 +1946,8 @@ export function makePages(
       if (parent === DESIGN_PAGE) throw bad("bad_request", "the design doc holds no pages");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be moved");
       if (parent === MAP_PAGE) throw bad("bad_request", "the map holds no pages");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be moved");
+      if (parent === AGENT_PAGE) throw bad("bad_request", "the Agent screen holds no pages");
       const from = dirOf(id);
       const parentDir = dirOf(parent);
       if (id === ROOT_PAGE) throw bad("bad_request", "the root page cannot be moved");
@@ -1832,6 +2001,7 @@ export function makePages(
     async rename(id: PageId, name: string): Promise<PageId> {
       if (id === DESIGN_PAGE) throw bad("bad_request", "the design doc cannot be renamed");
       if (id === MAP_PAGE) throw bad("bad_request", "the map is not a page and cannot be renamed");
+      if (id === AGENT_PAGE) throw bad("bad_request", "the Agent screen is not a page and cannot be renamed");
       const next = name.trim();
       if (next === "") throw bad("bad_request", "a page needs a name");
       const found = await readDoc(id);
@@ -1881,4 +2051,269 @@ function htmlFileOf(part: PartValue): string | null {
   }
   const content = contentOf(part);
   return content !== null && content.type === "html" ? content.data : null;
+}
+
+/* ── a page's identity, while the server runs ───────────────────────────── */
+
+/** WHAT KEEPS EVERY PAGE'S `uid` FOR THE SESSION. `identify` gives a page with
+ *  none an identity on mount; this is the same act for a page that arrives, or
+ *  loses its `uid`, while the server runs — an agent that made a page, which
+ *  the vault's rules tell never to type a `uid`, or one that wrote a page's
+ *  document whole and dropped the one it had. Without it such a page has no
+ *  identity until the next mount, the history places every edit, open and view
+ *  of it nowhere, and the switcher can never bring it up. */
+export interface Identities {
+  /** THE `uid` OF THE PAGE AT `id`, giving it one where its document parses and
+   *  has none — the one this session already knew for that page when no other
+   *  page holds it now, or a new one — and writing that into the file behind a
+   *  commit, as one line where mount puts it and every other byte as it was.
+   *  Answers once the `uid` is decided, not once
+   *  it is written: nothing that asks has to wait on git. Null for a page that
+   *  is not there or will not parse, which is never rewritten. */
+  of(id: PageId): Promise<string | null>;
+  /** Remember what a list of pages says — every one with a `uid` — so a page
+   *  whose document is later written whole without it gets the same one back. */
+  saw(refs: readonly PageRef[]): void;
+  /** What a structural change turned up: remember every `uid` in the list and
+   *  give an identity to every page in it that has none. Answers how many. */
+  arrived(refs: readonly PageRef[]): Promise<number>;
+  /** Every write-back asked for so far, finished — for a test. */
+  written(): Promise<void>;
+}
+
+/**
+ * @param files A `Files` WITH NO BASELINE — `makeFiles(root)`, never the
+ *   vault's own. A read through the vault's would make a page an agent has
+ *   just made KNOWN, and a write through it would note the bytes; either way
+ *   the watcher would take the page for one it already had and the rail would
+ *   never learn that it arrived. Written through this, the `uid` reaches the
+ *   watcher as the change it is.
+ * @param warn where a write-back that failed is said; the page keeps the `uid`
+ *   in memory, and the next ask writes it again.
+ */
+/** What the page index tells the identities, typed by shape: `pageindex.ts` is
+ *  a sibling. */
+export interface IdentitiesFromIndex {
+  /** The pages holding this `uid` now, checked by stat and never waited for. */
+  holders(uid: string): Promise<PageId[]>;
+  /** The `uid` this page's folder last carried, whatever its document says. */
+  uidWas(id: PageId): Promise<string | null>;
+}
+
+/**
+ * @param from THE PAGE INDEX, where there is one: what a page nobody asked about
+ *   this session last carried, and who holds a `uid` now. Without it memory is
+ *   only what this session has seen, which the mount used to fill by parsing
+ *   every page; with it nothing has to be read ahead of the question.
+ */
+export function makeIdentities(
+  files: DiskFiles,
+  yaml: YamlCodec,
+  warn: (what: string, e: unknown) => void = () => {},
+  from: IdentitiesFromIndex | null = null,
+): Identities {
+  /** THE `uid` EACH PAGE ID LAST HAD, and WHICH PAGE LAST HELD each `uid`, as
+   *  seen or given. The two can disagree, and that is what they are for: a page
+   *  that moved leaves its old id still knowing the `uid`, while the `uid`'s
+   *  holder is the page at its new id. */
+  const known = new Map<PageId, string>();
+  const owner = new Map<string, PageId>();
+  /** Pages whose `uid` is decided and not yet in the file. */
+  const pending = new Set<PageId>();
+  /** ONE DECISION AT A TIME, so two asks about one page arriving together —
+   *  the history's and the watcher's — can never mint it two identities. */
+  let deciding: Promise<unknown> = Promise.resolve();
+  /** Write-backs one at a time, each behind its own commit. */
+  let writing: Promise<unknown> = Promise.resolve();
+
+  const learn = (id: PageId, uid: string): void => {
+    known.set(id, uid);
+    owner.set(uid, id);
+  };
+
+  /** The page's document, or null where there is none or it will not parse. */
+  const read = async (id: PageId): Promise<PageDoc | null> => {
+    const text = await files.read(pageDocPath(id));
+    if (text === null) return null;
+    try {
+      return docOf(yaml.parse(text), segmentOf(id));
+    } catch {
+      return null;
+    }
+  };
+
+  /** DOES ANOTHER PAGE HOLD `uid` NOW — asked of memory, and of the disk only
+   *  for the one page memory names: never a walk of the tree, which on a
+   *  workspace of two thousand pages is over a second, and this is on the
+   *  history's path, where every append waits on it. A move is known without
+   *  one: the watcher's structural settle hands `arrived` the list, and an
+   *  agent's move is an edit the history asks about. A page moved while no
+   *  window watched and no writer Biom can name moved it is the one this
+   *  cannot see. */
+  const heldElsewhere = async (uid: string, id: PageId): Promise<boolean> => {
+    const holder = owner.get(uid);
+    if (holder === id) return false;
+    // WHERE MEMORY HAS NO HOLDER, THE INDEX IS ASKED: its rows by `uid`, each
+    // checked by stat. The document of each page it names is still read, as
+    // memory's is, before the `uid` is taken to be somebody else's.
+    const asked = holder !== undefined ? [holder] : from !== null ? await from.holders(uid) : [];
+    for (const other of asked) {
+      if (other === id) continue;
+      if ((await read(other))?.uid === uid) return true;
+    }
+    return false;
+  };
+
+  /** ONE COMMIT AHEAD, as mount does, then ONE LINE: `uid:` put in under the
+   *  `name:` line, where mount writes it, and every other byte left as it was —
+   *  so an agent's comments, quoting, order and a plugin's own keys under
+   *  `input:` survive, and a document an agent may still be editing is not
+   *  rewritten under it. The text is read again after the commit, so what an
+   *  agent wrote meanwhile is what gets the `uid`. The insert is kept only if
+   *  it reads back as the same document plus that `uid` and nothing else; a
+   *  layout it cannot be put into — no `name:` line, a name spread over lines,
+   *  an empty `uid:` already there — is written the way mount writes one.
+   *  Either is a `replace`, never a `write`: a page deleted from outside
+   *  between the read and the write stays deleted, where a write made its
+   *  folder again and brought it back, `uid` and all. */
+  const writeBack = (id: PageId): void => {
+    pending.add(id);
+    const run = writing.then(async () => {
+      try {
+        await files.commit("Before a page was given its identity");
+        const path = pageDocPath(id);
+        const text = await files.read(path);
+        const uid = known.get(id);
+        if (text === null || uid === undefined) return;
+        let now: PageDoc;
+        try {
+          now = docOf(yaml.parse(text), segmentOf(id));
+        } catch {
+          // Broken since it was asked about: never rewritten, as ever.
+          return;
+        }
+        if (typeof now.uid === "string") {
+          learn(id, now.uid);
+          return;
+        }
+        const inserted = withUidLine(text, uid);
+        if (inserted !== null && onlyTheUid(yaml, text, inserted, uid)) {
+          await files.replace(path, inserted);
+          return;
+        }
+        await files.replace(path, yaml.format({ ...now, uid }));
+      } finally {
+        pending.delete(id);
+      }
+    });
+    writing = run.then(() => undefined, (e: unknown) => warn(`the identity of ${id} could not be written`, e));
+  };
+
+  const of = async (id: PageId): Promise<string | null> => {
+    const doc = await read(id);
+    if (doc === null) return null;
+    if (typeof doc.uid === "string") {
+      learn(id, doc.uid);
+      return doc.uid;
+    }
+    // ONLY A PAGE IN THE TREE. `@design` reads the design doc, which is a page
+    // in every way but this one: it is in no tree, so an identity would name
+    // nothing, and nothing here writes into it.
+    if (id.startsWith("@")) return null;
+    const decided = deciding.then(async (): Promise<string | null> => {
+      // What this page last carried: this session's memory, or the index's row
+      // for its folder — which is how a page nobody has asked about since mount
+      // gets its own `uid` back when an agent writes it whole without it.
+      const had = known.get(id) ?? (from !== null ? (await from.uidWas(id)) ?? undefined : undefined);
+      if (had !== undefined && pending.has(id)) return had;
+      const again = await read(id);
+      if (again === null) return null;
+      if (typeof again.uid === "string") {
+        learn(id, again.uid);
+        return again.uid;
+      }
+      // STABLE FOR THE SESSION: the page's own `uid` back, unless the page that
+      // had it has moved away and another holds it now.
+      let uid = had;
+      if (uid !== undefined && await heldElsewhere(uid, id)) uid = undefined;
+      uid ??= mintUid();
+      learn(id, uid);
+      writeBack(id);
+      return uid;
+    });
+    deciding = decided.then(() => undefined, () => undefined);
+    return await decided;
+  };
+
+  return {
+    of,
+    saw(refs) {
+      for (const ref of refs) if (typeof ref.uid === "string") learn(ref.id, ref.uid);
+    },
+    async arrived(refs) {
+      let given = 0;
+      for (const ref of refs) {
+        if (typeof ref.uid === "string") {
+          learn(ref.id, ref.uid);
+          continue;
+        }
+        try {
+          if ((await of(ref.id)) !== null) given++;
+        } catch (e) {
+          warn(`the identity of ${ref.id} could not be decided`, e);
+        }
+      }
+      return given;
+    },
+    async written() {
+      await writing;
+    },
+  };
+}
+
+/** THE TEXT WITH ONE `uid:` LINE PUT IN under the top-level `name:` line — the
+ *  first line that starts with `name:` at the left edge — in the line ending the
+ *  file already uses. Null where there is no such line. Whether the result is
+ *  still the same page is `onlyTheUid`'s to say, not this. */
+export function withUidLine(text: string, uid: string): string | null {
+  const found = /^name:[^\r\n]*(\r?\n|$)/m.exec(text);
+  if (found === null) return null;
+  const ending = found[1] ?? "";
+  const line = `uid: ${uid}`;
+  if (ending === "") return `${text}${text.includes("\r\n") ? "\r\n" : "\n"}${line}`;
+  const at = found.index + found[0].length;
+  return `${text.slice(0, at)}${line}${ending}${text.slice(at)}`;
+}
+
+/** Does `after` read back as `before` plus `uid: <uid>` at the top level, and
+ *  nothing else — every value, at every depth, the same? Read as plain YAML,
+ *  so nothing the page reader narrows away can hide a difference, and then as
+ *  a page, so the result is one the reader opens with that identity. */
+function onlyTheUid(yaml: YamlCodec, before: string, after: string, uid: string): boolean {
+  try {
+    const was = yaml.parseAny(before);
+    const now = yaml.parseAny(after);
+    if (!isPlainMap(was) || !isPlainMap(now)) return false;
+    if (Object.hasOwn(was, "uid") || now["uid"] !== uid) return false;
+    if (!sameShape(now, { ...was, uid })) return false;
+    return yaml.parse(after).uid === uid;
+  } catch {
+    return false;
+  }
+}
+
+const isPlainMap = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Two parsed values, the same at every depth: a list in order, a map key for
+ *  key whatever the order its keys came in. */
+function sameShape(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => sameShape(item, b[i]));
+  }
+  if (!isPlainMap(a) || !isPlainMap(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.hasOwn(b, key) && sameShape(a[key], b[key]));
 }

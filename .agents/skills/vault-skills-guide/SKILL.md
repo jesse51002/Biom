@@ -354,6 +354,18 @@ it is in every workspace that had it.
 **`INSTRUCTIONS.md`, `base/` and `design/` are filled once and never
 overwritten**: those are the person's from the moment they land.
 
+**Beside the guide and the skills, the framework keeps the harnesses' own
+names for them**, because a chat's agent starts at the vault's root and some
+harnesses read only their own: `CLAUDE.md` a link to `AGENTS.md` and
+`.claude/skills` a link to `.agents/skills` for Claude Code, and
+`.gemini/settings.json` naming `AGENTS.md` for Gemini CLI. `keepHarness` in
+`server/workspace/framework.ts` makes them in the same pass as the rewrite and
+they are committed with it, but **unlike the rewrite they are never written
+over**: each is made only where nothing stands, and what a person keeps under
+one of those names is left where it is and said in the server's log. So a skill
+written here reaches the agent under whichever name its harness reads, and
+there is still one copy of it.
+
 **Testing a change from inside a workspace is honest** — the running server
 rewrote the guide, the docs, the skills and the checker when it opened the
 folder. When you want certainty about which checker ran, invoke
@@ -419,7 +431,8 @@ When a new one appears, add it as a class rather than as an incident.
   `INSTRUCTIONS.md`, `base/`, `design/`: `server/workspace/presets.ts`. **The
   rewrite of what is the framework's** — `AGENTS.md`, `docs/`, the skills, the
   checker, its `_lib/`: `rewriteOwned` in `server/workspace/framework.ts`, run
-  by `afterMount` in `server/main.ts`.
+  by `afterMount` in `server/main.ts`, with `keepHarness` beside it for the
+  harnesses' names (`tests/framework-harness.test.ts`).
 - **Siblings, for the mechanism a skill describes:** the section runtime →
   `section-runtime-guide`; the format on disk → `page-format-guide`; the plugin
   registry → `plugin-guide`; the box and its ports → `boundary-guide`.

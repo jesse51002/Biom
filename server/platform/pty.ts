@@ -1,32 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Layer 1 — a pseudo-terminal. Raw capability with no vocabulary: find a shell,
-// start it in a directory the caller already resolved, carry its bytes both
+// Layer 1 — a pseudo-terminal. Raw capability with no vocabulary: start ONE
+// command in a directory the caller already resolved, carry its bytes both
 // ways, resize it, say how it ended, and end it — the whole tree it started, not
-// just the shell's own pid.
+// just the command's own pid.
 //
-// IT KNOWS NOTHING ABOUT A VAULT, A PAGE OR A SESSION. It is handed a directory
-// and an environment and answers a `Pty`; who owns one, how long it lives and
-// who may type into it are `server/workspace/terminals.ts`'s questions. That
-// split is Zed's, read at source (process, terminal model, view), and it is what
-// lets the registry be tested against a fake spawner with no shell anywhere.
+// IT KNOWS NOTHING ABOUT A VAULT, AN AGENT OR A SIGN-IN. It is handed a command,
+// a directory and an environment and answers a `Pty`; which command may run,
+// who may type into it and how long it lives are
+// `server/workspace/terminals.ts`'s questions. That split is Zed's, read at
+// source (process, terminal model, view), and it is what lets the sign-in run
+// be tested against a fake spawner with nothing started anywhere.
 //
-// A REAL PTY, NOT PIPES. An agent CLI asks `isatty` before it draws a prompt, a
-// full-screen editor needs a window size and the alternate screen, and Ctrl+C is
-// a byte the line discipline turns into SIGINT for the foreground job. Bun's own
+// A REAL PTY, NOT PIPES. An agent's sign-in asks `isatty` before it draws a
+// prompt, a code pasted into it is read by a line discipline, and Ctrl+C is a
+// byte that discipline turns into SIGINT for the foreground job. Bun's own
 // `terminal` spawn option is the whole of it — measured on macOS with Bun 1.4.2:
 // a real `/dev/ttys…`, the directory it was given, the size it was given, a
-// resize that `stty size` reads back, and the shell's own exit code.
+// resize that `stty size` reads back, and the command's own exit code.
 //
-// THE SHELL IS A SESSION LEADER, and ending one is built on that. Its pid is its
-// process group, so a signal to `-pid` reaches everything it started in the
-// foreground — but an INTERACTIVE shell runs each job in a group of its own, so
-// the group alone misses a `sleep 60 &`. `end` therefore walks the process table
-// for descendants first and signals every pid and every group it finds. What it
-// cannot promise is a process that deliberately left: a daemon reparented to
-// init is nobody's child, and nothing here pretends otherwise.
+// THE COMMAND IS A SESSION LEADER, and ending one is built on that. Its pid is
+// its process group, so a signal to `-pid` reaches everything it started in the
+// foreground — but a command that runs jobs of its own (a shell, above all) may
+// put each in a group of its own, so the group alone misses a `sleep 60 &`.
+// `end` therefore walks the process table for descendants first and signals
+// every pid and every group it finds. What it cannot promise is a process that
+// deliberately left: a daemon reparented to init is nobody's child, and nothing
+// here pretends otherwise.
 
 import { accessSync, constants, statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 // Declared rather than pulled in as types, for the reason `server/main.ts` gives:
 // nothing the server runs is a dependency.
@@ -46,13 +48,14 @@ declare const Bun: {
     terminal?: { write(data: string): number; resize(cols: number, rows: number): void; close(): void };
   };
   spawnSync(cmd: string[], options?: { stdout?: "pipe"; stderr?: "ignore" }): { stdout?: { toString(): string } | null; success: boolean };
+  which(command: string, options?: { PATH?: string; cwd?: string }): string | null;
 };
 declare const process: {
   platform: string;
   kill(pid: number, signal?: string | number): boolean;
 };
 
-/** How a shell ended. Exactly one of the two is set once it has. */
+/** How a command ended. Exactly one of the two is set once it has. */
 export interface PtyExit {
   code: number | null;
   signal: string | null;
@@ -60,15 +63,15 @@ export interface PtyExit {
 
 export interface Pty {
   pid: number;
-  /** The absolute path of the shell that was started, for a tab to name. */
-  shell: string;
+  /** The absolute path of the program that was started. */
+  command: string;
   cwd: string;
   write(data: string): void;
   resize(cols: number, rows: number): void;
-  /** Resolves once, when the shell has gone — however it went. */
+  /** Resolves once, when the command has gone — however it went. */
   exited: Promise<PtyExit>;
   /** HANG UP, THEN ASK, THEN INSIST, across the whole tree. Answers whether the
-   *  shell is gone; `false` is a termination that failed and must be shown as
+   *  command is gone; `false` is a termination that failed and must be said as
    *  one, never read as a close. */
   end(): Promise<boolean>;
   /** The same tree, SIGKILL, now, and nothing awaited — for a process that is
@@ -77,18 +80,25 @@ export interface Pty {
 }
 
 export interface PtyOptions {
-  /** Absolute and already resolved. It is never defaulted: a terminal that
+  /** THE PROGRAM AND ITS ARGUMENTS, as an argument vector and never as a line:
+   *  nothing here is handed to a shell to be split or expanded, so an argument
+   *  is exactly one argument whatever it holds. The program is an absolute
+   *  path, a path relative to `cwd`, or a bare name found on `env.PATH`. Who
+   *  decides WHICH command may run is the caller's question, and this module
+   *  does not ask it. */
+  command: string[];
+  /** Absolute and already resolved. It is never defaulted: a command that
    *  cannot start where it was asked does not start somewhere else. */
   cwd: string;
   cols: number;
   rows: number;
-  /** The environment the server itself was started with. `scrubEnv` decides
-   *  what of it a shell may see. */
+  /** The environment to start it in. `scrubEnv` decides what of it the command
+   *  may see. */
   env: Record<string, string | undefined>;
   onData(bytes: Uint8Array): void;
 }
 
-/** A refusal with a sentence a person can act on — it names the shell or the
+/** A refusal with a sentence a person can act on — it names the program or the
  *  folder that failed, and nothing else. */
 export class PtyError extends Error {
   override name = "PtyError";
@@ -96,7 +106,11 @@ export class PtyError extends Error {
 
 /* ── pure, and therefore testable ─────────────────────────────────────── */
 
-/** Which shell, and what to start it with.
+/** Which shell, and what to start it with. NOTHING HERE CALLS IT any more — the
+ *  terminal runs one command it is handed rather than a shell — and it stays
+ *  exported only because reading the person's login environment is to reuse
+ *  it (`server/platform/loginenv.ts`, whose own layer cannot import it; its
+ *  composition root can hand it the answer).
  *
  *  A LOGIN SHELL ON UNIX, and that is the PATH answer rather than a taste. An
  *  application started from the dock or a desktop launcher inherits the session's
@@ -127,23 +141,23 @@ export function findShell(
   return null;
 }
 
-/** THE SHELL'S ENVIRONMENT: the person's own, minus this program's plumbing.
+/** THE COMMAND'S ENVIRONMENT: the person's own, minus this program's plumbing.
  *
  *  PRESERVED on purpose: PATH, HOME, every credential variable an agent CLI reads
  *  its login out of. The CLI is the person's and so is its authentication; a
  *  terminal that stripped `ANTHROPIC_API_KEY` would be a terminal where their
- *  agent does not work.
+ *  agent does not sign in.
  *
  *  STRIPPED: every `BIOM_` marker — `BIOM_SHELL` in particular, which tells a
- *  server that the pipe on its stdin is its parent, and a `bun server/main.ts`
- *  typed into this terminal must not believe that — the variables that choose a
- *  vault, a list and a port for a server, and the font cache the desktop shell
- *  pointed itself at on Linux, which is the application's and not the person's.
+ *  server that the pipe on its stdin is its parent, and nothing started here may
+ *  believe that — the variables that choose a vault, a list and a port for a
+ *  server, and the font cache the desktop shell pointed itself at on Linux,
+ *  which is the application's and not the person's.
  *
  *  ADDED: what a terminal is. `TERM` for the emulator on the other end, and a
  *  UTF-8 `LANG` only where none was set, which is what a Finder-launched process
- *  on macOS has — and a shell with no locale draws every non-ASCII character as
- *  a question mark. */
+ *  on macOS has — and a program with no locale draws every non-ASCII character
+ *  as a question mark. */
 export function scrubEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
   const ownCache = env.BIOM_OWN_CACHE === "1";
@@ -206,7 +220,7 @@ export function treeOf(rows: { pid: number; ppid: number; pgid: number }[], root
 
 /* ── the capability ───────────────────────────────────────────────────── */
 
-const usableShell = (path: string): boolean => {
+const executable = (path: string): boolean => {
   try {
     if (!statSync(path).isFile()) return false;
     accessSync(path, constants.X_OK);
@@ -216,7 +230,21 @@ const usableShell = (path: string): boolean => {
   }
 };
 
-/** How long each step of `end` waits for the shell to go before the next. The
+/** WHERE THE PROGRAM IS, or null. An absolute path is taken as it is, a path
+ *  with a separator in it is read from `cwd`, and a bare name is looked up on
+ *  the `PATH` of the environment the command will run in — not the server's,
+ *  which a desktop launcher leaves bare. Either way the answer is an executable
+ *  file or nothing. */
+function locate(program: string, cwd: string, env: Record<string, string | undefined>): string | null {
+  if (isAbsolute(program)) return executable(program) ? program : null;
+  if (program.includes("/") || program.includes("\\")) {
+    const path = resolve(cwd, program);
+    return executable(path) ? path : null;
+  }
+  return Bun.which(program, { PATH: env.PATH ?? "", cwd });
+}
+
+/** How long each step of `end` waits for the command to go before the next. The
  *  exact numbers are not a requirement — Zed's are not Biom's — but the ladder
  *  is: a hangup lets an editor save a swap file, a TERM is asked, a KILL is not. */
 const HANGUP_WAIT = 800;
@@ -225,8 +253,9 @@ const KILL_WAIT = 1500;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Start a shell in `cwd` on a new pseudo-terminal. Throws `PtyError` with a
- *  sentence naming what failed; never falls back to another folder or shell. */
+/** Start one command in `cwd` on a new pseudo-terminal. Throws `PtyError` with
+ *  a sentence naming what failed; never falls back to another folder or
+ *  program. */
 export async function spawnPty(opts: PtyOptions): Promise<Pty> {
   const platform = process.platform;
   let dir = false;
@@ -235,33 +264,31 @@ export async function spawnPty(opts: PtyOptions): Promise<Pty> {
   } catch {
     dir = false;
   }
-  if (!isAbsolute(opts.cwd) || !dir) throw new PtyError(`the workspace folder ${opts.cwd} is not there, so no terminal was started`);
+  if (!isAbsolute(opts.cwd) || !dir) throw new PtyError(`the workspace folder ${opts.cwd} is not there, so nothing was started`);
 
-  const shell = findShell(opts.env, platform, usableShell);
-  if (shell === null) {
-    throw new PtyError(opts.env.SHELL
-      ? `no shell could be started: ${opts.env.SHELL} is not an executable file, and none of the usual shells is either`
-      : "no shell could be started: none of the usual shells is an executable file on this machine");
-  }
+  const [program, ...args] = opts.command;
+  if (program === undefined || program === "") throw new PtyError("no command was named, so nothing was started");
+  const path = locate(program, opts.cwd, opts.env);
+  if (path === null) throw new PtyError(`${program} is not a program on this machine, so it was not started`);
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn([shell.path, ...shell.args], {
+    proc = Bun.spawn([path, ...args], {
       cwd: opts.cwd,
       env: scrubEnv(opts.env),
       terminal: { cols: opts.cols, rows: opts.rows, data: (_t, bytes) => opts.onData(bytes) },
     });
   } catch (e) {
-    throw new PtyError(`${shell.path} could not be started in ${opts.cwd}: ${e instanceof Error ? e.message : String(e)}`);
+    throw new PtyError(`${path} could not be started in ${opts.cwd}: ${e instanceof Error ? e.message : String(e)}`);
   }
   const term = proc.terminal;
-  if (!term) throw new PtyError(`${shell.path} started without a terminal — this runtime has no PTY support`);
+  if (!term) throw new PtyError(`${path} started without a terminal — this runtime has no PTY support`);
 
   let gone = false;
   const exited: Promise<PtyExit> = proc.exited.then(() => {
     gone = true;
-    // The master is closed a beat after the shell goes, so output the kernel has
-    // already queued still reaches `onData` rather than being cut mid-line.
+    // The master is closed a beat after the command goes, so output the kernel
+    // has already queued still reaches `onData` rather than being cut mid-line.
     setTimeout(() => {
       try {
         term.close();
@@ -289,7 +316,7 @@ export async function spawnPty(opts: PtyOptions): Promise<Pty> {
       try {
         Bun.spawnSync(["taskkill", "/PID", String(proc.pid), "/T", "/F"], { stderr: "ignore" });
       } catch {
-        /* reported by the caller when the shell does not go */
+        /* reported by the caller when the command does not go */
       }
       return;
     }
@@ -319,7 +346,7 @@ export async function spawnPty(opts: PtyOptions): Promise<Pty> {
 
   return {
     pid: proc.pid,
-    shell: shell.path,
+    command: path,
     cwd: opts.cwd,
     write(data) {
       if (gone) return;
@@ -333,8 +360,9 @@ export async function spawnPty(opts: PtyOptions): Promise<Pty> {
     end() {
       if (ending) return ending;
       ending = (async () => {
-        // Collected BEFORE the hangup, because a shell that goes first reparents
-        // its children to init and they are nobody's descendants any more.
+        // Collected BEFORE the hangup, because a command that goes first
+        // reparents its children to init and they are nobody's descendants any
+        // more.
         const before = tree();
         signal(before, "SIGHUP");
         if (!(await within(HANGUP_WAIT))) {
@@ -344,7 +372,7 @@ export async function spawnPty(opts: PtyOptions): Promise<Pty> {
             await within(KILL_WAIT);
           }
         }
-        // Whatever the shell left behind that ignored the hangup — a job it
+        // Whatever the command left behind that ignored the hangup — a job it
         // disowned on the way out — is still the tree this terminal started.
         if (gone && platform !== "win32") signal({ pids: before.pids, groups: before.groups.filter((g) => g !== proc.pid) }, "SIGKILL");
         return gone;

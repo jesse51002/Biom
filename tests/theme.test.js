@@ -12,12 +12,15 @@
 // full set of properties written and the scheme chosen, against a stub.
 
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { DEFAULT_THEME, cleanName, tokenOf } from "../client/theme/palettes.js";
 import { applyTheme, hostVars, lumaOf, paperOf, schemeOf, shadowOf, themeVars } from "../client/theme/theme.js";
 import { FACES, faceCss } from "../client/theme/faces.js";
+import { makeTheme } from "../server/workspace/presets.ts";
+import { makeFiles } from "../server/platform/files.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -255,6 +258,11 @@ test("every text role in the shipped palette clears 4.5:1 on every ground it is 
     [c.roomInk, c.room], [c.roomInk2, c.room], [c.roomInk3, c.room],
     // A label on a filled control, which is the whole reason `onSpot` exists.
     [c.onSpot, c.cyan], [c.onSpot, c.cyanT], [c.onSpot, c.magenta], [c.onSpot, c.magentaT],
+    // The lamps, which are set as words too — a grid's refusal in `ledRed`, a
+    // verdict beside a chat — on every paper they are laid on.
+    [c.led, c.stock], [c.led, c.stockHi], [c.led, c.field],
+    [c.ledRed, c.stock], [c.ledRed, c.stockHi], [c.ledRed, c.stockLo], [c.ledRed, c.field],
+    [c.ledGreen, c.stock], [c.ledGreen, c.stockHi], [c.ledGreen, c.field],
     ...DEFAULT_THEME.palette.extra.map((x) => [c.onSpot, x.value]),
   ];
 
@@ -263,6 +271,58 @@ test("every text role in the shipped palette clears 4.5:1 on every ground it is 
     .filter((p) => p[2] < 4.5)
     .map((p) => p[0] + " on " + p[1] + " is " + p[2].toFixed(2) + ":1");
   expect(failed).toEqual([]);
+});
+
+test("every shipped palette carries the four lamps, and each is the colour its verdict says", () => {
+  // THE AGENT SCREEN'S LIGHT IS A VERDICT, and a verdict has to read as one:
+  // amber while working, green once done, red when it failed. The look reads
+  // `--led`, `--led-red`, `--led-green` and `--dot-off`, and a palette without
+  // them sent it to its fallbacks — which in the brand palette drew red as
+  // `magenta`, a cool blue. So every palette the framework ships names all four:
+  // the fallback painted before the vault answers, the one a new vault is
+  // seeded with (held equal to it above), and the first frame's `tokens.css`
+  // (held equal to it above too).
+  const LAMPS = ["led", "ledRed", "ledGreen", "dotOff"];
+  const c = DEFAULT_THEME.palette.colors;
+  for (const key of LAMPS) expect(typeof c[key], `DEFAULT_THEME.palette.colors.${key}`).toBe("string");
+
+  const server = read("server/workspace/presets.ts").match(/const BRAND: Palette = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+  for (const key of LAMPS) expect(server, `server/workspace/presets.ts BRAND.colors.${key}`).toMatch(new RegExp(`\\b${key}:\\s*"#`));
+
+  const css = read("client/css/tokens.css").match(/palette:start[^*]*\*\/([\s\S]*?)\/\* palette:end/)?.[1] ?? "";
+  for (const key of LAMPS) expect(css, `tokens.css ${tokenOf(key)}`).toContain(tokenOf(key) + ":");
+
+  // WHAT EACH IS FOR, by hue: amber is amber, red is red and green is green —
+  // a red that drifted towards the accent it replaced would be the bug again.
+  const hue = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+    if (d === 0) return null;
+    const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  };
+  const between = (h, lo, hi) => h !== null && (lo <= hi ? h >= lo && h <= hi : h >= lo || h <= hi);
+  expect(between(hue(c.led), 25, 55), `led ${c.led} is amber`).toBe(true);
+  expect(between(hue(c.ledRed), 345, 15), `ledRed ${c.ledRed} is red`).toBe(true);
+  expect(between(hue(c.ledGreen), 90, 160), `ledGreen ${c.ledGreen} is green`).toBe(true);
+  expect(c.ledRed).not.toBe(c.magenta);
+});
+
+test("a workspace whose theme.json names no lamp is handed the shipped four", async () => {
+  // A vault seeded before the lamps shipped keeps its `theme.json` — it is the
+  // person's — and the theme store fills every key it leaves out from the
+  // shipped palette, key by key, so the box still has all four.
+  const dir = mkdtempSync(join(tmpdir(), "biom-lamps-"));
+  try {
+    const { stock, ink } = DEFAULT_THEME.palette.colors;
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ palette: { name: "Invented", colors: { stock, ink }, extra: [] } }));
+    const got = await makeTheme(makeFiles(dir)).get();
+    for (const key of ["led", "ledRed", "ledGreen", "dotOff"]) expect(got.palette.colors[key]).toBe(DEFAULT_THEME.palette.colors[key]);
+    expect(themeVars(got)["--led-red"]).toBe(DEFAULT_THEME.palette.colors.ledRed);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the three worlds the design page seeds clear 4.5:1 on their own grounds", () => {
@@ -316,6 +376,7 @@ test("nothing outside palettes.js names a colour", () => {
     "client/theme/theme.js",
     "client/css/tokens.css",
     "client/css/chrome.css",
+    "client/css/agent.css",
     "client/css/page.css",
     "client/css/panels.css",
     "client/css/table.css",

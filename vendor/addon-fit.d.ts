@@ -7,6 +7,5 @@ export declare class FitAddon implements ITerminalAddon {
   constructor();
   activate(terminal: Terminal): void;
   dispose(): void;
-  fit(): void;
   proposeDimensions(): { cols: number; rows: number } | undefined;
 }

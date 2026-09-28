@@ -9,7 +9,7 @@
 // actually stops.
 
 import { test, expect } from "bun:test";
-import { makeWorkspace, rebase, scopeOf, childKey, parentOf, segmentOf, ROOT_PAGE } from "../client/store/workspace.js";
+import { makeWorkspace, rebase, childKey, parentOf, segmentOf, ROOT_PAGE } from "../client/store/workspace.js";
 import { makeUi } from "../client/store/ui.js";
 import { childKey as contractKey, ROOT_PAGE as contractRoot,
          parentOf as contractParent, segmentOf as contractSegment } from "../contracts/types.ts";
@@ -130,19 +130,19 @@ function fake() {
      *  The markdown comes back RAW, braces and all: interpolation happens where
      *  the part is drawn, because prose is editable in place and writes back.
      *
-     *  THE SCOPE IS WRITTEN AT BOTH LEVELS because it is read at both: a section
-     *  carries it, and so does every markdown or html part inside it, since a
-     *  part is drawn from its own `vars` and never reaches up. */
+     *  EACH SCOPE IS SENT ONCE, AS ITS OWN: the page's in `variables`, a
+     *  section's in its `vars`, and a markdown or html part's in its own, `{}`
+     *  where it has none. Whoever draws a part merges the three. */
     pageOf(id, doc) {
       return {
         id, name: doc.name, variables: doc.variables,
         sections: doc.contents.map((section) => {
-          const vars = { ...doc.variables, ...(section.variables ?? {}) };
+          const vars = { ...(section.variables ?? {}) };
           const parts = {};
           for (const [slot, held] of Object.entries(section.parts ?? {})) {
             // A bare string is markdown; a map is a full Content.
             const c = typeof held === "string" ? { type: "markdown", data: held } : held;
-            const own = { ...vars, ...(c.variables ?? {}) };
+            const own = { ...(c.variables ?? {}) };
             parts[slot] =
               c.type === "markdown" ? { kind: "markdown", md: c.data, vars: own }
               : c.type === "html" ? { kind: "html", file: c.data, html: "", vars: own }
@@ -350,16 +350,18 @@ function wired() {
 
 /* ── the workspace store ─────────────────────────────────────────────── */
 
-test("loadTree reads the whole shell and emits once", async () => {
+test("loadTree reads the root's level, the tables and the theme, and emits once", async () => {
   const { server, ws, seen } = wired();
   await ws.loadTree();
 
-  expect(seen.n).toBe(1);                       // four requests, one repaint
+  expect(seen.n).toBe(1);                       // three requests, one repaint
   const s = ws.get();
-  expect(s.pages).toHaveLength(2);
+  // THE PAGES THIS WINDOW KNOWS, not every page: the root's level names one.
+  expect(s.pages.map((p) => p.id)).toEqual(["notes"]);
   expect(s.tables[0].name).toBe("jobs");
   expect(s.theme.palette.name).toBe("Press Proof");
-  expect(server.count("page.list")).toBe(1);
+  expect(server.count("page.list")).toBe(0);
+  expect(server.count("children.all")).toBe(0);
 });
 
 test("an empty store names no colour", () => {
@@ -409,16 +411,32 @@ test("renaming a page is a move: the rail is re-listed and the open page re-read
   // THE ANSWER IS THE NEW ID, because the one sent has stopped existing.
   expect(to).toBe("Field-notes");
   expect(server.count("page.rename")).toBe(1);
-  // The rail is re-read rather than patched: the server owns names as it owns
-  // ids. The open page was the one renamed, so it is re-read under the new id
-  // — that read is what carries the new name.
-  expect(server.count("page.list")).toBe(2);
+  // The level that holds it is re-read rather than patched: the server owns
+  // names as it owns ids. The open page was the one renamed, so it is re-read
+  // under the new id — that read is what carries the new name.
+  expect(server.calls.filter((c) => c.kind === "children").map((c) => c.page)).toEqual(["home", "home"]);
+  expect(server.count("page.list")).toBe(0);
   expect(server.count("page.read")).toBe(2);
   expect(ws.get().pages.find((p) => p.id === to).name).toBe("Field notes");
   expect(ws.get().pages.some((p) => p.id === "notes")).toBe(false);
   expect(ws.get().page.id).toBe(to);
   expect(ws.get().page.name).toBe("Field notes");
   expect(seen.n).toBe(paints + 1);
+});
+
+test("the page just read for the screen is handed to its box once, and never once anything has changed it", async () => {
+  // The box's own first `page.read` is the read the host made a moment ago to
+  // mount it; handing that over is one read per page switch, not two.
+  const { ws } = wired();
+  await ws.loadPage("notes");
+  expect(ws.handoff("board")).toBe(null);
+  expect(ws.handoff("notes")?.id).toBe("notes");
+  expect(ws.handoff("notes")).toBe(null);
+  // A slot write merges into the open page — a new object — so the read is
+  // behind what the box shows, and is not handed over.
+  await ws.reloadPage("notes");
+  await ws.writeSlot("notes", "body", "left", "Changed since.");
+  expect(ws.handoff("notes")).toBe(null);
 });
 
 test("a page that is not there is an answer, not a failure", async () => {
@@ -617,27 +635,50 @@ test("THE NEAREST ONE WINS, and the open page picks up both scopes", async () =>
   await ws.loadPage("notes");
 
   await ws.patchVariables("notes", null, { rate: 90 });
+  /** Each section's OWN value, as the page read carried it. */
   const sections = () => Object.fromEntries(ws.get().page.sections.map((s) => [s.name, s.vars.rate]));
-  /** THE SAME SCOPE, ONE LEVEL DOWN. A part is drawn from its own `vars` and
-   *  never reaches up for its section's, so a patch that moved one and not the
-   *  other would leave the words showing the old number while the section
-   *  claimed the new one. */
-  const slots = () => Object.fromEntries(ws.get().page.sections.flatMap((s) =>
-    Object.entries(s.parts).map(([slot, part]) => [s.name + "." + slot, part.vars.rate])));
+  /** WHAT A SLOT RESOLVES AGAINST: the page's, under its section's, under its
+   *  own, merged the way the box merges them where the part is drawn. A patch
+   *  that moved one scope and not the store's copy of it would leave the words
+   *  showing the old number while the page claimed the new one. */
+  const slots = () => {
+    const page = ws.get().page;
+    return Object.fromEntries(page.sections.flatMap((s) =>
+      Object.entries(s.parts).map(([slot, part]) => [s.name + "." + slot, { ...page.variables, ...s.vars, ...part.vars }.rate])));
+  };
 
   // The page's value reaches every section that has not written its own. `tail`
   // carries `rate: 70` of its own, so it is untouched by a page-level write —
   // which is the whole of the rule, and the reason a slot writes to a section
   // rather than to the page.
   expect(ws.get().page.variables.rate).toBe(90);
-  expect(sections()).toEqual({ title: 90, body: 90, tail: 70 });
+  expect(sections()).toEqual({ title: undefined, body: undefined, tail: 70 });
   expect(slots()).toEqual({
     "title.body": 90, "body.left": 90, "body.right": 90, "tail.body": 70,
   });
 
   await ws.patchVariables("notes", "tail", { rate: 95 });
-  expect(sections()).toEqual({ title: 90, body: 90, tail: 95 });
+  expect(sections()).toEqual({ title: undefined, body: undefined, tail: 95 });
   expect(slots()["tail.body"]).toBe(95);
+});
+
+test("a patch gives the open page each scope as its own, and leaves a part's own alone", async () => {
+  // What the page read carried, kept in the same spelling: the page's values on
+  // the page, a section's on the section, a part's on the part — and a patch
+  // answers with the document, which says the first two and nothing of a
+  // part's, so a part keeps what it was read with.
+  const { server, ws } = wired();
+  server.docs.notes.contents[1].parts.right = { type: "markdown", data: "More words.", variables: { rate: 75 } };
+  await ws.loadPage("notes");
+
+  await ws.patchVariables("notes", "tail", { rate: 95 });
+
+  const page = ws.get().page;
+  expect(page.variables).toEqual({ rate: 62 });
+  expect(Object.fromEntries(page.sections.map((s) => [s.name, s.vars]))).toEqual({ title: {}, body: {}, tail: { rate: 95 } });
+  const body = page.sections.find((s) => s.name === "body");
+  expect(body.parts.right.vars).toEqual({ rate: 75 });
+  expect(body.parts.left.vars).toEqual({});
 });
 
 test("a slot flush re-reads NOTHING, because the document says what moved", async () => {
@@ -697,7 +738,7 @@ test("a prose write is one request, and page.read is not the second", async () =
     data: "Rates went up in March.",
   });
   expect(server.count("page.read")).toBe(reads);
-  expect(server.count("children.all")).toBe(1);  // the tree was not re-read either
+  expect(server.count("children")).toBe(1);  // the tree was not re-read either
 });
 
 test("A SLOT WRITE TELLS NOBODY, and that asymmetry is the decision", async () => {
@@ -729,8 +770,9 @@ test("the slot the caret is in shows what was just typed, without a round trip",
   // drawn, so the store carries the template and never the number.
   expect(part.md).toContain("{{rate}}");
   // The scope is untouched: a prose write says what a paragraph SAYS, never what
-  // it resolves against.
-  expect(part.vars).toEqual({ rate: 62 });
+  // it resolves against. The part has none of its own; the page's is the page's.
+  expect(part.vars).toEqual({});
+  expect(ws.get().page.variables).toEqual({ rate: 62 });
   // AND NOTHING ELSE ON THE PAGE MOVED. The merge is one slot of one section.
   expect(ws.get().page.sections.map((s) => s.name)).toEqual(["title", "body", "tail"]);
   expect(ws.get().page.sections.find((s) => s.name === "body").parts.left.md).toBe("Words.");
@@ -760,11 +802,11 @@ test("the order is one write, and the page and the rail are both re-read from it
   changes.length = 0;
   // THE BOX IS TOLD BEFORE THE TREE IS RE-READ. A box re-reads the page from
   // the server on its own, so the change can go out the moment the order has
-  // landed — and `children.all` on a large workspace is seconds, which is how
+  // landed — and `children.all` on a large workspace was seconds, which is how
   // long the doc document's table-to-grid conversion used to sit undrawn.
   /** @type {number[]} */
   const treeReadsWhenTold = [];
-  ws.onChange(() => treeReadsWhenTold.push(server.count("children.all")));
+  ws.onChange(() => treeReadsWhenTold.push(server.count("children")));
 
   const next = await ws.setSections("notes", [
     { name: "tail", parts: { body: "More." } },
@@ -779,17 +821,24 @@ test("the order is one write, and the page and the rail are both re-read from it
   // A name that stayed keeps its own text and its own variables: the client sent
   // "More." for `tail` and the document's own entry is what survived.
   expect(ws.get().page.sections.find((s) => s.name === "tail").vars).toEqual({ rate: 70 });
-  // THE RAIL DRAWS THIS ORDER TOO — a page's children come back in the order its
-  // own contents put them — so the tree is re-read with the page: one request
-  // for the whole tree, twice.
-  expect(server.count("children.all")).toBe(2);
+  // A LEVEL NOBODY OPENED IS NOT READ: the window does not hold `notes`' own
+  // level, so nothing but the page was re-read.
+  expect(server.count("children")).toBe(1);
   // THE OTHER HALF OF THE ASYMMETRY. The shape of the page moved — the rail
   // draws that order, and another box mounted on the same page is drawing it —
   // so unlike a slot write, this one says so.
   expect(seen.n).toBe(base + 1);
   expect(changes).toEqual([{ page: "notes", shape: true }]);
-  // Told once, with the tree still un-re-read at that moment.
+  // Told first, with the tree still un-re-read at that moment.
   expect(treeReadsWhenTold).toEqual([1]);
+  // THE RAIL DRAWS THIS ORDER TOO — a page's children come back in the order its
+  // own contents put them — so where the window holds the page's own level, it
+  // is re-read with the page, and only that level.
+  await ws.expand("notes");
+  const before = server.count("children");
+  await ws.setSections("notes", [{ name: "tail", parts: { body: "More." } }, { name: "title", parts: { body: "# Notes" } }]);
+  expect(server.count("children")).toBe(before + 1);
+  expect(server.calls.filter((c) => c.kind === "children").at(-1).page).toBe("notes");
 });
 
 /* ── the design doc: one page, and it is not in the page tree ──────────── */
@@ -904,10 +953,10 @@ test("opening a vault checks the folder and changes nothing on screen", async ()
   // AND NOTHING HERE MOVED. Not the pages, not the open page, not the table on
   // screen, not the query it was read with — because this store is still the
   // store of the folder it was constructed for, and always will be.
-  expect(ws.get().pages.map((p) => p.id)).toEqual(["notes", "board"]);
+  expect(ws.get().pages.map((p) => p.id)).toEqual(["notes"]);
   expect(ws.get().page.id).toBe("notes");
   expect(ws.get().table.schema.name).toBe("jobs");
-  expect(server.count("page.list")).toBe(1);
+  expect(server.count("children")).toBe(1);
 
   // No emit, so no repaint, so no frame torn down. A workspace that cannot
   // switch cannot be caught half-switched, and this is that claim as a test.
@@ -940,7 +989,7 @@ test("an open the server refuses throws and moves nothing", async () => {
 
   // Nothing is dropped until the server says the folder is open, so a refusal
   // leaves the workspace exactly as it was rather than empty.
-  expect(ws.get().pages).toHaveLength(2);
+  expect(ws.get().pages).toHaveLength(1);
   expect(ws.get().page.id).toBe("notes");
   expect(seen.n).toBe(base);
   expect(changes).toEqual([]);
@@ -970,19 +1019,20 @@ test("the client's copy of the four contract values is the contract's", () => {
   expect(parentOf("home")).toBe(null);
 });
 
-test("loadTree reads what every page holds, without taking the open-page slot", async () => {
+test("loadTree reads the root's level, without taking the open-page slot", async () => {
   const { server, ws, seen } = wired();
   await ws.loadTree();
 
   expect(seen.n).toBe(1);                       // still one repaint for the lot
-  // ONE REQUEST FOR THE WHOLE TREE, however many pages it holds — and never one
-  // per page, which a browser refuses past a few hundred in flight. The root is
-  // in the map whether or not it is in the page list.
-  expect(server.count("children.all")).toBe(1);
-  expect(server.count("children")).toBe(0);
+  // ONE LEVEL, the root's, however many pages the workspace holds — never the
+  // whole tree, and never one request per page. A level nobody opened is not
+  // held, and reads as empty until it is.
+  expect(server.count("children.all")).toBe(0);
+  expect(server.calls.filter((c) => c.kind === "children").map((c) => c.page)).toEqual(["home"]);
   expect(ws.children("home").map((c) => c.kind + ":" + c.id))
     .toEqual(["page:notes", "table:jobs"]);
-  expect(ws.children("board")).toEqual([]);
+  expect(ws.held("notes")).toBe(false);
+  expect(ws.children("notes")).toEqual([]);
   expect(ws.get().page).toBe(null);             // nothing stole the open page
 });
 
@@ -996,11 +1046,6 @@ test("an id that moved is said again under its new parent", () => {
   expect(rebase("other", "notes", "board/notes")).toBe("other");
   // And not fooled by a shared prefix that is not a path boundary.
   expect(rebase("notes-two", "notes", "board/notes")).toBe("notes-two");
-});
-
-test("one scope is the page's values with the content's over the top", () => {
-  expect(scopeOf({ rate: 62, vat: 20 }, { rate: 70 })).toEqual({ rate: 70, vat: 20 });
-  expect(scopeOf({ rate: 62 }, undefined)).toEqual({ rate: 62 });
 });
 
 test("a move inside the same page writes nothing at all", async () => {
@@ -1032,7 +1077,9 @@ test("a move between pages MOVES THE DIRECTORY and answers the new id", async ()
   expect(moved).toBe("board/notes");
   expect(server.calls.filter((c) => c.kind === "page.move"))
     .toEqual([expect.objectContaining({ page: "notes", parent: "board" })]);
+  // The directory knows it under the new id, and not the old one.
   expect(ws.get().pages.map((p) => p.id)).toContain("board/notes");
+  expect(ws.refOf("notes")).toBe(null);
   // Both ends moved, and an artifact mounted on either has to hear it.
   expect(changes).toEqual([{ page: "home", shape: true }, { page: "board", shape: true }]);
 });
@@ -1121,14 +1168,68 @@ test("go resets the inserter", () => {
 
   ui.go("page", "notes");
   expect(ui.get()).toMatchObject({ inserting: null });
-  expect(ui.get().route).toEqual({ view: "page", id: "notes" });
+  expect(ui.get().route).toEqual({ view: "page", id: "notes", screen: "page" });
 
   ui.go("table", "jobs");
   expect(n).toBe(3);                            // set, two gos
 });
 
 test("the ui store takes a route from boot", () => {
+  // A route written before the screen joined the address reads as the page's
+  // own face — the store normalises every route it is handed.
   const ui = makeUi({ route: { view: "table", id: "jobs" } });
-  expect(ui.get().route).toEqual({ view: "table", id: "jobs" });
+  expect(ui.get().route).toEqual({ view: "table", id: "jobs", screen: "page" });
   expect(ui.get().inserting).toBe(null);
+});
+
+test("a page's own screen is part of its address, and going somewhere else drops it", () => {
+  // THE ELEVENTH CONTRACTS EDIT folded `pageView` into the route as `screen`,
+  // so a reload and Back land on a page's Instructions or Automations.
+  const ui = makeUi();
+  ui.go("page", "home/notes", "automation");
+  expect(ui.get().route).toEqual({ view: "page", id: "home/notes", screen: "automation" });
+  expect("pageView" in ui.get()).toBe(false);
+  // A screen means nothing off a page, and nothing on a page with no id.
+  ui.go("table", "jobs", "instructions");
+  expect(ui.get().route.screen).toBe("page");
+  ui.go("page", "", "instructions");
+  expect(ui.get().route.screen).toBe("page");
+});
+
+test("a no-op route write does not repaint, and the context's fields start closed", () => {
+  const ui = makeUi({ route: { view: "page", id: "notes", screen: "page" } });
+  expect(ui.get()).toMatchObject({ panel: false, chat: null, chatList: false });
+  let n = 0;
+  ui.on(() => { n++; });
+  ui.set({ route: ui.get().route });
+  expect(n).toBe(0);
+});
+
+test("A RELOAD AT `#/agent/<chat>` COMES BACK WITH THAT CHAT OPEN, and a route written by set does the same", async () => {
+  const { parseAddress } = await import("../contracts/address.js");
+  const ui = makeUi({ route: parseAddress("#/agent/chat-0001-invented") });
+  expect(ui.get().route).toEqual({ view: "agent", id: "chat-0001-invented", screen: "page" });
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // The start screen after a reload is no chat.
+  expect(makeUi({ route: parseAddress("#/agent") }).get().chat).toBe(null);
+  // A route set whole — the bar, Back — keeps the two together too.
+  ui.set({ route: { view: "agent", id: "chat-0002-invented", screen: "page" } });
+  expect(ui.get().chat).toBe("chat-0002-invented");
+  // Anywhere else, the chat the window last had open stays.
+  ui.set({ route: { view: "page", id: "home", screen: "page" } });
+  expect(ui.get().chat).toBe("chat-0002-invented");
+  // A reload on a page keeps whatever chat boot handed it.
+  expect(makeUi({ route: parseAddress("#/page/home"), chat: "chat-0003-invented" }).get().chat).toBe("chat-0003-invented");
+});
+
+test("the Agent screen names its chat, and the window remembers it", () => {
+  const ui = makeUi();
+  ui.go("agent", "chat-0001-invented");
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // Leaving for a page keeps the chat — the rail's Agent comes back to it.
+  ui.go("page", "home");
+  expect(ui.get().chat).toBe("chat-0001-invented");
+  // The start screen is no chat.
+  ui.go("agent", "");
+  expect(ui.get().chat).toBe(null);
 });

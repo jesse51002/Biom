@@ -6,7 +6,7 @@
 // file's values are duplicated there deliberately and must be kept in step.
 // It is the one duplication in the framework and it is why this file is tiny.
 
-/** @import { HostError, HostErrorCode } from "./types.ts" */
+/** @import { ChatView, HostError, HostErrorCode } from "./types.ts" */
 
 /** The protocol major, on every frame. An unknown major is dropped silently
  *  rather than answered, and at most two majors are ever live at once. */
@@ -92,6 +92,66 @@ export const SHIM_ROUTE = "/biom.js";
  *  says *something under this vault changed* and the client answers by reading
  *  disk — so the route is the whole of what the two sides have to agree on. */
 export const EVENTS_ROUTE = "/events";
+
+/** THE NAMED EVENTS ON THAT STREAM, spelled once for both tiers. `change` and
+ *  `run` carry a bare `1` and mean *reread*, as they always have; `history`,
+ *  `chat` and `agents` joined with the eleventh contracts edit and carry JSON
+ *  — the entries appended, one chat's push, the whole list of this machine's
+ *  agents — because none of that is on disk to be reread. `StreamEvent` in
+ *  `types.ts` says what each carries. NAMED, never the default `message`:
+ *  the server's keep-alive comments are not events, and a named event is the
+ *  only thing that means something happened. */
+export const STREAM = Object.freeze({
+  CHANGE: "change",
+  RUN: "run",
+  HISTORY: "history",
+  CHAT: "chat",
+  AGENTS: "agents",
+});
+
+/** WHICH WINDOW A STREAM IS, on its address: `…/events?window=<id>`. A
+ *  window's context is kept while its stream is open and DROPPED WHEN IT
+ *  CLOSES, so the contexts `window.list` answers are the windows still there
+ *  rather than every window since the server started. An address and not a
+ *  message, for the reason the token is: the stream has no envelope. The
+ *  server reads it on the stream route in `server/main.ts`; the client puts it
+ *  on the address it hands `events.js`, in `client/boot.js`. */
+export const WINDOW_PARAM = "window";
+
+/** THE GRAMMAR OF AN ID NOBODY TYPES: a window's, a chat's, a running agent's,
+ *  a sign-in ticket's. Eight to sixty-four letters, digits, dashes and
+ *  underscores — a uuid is one, and so is what a window mints where
+ *  `crypto.randomUUID` is not offered. Checked at the guards, because every
+ *  one of these arrives off the wire and names something the server holds. */
+export const OPAQUE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** THE GRAMMAR OF AN AGENT'S KEY: the ACP Registry's ids — `claude-acp`,
+ *  `github-copilot-cli` — and Biom's own for an agent the registry does not
+ *  list, `openclaw`. Lowercase, because the registry's are. */
+export const AGENT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/** THE THREE VIEWS OF A CHAT — `ChatView` in `types.ts` — in the order the
+ *  menu lists them, which is a ladder: each adds to the one before, and the
+ *  tools come last. The thirteenth contracts edit; the fifteenth put them in
+ *  this order.
+ *  @type {readonly ["plain", "thinking", "tools"]} */
+export const CHAT_VIEWS = Object.freeze(/** @type {const} */ (["plain", "thinking", "tools"]));
+/** The view a workspace that has kept none starts on: Plain, because Biom is
+ *  a second brain before it is a place to build software, and most people
+ *  never need to see the tools. A view already kept stays as it was.
+ *  @type {"plain"} */
+export const DEFAULT_VIEW = "plain";
+/** WHAT EACH VIEW IS CALLED, and the one line under its name saying what it
+ *  adds to the view before it — so nobody reads the pick as a setting of the
+ *  agent's. The framework's own words: the default look says them again in
+ *  its `model.js`, held equal to these by a test, and a look a workspace
+ *  writes draws its own or none. The fifteenth contracts edit.
+ *  @type {Readonly<Record<ChatView, Readonly<{ name: string, line: string }>>>} */
+export const VIEW_WORDS = Object.freeze({
+  plain: Object.freeze({ name: "Plain", line: "Just the words" }),
+  thinking: Object.freeze({ name: "Thinking", line: "Adds the agent's thinking" }),
+  tools: Object.freeze({ name: "Tool calls", line: "Adds the tools it used" }),
+});
 
 /* ── which vault a request is for ───────────────────────────────────────── */
 
@@ -212,6 +272,17 @@ export const DESIGN_PAGE = "@design";
  *  own says `plugin: biom-mindmap` and is an ordinary page. */
 export const MAP_PAGE = "@map";
 
+/** THE AGENT SCREEN'S ID, for the same reason and by the same mechanism, and
+ *  the eleventh contracts edit. The start screen, a chat and the list of
+ *  chats are drawn by a plugin a workspace can replace — the framework's
+ *  `biom-agent`, whose `look` variable names the plugin that draws them, and
+ *  a vault names its own in a rung — so the Agent screen needs a mount the
+ *  runtime can `page.read`: this id answers a bare plugin page with no
+ *  directory behind it, as `@map` does. Only the INPUT BOX is not the
+ *  look's: it is Biom's, in the host, over the box, so only the person's
+ *  typing ever reaches an agent. */
+export const AGENT_PAGE = "@agent";
+
 /** AN ID FOLDED FOR COMPARISON, and the only place case is ever ignored.
  *
  *  A page id keeps the case it was given — `Companies/Airtable` is what somebody
@@ -232,3 +303,18 @@ export const MAP_PAGE = "@map";
  *  a browser loads directly.
  *  @param {string} id */
 export const foldId = (id) => String(id).toLowerCase();
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** THE MOST PAGES ONE `page.locate` NAMES, of ids and of uids each. A window
+ *  asks for what is on its screen and in its history, in batches, and a bound
+ *  is what keeps one request from being a way to ask for the workspace. */
+export const LOCATE_MAX = 256;
+
+/** THE MOST HITS ONE `page.search` ANSWERS, and its default: a list longer
+ *  than this is a list nobody reads, and `more` says there were others. */
+export const SEARCH_MAX = 50;
+
+/** THE LONGEST QUERY `page.search` TAKES, in characters. A name is short; a
+ *  query this long is a paste, and it is refused rather than scanned. */
+export const SEARCH_QUERY_MAX = 200;

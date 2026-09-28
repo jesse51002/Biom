@@ -18,14 +18,24 @@
 // can only be projected by the code that draws it, which reports its markdown
 // from inside the box. This module is what puts either on disk.
 //
-// COMMITS. Nothing in here commits. `files.commit` is `git add -A` BEFORE the
-// next write, so a projection written inside the same request as the change it
-// mirrors is swept into the same commit as that change — which is the whole
-// reason it is written synchronously rather than on a timer. The one exception
-// is the rebuild on mount, which has no change to ride and says so itself.
+// IT IS KEPT IN THE BACKGROUND. Nothing a request answers waits on it: a write
+// asks `queue.follow` and answers, and the projection lands a moment later —
+// one page at a time, a page asked for twice in a row projected once, the
+// thread handed back between pages because a projection parses and the server
+// has one thread. So the mirror is current within seconds of a write rather
+// than at the moment it answers, and `queue.idle()` is when everything asked
+// so far is on disk — for a test, and for the mount's pass. Every change to a
+// page's file here is a task on that queue — a projection, a box's own words,
+// a move, a drop, and the prune that takes away what is no longer a page — so
+// none of them lands in the middle of another.
+//
+// COMMITS. Nothing in here commits. A projection is swept into the next
+// commit anybody makes, which is the one before the next write. The mount's
+// pass and a full rebuild say so themselves where anything changed.
 
-import type { Files, HostErrorCode, PageId, PageRef, Pages, VarValue, Variables } from "../../contracts/types.ts";
-import { DOC_PLUGIN, parentOf } from "../../contracts/types.ts";
+import type { Docs, Files, HostErrorCode, PageId, PageRef, Pages, VarValue, Variables } from "../../contracts/types.ts";
+import { DOC_PLUGIN, parentOf, segmentOf } from "../../contracts/types.ts";
+import type { DiskFiles } from "../platform/files.ts";
 import { projectDoc } from "../../contracts/projection.ts";
 
 const bad = (code: HostErrorCode, message: string) => Object.assign(new Error(message), { code });
@@ -41,12 +51,17 @@ export const MIRROR_DIR = "_markdown";
  *  segment is not a page and must never be turned into an id. */
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-/** The two spellings the page tree is laid out with, as `pages.ts` writes them.
+/** The spellings the page tree is laid out with, as `pages.ts` writes them.
  *  They are repeated here for the same reason `SEGMENT` is: this module is the
  *  one that walks a real directory path and decides whether it is a page, and
  *  `pages.ts` is a sibling it may not import. */
 const PAGES_DIR = "pages";
 const CHILDREN = "children";
+const PAGE_DOC = "content.yaml";
+
+/** `home/clients/ashgrove` → `pages/home/children/clients/children/ashgrove`,
+ *  vault-relative: the folder `pages.ts` keeps that page in. */
+const folderOf = (id: string): string => `${PAGES_DIR}/${id.split("/").join(`/${CHILDREN}/`)}`;
 
 /** WHICH PAGE A CHANGED FILE BELONGS TO, and what is left of the path below it.
  *
@@ -77,11 +92,44 @@ export function pageAt(rel: string): { id: PageId; rest: string } | null {
   return { id: ids.join("/") as PageId, rest: parts.slice(at).join("/") };
 }
 
+/** THE MIRROR'S WORK, ASKED FOR AND NOT WAITED ON. Each call answers at once;
+ *  the work runs in the order asked, one task at a time, yielding between
+ *  them. Consecutive asks to project one page are one projection. */
+export interface MirrorQueue {
+  /** Project a page soon — and, where the change was structural, its parent,
+   *  which lists it. A reserved id (`@design`) is not mirrored and is let go. */
+  follow(id: PageId, structural?: boolean): void;
+  /** Take a page's file and everything under it away, soon. */
+  drop(id: PageId): void;
+  /** Carry a moved page's files to its new id, soon. */
+  rename(from: PageId, to: PageId): void;
+  /** STORE THE WORDS A PAGE'S OWN BOX COMPUTED, in their turn: after every
+   *  task already asked, so a projection of that page already under way
+   *  cannot land after them and put the host's empty file back over them.
+   *  Settles once they are on disk, and fails as `Mirror.write` fails. */
+  write(id: PageId, markdown: string): Promise<void>;
+  /** TAKE AWAY WHAT IS NO LONGER A PAGE, in its turn: after every task
+   *  already asked and before any asked after it, so no projection lands
+   *  between its look at the disk and its delete. Answers what it took, and
+   *  fails as `Mirror.prune` fails. */
+  prune(ids: readonly PageId[]): Promise<string[]>;
+  /** Settles when every task asked so far is done. */
+  idle(): Promise<void>;
+  /** THE FOLDER CLOSED: every task not yet started is let go, a `write` or a
+   *  `prune` waiting among them fails, and nothing asked from now on is done.
+   *  A task under way finishes. */
+  stop(): void;
+  /** Tasks asked and not yet done. */
+  pending(): number;
+}
+
 /** What the mirror can be asked to do. It lives here rather than in
  *  `contracts/types.ts` because nothing crosses the wire to reach it — the wire
  *  carries a page's markdown and this is what happens to it afterwards, the same
  *  arrangement `ThemeStore` already has. */
 export interface Mirror {
+  /** The same work, in the background: what every write and every settle asks. */
+  readonly queue: MirrorQueue;
   /** Put one page's markdown on disk, wrapped in its frontmatter. */
   write(id: PageId, markdown: string): Promise<void>;
   /** Compute a doc page's projection here and write it. */
@@ -90,8 +138,9 @@ export interface Mirror {
   drop(id: PageId): Promise<void>;
   /** Carry a moved page's files, and everything under it, to its new id. */
   rename(from: PageId, to: PageId): Promise<void>;
-  /** Remove every file in the mirror that no longer names a page; answers what
-   *  it took. */
+  /** Remove every file in the mirror that no longer names a page — one `ids`
+   *  does not name and whose page is not on disk either; answers what it
+   *  took. */
   prune(ids: readonly PageId[]): Promise<string[]>;
   /** Write the read-only notice where it differs; answers whether it wrote. */
   guide(): Promise<boolean>;
@@ -214,7 +263,14 @@ const RESERVED = new Set(["id", "parent", "source", "generated"]);
  *  Obsidian already understands. */
 export const mirrorPath = (id: PageId): string => `${MIRROR_DIR}/${id}.md`;
 
-export function makeMirror(files: Files, pages: Pages): Mirror {
+/**
+ * @param docs the page documents, for a projection's frontmatter — the name and
+ *   the variables, one parse of one file and no children listed. Absent, the
+ *   page is read whole for them, as a tool with no `Docs` to hand does.
+ * @param pause what the queue hands the thread back with between tasks; a
+ *   test hands its own.
+ */
+export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null, pause: () => Promise<void> = breathe): Mirror {
   /** The design doc has an id but is not in the page tree, and a page id with a
    *  `@` in it cannot be a path segment anywhere. Refused by name rather than
    *  silently skipped, so a caller that meant it hears about it. */
@@ -236,14 +292,21 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
     check(id);
     if (typeof markdown !== "string") throw bad("bad_request", "a projection is text");
     if (markdown.length > MAX) throw bad("limit", "that projection is too long to store");
-    const page = await pages.read(id);
-    if (page === null) throw bad("not_found", "no such page");
+    await put(id, markdown, await frontOf(id));
+  };
+
+  /** One page's file, from its markdown and the name and variables its
+   *  frontmatter carries — which the caller already has, so nothing is read
+   *  twice. NOT WRITTEN WHERE IT IS ALREADY WHAT IS ON DISK: a mirror file
+   *  rewritten with its own bytes is a write for nothing and, on a mount, one
+   *  of two thousand. */
+  const put = async (id: PageId, markdown: string, page: { name: string; variables: Variables }): Promise<void> => {
     const body = markdown.trim();
     // The page's own title, where the body opens with one. Read from the FIRST
     // LINE only: a `#` further down is a section heading, not the page's name.
     const heading = /^#\s+(.+)$/.exec(body.split("\n", 1)[0] ?? "")?.[1]?.trim() ?? "";
     const head = frontmatter(
-      id, page.name, `pages/${id.split("/").join("/children/")}/content.yaml`, page.variables, heading,
+      id, page.name, `${folderOf(id)}/${PAGE_DOC}`, page.variables, heading,
     );
     // THE PAGE'S OWN HEADING WINS WHERE IT HAS ONE.
     //
@@ -257,13 +320,31 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
     // which is every page made in the app, and every board, whose projection is
     // a list of cards with nothing above it.
     const titled = /^#\s/.test(body);
-    await files.write(
-      mirrorPath(id),
-      titled
-        ? `${head}\n\n${body}\n`
-        : `${head}\n\n# ${page.name}\n${body === "" ? "" : `\n${body}\n`}`,
-    );
+    const text = titled
+      ? `${head}\n\n${body}\n`
+      : `${head}\n\n# ${page.name}\n${body === "" ? "" : `\n${body}\n`}`;
+    if ((await files.read(mirrorPath(id))) === text) return;
+    await files.write(mirrorPath(id), text);
   };
+
+  /** THE NAME AND VARIABLES A PROJECTION'S FRONTMATTER CARRIES: the page's
+   *  document alone — one parse, and no child listed — where `docs` is given.
+   *  A document that will not parse is named by its segment, as the tree names
+   *  it; a page that is not there is refused. */
+  async function frontOf(id: PageId): Promise<{ name: string; variables: Variables }> {
+    if (docs === null) {
+      const page = await pages.read(id);
+      if (page === null) throw bad("not_found", "no such page");
+      return { name: page.name, variables: page.variables };
+    }
+    try {
+      const doc = await docs.read(id);
+      return { name: doc.name, variables: doc.variables };
+    } catch (e) {
+      if ((e as { code?: unknown }).code === "not_found") throw bad("not_found", "no such page");
+      return { name: segmentOf(id), variables: {} };
+    }
+  }
 
   /** The words a projection wraps, taken back out — the inverse of what `write`
    *  puts around them. A moved page's file has to be rewritten rather than
@@ -294,14 +375,17 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
    *  in the graph and its own projection fills the body the first time somebody
    *  opens it. */
   const project = async (id: PageId): Promise<void> => {
+    check(id);
+    // ONE READ OF THE PAGE: its projection and its frontmatter both come out
+    // of it, so the name and the variables are not read a second time.
     const page = await pages.read(id);
     if (page === null) return;
     if (page.plugin === DOC_PLUGIN) {
-      await write(id, projectDoc(page));
+      await put(id, projectDoc(page), page);
       return;
     }
     if ((await files.read(mirrorPath(id))) !== null) return;
-    await write(id, "");
+    await put(id, "", page);
   };
 
   const drop = async (id: PageId): Promise<void> => {
@@ -313,7 +397,8 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
     await files.remove(`${MIRROR_DIR}/${id}`);
   };
 
-  return {
+  const mirror: Mirror = {
+    queue: makeQueue(),
     write: write,
     project: project,
     drop: drop,
@@ -404,6 +489,23 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
       const live = new Set(ids);
       const gone: string[] = [];
 
+      /** WHAT THE DISK HAS OF A PAGE `ids` DID NOT NAME. The list is a walk
+       *  taken before this ran — the mount's, which then stats every page
+       *  while the watcher goes on projecting — so a page made after it has a
+       *  folder the list never saw and a file the watcher has already
+       *  written. Swept on the list's word alone, that file went, and the
+       *  page stayed without its markdown until its next edit or the next
+       *  mount. So a name the list does not hold is asked of disk before
+       *  anything of it is taken: its document, and whether a `children/`
+       *  could still hold pages. */
+      const standing = async (id: string): Promise<{ page: boolean; kids: boolean }> => {
+        const here = await files.list(folderOf(id));
+        return {
+          page: here.some((e) => !e.dir && e.name === PAGE_DOC),
+          kids: here.some((e) => e.dir && e.name === CHILDREN),
+        };
+      };
+
       const walk = async (rel: string, prefix: string): Promise<void> => {
         for (const entry of await files.list(rel)) {
           const path = `${rel}/${entry.name}`;
@@ -421,7 +523,7 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
             // still standing is not a shape this reaches, but a mirror that
             // deleted a live page's file would be.
             const holds = [...live].some((one) => one.startsWith(`${id}/`));
-            if (holds) await walk(path, `${id}/`);
+            if (holds || (await standing(id)).kids) await walk(path, `${id}/`);
             else { await files.remove(path); gone.push(path); }
             continue;
           }
@@ -430,7 +532,7 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
           // be swept as a stale one. See NOTICE.
           if (rel === MIRROR_DIR && NOTICE.includes(entry.name)) continue;
           const id = prefix + entry.name.slice(0, -3);
-          if (live.has(id)) continue;
+          if (live.has(id) || (await standing(id)).page) continue;
           await files.remove(path);
           gone.push(path);
         }
@@ -453,7 +555,129 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
       return wrote;
     },
   };
+  return mirror;
+
+  /** THE QUEUE. One task at a time, in the order asked; the thread handed back
+   *  between tasks; a failure a line in the log and never the next task's
+   *  problem — the mirror is derived, and the next write of that page, or the
+   *  next mount, writes it again. */
+  function makeQueue(): MirrorQueue {
+    type Task =
+      | { kind: "project"; id: PageId }
+      | { kind: "drop"; id: PageId }
+      | { kind: "rename"; from: PageId; to: PageId }
+      | { kind: "write"; id: PageId; markdown: string; done: () => void; failed: (e: unknown) => void }
+      | { kind: "prune"; ids: readonly PageId[]; done: (gone: string[]) => void; failed: (e: unknown) => void };
+    const tasks: Task[] = [];
+    let running: Promise<void> | null = null;
+    let stopped = false;
+    const closed = (): Error => Object.assign(new Error("the folder is closed"), { code: "unsupported" });
+
+    /** Ask for one page's projection, unless the same ask is already waiting
+     *  in the run of projections at the end of the queue — never across a drop
+     *  or a rename, whose order against it matters. */
+    const project = (id: PageId): void => {
+      if (stopped) return;
+      for (let i = tasks.length - 1; i >= 0; i--) {
+        const t = tasks[i] as Task;
+        if (t.kind !== "project") break;
+        if (t.id === id) return;
+      }
+      tasks.push({ kind: "project", id });
+      start();
+    };
+
+    const run = async (t: Task): Promise<void> => {
+      if (t.kind === "project") await mirror.project(t.id);
+      else if (t.kind === "drop") await mirror.drop(t.id);
+      else if (t.kind === "rename") await mirror.rename(t.from, t.to);
+      else if (t.kind === "prune") {
+        try {
+          t.done(await mirror.prune(t.ids));
+        } catch (e) {
+          t.failed(e);
+        }
+      } else {
+        // The caller's to report, as a refusal it chose the words of — never
+        // a line in this log.
+        try {
+          await mirror.write(t.id, t.markdown);
+          t.done();
+        } catch (e) {
+          t.failed(e);
+        }
+      }
+    };
+
+    const start = (): void => {
+      if (running !== null) return;
+      running = (async () => {
+        try {
+          for (let t = tasks.shift(); t !== undefined; t = tasks.shift()) {
+            try {
+              await run(t);
+            } catch (e) {
+              // A task under way when its folder closed fails on the closed
+              // database, and that is nothing to report.
+              if (!stopped) console.warn("the markdown mirror", e instanceof Error ? e.message : e);
+            }
+            await pause();
+          }
+        } finally {
+          running = null;
+        }
+      })();
+    };
+
+    return {
+      follow(id, structural = false) {
+        // A RESERVED PAGE HAS NO MIRROR AND IS NOT ASKED FOR ONE — `follow`
+        // says why.
+        if (typeof id !== "string" || id === "" || id.startsWith("@")) return;
+        project(id);
+        if (!structural) return;
+        const parent = parentOf(id);
+        if (parent !== null) project(parent);
+      },
+      drop(id) {
+        if (stopped || typeof id !== "string" || id === "" || id.startsWith("@")) return;
+        tasks.push({ kind: "drop", id });
+        start();
+      },
+      rename(from, to) {
+        if (stopped || from === to || from.startsWith("@") || to.startsWith("@")) return;
+        tasks.push({ kind: "rename", from, to });
+        start();
+      },
+      write(id, markdown) {
+        if (stopped) return Promise.reject(closed());
+        return new Promise<void>((done, failed) => {
+          tasks.push({ kind: "write", id, markdown, done, failed });
+          start();
+        });
+      },
+      prune(ids) {
+        if (stopped) return Promise.reject(closed());
+        return new Promise<string[]>((done, failed) => {
+          tasks.push({ kind: "prune", ids, done, failed });
+          start();
+        });
+      },
+      stop() {
+        stopped = true;
+        for (const t of tasks.splice(0)) if (t.kind === "write" || t.kind === "prune") t.failed(closed());
+      },
+      async idle() {
+        while (running !== null) await running;
+      },
+      pending: () => tasks.length + (running === null ? 0 : 1),
+    };
+  }
 }
+
+/** Hand the thread back for a moment: every request waiting gets its turn
+ *  before the next page is projected. */
+const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 /** Rebuild every page's projection and take away what is no longer a page.
  *
@@ -465,9 +689,54 @@ export function makeMirror(files: Files, pages: Pages): Mirror {
  *  Answers whether anything changed on disk. */
 export async function rebuild(mirror: Mirror, refs: readonly PageRef[]): Promise<boolean> {
   const wrote = await mirror.guide();
-  for (const ref of refs) await mirror.project(ref.id);
-  const gone = await mirror.prune(refs.map((r) => r.id));
+  // Through the queue, like every other projection, and waited for: this is
+  // the one caller that asks for every page on purpose. The prune takes its
+  // turn after them.
+  for (const ref of refs) mirror.queue.follow(ref.id);
+  const gone = await mirror.queue.prune(refs.map((r) => r.id));
   return wrote || gone.length > 0 || refs.length > 0;
+}
+
+/** THE MOUNT'S PASS, and the answer to a mirror that fell behind while the
+ *  server was not running: project a page only where its `content.yaml` — or
+ *  its `children/`, whose listing a parent's projection spells — is newer than
+ *  its `.md`, or the `.md` is missing, then take away what is no longer a page.
+ *  A stat or two per page and nothing parsed where nothing changed, so a mount
+ *  after which nothing had changed writes nothing at all.
+ *
+ *  `dirs` is every page folder, vault-relative — `pageDirs`, a readdir walk and
+ *  never a parse, taken before this runs. The projections go on the queue and
+ *  the prune after them, in its turn, asking the disk about any file `dirs`
+ *  does not name — a page made since the walk is not gone; this answers once
+ *  the prune has run, with how many projections it asked for and whether the
+ *  notice or the prune wrote. */
+export async function refresh(
+  mirror: Mirror,
+  files: DiskFiles,
+  dirs: readonly string[],
+  pause: () => Promise<void> = breathe,
+): Promise<{ queued: number; wrote: boolean }> {
+  const wrote = await mirror.guide();
+  const ids: PageId[] = [];
+  let queued = 0;
+  let n = 0;
+  for (const dir of dirs) {
+    const at = pageAt(dir);
+    if (at === null || at.rest !== "") continue;
+    ids.push(at.id);
+    const doc = await files.stat(`${dir}/${PAGE_DOC}`);
+    if (doc === null) continue;
+    const md = await files.stat(mirrorPath(at.id));
+    const kids = await files.stat(`${dir}/${CHILDREN}`);
+    const since = md === null ? -1 : md.mtimeMs;
+    if (md === null || doc.mtimeMs > since || (kids !== null && kids.mtimeMs > since)) {
+      mirror.queue.follow(at.id);
+      queued++;
+    }
+    if (++n % 200 === 0) await pause();
+  }
+  const gone = await mirror.queue.prune(ids);
+  return { queued, wrote: wrote || gone.length > 0 };
 }
 
 /** Re-project one page and, where the change was structural, its parent too —

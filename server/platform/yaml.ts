@@ -897,3 +897,134 @@ function sameVariables(a: Variables | undefined, b: Variables | undefined): bool
   }
   return true;
 }
+
+/* ── a page's head ─────────────────────────────────────────────────────── */
+
+/** What a page's head says: its `name`, `uid` and `plugin`, each null where the
+ *  document has none. */
+export interface Head {
+  name: string | null;
+  uid: string | null;
+  plugin: string | null;
+}
+
+/** The three top-level keys a head is read for. */
+const HEAD_KEYS = new Set(["name", "uid", "plugin"]);
+
+/** A top-level line: a key at the left edge, a colon, and whatever follows. A
+ *  quoted key is not matched, and neither is anything indented — which is what
+ *  keeps a section's own `name:` from ever being taken for the page's. */
+const TOP_LINE = /^([A-Za-z_][A-Za-z0-9_-]*):(?=\s|$)(.*)$/;
+
+/**
+ * THE ONE HEAD PARSER: a page's `name`, `uid` and `plugin` off the top of its
+ * document, without parsing the rest of it. Parsing is what costs — reading a
+ * workspace's every document is fifty milliseconds and parsing them is well
+ * over a second — so a level of the tree, a lookup and a search are answered
+ * from this and never from `parse`.
+ *
+ * Only the column-0 `name:`, `uid:` and `plugin:` lines are taken, and they are
+ * parsed as those lines alone with the real parser, so quoting, escapes and a
+ * trailing comment come out exactly as a full parse would give them. Null means
+ * THE HEAD CANNOT SAY, and the caller parses the whole document once instead:
+ *
+ *   - there is no `name:` line in it;
+ *   - one of the three is a block scalar, anchored, aliased, tagged, spread
+ *     over more than one line, or given twice;
+ *   - a top-level value opens a quote or a bracket it does not close on its
+ *     own line — the one way a later line at the left edge can still be inside
+ *     a value;
+ *   - the lines will not parse, or a value is not what the format allows
+ *     (`uid` off its grammar, `plugin` not a plugin's name, a name that is a
+ *     list or a map);
+ *   - a second document starts.
+ *
+ * A `name:` with nothing after it is a page with no name, which the caller
+ * names by its folder. Pure: the text is whatever the caller read, and a head
+ * cut off part-way through a line has had that line dropped by the caller.
+ */
+export function headOf(text: string): Head | null {
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const lines = body.split(/\r?\n/);
+  const taken = new Map<string, string>();
+  let started = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (line === "" || line.startsWith("#") || line.startsWith(" ") || line.startsWith("\t")) continue;
+    if (line.startsWith("%")) continue;
+    if (line.startsWith("---")) {
+      // A second document after the first's keys is not a page the head can
+      // speak for.
+      if (started) return null;
+      continue;
+    }
+    if (line.startsWith("...")) return null;
+    const m = TOP_LINE.exec(line);
+    if (m === null) return null;
+    started = true;
+    const key = m[1] ?? "";
+    const value = (m[2] ?? "").trim();
+    const opens = value.startsWith('"') || value.startsWith("'") || value.startsWith("[") || value.startsWith("{");
+    if (!HEAD_KEYS.has(key)) {
+      // SOMEBODY ELSE'S VALUE, which matters only if it could run on past its
+      // own line: a quote or a bracket left open there.
+      if (opens && !parsesAlone(line)) return null;
+      continue;
+    }
+    if (taken.has(key)) return null;
+    if (/^[|>&*!]/.test(value)) return null;
+    // The value goes on below: a plain scalar folded onto a later line — blank
+    // lines may stand between — or a nested block where a scalar belongs.
+    let j = i + 1;
+    while (j < lines.length && (lines[j] ?? "").trim() === "") j++;
+    const next = lines[j];
+    if (next !== undefined && /^[ \t]+\S/.test(next) && !/^[ \t]+#/.test(next)) return null;
+    taken.set(key, line);
+  }
+  if (!taken.has("name")) return null;
+
+  let js: unknown;
+  try {
+    const doc = parseDocument([...taken.values()].join("\n"), { version: "1.2", uniqueKeys: true });
+    if (doc.errors.length > 0) return null;
+    js = doc.toJS();
+  } catch {
+    return null;
+  }
+  if (typeof js !== "object" || js === null || Array.isArray(js)) return null;
+  const map = js as Record<string, unknown>;
+
+  const rawName = map["name"];
+  let name: string | null;
+  if (rawName === null || rawName === undefined || rawName === "") name = null;
+  else if (typeof rawName === "string") name = rawName;
+  // `name: 2026` is a page called "2026" that YAML read as a number, exactly
+  // as the full parse reads it.
+  else if (typeof rawName === "number" || typeof rawName === "boolean") name = String(rawName);
+  else return null;
+
+  const rawUid = map["uid"];
+  let uid: string | null = null;
+  if (rawUid !== null && rawUid !== undefined) {
+    if (typeof rawUid !== "string" || !UID.test(rawUid)) return null;
+    uid = rawUid;
+  }
+
+  const rawPlugin = map["plugin"];
+  let plugin: string | null = null;
+  if (rawPlugin !== null && rawPlugin !== undefined) {
+    if (typeof rawPlugin !== "string" || !PLUGIN_NAME.test(rawPlugin)) return null;
+    plugin = rawPlugin;
+  }
+  return { name, uid, plugin };
+}
+
+/** Does one line parse as a document by itself — its quotes and brackets all
+ *  closed on it? */
+function parsesAlone(line: string): boolean {
+  try {
+    return parseDocument(line, { version: "1.2" }).errors.length === 0;
+  } catch {
+    return false;
+  }
+}

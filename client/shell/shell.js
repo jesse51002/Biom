@@ -48,16 +48,20 @@
 // been dragged. That is what keeps a drag from repainting the workspace and a
 // repaint from arguing with a drag.
 
-/** @import { FrameHost, Page, PageId, TableView,
- *            UiState, UiStore, VaultInfo, ViewName } from "../../contracts/types.ts" */
+/** @import { Address, ChangeEvent, FrameHost, Page, PageId, PageScreen, TableView,
+ *            UiState, VaultInfo, ViewName } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
-/** @import { TerminalStore } from "../store/terminals.js" */
-/** @import { TerminalView } from "../views/terminal.js" */
+/** @import { Ui } from "../store/ui.js" */
+/** @import { AgentChrome } from "../views/agent.js" */
 
 import { DESIGN_PAGE, MAP_PAGE } from "../../contracts/wire.js";
+import { VIEW_NAMES, formatAddress, parseAddress, sameAddress } from "../../contracts/address.js";
 import { remember } from "../platform/dom.js";
 import { closePopover, popItem, popover } from "../widgets/popover.js";
 import { ROOT_PAGE } from "../store/workspace.js";
+import { NOT_TOUCH } from "../store/switcher.js";
+import { agentMode } from "../store/chats.js";
+import { changeOf } from "../transport/chat.js";
 // THE ADDRESS OF THE START PAGE, from the module that owns every other address a
 // workspace has. `Close workspace` and the picker's own rows are the two
 // directions of one move — into a folder and out of it — and an address built
@@ -65,7 +69,6 @@ import { ROOT_PAGE } from "../store/workspace.js";
 import { closeHref } from "../views/vault.js";
 import { makeDialog } from "./dialog.js";
 import { makeRack } from "./rack.js";
-import { makeDock } from "./dock.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
 /** @typedef {(el: HTMLElement, ...content: any[]) => HTMLElement} Fill */
@@ -87,6 +90,30 @@ import { makeDock } from "./dock.js";
  *   the workspace's INSTRUCTIONS.md with its skills, and a page's own.
  * @property {(page: Page) => HTMLElement} automation a page's automations:
  *   manifest, files, runs.
+ * @property {() => HTMLElement | null} [goback] **GO BACK TO**, or null while
+ *   there is nothing of the person's to go back to. Mounted at the top left of
+ *   the canvas. Absent where no switcher is built — a tab with no workspace, a
+ *   test that is not about it.
+ * @property {ShellAgent} [agent] THE AGENT SCREEN, and the chat panel
+ *   beside a page. Absent in a tab with no workspace and in a test that is not
+ *   about it, where the route holds a sentence.
+ */
+
+/**
+ * THE AGENT SCREEN AS THE SHELL HOLDS IT. `slot` is ONE element — the look's
+ * box and Biom's input box over it — which the shell puts in the bed once,
+ * beside the canvas, and never moves: moving an iframe reloads it. Where it
+ * shows is the bed's `data-agent`: the whole screen on `#/agent`, the panel
+ * beside whatever else is on screen while the panel is open, nowhere
+ * otherwise.
+ * @typedef {object} ShellAgent
+ * @property {HTMLElement} slot
+ * @property {() => void} open The rail's **Agent**: the full screen, and the
+ *   chat this window last had open.
+ * @property {(page: PageId) => void} edit **Edit**: a new chat beside the
+ *   page with the page's location typed in.
+ * @property {() => AgentChrome} chrome The busy count, the open chat and the
+ *   counts the chrome shows.
  */
 
 /**
@@ -97,7 +124,13 @@ import { makeDock } from "./dock.js";
  *   table and then places it, which is `moveChild` — the same write the rail
  *   makes when you drag one — and that lives on the store rather than in the
  *   frozen contract.
- * @property {UiStore} ui
+ * @property {Ui} ui WHERE THE PERSON IS. Every control in here that takes them
+ *   somewhere is THEIR open — the rail, a crumb, a hit, Home, Back — and only a
+ *   workspace failing to open moves them without being asked (`trouble`).
+ * @property {() => void} [touched] THE PERSON TOUCHED THE SCREEN the host
+ *   draws itself — a click, a key or a scroll on the canvas, anywhere not
+ *   marked `NOT_TOUCH`. A box says its own through the frame host. Absent where
+ *   no switcher is built.
  * @property {FrameHost} frameHost
  * @property {ShellViews} views
  * @property {string} [newerVersion] A NEWER RELEASE THAN THIS ONE, by name, or
@@ -111,19 +144,17 @@ import { makeDock } from "./dock.js";
  *   failure screen may name `make dev`. Every screen and every row is in every
  *   build — the owner decided on 2026-09-17 that the built application hides no
  *   screen — so nothing here is a second code path. Absent means development.
- * @property {{ on: (hear: () => void) => () => void }} [events] THE VAULT
- *   CHANGING ON DISK, as a subscription rather than an import: data ascends
- *   through a callback a higher layer registered, and nothing below the shell
- *   holds a reference to anything above it. Optional, because a tab that has
- *   chosen no folder has no stream and because most tests that build a shell
- *   are not about this.
+ * @property {{ on: (hear: (data: string | null) => void) => () => void }} [events]
+ *   THE VAULT CHANGING ON DISK, as a subscription rather than an import: data
+ *   ascends through a callback a higher layer registered, and nothing below
+ *   the shell holds a reference to anything above it. Each `change` hands up
+ *   its data — the pages and levels it names, decoded here by `changeOf` —
+ *   and a reconnect hands up null, which rereads everything the window holds.
+ *   Optional, because a tab that has chosen no folder has no stream and
+ *   because most tests that build a shell are not about this.
  * @property {string} [search] THE QUERY THIS WINDOW WAS OPENED WITH, which the
  *   rail's `Close workspace` row carries forward minus the folder. Defaults to
  *   the real one, and to "" where there is no window at all.
- * @property {{ store: TerminalStore, view: TerminalView }} [terminal]
- *   THE AGENT TERMINAL, when this window has a workspace to run one in. Absent,
- *   no dock is built, no `.work` wraps the bed, and the rail offers no Terminal
- *   row — which is a tab with no folder, and every test that is not about it.
  */
 
 /** The route vocabulary, so a hash somebody typed cannot invent a view.
@@ -131,9 +162,12 @@ import { makeDock } from "./dock.js";
  *  Exported for the test that holds it and the rail in agreement: a view is
  *  reachable by typing and reachable by clicking, and the two lists are in
  *  different halves of this file. A test that hand-copied either would be a
- *  third list.
+ *  third list. IT IS `VIEW_NAMES` NOW, from `contracts/address.js`, typed
+ *  there so it cannot differ from `ViewName`: the switcher and the history
+ *  route to the same addresses the shell does, and one vocabulary is read by
+ *  all three.
  *  @type {ReadonlySet<string>} */
-export const VIEWS = new Set(["page", "table", "vault", "design", "map", "runs", "instructions"]);
+export const VIEWS = VIEW_NAMES;
 
 /** THE WINDOW'S OWN BAR, AND WHETHER THERE IS A WINDOW TO PUT ONE ON.
  *
@@ -192,24 +226,23 @@ export function makeShell(deps) {
   const rail = h("div.rail");
   const rack = h("nav.rack", { "aria-label": "Workspace" });
   const plate = h("div.plate");
+  /** WHERE **GO BACK TO** SITS: the top left of the canvas, over whatever the
+   *  screen is, after the plate so the plate keeps its place among the
+   *  canvas's children. NOT A TOUCH: pressing it must not first make the
+   *  screen it offers a way out of the person's, which would take the button
+   *  away between the press and the click. */
+  const backslot = h("div.backslot", { [NOT_TOUCH]: "" });
   const canvas = h("div.canvas",
-    h("i.reg.tl"), h("i.reg.tr"), h("i.reg.bl"), h("i.reg.br"), plate);
+    h("i.reg.tl"), h("i.reg.tr"), h("i.reg.bl"), h("i.reg.br"), plate, backslot);
   // The grip sits in the bed rather than in the rack: the rack scrolls, and a
   // handle that scrolls out of view is a handle nobody finds twice.
-  const bed = h("div.bed", rack, canvas, sizer.grip);
+  // THE AGENT SCREEN'S SLOT, after the canvas and put here once: its shape is
+  // the bed's grid (`data-agent`), never a move.
+  const bed = views.agent ? h("div.bed", rack, canvas, views.agent.slot, sizer.grip) : h("div.bed", rack, canvas, sizer.grip);
+  /** WHAT THE PLATE HOLDS ON THE AGENT SCREEN: nothing, kept. The canvas is
+   *  not drawn there — the slot takes its column. */
+  const agentHole = h("div.agenthole");
   const strip = h("div.strip");
-
-  /** THE TERMINAL DOCK, beside the whole workspace — rail-side navigation and
-   *  page alike — on whichever edge it was dragged to. `.work` holds the bed and
-   *  the dock as two fixed children for the life of the window, and which edge
-   *  is a grid template on it: see the header of `dock.js` for why nothing here
-   *  may ever reparent either. No terminal, no wrapper, and the bed is the row
-   *  it always was. */
-  const terminal = deps.terminal ?? null;
-  const dock = terminal === null ? null : makeDock({ h, terms: terminal.store, view: terminal.view });
-  const work = dock === null ? null : h("div.work", bed, dock.el);
-  if (dock !== null && work !== null) dock.attach(work);
-  const middle = work ?? bed;
 
   /** The window's own bar, or null in a browser. Read once: see `windowBridge`.
    *  The double-click is here rather than on a control because the whole bar is
@@ -225,8 +258,8 @@ export function makeShell(deps) {
   // skeleton: with no bridge the element is not built and nothing about the
   // page below it changes by a pixel.
   const app = titlebar === null
-    ? h("div.app", rail, middle, strip)
-    : h("div.app.framed", titlebar, rail, middle, strip);
+    ? h("div.app", rail, bed, strip)
+    : h("div.app.framed", titlebar, rail, bed, strip);
 
   /** What the body was last built from. Identity, not equality. @type {unknown[]} */
   let built = [Symbol("nothing")];
@@ -246,10 +279,13 @@ export function makeShell(deps) {
   /** How many times Reload has been pressed. The only screen that reads it is
    *  Design, whose doc is not in the snapshot and so cannot be seen to move. */
   let reloads = 0;
-  /** A change that landed while a reload was already running. It is a flag and
-   *  not a queue: what a redraw reads is the current state of disk, so two
-   *  pending changes and one are the same amount of work. */
-  let again = false;
+  /** What changed while a reload was already running, merged: one more pass
+   *  rereads all of it, so two pending changes and one are one pass.
+   *  @type {ChangeEvent | null} */
+  let again = null;
+  /** The page whose way down the rail has listed, so a repaint does not ask
+   *  again — and a level that would not list is not asked for on every one. */
+  let revealed = "";
   /** Set by boot when the workspace could not be read at all. @type {string} */
   let troubled = "";
   /** HOW MANY RUNS THE WINDOW WAS ASKED TO CLOSE OVER, or 0 when it was not.
@@ -261,13 +297,13 @@ export function makeShell(deps) {
    *  frozen and does not carry it, so it is read on its own.
    *  @type {VaultInfo | null} */
   let vault = null;
-  /** The page list the name above was read against. Re-reading on a re-listed
-   *  tree is what keeps it honest without a signal the contract does not have:
-   *  opening a vault replaces every page in the snapshot at once, so a `pages`
-   *  array that is a different object is the cheapest true test for "the folder
-   *  may have moved". It costs one small request per create, move or install.
-   *  @type {unknown} */
-  let vaultFrom = Symbol("nothing");
+  /** The tree's version the name above was read against. Re-reading on a
+   *  re-listed tree is what keeps it honest without a signal the contract does
+   *  not have: the store moves its version whenever a level is listed, so a
+   *  different number is the cheapest true test for "the folder may have
+   *  moved". It costs one small request per level listed, create, move or
+   *  install. @type {number} */
+  let vaultFrom = -1;
   let vaultBusy = false;
   /** Ids the server answered "no such page" for. Without this, a route to a
    *  deleted page refetches it on every emit for as long as the tab is open. */
@@ -312,7 +348,7 @@ export function makeShell(deps) {
         // `pages` is here because a page draws its children, and a child renamed
         // or removed elsewhere changes what this page says without touching the
         // page object itself.
-        return ["page", r.id, u.pageView, w.page, u.inserting, w.pages, missing.has(r.id)];
+        return ["page", r.id, r.screen, w.page, u.inserting, w.pages, missing.has(r.id)];
       case "table":
         return ["table", r.id, w.table, w.pages];
       case "design":
@@ -333,6 +369,10 @@ export function makeShell(deps) {
       case "instructions":
         // The workspace's instructions and skills, read on entry and on Reload.
         return ["instructions", reloads];
+      case "agent":
+        // The Agent screen is the Agent view's own mount, built once and kept,
+        // exactly as the overview is.
+        return ["agent"];
       default:
         return ["none"];
     }
@@ -371,22 +411,22 @@ export function makeShell(deps) {
         h("b", "The workspace did not open"),
         h("span", troubled),
         production
-          ? h("button.btn", { type: "button", onclick: () => ui.go("vault", "") }, "Choose a folder")
+          ? h("button.btn", { type: "button", onclick: () => ui.open("vault", "") }, "Choose a folder")
           : h("code", "make dev"));
     }
 
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
 
     switch (route.view) {
       case "page": {
         if (!route.id) return h("p.hold", "Nothing open yet.");
-        if (missing.has(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
+        if (missing.has(route.id) || frameworkId(route.id)) return h("p.hold", "There is no page called “" + route.id + "”.");
         const page = w.page;
         if (!page || page.id !== route.id) return h("p.hold", "Opening…");
         // THE THREE SCREENS OF A PAGE, in every build: the box, its
         // INSTRUCTIONS.md in one editor, and its automations.
-        switch (pageView) {
+        switch (route.screen) {
           case "instructions": return views.instructions.page(page);
           case "automation": return views.automation(page);
           default: return views.page(page);
@@ -420,19 +460,36 @@ export function makeShell(deps) {
       case "instructions":
         // The vault's INSTRUCTIONS.md and its own skills, one tree, one editor.
         return views.instructions.vault();
+      case "agent":
+        // THE AGENT SCREEN — `#/agent` and `#/agent/<chat>` route in every
+        // build — is the slot beside the canvas, which the bed draws in the
+        // canvas's place. The plate keeps nothing of its own meanwhile.
+        return views.agent ? agentHole : h("p.hold", "The Agent screen is not in this workspace window.");
       default:
         return h("p.hold", "Nothing open.");
     }
   }
 
+  /** THE ROOT PAGE'S OWN REF, from the directory — its name is what the bar
+   *  and the rail call the workspace — asked for once where it is not there
+   *  yet, and the answer is one repaint. @returns {import("../../contracts/types.ts").PageRef | null} */
+  function rootRef() {
+    const ref = ws.refOf(ROOT_PAGE);
+    if (ref === null) void ws.want({ ids: [ROOT_PAGE] });
+    return ref;
+  }
+
   /**
    * The page on screen, or null. "On screen" is stricter than "in the store":
-   * the route may have moved on while the read is still in flight.
+   * the route may have moved on while the read is still in flight — and Map
+   * and Design leave their own read there, under `@map` or `@design`, which a
+   * page route naming that id must never take for a page: it is no page, and
+   * gets no Share, no page screens, no Edit and a sentence's face.
    * @returns {Page | null}
    */
   function openPage() {
     const { route } = ui.get();
-    if (route.view !== "page") return null;
+    if (route.view !== "page" || frameworkId(route.id)) return null;
     const page = ws.get().page;
     return page && page.id === route.id ? page : null;
   }
@@ -448,11 +505,11 @@ export function makeShell(deps) {
    *  paragraph — `guest/sections/default.html` — which is what lets the section
    *  beside it be full-bleed. */
   function faceOf() {
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     if (route.view === "vault") return "vault";
     if (troubled) return "none";
     if (route.view !== "page") return route.view;
-    if (pageView !== "page") return pageView;
+    if (route.screen !== "page") return route.screen;
     // Only once the page is actually on screen. Before it is, the canvas is
     // holding a sentence — "Opening…", or the one about a page that is not there
     // — and a sentence wants the padding a box does not.
@@ -484,8 +541,7 @@ export function makeShell(deps) {
    */
   function titleParts() {
     const wc = bridge.windowControls;
-    const w = ws.get();
-    const home = w.pages.find((p) => p.id === ROOT_PAGE);
+    const home = rootRef();
     // The name the rack calls the workspace, which is the root page's own — it
     // is the user's to change. The folder's name is the fallback, and the
     // product's the last resort while nothing has been read yet.
@@ -539,8 +595,15 @@ export function makeShell(deps) {
     return h("button.tool", { type: "button", onclick, "aria-pressed": String(pressed) }, text);
   }
 
+  /** A CHAT'S LAMP wherever the chrome names a chat, as the server keeps it:
+   *  amber and pulsing while it works, green for ten minutes after it
+   *  finished, red from a stop on an error until its next turn, and none
+   *  otherwise. @param {string} light */
+  const lamp = (light) =>
+    h("span", { class: light === "working" ? "led lit pulse" : light === "done" ? "led green" : light === "error" ? "led red" : "led", "aria-hidden": "true" });
+
   function railParts() {
-    const { route, pageView } = ui.get();
+    const { route } = ui.get();
     const w = ws.get();
     const page = openPage();
 
@@ -594,43 +657,34 @@ export function makeShell(deps) {
     // page panel and a `···` menu opening a Config screen, and the owner decided
     // on 2026-09-17 that all three go rather than hide: History said "no
     // version list yet" over a prompt; Modify page gave directions to a terminal
-    // the dock now holds; Config was made for ports the framework does not have.
+    // beside the page; Config was made for ports the framework does not have.
     // A version list, when one is built, is its own spec.
 
     if (page) {
       // THE PAGE'S TWO SCREENS, as two controls where the three dots were:
       // Instructions, the page's INSTRUCTIONS.md in one editor, and
       // Automations, its manifests, files and runs. Each takes the canvas when
-      // pressed and gives it back when pressed again. They are in every build,
-      // and they go BEFORE the terminal's toggle: that one is the rightmost
-      // action on every page.
+      // pressed and gives it back when pressed again. They are in every build.
       /** @param {"instructions" | "automation"} which @param {string} text */
-      const screenTool = (which, text) => tool(text, () => ui.set({ pageView: pageView === which ? "page" : which }), pageView === which);
+      // A SCREEN OF THE PAGE IS AN ADDRESS OF ITS OWN, so pressing one writes
+      // the route and the url with it: a reload lands on it and Back leaves it.
+      // And pressing one is the person OPENING that screen: an open in the
+      // history, like any other.
+      const screenTool = (which, text) => tool(text, () => ui.open("page", route.id, route.screen === which ? "page" : which), route.screen === which);
       tools.push(screenTool("instructions", "Instructions"));
       tools.push(screenTool("automation", "Automations"));
     }
 
-    // THE TERMINAL'S VISIBLE TOGGLE, in every build, FILLED, AND LAST. It is
-    // where a person runs their own agent beside the page, and it is the one
-    // action on the bar that does something rather than shows something, so it
-    // takes `prime`, the bar's fill in the palette's primary accent. It sits
-    // after every other action so it is in the same place on every page. It
-    // names how many sessions are still running while the dock is put away,
-    // because Hide stops nothing and the person is entitled to see that it
-    // did not.
-    if (terminal !== null) {
-      const st = terminal.store.get();
-      const running = terminal.store.live();
-      const shown = st.dock.visible;
-      tools.push(h("button.tool.prime.termtoggle", {
-        type: "button",
-        "aria-pressed": String(shown),
-        title: shown ? "Hide the terminal — sessions keep running (Ctrl+`)" : "Show the terminal (Ctrl+`)",
-        onclick: () => {
-          terminal.store.toggle();
-          if (!shown) terminal.view.focus();
-        },
-      }, !shown && running > 0 ? `Agent Terminal · ${running}` : "Agent Terminal"));
+    // EDIT, THE AMBER BUTTON, where Agent Terminal was (*Chat*, `screens`): a
+    // new chat beside the page with the page's location typed in, and the
+    // caret after it. The one lit control on the bar, because it is the one
+    // that hands the page to an agent.
+    if (page && views.agent) {
+      const agent = views.agent;
+      const id = page.id;
+      tools.push(h("button.tool.edit", { type: "button", title: "Ask your agent to change this page", onclick: () => agent.edit(id) },
+        h("span.glyph", { "data-glyph": "pencil", "aria-hidden": "true" }),
+        h("span", "Edit")));
     }
 
     return [crumbs, h("span.tools", ...tools)];
@@ -650,19 +704,24 @@ export function makeShell(deps) {
    * @returns {HTMLElement[]}
    */
   function trail(route, w, page) {
+    /** Names the directory does not have yet, asked for once the trail is
+     *  built. @type {PageId[]} */
+    const unknown = [];
     /** @param {PageId} id */
     const nameOf = (id) => {
-      const ref = w.pages.find((p) => p.id === id);
-      return ref ? ref.name : id.slice(id.lastIndexOf("/") + 1);
+      const ref = ws.refOf(id);
+      if (ref) return ref.name;
+      unknown.push(id);
+      return id.slice(id.lastIndexOf("/") + 1);
     };
-    /** @param {string} text @param {(() => void) | null} go @param {boolean} last */
-    const crumb = (text, go, last) =>
+    /** @param {string} text @param {(() => void) | null} go @param {boolean} last @param {string} [light] */
+    const crumb = (text, go, last, light) =>
       h("button.crumb", {
         type: "button", "aria-current": last ? "page" : null,
         onclick: go || undefined, disabled: go ? null : "",
-      }, text);
+      }, light !== undefined && light !== "none" ? lamp(light) : null, text);
 
-    /** @type {{ text: string, go: (() => void) | null }[]} */
+    /** @type {{ text: string, go: (() => void) | null, light?: string }[]} */
     const items = [];
     /** Every page from the root down to `id`, inclusive. @param {PageId} id */
     const pages = (id) => {
@@ -670,12 +729,12 @@ export function makeShell(deps) {
       // hierarchy, and whether the root's own folder is part of the path is
       // the vault's business. Either way the root is the first crumb once.
       if (id !== ROOT_PAGE && !id.startsWith(ROOT_PAGE + "/")) {
-        items.push({ text: nameOf(ROOT_PAGE), go: () => ui.go("page", ROOT_PAGE) });
+        items.push({ text: nameOf(ROOT_PAGE), go: () => ui.open("page", ROOT_PAGE) });
       }
       const parts = id.split("/");
       for (let n = 1; n <= parts.length; n++) {
         const at = parts.slice(0, n).join("/");
-        items.push({ text: at === id && page ? page.name : nameOf(at), go: () => ui.go("page", at) });
+        items.push({ text: at === id && page ? page.name : nameOf(at), go: () => ui.open("page", at) });
       }
     };
 
@@ -690,17 +749,28 @@ export function makeShell(deps) {
     } else if (route.view === "map") {
       pages(ROOT_PAGE);
       items.push({ text: "Map", go: null });
+    } else if (route.view === "agent") {
+      // THE AGENT SCREEN: Agent, which is a new thread, then the chat open in
+      // it with its lamp.
+      const chat = views.agent ? views.agent.chrome().chat : null;
+      items.push({ text: "Agent", go: route.id ? () => ui.open("agent", "") : null });
+      if (route.id) items.push({ text: chat ? chat.name || "New chat" : "Chat", go: null, light: chat ? chat.light : "none" });
     }
     // THE VAULT ROUTE HAS NO CRUMB, because it has no rail to put one in: it is
     // the start page and the start page draws no furniture at all. It used to
     // name the open folder, which was Settings — the picker with the chrome
     // around it — and that screen is gone.
 
+    // A crumb the directory could not name reads as its segment until the
+    // answer lands, and the answer is one repaint. Asking is safe from a draw:
+    // what is asked, known or absent is never asked again.
+    if (unknown.length) void ws.want({ ids: unknown });
+
     /** @type {HTMLElement[]} */
     const out = [];
     items.forEach((it, i) => {
       if (i) out.push(h("span.crumbsep", { "aria-hidden": "true" }, "/"));
-      out.push(crumb(it.text, i === items.length - 1 ? null : it.go, i === items.length - 1));
+      out.push(crumb(it.text, i === items.length - 1 ? null : it.go, i === items.length - 1, it.light));
     });
     return out;
   }
@@ -720,6 +790,15 @@ export function makeShell(deps) {
   // filtered is a rail that looks like it has lost most of the workspace.
   let query = "";
 
+  /** THE SERVER'S ANSWER FOR THE LAST QUERY ASKED, which is the only one drawn:
+   *  a slower answer to an older query arriving after it is dropped.
+   *  @type {{ query: string, hits: import("../../contracts/types.ts").PageRef[], more: boolean, complete: boolean, failed?: boolean } | null} */
+  let found = null;
+  /** Which ask is the latest. */
+  let asking = 0;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let findTimer = null;
+
   /** Where the tree draws, or the hits when there is a query. Held so a
    *  keystroke repaints THIS and nothing above it. */
   const results = h("div.railresults");
@@ -728,7 +807,7 @@ export function makeShell(deps) {
     type: "search",
     placeholder: "Find a page",
     "aria-label": "Find a page or table",
-    oninput: (/** @type {any} */ e) => { query = e.currentTarget.value; drawResults(); },
+    oninput: (/** @type {any} */ e) => { query = e.currentTarget.value; drawResults(); findSoon(); },
     // Escape clears without reaching for the mouse, and leaves the caret where
     // it is so the next thing typed is a fresh query rather than an edit.
     onkeydown: (/** @type {KeyboardEvent} */ e) => {
@@ -736,19 +815,35 @@ export function makeShell(deps) {
       e.preventDefault();
       query = "";
       /** @type {HTMLInputElement} */ (finder).value = "";
+      findSoon();
       drawResults();
     },
   });
 
-  /** How many hits are drawn. A one-letter query matches most of a workspace of
-   *  a few hundred pages, and a list nobody can scan is the same as no answer —
-   *  so the rest are counted rather than drawn, and the count says what to do. */
-  const SHOWN = 50;
+  /** ASK THE SERVER, once the typing pauses: no window holds every page's
+   *  name to search them, so a burst of keystrokes is one `page.search`,
+   *  `FIND_AFTER` after the last of them, and the last query wins. */
+  function findSoon() {
+    if (findTimer !== null) { clearTimeout(findTimer); findTimer = null; }
+    const q = query.trim();
+    const my = ++asking;
+    if (!q) { found = null; return; }
+    findTimer = setTimeout(() => {
+      findTimer = null;
+      ws.search(q).then(
+        (res) => { if (my !== asking) return; found = { query: q, hits: res.hits, more: res.more, complete: res.complete }; drawResults(); },
+        () => { if (my !== asking) return; found = { query: q, hits: [], more: false, complete: true, failed: true }; drawResults(); },
+      );
+    }, FIND_AFTER);
+  }
 
-  /** Every page and table whose name or path carries the query, best first: a
-   *  name that STARTS with it, then one that contains it, then a path that
-   *  does. Pages and tables are ranked together because the rail lists them
-   *  together — a table is a child like a page and sits where it was put. */
+  /** Every page the server found and every table whose name carries the
+   *  query, best first: a name that STARTS with it, then one that contains
+   *  it, then a path that does — the server's own ranking, kept in its order
+   *  within a rank. Pages and tables are ranked together because the rail
+   *  lists them together — a table is a child like a page and sits where it
+   *  was put. The tables are filtered here: the rack holds them all, and there
+   *  are few. */
   function hits() {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -756,10 +851,10 @@ export function makeShell(deps) {
     /** @type {{ score: number, kind: string, view: ViewName, id: string, name: string, where: string }[]} */
     const out = [];
 
-    for (const p of w.pages) {
+    const pages = found !== null && found.query.toLowerCase() === q ? found.hits : [];
+    for (const p of pages) {
       const name = p.name.toLowerCase();
-      const score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : p.id.toLowerCase().includes(q) ? 2 : -1;
-      if (score < 0) continue;
+      const score = name.startsWith(q) ? 0 : name.includes(q) ? 1 : 2;
       const cut = p.id.lastIndexOf("/");
       out.push({
         score, kind: "doc", view: "page", id: p.id, name: p.name,
@@ -780,18 +875,22 @@ export function makeShell(deps) {
   /** The tree when there is no query, the hits when there is. Called by a
    *  keystroke and by every repaint, so the list is never stale. */
   function drawResults() {
-    if (!query.trim()) { fill(results, views.tree()); return; }
+    const q = query.trim();
+    if (!q) { fill(results, views.tree()); return; }
 
-    const found = hits();
-    if (!found.length) {
-      fill(results, h("p.railnone", "No page or table is called that."));
+    const answered = found !== null && found.query.toLowerCase() === q.toLowerCase() ? found : null;
+    const list = hits();
+    if (!list.length) {
+      fill(results, h("p.railnone", answered === null ? "Looking…"
+        : answered.failed ? "The workspace could not be searched just now."
+        : "No page or table is called that."));
       return;
     }
 
-    const rows = found.slice(0, SHOWN).map((r) =>
+    const rows = list.map((r) =>
       h("li.treerow", h("a.foundrow", {
         href: "#",
-        onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.go(r.view, r.id); },
+        onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.open(r.view, r.id); },
       },
       h("span.kindtag", { "data-kind": r.kind, "aria-hidden": "true" }),
       h("span.nm", r.name),
@@ -801,9 +900,14 @@ export function makeShell(deps) {
       r.where ? h("span.foundwhere", r.where) : null)));
 
     fill(results, h("ul.tree", ...rows),
-      found.length > SHOWN
-        ? h("p.railnone", `${found.length - SHOWN} more. Type more of the name.`)
-        : null);
+      // THE SERVER DRAWS AT MOST A PAGEFUL, and says when there were more — a
+      // one-letter query matches most of a workspace, and a list nobody can
+      // scan is the same as no answer, so the line says what to do.
+      answered !== null && answered.more ? h("p.railnone", "More pages match. Type more of the name.") : null,
+      // AND WHETHER IT HAS READ EVERY PAGE YET: just after a workspace opens
+      // the server is still reading it, and a hit may yet turn up.
+      answered !== null && !answered.complete ? h("p.railnone", "Still reading the workspace, so more may turn up.") : null,
+      answered === null ? h("p.railnone", "Looking…") : null);
   }
 
   /* ── the rack ──────────────────────────────────────────────────────────── */
@@ -828,7 +932,7 @@ export function makeShell(deps) {
     // beside the page that uses it. The heading is the root page's own name
     // rather than the word "Pages", because the top level IS a page — its name
     // is the user's to change and clicking it opens it like any other.
-    const home = w.pages.find((p) => p.id === ROOT_PAGE);
+    const home = rootRef();
 
     // WHICH WAY THE RAIL READS, beside the heading of the list it sorts. One
     // button and not a menu: the only question anybody has about a folder of
@@ -848,25 +952,42 @@ export function makeShell(deps) {
     // is under the finder instead of leaving the last list on screen.
     drawResults();
 
-    return [
-      // A DEDICATED WAY HOME, distinct from the workspace-name link below (which
-      // stays as the page's own heading). One row, always visible, at the very
-      // top of the rail — the same "New page" pattern at the foot, mirrored.
-      //
-      // IT IS IN EVERY BUILD. The audit had it on the production hide list as
-      // one of two rows going home; the owner decided (2026-09-14) that the
-      // dashboard is the root page and a way to it is always on screen.
-      h("button.dashboardlink", {
+    // THE AGENT, WHERE DASHBOARD WAS (*Chat*, `screens`): the rail's one
+    // button, in Dashboard's slot and look, with a count of the chats working
+    // and their lamp; it goes to the full Agent screen and the chat this
+    // window last had open. Without an Agent screen — a test not about it —
+    // there is no row.
+    const agent = views.agent;
+    const busy = agent ? agent.chrome().busy : 0;
+    const agentRow = agent
+      ? h("button.agentlink", {
         type: "button",
-        "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-        onclick: () => ui.go("page", ROOT_PAGE),
-      }, h("span.dashglyph", { "aria-hidden": "true" }), h("span.nm", "Dashboard")),
+        "aria-current": route.view === "agent" ? "page" : null,
+        title: busy ? `${busy} ${busy === 1 ? "chat is" : "chats are"} working` : "The Agent screen",
+        onclick: () => agent.open(),
+      },
+      h("span.glyph", { "data-glyph": "chat", "aria-hidden": "true" }),
+      h("span.nm", "Agent"),
+      busy ? h("span.busy", lamp("working"), h("span.n", String(busy))) : null)
+      : null;
+
+    return [
+      agentRow,
+      // HOME IS THE TREE'S OWN HEADING, and there is one of it: where there
+      // used to be a Dashboard button and a heading that both opened the root
+      // page, there is one row that does, with the sort control beside it,
+      // because the list under it IS the root page's children. It is in every
+      // build — the owner decided (2026-09-14) that a way to the root page is
+      // always on screen.
       h("div.railhead",
-        h("h3", h("a", {
-          href: "#",
+        h("button.homerow", {
+          type: "button",
           "aria-current": route.view === "page" && route.id === ROOT_PAGE ? "page" : null,
-          onclick: (/** @type {Event} */ e) => { e.preventDefault(); ui.go("page", ROOT_PAGE); },
-        }, home ? home.name : "Workspace")),
+          title: home ? home.name : "Home",
+          onclick: () => ui.open("page", ROOT_PAGE),
+        },
+        h("span.glyph", { "data-glyph": "home", "aria-hidden": "true" }),
+        h("span.nm", "Home")),
         // The label says what pressing it DOES, which for a toggle means naming
         // the state it goes to rather than the one it is in.
         h("button.railsort", {
@@ -896,22 +1017,22 @@ export function makeShell(deps) {
           // and a vault's palette is its pages' business, edited in theme.json.
           // Each row's glyph is drawn from `data-kind` in page.css: a brush, a
           // folded map, a doorway.
-          link("Design", route.view === "design", () => ui.go("design", ""), "design"),
+          link("Design", route.view === "design", () => ui.open("design", ""), "design"),
           // THE WORKSPACE'S OWN INSTRUCTIONS: the vault's INSTRUCTIONS.md and
           // its own skills, in one tree with one editor. The file every agent
           // opened anywhere in the folder reads first, and the person's.
-          link("Instructions", route.view === "instructions", () => ui.go("instructions", ""), "instructions"),
+          link("Instructions", route.view === "instructions", () => ui.open("instructions", ""), "instructions"),
           // AUTOMATIONS: what is running now across the workspace, what has
           // finished, and Start. A page's own screen is where one is made;
           // this is where all of them are watched.
-          link("Automations", route.view === "runs", () => ui.go("runs", ""), "runs"),
+          link("Automations", route.view === "runs", () => ui.open("runs", ""), "runs"),
           // The map: every page as a light, every prose link as a line between
           // two, drawn by the shipped `mindmap` plugin over the whole workspace.
           // IN EVERY BUILD. It was withheld from the built application because
           // a one-page workspace maps to one light; the owner decided on
           // 2026-09-17 that one light is what a one-page workspace looks like,
           // and the drawing is finished.
-          link("Map", route.view === "map", () => ui.go("map", ""), "map"),
+          link("Map", route.view === "map", () => ui.open("map", ""), "map"),
           // CLOSE WORKSPACE, last, and it is the one row that leaves. There was
           // a Settings row here: the picker, drawn INSIDE the chrome, with the
           // folder open behind it and an "Open now" block on top saying which
@@ -927,26 +1048,7 @@ export function makeShell(deps) {
           // `closeHref`, is the other direction of the same move, and it keeps
           // the per-launch token for the same reason. Middle-click opens the
           // start page in a second tab and this file does nothing to arrange it.
-          //
-          // LEAVING WITH TERMINALS RUNNING ASKS FIRST. A workspace's sessions do
-          // not follow the window to the start page — no session silently changes
-          // workspace — so closing it ends them, and only once the person has
-          // said so. Cancel keeps everything where it is.
-          h("li.treerow", h("a", {
-            href: closeHref(search),
-            onclick: (/** @type {Event} */ e) => {
-              if (terminal === null) return;
-              const running = terminal.store.live();
-              if (running === 0) return;
-              e.preventDefault();
-              const href = closeHref(search);
-              const ok = typeof confirm === "function" && confirm(
-                `${running === 1 ? "A terminal session is" : `${running} terminal sessions are`} still running in this workspace. ` +
-                "Closing it ends them. Close the workspace?");
-              if (!ok) return;
-              void terminal.store.endAll().then(() => { location.href = href; });
-            },
-          },
+          h("li.treerow", h("a", { href: closeHref(search) },
             h("span.kindtag", { "data-kind": "close", "aria-hidden": "true" }),
             h("span.nm", "Close workspace"))))),
     ];
@@ -964,7 +1066,9 @@ export function makeShell(deps) {
 
     // THE DESIGN DOC AND THE MAP ARE PAGE READS TOO, so the same report is
     // given for them: the design doc declares sections and the map none.
-    const shown = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
+    // Only through their own routes: a page route naming a reserved id reports
+    // nothing, whatever read the store still holds.
+    const shown = route.view === "page" ? (frameworkId(route.id) ? null : route.id) : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
     if (shown !== null && w.page && w.page.id === shown) {
       const page = w.page;
       // DECLARED, THEN DRAWN, and they are two items because they can disagree.
@@ -996,6 +1100,13 @@ export function makeShell(deps) {
       items.push(["Rows", String(w.table.total)]);
       items.push(["Columns", String(w.table.schema.columns.length)]);
       if (!production) items.push(["Data", "unrestricted"]);
+    } else if (route.view === "agent" && views.agent) {
+      // THE CHATS AND THE AGENTS, as the mockup's strip has them: facts about
+      // the person's own work, in both builds.
+      const c = views.agent.chrome();
+      if (c.busy) items.push(["Working", String(c.busy)]);
+      items.push(["Chats", String(c.chats)]);
+      items.push(["Agents active", String(c.active)]);
     }
 
     // THE ONLY THING SAID ABOUT GIT IS THE BAD NEWS, and the asymmetry is
@@ -1024,22 +1135,29 @@ export function makeShell(deps) {
 
   /* ── the two things the chrome does ────────────────────────────────────── */
 
-  /** AN OUTSIDE CHANGE, and it re-runs exactly what the button runs.
+  /** AN OUTSIDE CHANGE, and it re-runs what the button runs — for what it
+   *  names and nothing else. The event says which pages' own files changed
+   *  and which levels' children did; the open page is redrawn only when it is
+   *  one of them, and only the levels this window holds are listed again. A
+   *  write to another page never tears down the box somebody is reading or
+   *  typing in. A reconnect names nothing it can trust, and rereads all.
    *
-   *  IT MUST GO THROUGH `doReload` AND THEREFORE THROUGH `ws.reloadPage`, and
-   *  that is the one rule in this file worth reading twice. A frame is REUSED
-   *  while its html is unchanged, so a cheaper redraw written to stop the
-   *  flicker would leave the box alive with its 350 ms save timer armed — and
-   *  the person's stale text would land over the agent's a moment later, which
-   *  is the precise opposite of the rule this feature ships. `reloadPage` sets
-   *  the page to null and emits, the frame is torn down, and a timer in a realm
-   *  that has gone does not fire. See `SAVE_AFTER` in `guest/runtime/edit.js`.
+   *  THE OPEN PAGE, WHEN NAMED, MUST GO THROUGH `doReload` AND THEREFORE
+   *  THROUGH `ws.reloadPage`, and that is the one rule in this file worth
+   *  reading twice. A frame is REUSED while its html is unchanged, so a
+   *  cheaper redraw written to stop the flicker would leave the box alive with
+   *  its 350 ms save timer armed — and the person's stale text would land over
+   *  the agent's a moment later, which is the precise opposite of the rule
+   *  this feature ships. `reloadPage` sets the page to null and emits, the
+   *  frame is torn down, and a timer in a realm that has gone does not fire.
+   *  See `SAVE_AFTER` in `guest/runtime/edit.js`.
    *
-   *  ONE GUARD, AND IT IS `doReload`'s. An event landing mid-reload asks for one
-   *  more pass after this one, which is the same answer the button pressed twice
-   *  gets — so this is a call and nothing else, and the two cannot drift. */
-  function heard() {
-    void doReload();
+   *  ONE GUARD, AND IT IS `doReload`'s. An event landing mid-reload is merged
+   *  into one more pass after this one, which is the same answer the button
+   *  pressed twice gets — so this is a call and nothing else.
+   *  @param {string | null} data */
+  function heard(data) {
+    void doReload(data === null ? EVERYTHING : changeOf(data));
   }
 
   /** Why the share did not happen, in words somebody can act on. The same
@@ -1116,11 +1234,16 @@ export function makeShell(deps) {
     }, { center: true, width: "26rem" });
   }
 
-  async function doReload() {
+  /** THE BUTTON, and a change on disk: reread what `change` names — the open
+   *  page when it is one of the pages, the held levels among the levels, and
+   *  everything the window holds for `all`, which is what the button asks.
+   *  @param {ChangeEvent} [change] */
+  async function doReload(change = EVERYTHING) {
     if (reloading) {
-      // The button, pressed twice. Same answer as an event: one more pass after
-      // this one, because the disk may have moved since this pass read it.
-      again = true;
+      // The button pressed twice, or a change landing mid-pass: merged into
+      // one more pass after this one, because the disk may have moved since
+      // this pass read it.
+      again = again === null ? change : merged(again, change);
       return;
     }
     const { route } = ui.get();
@@ -1128,36 +1251,40 @@ export function makeShell(deps) {
     reloads++;
     troubled = "";
     missing.clear();
+    // What was listed on the way down is listed again where the change says;
+    // a route whose way down would not list is asked once more.
+    revealed = "";
     paint();
     try {
-      // The tree first is wrong and the page first is right: `reloadPage` drops
-      // the cached page and emits, which is what tears every frame on it down.
+      // The page first and the levels beside it: `reloadPage` drops the cached
+      // page and emits, which is what tears every frame on it down.
       //
       // AND THE READER'S PLACE SURVIVES THE TEARDOWN. `keep` goes first, while
       // the realm that reported where it was scrolled to is still the one on
       // the mount; the new realm is put back there on its `ready`, clamped to
       // whatever the page is now. It is said here and nowhere else, so a page
       // navigated to starts at the top and only a redraw keeps its place.
-      const reserved = route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
-      if (route.view === "page" && route.id) {
-        frameHost.keep(route.id);
-        await ws.reloadPage(route.id);
-      } else if (reserved !== null) {
+      const open = route.view === "page" && route.id && !frameworkId(route.id) ? route.id
+        : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : null;
+      /** @type {Promise<unknown>[]} */
+      const work = [ws.refresh(change)];
+      if (open !== null && touches(change, open)) {
         // The design doc and the map are pages read under reserved ids, and a
         // reload of either is a page reload: the box torn down, the read taken
         // again from disk, the reader's place kept.
-        frameHost.keep(reserved);
-        await ws.reloadPage(reserved);
-      } else if (route.view === "table" && route.id) await ws.loadTable(route.id);
-      await ws.loadTree();
+        frameHost.keep(open);
+        work.push(ws.reloadPage(open));
+      } else if (route.view === "table" && route.id) work.push(ws.loadTable(route.id));
+      await Promise.all(work);
     } catch (err) {
       troubled = message(err);
     } finally {
       reloading = false;
       paint();
-      if (again) {
-        again = false;
-        void doReload();
+      if (again !== null) {
+        const next = again;
+        again = null;
+        void doReload(next);
       }
     }
   }
@@ -1170,9 +1297,9 @@ export function makeShell(deps) {
   /**
    * The folder's name, and the ids the router gave up on.
    *
-   * Both hang off the same fact and that is why they are one function: a `pages`
-   * array that is a different object means the tree was re-listed, and opening a
-   * vault is the extreme case of that — every page replaced at once. So the name
+   * Both hang off the same fact and that is why they are one function: a tree
+   * version that moved means a level was listed again, and opening a vault is
+   * the extreme case of that — every level read afresh. So the name
    * is re-read, and an id remembered as missing is forgiven, because the page
    * that was not there a moment ago may be there now. A genuinely deleted page
    * costs one refetch and goes straight back into the set.
@@ -1181,7 +1308,7 @@ export function makeShell(deps) {
    * not open, and a rail that cannot name the folder is no use on that screen.
    */
   function ensureVault() {
-    const now = ws.get().pages;
+    const now = ws.version();
     if (now === vaultFrom || vaultBusy) return;
     vaultFrom = now;
     vaultBusy = true;
@@ -1199,7 +1326,17 @@ export function makeShell(deps) {
 
     // THE DESIGN DOC AND THE MAP ARE PAGES UNDER RESERVED IDS, fetched exactly
     // as a routed page is: the id is the route's, and the read is a page read.
-    const wanted = route.view === "page" ? route.id : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
+    // Only through their own routes: a page route naming a reserved id reads
+    // nothing, and the body says there is no such page.
+    const wanted = route.view === "page" ? (frameworkId(route.id) ? "" : route.id) : route.view === "design" ? DESIGN_PAGE : route.view === "map" ? MAP_PAGE : "";
+    // THE WAY DOWN TO A PAGE, listed once per page gone to: the levels that
+    // hold it, which name its crumbs and are there when the rail is opened to
+    // it. Only the missing ones are asked for, and a level that would not list
+    // is not asked again on every repaint.
+    if (route.view === "page" && wanted && revealed !== wanted) {
+      revealed = wanted;
+      ws.reveal(wanted).catch((err) => console.warn("[biom] the way down to that page could not be listed", err));
+    }
     if (wanted && !missing.has(wanted)) {
       if (w.page && w.page.id === wanted) return;
       const key = "page:" + wanted;
@@ -1244,9 +1381,7 @@ export function makeShell(deps) {
     // a `#/vault` somebody typed with a folder open, and the way out of a
     // workspace that did not open at all.
     const bare = u.route.view === "vault";
-    // The dock first, because whether it fills the window decides the grid.
-    if (dock !== null) dock.sync(bare);
-    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "") + (dock !== null && dock.full() ? " tfull" : "");
+    app.className = (titlebar === null ? "app" : "app framed") + (bare ? " bare" : "");
 
     if (titlebar !== null) fill(titlebar, ...titleParts());
     fill(rail, ...(bare ? [] : railParts()));
@@ -1259,6 +1394,18 @@ export function makeShell(deps) {
     sizer.sync();
 
     plate.setAttribute("data-face", faceOf());
+
+    // WHERE THE AGENT SCREEN IS DRAWN: the bed's grid, and nothing moved. A
+    // workspace that did not open draws its trouble, not a chat.
+    bed.setAttribute("data-agent", bare || troubled || !views.agent ? "none" : agentMode(u));
+
+    // GO BACK TO, when there is something of the person's to go back to. The
+    // view hands back the same button until what it names changes, so a
+    // repaint between a press and its release never loses the click; and the
+    // canvas says so, which is what gives the screen under it room.
+    const back = bare || !views.goback ? null : views.goback();
+    if (backslot.firstChild !== back) fill(backslot, back);
+    canvas.toggleAttribute("data-back", back !== null);
 
     // THE LINES THIS FILE IS FOR. Nothing the body is made of moved, so it is
     // not asked for one; and a body that came back the node already on screen is
@@ -1288,14 +1435,36 @@ export function makeShell(deps) {
    *  because refreshing the browser is the second thing anyone tries after
    *  pressing Reload.
    *
-   *  Assigning the hash rather than replacing the entry, so Back works. It fires
-   *  `hashchange`, whose handler compares against the route it just came from
-   *  and does nothing — which is what makes one direction of this loop free. */
+   *  WHETHER THE BROWSER'S HISTORY GAINS AN ENTRY IS THE MOVE'S TO SAY
+   *  (`ui.cause().replace`). The person's open assigns the hash, so Back works.
+   *  A system move REPLACES the entry — Back to an id a rename or a delete
+   *  took away is a Back to nothing. The switcher replaces an entry of its own
+   *  and keeps the person's, so Back from anything it brought up lands on the
+   *  person's work rather than walking back through an agent's moves.
+   *
+   *  Assigning fires `hashchange`, whose handler compares against the route it
+   *  just came from and does nothing; `replaceState` fires nothing at all.
+   *  That is what makes this direction of the loop free. */
   function syncHash() {
     if (typeof window === "undefined" || !window.location) return;
     const want = hashOf(ui.get().route);
-    if (window.location.hash !== want) window.location.hash = want;
+    // ONLY A ROUTE THAT MOVED IS WRITTEN. The browser moves the hash itself on
+    // Back and announces it a task later; a repaint landing in between — a
+    // stream event, a store write — would otherwise see the hash and the route
+    // differ and write the old route back over the person's Back.
+    if (want === written) return;
+    written = want;
+    if (window.location.hash === want) return;
+    const history = window.history;
+    if (ui.cause().replace && history && typeof history.replaceState === "function") {
+      history.replaceState(history.state, "", want);
+    } else {
+      window.location.hash = want;
+    }
   }
+
+  /** The hash this shell last wrote, or took from the browser. @type {string | null} */
+  let written = null;
 
   return {
     /**
@@ -1303,6 +1472,21 @@ export function makeShell(deps) {
      * @param {HTMLElement} el
      */
     mount(el) {
+      // THE ADDRESS THE WINDOW ENDS UP ON IS THE LATEST ONE. The route was
+      // read from the hash when the window's stores were built, and the shell
+      // listens for the hash moving only from here on — so a hash set while the
+      // window was still booting (a person's Back, a walk going somewhere the
+      // moment the page reloads) was never heard, and the first repaint wrote
+      // the address it loaded with back over it. What the browser says now is
+      // taken as the person's open, as a typed hash is. A tab with no folder
+      // has one screen, the start page, whatever its hash says.
+      if (typeof window !== "undefined" && window.location && ui.get().route.view !== "vault") {
+        const now = parseHash(window.location.hash);
+        if (!sameAddress(now, ui.get().route)) {
+          written = hashOf(now);
+          ui.open(now.view, now.id, now.screen);
+        }
+      }
       root = el;
       fill(el, app);
       sizer.mount(app, bed, rack);
@@ -1346,15 +1530,9 @@ export function makeShell(deps) {
         }
       }
 
-      if (dock !== null) dock.mount();
-
       if (typeof document !== "undefined" && document.addEventListener) {
         document.addEventListener("keydown", (ev) => {
           if (ev.key !== "Escape") return;
-          // ESCAPE INSIDE THE TERMINAL IS THE PROGRAM'S. Vim leaves insert mode
-          // on it and an agent cancels on it; a dialog of ours closing instead
-          // would be the host stealing a key the person pressed for the shell.
-          if (dock !== null && dock.holds(ev.target)) return;
           const u = ui.get();
           if (u.dialog) ui.set({ dialog: false });
           else if (u.inserting !== null) ui.set({ inserting: null });
@@ -1371,18 +1549,57 @@ export function makeShell(deps) {
         if (notice && notice.kind === "ready") paint();
       });
 
+      // THE PERSON'S HAND ON A SCREEN THE HOST DRAWS — Instructions, the
+      // Automations screens, a table, the design doc's chrome, the map's. A box
+      // cannot be seen into and says its own through the frame host; nothing
+      // inside an iframe reaches these listeners. Only events the browser says
+      // a person made, a scroll only as the gesture that scrolls, and nothing
+      // inside an element marked `NOT_TOUCH` — the chat's input, Go back to.
+      // At most one of each a second: what the switcher wants is THAT the
+      // person was here, not how often.
+      if (deps.touched) {
+        const touched = deps.touched;
+        /** @type {Record<string, number>} */
+        const last = {};
+        /** @param {string} what */
+        const hand = (what) => (/** @type {Event} */ ev) => {
+          if (!ev.isTrusted) return;
+          const at = /** @type {any} */ (ev.target);
+          if (at && typeof at.closest === "function" && at.closest("[" + NOT_TOUCH + "]")) return;
+          const t = Date.now();
+          if (t - (last[what] ?? -Infinity) < 1000) return;
+          last[what] = t;
+          touched();
+        };
+        const quietly = { capture: true, passive: true };
+        canvas.addEventListener("pointerdown", hand("click"), quietly);
+        canvas.addEventListener("keydown", hand("key"), quietly);
+        canvas.addEventListener("wheel", hand("scroll"), quietly);
+        canvas.addEventListener("touchmove", hand("scroll"), quietly);
+      }
+
       // THE FILE CHANGED ON DISK, so press Reload. That is the whole feature:
       // there is no hot patch, no diff on the wire and no new thing a page can
       // say — the server presses the button a person used to have to.
       if (events) events.on(heard);
 
       if (typeof window !== "undefined" && window.addEventListener) {
-        // Back and forward. `go` writes the hash itself, so this only fires for
-        // history the browser moved and never for a route this shell set.
+        // BACK AND FORWARD, and a hash somebody typed: the PERSON moving the
+        // screen, so an open. A route this shell set writes the same hash it
+        // already holds, so the comparison makes that direction a no-op.
         window.addEventListener("hashchange", () => {
           const route = parseHash(window.location.hash);
-          const now = ui.get().route;
-          if (route.view !== now.view || route.id !== now.id) ui.go(route.view, route.id);
+          if (sameAddress(route, ui.get().route)) return;
+          // The browser already holds this entry, so its spelling is put
+          // right IN it — a hash typed with its slashes left in is the same
+          // address — rather than pushed as a second entry after it.
+          const want = hashOf(route);
+          written = want;
+          const history = window.history;
+          if (window.location.hash !== want && history && typeof history.replaceState === "function") {
+            history.replaceState(history.state, "", want);
+          }
+          ui.open(route.view, route.id, route.screen);
         });
       }
 
@@ -1432,29 +1649,58 @@ export function makeShell(deps) {
  * unknown view falls back rather than routing to nothing. It is the same
  * vocabulary in every build: a screen the rail offers is a screen a hash may
  * name, and there is no screen the rail does not offer.
+ *
+ * `parseAddress` in `contracts/address.js`, under the name this file and its
+ * test have always called it: the switcher and the history spell an address
+ * the same way, so the spelling moved down to where all three can read it.
  * @param {string} hash
- * @returns {{ view: ViewName, id: string }}
+ * @returns {Address}
  */
-export function parseHash(hash) {
-  const raw = String(hash || "").replace(/^#\/?/, "");
-  const cut = raw.indexOf("/");
-  const view = cut < 0 ? raw : raw.slice(0, cut);
-  let id = cut < 0 ? "" : raw.slice(cut + 1);
-  try {
-    id = decodeURIComponent(id);
-  } catch {
-    id = "";
-  }
-  // The fallback carries no id on purpose: an unknown view landing on a page
-  // view with an id taken from its route would open whatever page happened to
-  // share the name. Boot fills an empty page route with the first page in the
-  // workspace.
-  return VIEWS.has(view) ? { view: /** @type {ViewName} */ (view), id } : { view: "page", id: "" };
+export const parseHash = (hash) => parseAddress(hash);
+
+/** The url fragment for a route — `formatAddress`, for the same reason.
+ *  @param {{ view: ViewName, id: string, screen?: PageScreen }} route @returns {string} */
+export const hashOf = (route) => formatAddress(route);
+
+/** A FRAMEWORK SCREEN'S ID — `@agent`, `@map`, `@design` — is no page. `@` is
+ *  outside a page segment's grammar, so no page anybody made starts with one,
+ *  and the server answers such an id with the screen's own bare plugin page:
+ *  routed as a page, `@agent` would draw a second Agent screen in a page box
+ *  that is never fed. So a page route naming one is not read and is said to
+ *  be no page at all, whatever the missing set holds.
+ *  @param {string} id */
+const frameworkId = (id) => id.startsWith("@");
+
+/** HOW LONG THE FINDER WAITS AFTER THE LAST KEYSTROKE BEFORE IT ASKS THE
+ *  SERVER, in ms: long enough that a word typed is one `page.search`, short
+ *  enough to read as instant. */
+export const FIND_AFTER = 120;
+
+/** THE CHANGE THAT NAMES EVERYTHING: the Reload button, and a reconnect,
+ *  which cannot know what it missed. It rereads the open page and every level
+ *  the window holds — still bounded by what is on the window's screen.
+ *  @type {ChangeEvent} */
+export const EVERYTHING = { pages: [], levels: [], all: true };
+
+/** Two changes as one pass: everything either names.
+ *  @param {ChangeEvent} a @param {ChangeEvent} b @returns {ChangeEvent} */
+export function merged(a, b) {
+  if (a.all === true || b.all === true) return EVERYTHING;
+  return { pages: [...new Set([...a.pages, ...b.pages])], levels: [...new Set([...a.levels, ...b.levels])] };
 }
 
-/** @param {{ view: ViewName, id: string }} route @returns {string} */
-export const hashOf = (route) =>
-  "#/" + route.view + (route.id ? "/" + encodeURIComponent(route.id) : "");
+/** WHETHER A CHANGE REDRAWS THE SCREEN SHOWING `open` — a page, the design
+ *  doc or the map. A page only when the change names it, or names everything:
+ *  a write to another page never tears down the box somebody is reading. The
+ *  map draws every page, so any change is its change. The design doc lives
+ *  outside `pages/`, so a change naming no page at all may be its own.
+ *  @param {ChangeEvent} change @param {PageId} open @returns {boolean} */
+export function touches(change, open) {
+  if (change.all === true) return true;
+  if (open === MAP_PAGE) return true;
+  if (open === DESIGN_PAGE) return change.pages.includes(DESIGN_PAGE) || (change.pages.length === 0 && change.levels.length === 0);
+  return change.pages.includes(open);
+}
 
 /** @param {unknown} err */
 const message = (err) =>

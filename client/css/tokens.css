@@ -68,6 +68,10 @@
   --room-ink-2:#B9B3A5;
   --room-ink-3:#8F8A7C;
   --on-spot:#16181B;
+  --led:#FFB020;
+  --led-red:#FF4A3D;
+  --led-green:#5BE37D;
+  --dot-off:#23262B;
 }
 /* palette:end */
 

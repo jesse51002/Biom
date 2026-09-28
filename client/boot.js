@@ -14,20 +14,23 @@
 
 /** @import { Theme, VaultInfo } from "../contracts/types.ts" */
 
-import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, vaultBase } from "../contracts/wire.js";
+import { API_ROUTE, ERRORS, PROTOCOL, SHIM_ROUTE, WINDOW_PARAM, vaultBase } from "../contracts/wire.js";
+import { isOpaqueId, isWindowId } from "../contracts/guards.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { h, fill, remembered, heldForTab, holdForTab } from "./platform/dom.js";
+import { h, fill, remembered } from "./platform/dom.js";
 import { useAssets } from "./platform/markdown.js";
 import { makeHttp, TOKEN_PARAM } from "./transport/http.js";
 import { makeEvents } from "./transport/events.js";
-import { makeTerminalLink, terminalUrl } from "./transport/terminal.js";
-import { makeWorkspace } from "./store/workspace.js";
-import { makeTerminals, dockFrom } from "./store/terminals.js";
-import { makeTerminalView } from "./views/terminal.js";
+import { makeChatStream } from "./transport/chat.js";
+import { openTerminalSocket, terminalUrl } from "./transport/terminal.js";
+import { makeWorkspace, ROOT_PAGE } from "./store/workspace.js";
 import { applyTheme, paperOf } from "./theme/theme.js";
 import { faceCss } from "./theme/faces.js";
 import { makeUi } from "./store/ui.js";
+import { makeHistoryStore } from "./store/history.js";
+import { makeSwitcher, TIMING } from "./store/switcher.js";
+import { makeChatStore } from "./store/chats.js";
 import { makeBridge } from "./bridge/bridge.js";
 import { makeFrameHost } from "./frame/frame.js";
 import { makePageView, makeDesignView, makeMapView } from "./views/page.js";
@@ -37,6 +40,11 @@ import { makeRunsView } from "./views/runs.js";
 import { makeTableView } from "./views/table.js";
 import { makeTreeView } from "./views/tree.js";
 import { makeVaultView } from "./views/vault.js";
+import { makeSignInTerminal } from "./views/terminal.js";
+import { makeGoBack } from "./views/goback.js";
+import { makeAgentDialogs } from "./views/agent-dialogs.js";
+import { makeAgentInput } from "./views/agent-input.js";
+import { makeAgentView } from "./views/agent.js";
 import { makeShell, parseHash } from "./shell/shell.js";
 
 /* ── which build this is ────────────────────────────────────────────────── */
@@ -177,6 +185,41 @@ if (vault === null && !wantsPicker) {
   }
 }
 
+/* ── which window this is ───────────────────────────────────────────────── */
+
+/** THIS WINDOW'S OWN ID, minted once and kept for the tab (`WindowId` in
+ *  `contracts/types.ts`): in `sessionStorage`, which a reload keeps and a
+ *  second window does not share, and never saved anywhere else. The history's
+ *  opens and views belong to it, the person's writes are stamped with it, and
+ *  the server keeps what it has open while its stream is attached — so a
+ *  reload comes back as the same window, with its history, rather than as a
+ *  stranger. A value in storage that is not an id is replaced, and a browser
+ *  that refuses storage gets an id for this load alone.
+ *  @returns {string} */
+function thisWindow() {
+  const KEY = "biom-window";
+  try {
+    const held = sessionStorage.getItem(KEY);
+    if (isWindowId(held)) return held;
+  } catch { /* storage refused: an id for this load */ }
+  const minted = mint();
+  try { sessionStorage.setItem(KEY, minted); } catch { /* kept for this load only */ }
+  return minted;
+}
+
+/** A uuid where the browser offers one, and otherwise sixteen random bytes as
+ *  base64url — either is `OPAQUE_ID`'s grammar. @returns {string} */
+function mint() {
+  const c = /** @type {any} */ (globalThis).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === "function") c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const windowId = thisWindow();
+
 /* ── construction ───────────────────────────────────────────────────────── */
 
 // The vault is the BASE URL, which is why transport did not have to change: it
@@ -198,23 +241,118 @@ const base = vault === null ? "" : vaultBase(vault);
 const assets = vault === null ? "" : location.origin + base + "/asset/";
 useAssets(assets);
 
-const transport = makeHttp(base, token);
+// EVERY CALL CARRIES THIS WINDOW'S ID, written by the transport over whatever a
+// request carried, so the server can stamp the person's writes as theirs.
+const transport = makeHttp(base, token, windowId);
 // THE SERVER PRESSING RELOAD. One stream per tab, under this tab's vault
 // prefix — which is what makes an event from another folder unable to reach
 // this one: the vault is settled above before a single module is constructed,
 // so opening another folder is a navigation and a fresh document with a stream
 // of its own. With no folder chosen the base is "" and nothing is opened.
-const events = makeEvents(base);
+// The stream carries the chats and the history, so in the built application
+// it carries the launch token too, as the API route's address does — and this
+// window's id, because the server keeps what a window has open exactly as long
+// as its stream is attached.
+const streamQuery = new URLSearchParams();
+if (token !== null) streamQuery.set(TOKEN_PARAM, token);
+streamQuery.set(WINDOW_PARAM, windowId);
+const events = makeEvents(base, "?" + streamQuery.toString());
+// THE STREAM'S JSON EVENTS, decoded: the history here, and the chats and the
+// agents for the Agent screen.
+const stream = makeChatStream(events);
 const ws = makeWorkspace(transport);
+
+/** WHICH CHAT THIS WINDOW HAD OPEN, AND WHETHER IT SAT BESIDE THE PAGE — kept
+ *  for the session (*Chat*, `history`: "Each window remembers its open chat
+ *  for the session"), per folder, in `sessionStorage`, which a reload keeps and
+ *  another window does not share. On `#/agent/<chat>` the address names the
+ *  chat and wins. A value that is not one is dropped. */
+const CONTEXT_KEY = "biom-agent:" + (vault ?? "");
+/** @returns {{ chat: string | null, panel: boolean }} */
+function heldContext() {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CONTEXT_KEY) ?? "null");
+    return { chat: v && isOpaqueId(v.chat) ? v.chat : null, panel: v !== null && v.panel === true };
+  } catch {
+    return { chat: null, panel: false };
+  }
+}
+
 // A tab with no folder has one thing to show, and it is the picker. Not an empty
 // workspace and not an error: there is genuinely nothing else to be looking at.
 const ui = makeUi({
-  route: vault === null ? { view: "vault", id: "" } : parseHash(location.hash),
+  route: vault === null ? { view: "vault", id: "", screen: "page" } : parseHash(location.hash),
   // The one piece of view state that outlives the tab, read here because the
   // store does no I/O. Anything other than "desc" is ascending, so a corrupted
   // value reads as the default rather than as a third state.
   treeOrder: remembered("treeOrder", "asc") === "desc" ? "desc" : "asc",
+  ...(vault === null ? {} : heldContext()),
 });
+// The panel shows beside a page and never on the full Agent screen, so a
+// window reloaded there is not one with the panel open.
+if (ui.get().route.view === "agent" && ui.get().panel) ui.set({ panel: false });
+if (vault !== null) {
+  ui.on(() => {
+    const u = ui.get();
+    try { sessionStorage.setItem(CONTEXT_KEY, JSON.stringify({ chat: u.chat, panel: u.panel })); } catch { /* kept for this load only */ }
+  });
+}
+
+/* ── the chats ───────────────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE: a chat is a workspace's, run in its
+// folder. This window's copy of the chats and of what agents this machine
+// has, fed by the stream and read again on every open of it — nothing is
+// replayed. Every act the input box makes goes through it.
+const chats = vault === null ? null : makeChatStore({ transport });
+if (chats !== null) {
+  stream.onChat((push) => chats.takeChat(push));
+  stream.onAgents((list) => chats.takeAgents(list));
+  events.onOpen(() => { void chats.resync(); });
+}
+
+/* ── the history and the switcher ────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE: the history is a workspace's, and the
+// start page has none. This window's copy of it — `mirror`, because `history`
+// is the browser's own — follows the stream; the
+// switcher watches it and the window's context from above, reports the
+// context on every change, and — the only thing besides the person that ever
+// does — moves the screen for the open chat's agent. Its clock is this
+// window's and its times are the spec's: five minutes, two minutes and five
+// seconds.
+const mirror = vault === null ? null : makeHistoryStore({ transport, now: Date.now });
+/** THE WINDOW IN FRONT: shown, and the one the person is in. */
+const inFront = () => document.visibilityState === "visible" && document.hasFocus();
+const switcher = mirror === null ? null : makeSwitcher({
+  ui,
+  history: mirror,
+  window: windowId,
+  // THE PAGES THIS WINDOW KNOWS, by id and by uid, and a way to ask for the
+  // rest by name: an agent's write to a page it has just made, which the
+  // history names before this window has heard of it, is looked up at once
+  // and decided the moment the answer lands — never waiting for the tree.
+  refOf: (id) => ws.refOf(id),
+  idOfUid: (uid) => ws.idOfUid(uid),
+  want: (q) => ws.want(q),
+  onPages: (hear) => ws.on(hear),
+  // When THIS window last sent a message in a chat: a touch before it does
+  // not hold the screen against that chat's agent.
+  lastSent: (chat) => (chats === null ? null : chats.lastSent(chat)),
+  now: Date.now,
+  timing: TIMING,
+  front: inFront(),
+});
+if (mirror !== null && switcher !== null) {
+  stream.onHistory((entries) => mirror.take(entries, true));
+  // EVERY OPEN OF THE STREAM, the first included: read what was missed, and
+  // tell the server again what it forgot when the stream closed.
+  events.onOpen(() => { void switcher.resync(); });
+  const front = () => switcher.front(inFront());
+  document.addEventListener("visibilitychange", front);
+  window.addEventListener("focus", front);
+  window.addEventListener("blur", front);
+}
 
 // DOM-free, and it never learns the artifact is in a frame. Writes go through
 // the store, so an artifact inserting a row updates the grid on screen.
@@ -225,7 +363,49 @@ const bridge = makeBridge(ws, transport, ui, vault ?? "");
 // absolute urls back to this origin's `/fonts/`, which the server answers with
 // the CORS header an opaque origin needs.
 const faces = faceCss(location.origin + "/fonts/");
-const frameHost = makeFrameHost(bridge, assets, faces);
+// A BOX'S TOUCH goes up to the switcher by the page on screen, and to the
+// bridge, which honours that box's `open` only just after one.
+const frameHost = makeFrameHost(bridge, assets, faces, {
+  touched: (page) => switcher?.touched(page),
+});
+
+/* ── the sign-in terminal ────────────────────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE, because the command runs in a workspace's
+// folder and the start page has none. Nothing is opened here: a socket is
+// opened by `open`, for one ticket, and the pop-up is up exactly as long as it.
+// Built before the views because the Agent screen is what calls it, for an
+// agent whose sign-in method is a terminal; xterm's constructors are handed in
+// so no module below this one names the library.
+const signInTerminal = vault === null ? null : makeSignInTerminal({
+  h,
+  connect: (hear) => openTerminalSocket({ url: terminalUrl(location, base, token), hear }),
+  Terminal,
+  FitAddon,
+  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
+});
+
+/* ── the Agent screen ────────────────────────────────────────────────────── */
+
+// THE LOOK'S BOX AND BIOM'S OWN INPUT BOX OVER IT, and the two pop-ups the
+// input opens. Only in a window with a workspace. The bridge answers the
+// look's four kinds through the view — for the one box it mounted, which it
+// knows by that box's context — and nothing else answers them.
+const agentDialogs = chats === null ? null : makeAgentDialogs({
+  h, chats,
+  signInTerminal: signInTerminal === null ? null : (req) => signInTerminal.open(req),
+});
+const agentInput = chats === null || agentDialogs === null ? null : makeAgentInput({ h, ui, chats, switcher, dialogs: agentDialogs });
+const agentView = chats === null || agentInput === null ? null : makeAgentView({
+  h, frameHost, ui, ws, chats, switcher,
+  history: mirror,
+  window: windowId,
+  input: agentInput,
+  vault: vault ?? "",
+  events: { on: (hear) => events.on(hear) },
+  confirm: (q) => agentDialogs === null ? Promise.resolve(false) : agentDialogs.confirm(q),
+});
+if (agentView !== null) bridge.answerLook((req, ctx) => agentView.answer(req, ctx));
 
 // THERE IS NO REGISTRY HERE ANY MORE, and its absence is the change. The client
 // used to fill a render registry at this point, because the host drew the page
@@ -259,58 +439,17 @@ const views = {
   runs: makeRunsView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
   instructions: makeInstructionsView({ h, ws, ui }),
   automation: makeAutomationView({ h, ws, ui, events: { on: (hear) => events.onRun(hear) } }),
+  // GO BACK TO, top left, while an agent has the screen.
+  goback: switcher === null ? undefined : makeGoBack({ h, switcher }),
+  // THE AGENT SCREEN, and the chat panel beside a page.
+  agent: agentView ?? undefined,
 };
-
-/* ── the agent terminal ─────────────────────────────────────────────────── */
-
-// ONLY IN A WINDOW WITH A WORKSPACE, because a shell starts in a workspace's
-// folder and the start page has none. The socket is built here and NOT opened:
-// a page load never touches the terminal endpoint unless this tab has had the
-// dock open before, and opening a workspace never runs a command.
-//
-// WHAT A RELOAD KEEPS is this tab's own: which edge, what size, shown or not —
-// sessionStorage, per folder. The sessions themselves are the server's and are
-// found again by connecting, which is why a tab that had them reconnects at once.
-const DOCK_KEY = "terminal-dock:" + (vault ?? "");
-const SEEN_KEY = "terminal-seen:" + (vault ?? "");
-const terminalLink = vault === null ? null : makeTerminalLink({ url: terminalUrl(location, base, token) });
-const terms = terminalLink === null ? null : makeTerminals({
-  link: terminalLink,
-  dock: dockFrom((() => {
-    try {
-      return JSON.parse(heldForTab(DOCK_KEY, "null"));
-    } catch {
-      return null;
-    }
-  })()),
-});
-const terminalView = terms === null || terminalLink === null ? null : makeTerminalView({
-  h,
-  link: terminalLink,
-  terms,
-  Terminal,
-  FitAddon,
-  mac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
-});
 
 const shell = makeShell({
   h, fill, ws, ui, frameHost, views, production, events, newerVersion,
-  terminal: terms !== null && terminalView !== null ? { store: terms, view: terminalView } : undefined,
+  // The person's hand on a screen the host draws; a box says its own above.
+  touched: switcher === null ? undefined : () => switcher.touched(),
 });
-
-if (terms !== null) {
-  let savedDock = terms.get().dock;
-  terms.on(() => {
-    const now = terms.get();
-    if (now.dock !== savedDock) {
-      savedDock = now.dock;
-      holdForTab(DOCK_KEY, JSON.stringify(now.dock));
-    }
-    if (now.link === "open") holdForTab(SEEN_KEY, "1");
-    shell.repaint();
-  });
-  if (terms.get().dock.visible || heldForTab(SEEN_KEY, "") === "1") terms.connect();
-}
 
 /* ── the wiring ─────────────────────────────────────────────────────────── */
 
@@ -345,7 +484,7 @@ function theme() {
   // plugin that owns it rather than by a hook out here.
   frameHost.broadcast({ kind: "theme", theme: next });
   // The emulator paints a canvas, which reads no custom property either.
-  if (terminalView !== null) terminalView.retheme();
+  signInTerminal?.retheme();
 }
 
 // Both stores repaint the same shell. The shell decides what actually changed —
@@ -353,6 +492,12 @@ function theme() {
 // every artifact iframe on it.
 ws.on(() => { theme(); shell.repaint(); });
 ui.on(() => shell.repaint());
+// Go back to and Go to page changing, which no store the shell reads says.
+switcher?.on(() => shell.repaint());
+// A chat starting or ending work, or the open one renamed: the rail's count,
+// the bar's lamp and the strip — and nothing else, so a reply streaming does
+// not repaint the chrome thirty times a second.
+agentView?.onChrome(() => shell.repaint());
 
 // The other half of the same signal. `on` says "redraw"; `onChange` says WHAT
 // moved, which is what an artifact needs — it lives in an opaque-origin frame
@@ -388,13 +533,29 @@ else console.error("no #root in the document — nothing was mounted");
 if (vault === null && startupTrouble !== "") shell.trouble(new Error(startupTrouble), true);
 
 if (vault !== null) {
+  // COLD START OPENS ON THE AGENT SCREEN (*Chat*: "Biom opens on the Agent
+  // screen"), the first screen every launch — ROUTED AND DRAWN FIRST, before
+  // the tree is read, because nothing on that screen waits for the rail. A
+  // hash that already names a screen wins over this; where there is no Agent
+  // screen, the root page, because a tool for building tools has an empty
+  // empty-state and the first screen is never one.
+  const route = ui.get().route;
+  if (route.view === "page" && !route.id) {
+    if (agentView !== null) ui.go("agent", "");
+    else ui.go("page", ROOT_PAGE);
+  }
+  // The chats and the agents, read once whether or not the stream opens;
+  // every open of it reads them again.
+  void chats?.resync();
   try {
-    await ws.loadTree();
-    // Cold start: a tool for building tools has an empty empty-state, so the first
-    // screen is never one. A hash that already names a page wins over this.
-    const route = ui.get().route;
-    const first = ws.get().pages[0];
-    if (route.view === "page" && !route.id && first) ui.go("page", first.id);
+    // THE RAIL'S TOP LEVEL, AND THE WAY DOWN TO THE PAGE ON THE ROUTE, beside
+    // the screen rather than in front of it: the root's level, the levels that
+    // hold the route's page, the tables and the theme — never every page.
+    const at = ui.get().route;
+    await ws.loadTree(at.view === "page" && at.id && !at.id.startsWith("@") ? at.id : undefined);
+    // The switcher reads the history and takes from it whose the screen was
+    // before this load; a page the tree has not listed is asked for by name.
+    void switcher?.start();
   } catch (err) {
     // WHICH FAILURE THIS IS DECIDES WHERE THE TAB LANDS, and the two are not the
     // same screen. A folder that cannot be opened at all — gone, a file now,

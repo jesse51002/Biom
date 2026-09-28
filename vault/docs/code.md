@@ -185,12 +185,13 @@ section — `await` at the top level of a section script is a syntax error.
 | `biom.fetch(url, init?)` | **the only way out.** The host performs the request |
 | `biom.theme()` | the palette as raw values, for a canvas or a shader |
 | `biom.vault()` | which folder this workspace is. Below |
-| `biom.open(target)` | go to a page or a table. Takes what `children()` hands back |
+| `biom.open(target)` | go to a page or a table, in answer to the person's click. Takes what `children()` hands back. Below |
 | `biom.embed` / `biom.embedInto` | draw another page inside this one. Below |
 | `biom.automations(pageId?)` / `biom.start(pageId, name, inputs?)` | every automation in the workspace, or one page's; start one. Below |
 | `biom.runs(filter?)` / `biom.run(id)` / `biom.readRun(id, stream?, from?, max?)` / `biom.kill(id)` | the rows, one row, a log from an offset, and the end of one. Below |
 | `biom.onRefresh(fn)` | the page's data changed and a drawing built from it should redraw |
 | `biom.onTheme(fn)` | the palette changed |
+| `biom.onLook(fn)` | the chats, for a look drawn on the Agent screen and nowhere else. See [`plugins.md`](./plugins.md) |
 
 ### Asking what a page holds
 
@@ -256,6 +257,22 @@ const key = (c) =>
 Spelling it with the whole id works for a top-level page and draws blank for every
 nested one — see [`pages.md`](./pages.md).
 
+### Going somewhere: `biom.open`
+
+```js
+row.addEventListener("click", () => biom.open(kid));   // kid, as children() handed it
+```
+
+**A page's own code never moves the screen; the person does.** So `biom.open` is
+honoured only just after the person's hand on this page — a click, a key, a
+selection or a scroll here, in about the last second and a half — and the host
+hears that from the box by itself, so there is nothing to pass. Called from a
+click handler, a key handler or a followed link, it goes. Called on load, on a
+timer, or because some data arrived, it is refused with `identity` — the
+promise rejects saying that only the person moves the screen — and the screen
+stays where it is. The only other thing that ever moves it is the agent in the
+chat the person has open, and only off a screen they are not using.
+
 ### Drawing another page inside this one
 
 **`biom.embedInto(iframe, pageId)` draws another page, as it is, in an iframe you
@@ -268,6 +285,11 @@ script**, because a doc page empties its section stack on every redraw and the
 iframe goes with it. The handle also has `onScroll(fn)` and `scrollTo(at)`, both a
 fraction of the nested page's run, for keeping two pages level by proportion.
 `biom.embed(pageId)` is the raw half for a caller doing the relay itself.
+
+**A workspace's own screens are never drawn inside a page.** An id starting `@`
+— the design doc, the Map, the Agent screen — is refused before anything is
+drawn: those are screens of the workspace, not pages, and the Agent screen's box
+is the one the chats are fed into.
 
 ## Automations and runs, from a page
 
@@ -358,7 +380,7 @@ Each of these is a consequence of the opaque origin rather than a policy.
 | **Reaching past the shim** | `window.parent`, `window.top`, `window.opener`, a raw `postMessage`, `document.referrer`. The port is the one contract the page has |
 | **External CSS or modules** | no external stylesheet, no `@import`, no module `<script src>`, no dynamic `import()` of a URL. Host CSS does not cross the boundary either — the palette does, as data ([`styling.md`](./styling.md)) |
 | **Measuring the canvas** | `innerWidth`, `screen.width` and `matchMedia` are refused. The frame is whatever width the page gave it, and that changes when a panel opens or the window resizes. A CSS viewport unit is *not* measuring — `100vh` is resolved by the browser against the box on every frame |
-| **Navigating away** | no popups and no top-level navigation, so an anchor to the outside either does nothing or replaces the page with no way back. Moving somewhere inside the workspace is `biom.open` |
+| **Navigating away** | no popups and no top-level navigation, so an anchor to the outside either does nothing or replaces the page with no way back. Moving somewhere inside the workspace is `biom.open`, in answer to the person's click |
 
 ### One classic script from `/vendor/`, and nothing else
 

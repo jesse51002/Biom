@@ -1,0 +1,535 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "91ecd4ed615d48009cb1063c23d05fae9f3b2872d0e7670eecee9c9ce971e177",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The lead says {{who}} at {{rate}} {{unit}}, with {{only}} and {{tags}}; empty reads [{{empty}}].",
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 64,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the part"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the part"
+          },
+          "item": null,
+          "node": null,
+          "part": "lead",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Plain prose says {{who}} at {{rate}} {{unit}}.",
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 64,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": "plain",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "file": "snippet.html",
+            "html": "<p class=\"snippet\" data-who=\"{{who}}\">A snippet drawn for {{who}} at {{rate}}, tags {{tags}}.</p>\n",
+            "kind": "html",
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 64,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the html part"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the html part"
+          },
+          "item": null,
+          "node": null,
+          "part": "snippet",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "file": "snippet.html",
+            "html": "<p class=\"snippet\" data-who=\"{{who}}\">A snippet drawn for {{who}} at {{rate}}, tags {{tags}}.</p>\n",
+            "kind": "html",
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 64,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": "bare",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "head": true,
+            "kind": "grid",
+            "rows": [
+              [
+                "Name",
+                "Rate",
+                "Unit"
+              ],
+              [
+                "{{who}}",
+                "{{rate}}",
+                "{{unit}}"
+              ],
+              [
+                "fixed",
+                "7",
+                "{{tags}}"
+              ]
+            ],
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 99,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 99,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": "cells",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "head": false,
+            "kind": "grid",
+            "rows": [
+              [
+                "{{who}}",
+                "{{only}}",
+                "{{empty}}"
+              ]
+            ],
+            "vars": {
+              "empty": null,
+              "only": "section only",
+              "rate": 64,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": "plaingrid",
+          "section": "layered",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": "recorder",
+          "part": null,
+          "section": "layered",
+          "via": "node"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "empty": null,
+            "only": "section only",
+            "rate": 64,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the section"
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "layered",
+          "via": "script"
+        }
+      ],
+      "name": "layered"
+    },
+    {
+      "markup": "f8465cc3ef8b1a6f6edd2f1bdc5f1cb78ea2986eb239635c98b5efe9b5f517f3",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The first item says {{who}} at {{rate}}.",
+            "vars": {
+              "empty": null,
+              "rate": 62,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the list's section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the list's section"
+          },
+          "item": 0,
+          "node": null,
+          "part": "items",
+          "section": "cards",
+          "via": "item"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The second item says {{who}} at {{rate}}.",
+            "vars": {
+              "empty": null,
+              "rate": 62,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the second item"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the second item"
+          },
+          "item": 1,
+          "node": null,
+          "part": "items",
+          "section": "cards",
+          "via": "item"
+        },
+        {
+          "content": {
+            "head": true,
+            "kind": "grid",
+            "rows": [
+              [
+                "Who",
+                "Rate"
+              ],
+              [
+                "{{who}}",
+                "{{rate}}"
+              ]
+            ],
+            "vars": {
+              "empty": null,
+              "rate": 5,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the list's section"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 5,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the list's section"
+          },
+          "item": 2,
+          "node": null,
+          "part": "items",
+          "section": "cards",
+          "via": "item"
+        },
+        {
+          "content": {
+            "file": "snippet.html",
+            "html": "<p class=\"snippet\" data-who=\"{{who}}\">A snippet drawn for {{who}} at {{rate}}, tags {{tags}}.</p>\n",
+            "kind": "html",
+            "vars": {
+              "empty": null,
+              "rate": 62,
+              "tags": [
+                "north",
+                "south"
+              ],
+              "unit": "per cent",
+              "who": "the html item"
+            }
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the html item"
+          },
+          "item": 3,
+          "node": null,
+          "part": "items",
+          "section": "cards",
+          "via": "item"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The last item says {{who}} with [{{empty}}] and {{tags}}.",
+            "vars": {
+              "empty": "filled",
+              "rate": 62,
+              "tags": [
+                "east"
+              ],
+              "unit": "per cent",
+              "who": "the list's section"
+            }
+          },
+          "ctx": {
+            "empty": "filled",
+            "rate": 62,
+            "tags": [
+              "east"
+            ],
+            "unit": "per cent",
+            "who": "the list's section"
+          },
+          "item": 4,
+          "node": null,
+          "part": "items",
+          "section": "cards",
+          "via": "item"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the list's section"
+          },
+          "item": null,
+          "node": "recorder",
+          "part": null,
+          "section": "cards",
+          "via": "node"
+        }
+      ],
+      "name": "cards"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Shadowing/Kid",
+              "kind": "page",
+              "name": "Kid",
+              "uid": "scopesfixkid01"
+            },
+            "draw": {
+              "file": "child.html",
+              "html": "<!-- Invented: a child row that reads its own fields and the holding section's scope. -->\n<div class=\"kid-row\" data-who=\"{{who}}\"><b>{{name}}</b> ({{kind}}, {{id}}) under {{who}} at {{rate}} {{unit}}</div>\n"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the kid's row"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Kid",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Kid"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "child": {
+              "children": false,
+              "id": "home/Shadowing/Plain_Kid",
+              "kind": "page",
+              "name": "Plain Kid",
+              "uid": "scopesfixplainkid01"
+            },
+            "draw": {
+              "file": "child.html",
+              "html": "<!-- base/child/index.html — HOW THIS PAGE LOOKS INSIDE SOMEBODY ELSE'S.\n\n     This is the one file in `base/` that is not a section. Every page is created\n     with a copy of it in its own directory as `child.html`, and the `child`\n     plugin mounts it wherever a parent draws this page as a child. Delete it and\n     the built-in row comes back, which is a supported act rather than a broken\n     page.\n\n     IT IS MARKUP AND NOT A PROGRAM. A `<script>` in here is removed and\n     reported: a script inserted as markup never runs, so leaving one would be\n     dead code that looks live. The child says how it LOOKS; the section holding\n     it says how the page BEHAVES.\n\n     NO NAME IS WRITTEN INTO IT. `{{name}}`, `{{kind}}`, `{{id}}` and `{{rows}}`\n     are this child's own fields and they are the nearest scope, which is what\n     lets one file sit in every page directory: renaming the page renames the\n     row, where a name copied in here would be wrong the moment somebody did that\n     and nothing on screen would say so.\n\n     NOTHING IN HERE IS FOCUSABLE, ON PURPOSE. The plugin wires the click either\n     way; with no control of its own in the markup it makes the whole drawing the\n     control — role, tab stop, Enter and Space, and an aria-label from the name.\n     Put ONE `<a href>` or `<button type=\"button\">` in here instead if the row\n     wants a real control, and never both: a control inside a thing pretending to\n     be a control is two tab stops for one row.\n\n     Its `<style>` is scoped to the slot by the plugin, so these selectors cannot\n     reach the section above or below.\n\n     IT IS A ROW AND IT STAYS ONE. A name, a count and a kind, and the one thing\n     it does beyond that is LIGHT when the pointer or the keyboard reaches it: a\n     leading edge that is nothing until the row is the one somebody is about to\n     open, in the palette's own hot colour. That is deliberately the whole of the\n     design in here — this file is copied into EVERY page in the workspace, which\n     makes it the most contagious file in `base/`, so what it carries is one\n     touch that says the row is live rather than a look every page inherits.\n     Restyle the copy in a page freely; think twice before restyling this one. -->\n<style>\n  .kid {\n    display: grid;\n    grid-template-columns: minmax(0, 1fr) auto auto;\n    align-items: baseline;\n    gap: .55rem;\n    padding: .5rem .65rem;\n    border-bottom: 1px solid var(--rule);\n    /* THE EDGE THAT LIGHTS. Transparent rather than absent, so the row does not\n       move by two pixels the moment the pointer reaches it — the plugin makes\n       the whole drawing the control, so `:hover` and `:focus-within` are already\n       true at the moment they should be and nothing has to be told. */\n    border-inline-start: 2px solid transparent;\n    color: var(--ink);\n    font-family: var(--sheet-face);\n    line-height: 1.4;\n    transition: border-color 140ms ease, background 140ms ease;\n  }\n  .kid:hover,\n  .kid:focus-within {\n    border-inline-start-color: var(--cyan);\n    background: color-mix(in srgb, var(--cyan) 7%, transparent);\n  }\n  @media (prefers-reduced-motion: reduce) { .kid { transition: none; } }\n\n  .kid-name { min-inline-size: 0; overflow-wrap: anywhere; }\n\n  /* A COUNT THAT HIDES ITSELF. `{{rows}}` is a table's row count and is EMPTY\n     for a page — the markup cannot branch, so the empty element is what carries\n     the difference, and `:empty` is what reads it.\n\n     THE NUMBER STANDS ALONE, and that is the same fact seen once more. A\n     `::after { content: \" rows\" }` would read \"1 rows\" beside every one-row\n     table, on every page this file is copied into, with no way to spell the\n     other case — the markup cannot branch, so it cannot pluralise either. The\n     `{{kind}}` beside it already says what is being counted. */\n  .kid-count { font-family: var(--gauge-face); font-size: .8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }\n  .kid-count:empty { display: none; }\n\n  .kid-kind {\n    font-size: .7rem;\n    text-transform: uppercase;\n    color: var(--ink-3);\n    white-space: nowrap;\n  }\n</style>\n\n<div class=\"kid\">\n  <span class=\"kid-name\">{{name}}</span>\n  <span class=\"kid-count\">{{rows}}</span>\n  <span class=\"kid-kind\">{{kind}}</span>\n</div>\n"
+            },
+            "kind": "child"
+          },
+          "ctx": {
+            "empty": null,
+            "rate": 62,
+            "tags": [
+              "north",
+              "south"
+            ],
+            "unit": "per cent",
+            "who": "the page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "@page-Plain_Kid",
+          "via": "slot"
+        }
+      ],
+      "name": "@page-Plain_Kid"
+    }
+  ]
+}

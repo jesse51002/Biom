@@ -1,0 +1,28 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The kid page's own scope says {{who}}, and {{rate}} is not in it.",
+            "vars": {
+              "who": "the kid page"
+            }
+          },
+          "ctx": {
+            "who": "the kid page"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "body",
+          "via": "slot"
+        }
+      ],
+      "name": "body"
+    }
+  ]
+}

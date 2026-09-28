@@ -43,6 +43,10 @@ export function interpolate(text: string, vars: Variables): string {
  *  page's own name, because an id is a slug and a name is what somebody wrote. */
 const linkTo = (child: Child): string => `- [[${child.id}|${child.name}]]`;
 
+/** A NEARER SCOPE OVER AN OUTER ONE, nearest last — the box's own `merge`. An
+ *  entry with no variables of its own is the outer scope unchanged. */
+const scope = (outer: Variables, own: Variables | undefined): Variables => ({ ...outer, ...(own || {}) });
+
 /** One part, projected. `null` where the part contributes nothing.
  *
  *  AN HTML PART CONTRIBUTES NOTHING, and that is the honest answer rather than a
@@ -50,15 +54,22 @@ const linkTo = (child: Child): string => `- [[${child.id}|${child.name}]]`;
  *  beside it (R56 is exactly that rule), and stripping tags out of it would put
  *  a caption from an `<svg>` into the archive as a paragraph. A TABLE names
  *  itself and does not inline its rows: rows change without the page changing,
- *  so a projection holding them would be stale in a way the page is not. */
+ *  so a projection holding them would be stale in a way the page is not.
+ *
+ *  `vars` is the scope AROUND the part — the page's under its section's — and
+ *  the part's own `vars` is merged over it, nearest last. A part's `vars` is
+ *  its own `variables:` since the fourteenth contracts edit, so reading it
+ *  alone would leave `{{rate}}` unfilled wherever the value is the section's
+ *  or the page's; merged, a part that still carries the three scopes already
+ *  merged projects exactly as it did. */
 function part(one: Part, vars: Variables): string | null {
-  if (one.kind === "markdown") return interpolate(one.md, one.vars || vars).trim() || null;
+  if (one.kind === "markdown") return interpolate(one.md, scope(vars, one.vars)).trim() || null;
   if (one.kind === "list") {
     const items = one.items.map((item) => part(item, vars)).filter((t): t is string => t !== null);
     return items.length ? items.join("\n\n") : null;
   }
   if (one.kind === "table") return `*(table: ${one.table})*`;
-  if (one.kind === "grid") return grid(one.rows, one.head, one.vars || vars);
+  if (one.kind === "grid") return grid(one.rows, one.head, scope(vars, one.vars));
   if (one.kind === "child") {
     return one.child.kind === "page" ? linkTo(one.child) : `*(table: ${one.child.id})*`;
   }
@@ -88,10 +99,12 @@ function grid(rows: string[][], head: boolean, vars: Variables): string | null {
   return [first, rule, ...body].join("\n");
 }
 
-/** One section, projected, or null where it says nothing. */
+/** One section, projected, or null where it says nothing. `vars` is the page's
+ *  scope, and the section's own is merged over it for every part inside. */
 function section(one: DrawnSection, vars: Variables): string | null {
+  const inner = scope(vars, one.vars);
   const parts = Object.values(one.parts || {})
-    .map((p) => part(p, vars))
+    .map((p) => part(p, inner))
     .filter((t): t is string => t !== null);
   return parts.length ? parts.join("\n\n") : null;
 }

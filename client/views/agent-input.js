@@ -1,0 +1,764 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Layer 14 — THE INPUT BOX, which is Biom's (*Chat*, `plugin`): "the Agent
+// screen … is drawn by a plugin a workspace can replace, except the input
+// box, which is Biom's, so only the person's typing reaches an agent that is
+// allowed everything."
+//
+// IT IS HOST DOM, over the look's box, and it is the only place a chat's agent
+// is handed words: the text area's own value, sent by the person's Enter or
+// Send, as `chat.new` or `chat.send`. Nothing the look says reaches here but
+// the chat it asks to show; the / menu and **Edit** only put words in the
+// text area, where the person reads them and sends them or not.
+//
+// WHAT IT HOLDS, after the mockup's composer: the text area — *Ask anything*
+// on the start screen, *Reply* in a chat; under it the agent, model, mode and
+// effort, each a chip with the agent's own list, a list longer than five
+// showing five and **More models**; Send, which sends — or, while a turn
+// runs, QUEUES — whatever is typed, and is **Stop** while a turn runs and
+// nothing is, because a chat takes one message at a time; **Go to *page***
+// above it when the switcher offers the page the open chat wrote; the / menu
+// of the agent's commands and the workspace's skills; and one line under it
+// saying the turn is working, or what went wrong. How the chat is SHOWN is
+// not here: its view is picked from the look's own ⋯, because a chip beside
+// the agent's pickers read as a setting of the agent's.
+//
+// A FIRST MESSAGE WITH NO AGENT READY is sent all the same, and held by the
+// server: More agents opens saying it is waiting, and the server sends it the
+// moment an agent is Active — this only shows that it did.
+//
+// THE START SCREEN STARTS WHERE THE PERSON LEFT OFF: the agent chip defaults
+// to the agent the workspace kept as last picked while it is on this machine,
+// and the pickers show that agent's kept values its list still offers — which
+// is what the server starts the new chat on. What is picked here overrides
+// them for the chat the first message makes, and the server keeps it then.
+//
+// A MESSAGE SENT WHILE A TURN RUNS WAITS IN THE CHAT'S QUEUE, the server's
+// (*Chat*, `acp`), so the text area stays editable while a turn runs and Enter
+// sends or queues; the look draws what waits. After Stop, an error or a
+// restart the queue is held, and **Send queued** under the input sends it.
+// Escape still stops.
+//
+// TYPING HERE IS NOT A TOUCH. The whole dock carries `NOT_TOUCH`, because
+// talking to the agent is not taking the screen back from it.
+
+/** @import { AgentInfo, AgentKey, ChatId, ChatSummary, ConfigOption, ConfigValue, LookInput, PageId, SlashCommand } from "../../contracts/types.ts" */
+/** @import { ChatStore } from "../store/chats.js" */
+/** @import { Switcher } from "../store/switcher.js" */
+/** @import { Ui } from "../store/ui.js" */
+/** @import { AgentDialogs } from "./agent-dialogs.js" */
+
+import { svg } from "../platform/dom.js";
+import { NOT_TOUCH } from "../store/switcher.js";
+import {
+  choiceName, defaultAgent, freshThread, keptFor, keptValues, machineAgents, pickersOf, showChat, shownChoices,
+  slashQuery, slashRows, stateWords, buttonOf, waitingWords, withValues,
+} from "../store/chats.js";
+
+/** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
+
+/**
+ * @typedef {object} AgentInput
+ * @property {HTMLElement} el The dock, whole.
+ * @property {() => void} sync Draw again from the stores.
+ * @property {() => LookInput} measure Where it sits over the look and how
+ *   much of the look it covers — the `LookInput` the look leaves room for.
+ * @property {(fn: () => void) => () => void} onMove Its size or place changed.
+ * @property {(text: string, page: PageId | null) => void} prefill Put words in
+ *   and the caret after them — **Edit**'s — naming the page the chat is for.
+ * @property {() => void} focus
+ * @property {() => void} fresh A new thread began: nothing pending for a page.
+ *   It moves no caret; the view decides where the caret goes.
+ * @property {(sentence: string) => void} say A sentence on the line under the
+ *   input, as a send, a stop or a pick that did not happen puts there — for
+ *   what the look asked that did not happen either.
+ */
+
+/** How the dock stands off the look's foot in a chat, under the composer —
+ *  the line that says the turn is working sits in it. The mockup's 34px. */
+export const DOCK_FOOT = 34;
+/** The most the text area grows before it scrolls, in px. The mockup's. */
+const TEXT_MAX = 240;
+/** How long after THIS window sent a message a held chat opens More agents. */
+const HELD_FRESH = 60000;
+
+/** The mockup's icons, as path data on a 16-pixel grid. Literals only: `svg`
+ *  writes them as markup. */
+const ICONS = {
+  chev: '<path d="m4 6.25 4 4 4-4"/>',
+  up: '<path d="M8 13V3.6M3.9 7.6 8 3.5l4.1 4.1" stroke-width="1.9"/>',
+  stop: '<rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.4" fill="currentColor" stroke="none"/>',
+  plus: '<path d="M8 3.25v9.5M3.25 8h9.5"/>',
+  check: '<path d="m3.25 8.5 3 3 6.5-7" stroke-width="1.7"/>',
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
+};
+
+/** @param {keyof typeof ICONS} name @param {string} [cls] */
+const icon = (name, cls = "ico") =>
+  svg("0 0 16 16", `<g stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</g>`, cls);
+
+/** A refusal's own sentence, or a plain one. @param {unknown} e */
+const sentence = (e) => (e instanceof Error && e.message ? e.message : "it did not answer");
+/** @param {unknown} e */
+const codeOf = (e) => (e && typeof e === "object" ? /** @type {{ code?: unknown }} */ (e).code : undefined);
+
+/** What each picker is called in its menu's heading. */
+const CATEGORY_WORD = /** @type {Record<string, string>} */ ({ model: "model", mode: "mode", thought_level: "effort" });
+/** What a picker's long list is called on its More row. */
+const MORE_WORD = /** @type {Record<string, string>} */ ({ model: "More models", mode: "More modes", thought_level: "More levels" });
+
+/**
+ * @param {{ h: H, ui: Ui, chats: ChatStore, switcher: Switcher | null, dialogs: AgentDialogs, doc?: Document, win?: Window }} deps
+ * @returns {AgentInput}
+ */
+export function makeAgentInput(deps) {
+  const { h, ui, chats, switcher, dialogs } = deps;
+  const doc = deps.doc ?? document;
+  const win = deps.win ?? window;
+
+  /** The agent a new chat goes to, once this window has settled on one: the
+   *  person's pick, the last chat's agent, or — once the kept choices are
+   *  read — the default. Null while that is not known yet.
+   *  @type {AgentKey | null} */
+  let picked = null;
+  /** What the person set the start screen's pickers to, for the new chat. @type {Map<string, ConfigValue>} */
+  const startConfig = new Map();
+  /** The page **Edit** opened this new chat for. @type {PageId | null} */
+  let pendingPage = null;
+  let sending = false;
+  let stopping = false;
+  /** Why the last send, stop or pick did not happen, or "". */
+  let said = "";
+  /** The chat the dock was last drawn for; undefined before the first draw.
+   *  @type {ChatId | null | undefined} */
+  let lastChat = undefined;
+  /** The held chat More agents was opened over, so it closes when the
+   *  message goes out. @type {ChatId | null} */
+  let heldFor = null;
+  /** @type {Set<() => void>} */
+  const movers = new Set();
+
+  /* ── the dock, built once ──────────────────────────────────────────── */
+
+  const slash = h("div#agentslash.slash", { role: "listbox", "aria-label": "Commands and skills", hidden: "" });
+  const text = /** @type {HTMLTextAreaElement} */ (h("textarea#agentta.agentta", {
+    rows: "1", spellcheck: "true", placeholder: "Ask anything",
+    "aria-label": "Message", "aria-controls": "agentslash", "aria-autocomplete": "list",
+    oninput: () => { said = ""; autosize(); paint(); void drawSlash(true); },
+    onkeydown: (/** @type {KeyboardEvent} */ e) => keydown(e),
+  }));
+  const agentLed = h("span.led");
+  const agentName = h("span.nm");
+  const agentChip = h("button.chip.agentchip", { type: "button", "aria-haspopup": "menu", "aria-expanded": "false", title: "The agent", onclick: () => agentMenu() },
+    agentLed, agentName, icon("chev"));
+  const sep = h("span.sep");
+  /** The three pickers, kept, each redrawn in place. */
+  const chipsFor = ["model", "mode", "thought_level"].map((cat) => {
+    const label = h("span.nm");
+    const el = h("button.chip", { type: "button", "aria-haspopup": "menu", "aria-expanded": "false", "data-category": cat, hidden: "", onclick: () => pickerMenu(cat) },
+      label, icon("chev"));
+    return { cat, el, label };
+  });
+  /** WHAT THE BUTTON SAID WHEN IT WAS PRESSED. A turn can end between the
+   *  press and the click, and the button under the pointer turns from Stop to
+   *  Send: a press that began on Stop must stop, never send the draft beside it.
+   *  @type {{ was: "stop" | "send", at: number } | null} */
+  let pressedAs = null;
+  const send = h("button.send", {
+    type: "button", "aria-label": "",
+    onpointerdown: () => { pressedAs = { was: stopsNow() ? "stop" : "send", at: Date.now() }; },
+    onclick: () => press(),
+  }, icon("up"));
+  const cbar = h("div.cbar", agentChip, sep, ...chipsFor.map((c) => c.el), send);
+  const composer = h("div.composer", slash, text, cbar);
+  const followName = h("b");
+  const follow = h("button.follow", { type: "button", hidden: "", onclick: () => switcher?.go() },
+    h("span.led.lit.pulse"), h("span.ft", "Editing ", followName), h("span.go", "Go to page"));
+  const workingText = h("span.wt", "Working");
+  const working = h("span.working", h("span.leds3", h("i"), h("i"), h("i")), workingText);
+  const saidLine = h("span.said", { role: "status" });
+  /** A HELD QUEUE, SENT: what waits after Stop, an error or a restart goes
+   *  only when the person says so. */
+  const sendQueued = h("button.sendqueued", { type: "button", hidden: "", onclick: () => void releaseQueue() });
+  const below = h("div.below", working, saidLine, sendQueued);
+  const el = h("div.agentdock", { [NOT_TOUCH]: "" }, follow, composer, below);
+
+  /* ── what the dock is for, now ─────────────────────────────────────── */
+
+  function now() {
+    const u = ui.get();
+    const s = chats.get();
+    const chatId = u.chat;
+    const chat = chatId === null ? null : chats.summary(chatId);
+    // THE DEFAULT SETTLES ONCE THE KEPT CHOICES ARE READ, so the agent the
+    // workspace kept is not passed over for whichever turned Active first.
+    if (chat === null && s.settings !== null) picked = defaultAgent(s.agents, picked, s.settings.agent);
+    const agentKey = chat !== null ? chat.agent : picked ?? defaultAgent(s.agents, null);
+    const agent = agentKey === null ? null : s.agents.find((a) => a.key === agentKey) ?? null;
+    const busy = chat !== null && chat.phase !== "idle";
+    const shown = agent?.options ?? [];
+    /** @type {ConfigOption[]} */
+    const options = chat !== null
+      ? (s.open === chat.id && s.config !== null ? s.config : shown)
+      : withValues(withValues(shown, keptValues(shown, keptFor(s.settings, agentKey))), startConfig);
+    const name = chat !== null ? chat.harness ?? agent?.name ?? "No agent yet" : agent?.name ?? (s.agentsKnown ? "No agent yet" : "Looking for agents");
+    return { u, s, chatId, chat, agentKey, agent, busy, options, name };
+  }
+
+  /** THE BUTTON IS STOP while a turn runs and nothing is typed; with words
+   *  in the input it sends them, or queues them behind the turn. */
+  function stopsNow() {
+    return now().busy && text.value.trim() === "";
+  }
+
+  function autosize() {
+    text.style.height = "auto";
+    text.style.height = Math.min(TEXT_MAX, text.scrollHeight) + "px";
+  }
+
+  function paint() {
+    const n = now();
+
+    // ANOTHER CHAT: the draft was for the one before it, as the mockup has
+    // it, and nothing pending for a page carries over.
+    if (n.chatId !== lastChat) {
+      if (lastChat !== undefined) { text.value = ""; autosize(); }
+      lastChat = n.chatId;
+      pendingPage = null;
+      said = "";
+      closeSlash();
+      closeMenu();
+      if (n.chat !== null && n.chat.agent !== null) picked = n.chat.agent;
+      // BACK ON THE START SCREEN, what is kept is read again: another window
+      // may have kept a choice since this one last read.
+      if (n.chatId === null) void chats.readSettings();
+    }
+
+    place(n.chatId === null ? "center" : "bottom");
+    text.placeholder = n.chatId === null ? "Ask anything" : "Reply";
+
+    agentName.textContent = n.name;
+    agentLed.className = n.busy && n.chat?.phase !== "held" ? "led lit pulse" : n.agent?.state === "active" ? "led lit" : "led";
+
+    const pickers = pickersOf(n.options);
+    for (const c of chipsFor) {
+      const o = pickers.find((p) => p.category === c.cat);
+      c.el.hidden = !o;
+      if (o) c.label.textContent = choiceName(o);
+    }
+    sep.hidden = !pickers.length;
+
+    const stopMode = n.busy && text.value.trim() === "";
+    if (send.getAttribute("aria-label") !== (stopMode ? "Stop" : "Send")) {
+      send.className = stopMode ? "send stop" : "send";
+      send.replaceChildren(icon(stopMode ? "stop" : "up"));
+      send.setAttribute("aria-label", stopMode ? "Stop" : "Send");
+    }
+    send.title = stopMode ? "Stop" : n.busy ? "Queue it behind this turn" : "";
+    if (stopMode) send.toggleAttribute("disabled", stopping);
+    else send.toggleAttribute("disabled", sending || text.value.trim() === "");
+
+    const offer = switcher?.get().offer ?? null;
+    follow.hidden = offer === null;
+    if (offer !== null) followName.textContent = offer.name;
+
+    // THE WORDS BEING SENT ARE NOT EDITED WHILE THEY GO: whatever was typed
+    // meanwhile would be left beside them and sent a second time.
+    text.readOnly = sending;
+
+    const phase = n.chat?.phase ?? "idle";
+    working.hidden = !n.busy;
+    workingText.textContent = phase === "held" ? "Waiting for an agent" : phase === "starting" ? "Starting " + n.name : "Working";
+    const heldQueue = n.chat !== null && n.chat.queueHeld === true && n.chat.queued > 0 ? n.chat.queued : 0;
+    sendQueued.hidden = heldQueue === 0;
+    if (heldQueue) sendQueued.textContent = heldQueue === 1 ? "Send queued" : "Send " + heldQueue + " queued";
+    saidLine.textContent = said;
+    below.hidden = n.chatId === null && said === "" && heldQueue === 0;
+
+    held(n.chat);
+    tell();
+  }
+
+  /** WHERE THE DOCK SITS, and the move between the two drawn as a move: the
+   *  start screen's input going down to the foot of the chat the first
+   *  message made, as the mockup has it, from where it was to where it is —
+   *  and no move at all where the person asked for stillness.
+   *  @param {"center" | "bottom"} at */
+  function place(at) {
+    const was = el.getAttribute("data-at");
+    if (was === at) return;
+    const still = typeof win.matchMedia === "function" && win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const before = was === null || still || !el.isConnected ? null : el.getBoundingClientRect();
+    el.setAttribute("data-at", at);
+    if (before === null || before.height === 0 || typeof el.animate !== "function") return;
+    const dy = before.top - el.getBoundingClientRect().top;
+    if (dy !== 0) el.animate([{ translate: `0 ${dy}px` }, { translate: "0 0" }], { duration: 700, easing: "cubic-bezier(.16,1,.3,1)" });
+  }
+
+  /** MORE AGENTS OVER A WAITING MESSAGE: opened when a chat this window just
+   *  sent to is held, and shut when its message goes out. A held chat seen
+   *  from another window, or long after, opens nothing.
+   *  @param {ChatSummary | null} chat */
+  function held(chat) {
+    if (chat !== null && chat.phase === "held") {
+      const sentAt = chats.lastSent(chat.id);
+      if (heldFor !== chat.id && sentAt !== null && Date.now() - sentAt < HELD_FRESH) {
+        heldFor = chat.id;
+        openAgents();
+      }
+      return;
+    }
+    if (heldFor !== null && (chat === null || chat.id === heldFor)) {
+      if (dialogs.shown() === "agents") dialogs.close();
+      heldFor = null;
+    }
+  }
+
+  /** @type {string} */
+  let told = "";
+  function tell() {
+    const m = measure();
+    const key = m.at + ":" + m.height;
+    if (key === told) return;
+    told = key;
+    for (const fn of [...movers]) fn();
+  }
+
+  /** WHAT THE HOST DRAWS OVER THE LOOK, measured whole: the composer, the
+   *  line under it down to the stage's foot, and **Go to page** hanging above
+   *  it while an offer shows — so the look leaves room for all of it and its
+   *  latest line is never under the pill. The / menu is not counted: it opens
+   *  over the look on purpose, while the person types.
+   *  @returns {LookInput} */
+  function measure() {
+    const at = ui.get().chat === null ? "center" : "bottom";
+    const c = composer.getBoundingClientRect();
+    // A hidden pill is drawn nowhere, and its rect says so with a top of 0.
+    const top = follow.hidden ? c.top : Math.min(c.top, follow.getBoundingClientRect().top);
+    if (at === "center") return { at, height: Math.round(c.bottom - top) };
+    const holder = el.parentElement;
+    const foot = holder ? holder.getBoundingClientRect().bottom : c.bottom + DOCK_FOOT;
+    return { at, height: Math.max(0, Math.round(foot - top)) };
+  }
+
+  if (typeof ResizeObserver === "function") {
+    const sized = new ResizeObserver(() => tell());
+    sized.observe(composer);
+    sized.observe(follow);
+  }
+
+  /* ── sending, and Stop ─────────────────────────────────────────────── */
+
+  function press() {
+    const intent = pressedAs !== null && Date.now() - pressedAs.at < 2000 ? pressedAs.was : null;
+    pressedAs = null;
+    if (intent === "stop" || (intent === null && stopsNow())) { void stop(); return; }
+    void submit();
+  }
+
+  async function submit() {
+    const words = text.value;
+    if (words.trim() === "" || sending) return;
+    const n = now();
+    // A CHAT THIS WINDOW NAMES AND HAS NOT READ YET is not the start screen:
+    // sending now would make a new chat of words meant for this one.
+    if (n.chatId !== null && n.chat === null) {
+      said = "This chat is still being read.";
+      paint();
+      return;
+    }
+    closeSlash();
+    said = "";
+    sending = true;
+    paint();
+    try {
+      if (n.chat !== null) {
+        await chats.send(n.chat.id, words);
+        if (text.value === words) text.value = "";
+      } else {
+        /** @type {Record<string, ConfigValue>} */
+        const config = Object.fromEntries(startConfig);
+        const made = await chats.create({ agent: n.agentKey ?? undefined, text: words, page: pendingPage ?? undefined, config });
+        if (text.value === words) text.value = "";
+        startConfig.clear();
+        pendingPage = null;
+        // The draft went with the chat, so showing it clears nothing.
+        lastChat = made.id;
+        showChat(ui, made.id, "made");
+      }
+      autosize();
+    } catch (e) {
+      const code = codeOf(e);
+      if (code === "limit") said = "Not sent: " + sentence(e);
+      else if (code === "timeout" || code === "fetch_failed") {
+        // IT MAY HAVE GONE: the server can have taken it and the answer been
+        // lost. The list is read again, and the person is told to look
+        // before sending the same words twice.
+        said = "The server did not answer in time. If your message shows in the chat, it went out; otherwise send it again.";
+        void chats.resync();
+      } else said = "Not sent: " + sentence(e);
+    } finally {
+      sending = false;
+      paint();
+    }
+  }
+
+  /** SEND QUEUED: the held queue goes — its next message now, the rest one
+   *  a turn. */
+  async function releaseQueue() {
+    const n = now();
+    if (n.chat === null) return;
+    try { await chats.sendQueued(n.chat.id); }
+    catch (e) { said = "Not sent: " + sentence(e); }
+    paint();
+  }
+
+  async function stop() {
+    const n = now();
+    if (n.chat === null || !n.busy || stopping) return;
+    stopping = true;
+    paint();
+    try {
+      await chats.cancel(n.chat.id);
+    } catch (e) {
+      said = "Not stopped: " + sentence(e);
+    } finally {
+      stopping = false;
+      paint();
+    }
+  }
+
+  /* ── the keyboard ──────────────────────────────────────────────────── */
+
+  /** @param {KeyboardEvent} e */
+  function keydown(e) {
+    if (slashKey(e)) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "n") {
+      // New thread, as the look binds it inside its box.
+      e.preventDefault();
+      freshThread(ui);
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      // Sent, or queued behind the turn that is going.
+      e.preventDefault();
+      void submit();
+      return;
+    }
+    if (e.key === "Escape" && now().busy && menu === null) {
+      e.preventDefault();
+      void stop();
+    }
+  }
+
+  /* ── the / menu ────────────────────────────────────────────────────── */
+
+  /** @type {SlashCommand[]} */
+  let rows = [];
+  let lit = 0;
+  /** The / menu as the server merged it, by the chat or agent it is for. @type {Map<string, SlashCommand[]>} */
+  const menus = new Map();
+  /** The agents list the cache was filled against: another one empties it. */
+  let menusFor = chats.get().agents;
+  let slashGen = 0;
+
+  function closeSlash() {
+    // A list still being read for what was typed before is not opened after.
+    slashGen++;
+    slash.hidden = true;
+    rows = [];
+    text.removeAttribute("aria-activedescendant");
+  }
+
+  /** The commands for what the dock is for: the open chat's own last list,
+   *  or asked of the server for a chat or an agent and kept. @returns {Promise<SlashCommand[]>} */
+  async function commandsNow() {
+    const n = now();
+    if (n.s.agents !== menusFor) { menus.clear(); menusFor = n.s.agents; }
+    if (n.chat !== null && n.s.open === n.chat.id && n.s.commands !== null) return n.s.commands;
+    const key = n.chat !== null ? "chat:" + n.chat.id : "agent:" + (n.agentKey ?? "");
+    const had = menus.get(key);
+    if (had) return had;
+    const got = await chats.commands(n.chat !== null ? { chat: n.chat.id } : n.agentKey !== null ? { agent: n.agentKey } : {});
+    menus.set(key, got);
+    return got;
+  }
+
+  /** @param {boolean} fresh the text changed, so the first row is lit again */
+  async function drawSlash(fresh) {
+    const q = slashQuery(text.value);
+    if (q === null) { closeSlash(); return; }
+    const my = ++slashGen;
+    /** @type {SlashCommand[]} */
+    let all;
+    try { all = await commandsNow(); } catch { all = []; }
+    if (my !== slashGen || slashQuery(text.value) !== q) return;
+    rows = slashRows(all, q);
+    if (fresh) lit = 0;
+    lit = Math.min(lit, Math.max(0, rows.length - 1));
+    slash.replaceChildren(...(rows.length
+      ? rows.map((c, i) => h("button.srow", {
+        type: "button", role: "option", id: "agentslash-" + i, tabindex: "-1",
+        "aria-selected": String(i === lit), "data-name": c.name,
+        onmousedown: (/** @type {Event} */ e) => e.preventDefault(),
+        onclick: () => pick(c.name),
+      }, h("span.sn", "/" + c.name), h("span.sw", c.description + (c.hint ? " · " + c.hint : ""))))
+      : [h("div.none", "Nothing starts with /" + q)]));
+    slash.hidden = false;
+    markSlash();
+  }
+
+  function markSlash() {
+    [...slash.children].forEach((r, i) => { if (r.matches(".srow")) r.setAttribute("aria-selected", String(i === lit)); });
+    if (rows.length) text.setAttribute("aria-activedescendant", "agentslash-" + lit);
+    else text.removeAttribute("aria-activedescendant");
+  }
+
+  /** PICKING ONE PUTS `/name` IN THE INPUT, and nothing is sent: the person
+   *  says the rest and presses Enter. @param {string} name */
+  function pick(name) {
+    text.value = "/" + name + " ";
+    closeSlash();
+    autosize();
+    paint();
+    text.focus({ preventScroll: true });
+    text.setSelectionRange(text.value.length, text.value.length);
+  }
+
+  /** @param {KeyboardEvent} e @returns {boolean} whether the menu took it */
+  function slashKey(e) {
+    if (slash.hidden) return false;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (rows.length) {
+        lit = (lit + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+        markSlash();
+        slash.children[lit]?.scrollIntoView?.({ block: "nearest" });
+      }
+      return true;
+    }
+    if (((e.key === "Enter" && !e.shiftKey && !e.isComposing) || e.key === "Tab") && rows.length) {
+      e.preventDefault();
+      pick(/** @type {SlashCommand} */ (rows[lit]).name);
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSlash();
+      return true;
+    }
+    return false;
+  }
+
+  /* ── the pickers' menus ────────────────────────────────────────────── */
+
+  /** @type {{ el: HTMLElement, anchor: HTMLElement, off: () => void } | null} */
+  let menu = null;
+
+  function closeMenu() {
+    if (menu === null) return;
+    const m = menu;
+    menu = null;
+    m.off();
+    m.el.remove();
+    m.anchor.setAttribute("aria-expanded", "false");
+  }
+
+  /**
+   * A MENU HUNG FROM A CHIP, on the document above everything but the pop-ups:
+   * under the chip where there is room, above it where there is not. It shuts
+   * on a press anywhere else, on Escape, and when the window loses focus —
+   * which is what a press inside the look's box looks like from here, because
+   * nothing inside an iframe reaches this document's listeners.
+   * @param {HTMLElement} anchor @param {(close: () => void) => HTMLElement[]} build
+   */
+  function openMenu(anchor, build) {
+    const mine = menu !== null && menu.anchor === anchor;
+    closeMenu();
+    if (mine) return;
+    const m = h("div.agentmenu", { role: "menu" }, ...build(closeMenu));
+    doc.body.append(m);
+    const r = anchor.getBoundingClientRect();
+    const mr = m.getBoundingClientRect();
+    const room = win.innerHeight - r.bottom;
+    const top = room > mr.height + 16 || room > r.top ? r.bottom + 6 : r.top - mr.height - 6;
+    const left = Math.max(8, Math.min(r.left, win.innerWidth - mr.width - 8));
+    m.style.top = Math.max(8, Math.round(top)) + "px";
+    m.style.left = Math.round(left) + "px";
+    anchor.setAttribute("aria-expanded", "true");
+    /** @param {PointerEvent} e */
+    const down = (e) => { const t = /** @type {Node} */ (e.target); if (!m.contains(t) && !anchor.contains(t)) closeMenu(); };
+    /** @param {KeyboardEvent} e */
+    const key = (e) => {
+      // EVERY CONTROL IN THE MENU, in the order it is drawn: the rows, and an
+      // Inactive agent's own button after its row.
+      const all = /** @type {HTMLElement[]} */ ([...m.querySelectorAll(".mi:not([disabled]), .mact:not([disabled])")]);
+      const at = all.indexOf(/** @type {HTMLElement} */ (doc.activeElement));
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); anchor.focus(); }
+      else if (e.key === "ArrowDown" && all.length) { e.preventDefault(); all[(at + 1) % all.length]?.focus(); }
+      else if (e.key === "ArrowUp" && all.length) { e.preventDefault(); all[(at - 1 + all.length) % all.length]?.focus(); }
+    };
+    const blur = () => closeMenu();
+    doc.addEventListener("pointerdown", down, true);
+    doc.addEventListener("keydown", key, true);
+    win.addEventListener("blur", blur);
+    win.addEventListener("resize", blur);
+    menu = {
+      el: m, anchor,
+      off: () => {
+        doc.removeEventListener("pointerdown", down, true);
+        doc.removeEventListener("keydown", key, true);
+        win.removeEventListener("blur", blur);
+        win.removeEventListener("resize", blur);
+      },
+    };
+    /** @type {HTMLElement | null} */ (m.querySelector(".mi:not([disabled])"))?.focus({ preventScroll: true });
+  }
+
+  /** @param {string} text */
+  const label = (text) => h("div.mlabel", text);
+  /** @param {string} text */
+  const foot = (text) => h("div.mfoot", text);
+
+  /** MORE AGENTS, saying why a waiting message waits where one does. */
+  function openAgents() {
+    dialogs.agents({
+      why: () => {
+        const n = now();
+        return n.chat !== null && n.chat.phase === "held" ? waitingWords(n.chat, n.s.agents) : null;
+      },
+      current: () => now().agentKey,
+      use: (key) => void choose(key),
+    });
+  }
+
+  function agentMenu() {
+    openMenu(agentChip, (close) => {
+      const n = now();
+      const list = machineAgents(n.s.agents);
+      /** @type {HTMLElement[]} */
+      const out = [label(list.length ? "On this machine" : n.s.agentsKnown ? "No agent on this machine yet" : "Looking for agents…")];
+      for (const a of list) {
+        const b = buttonOf(a);
+        const lamp = a.state === "active" ? "led lit" : a.reason === "checking" || a.reason === "installing" ? "led lit pulse" : "led";
+        const row = h("button.mi", {
+          type: "button", role: "menuitem", "data-agent": a.key,
+          // An Inactive agent's row opens More agents, where it can be made
+          // Active; only its own button does the making.
+          onclick: () => { close(); if (a.state === "active") void choose(a.key); else openAgents(); },
+        },
+          h("span", { class: lamp }),
+          h("span.txt", h("span.nm", a.name), h("span.sub", stateWords(a))),
+          a.key === n.agentKey ? icon("check", "check") : null);
+        // THE ONE BUTTON THAT MAKES IT ACTIVE IS A BUTTON OF ITS OWN, beside
+        // the row and never inside it — a control inside a button is one no
+        // key can reach — and it is in the menu's arrow-key ring after its
+        // row, so Enter on it signs in or starts the Gateway.
+        const pill = b === null ? null : h("button.mact", {
+          type: "button", role: "menuitem", "data-act": b,
+          "aria-label": b === "signin" ? "Sign in to " + a.name : "Start " + a.name + "’s Gateway",
+          onclick: () => {
+            close();
+            openAgents();
+            if (b === "signin") dialogs.signIn(a);
+            else void chats.start(a.key).catch((err) => { said = "The Gateway did not start: " + sentence(err); paint(); });
+          },
+        }, b === "signin" ? "Sign in" : "Start Gateway");
+        out.push(pill === null ? row : h("div.mipair", { role: "none" }, row, pill));
+      }
+      out.push(h("button.mi.addagent", { type: "button", role: "menuitem", onclick: () => { close(); openAgents(); } }, icon("plus"), h("span.nm", "More agents")));
+      out.push(foot(n.chat !== null
+        ? "Switching hands the new agent the chat so far. Each agent uses its own login and subscription."
+        : "Found by looking on this machine. Each agent uses its own login and subscription."));
+      return out;
+    });
+  }
+
+  /** @param {string} cat */
+  function pickerMenu(cat) {
+    const chip = chipsFor.find((c) => c.cat === cat);
+    if (!chip) return;
+    const n0 = now();
+    const option0 = pickersOf(n0.options).find((o) => o.category === cat);
+    if (!option0) return;
+    if (option0.type === "boolean") { void setConfig(option0, option0.value !== true); return; }
+    openMenu(chip.el, (close) => {
+      const n = now();
+      const option = pickersOf(n.options).find((o) => o.category === cat) ?? option0;
+      const { shown, more } = shownChoices(option);
+      /** @type {HTMLElement[]} */
+      const out = [label(n.name + " · " + (CATEGORY_WORD[cat] ?? cat))];
+      for (const c of shown) {
+        out.push(h("button.mi", {
+          type: "button", role: "menuitemradio", "aria-checked": String(c.value === option.value), "data-value": c.value,
+          onclick: () => { close(); void setConfig(option, c.value); },
+        }, h("span.txt", h("span.nm", c.name), c.description ? h("span.sub", c.description) : null), c.value === option.value ? icon("check", "check") : null));
+      }
+      if (more) {
+        out.push(h("button.mi.addagent", {
+          type: "button", role: "menuitem",
+          onclick: () => { close(); dialogs.models({ title: n.name + " · " + (cat === "model" ? "models" : CATEGORY_WORD[cat] ?? cat), option, pick: (v) => void setConfig(option, v) }); },
+        }, icon("search"), h("span.nm", MORE_WORD[cat] ?? "More"), h("span.mcount", String(option.choices.length))));
+      }
+      out.push(foot("What this list offers is what the agent reported when its session started."));
+      return out;
+    });
+  }
+
+  /** A PICKER SET: on a chat, the agent's own option, by its id — mid-turn it
+   *  applies from the next message; on the start screen, kept for the chat
+   *  the first message makes. @param {ConfigOption} option @param {ConfigValue} value */
+  async function setConfig(option, value) {
+    const n = now();
+    if (n.chat === null) { startConfig.set(option.id, value); paint(); return; }
+    try { await chats.config(n.chat.id, option.id, value); }
+    catch (e) { said = "Not changed: " + sentence(e); paint(); }
+  }
+
+  /** ANOTHER AGENT: for the next new chat on the start screen; for a chat,
+   *  switched — the new agent is handed the chat so far — and on a waiting
+   *  message, the message re-targeted. @param {AgentKey} key */
+  async function choose(key) {
+    const n = now();
+    picked = key;
+    if (n.chat === null) { startConfig.clear(); paint(); text.focus({ preventScroll: true }); return; }
+    if (n.chat.agent === key) return;
+    try { await chats.switchAgent(n.chat.id, key); }
+    catch (e) { said = codeOf(e) === "limit" ? "Stop this turn before switching agent." : "Not switched: " + sentence(e); }
+    paint();
+    text.focus({ preventScroll: true });
+  }
+
+  paint();
+
+  return {
+    el,
+    sync: paint,
+    measure,
+    onMove(fn) {
+      movers.add(fn);
+      return () => { movers.delete(fn); };
+    },
+    prefill(words, page) {
+      // A DRAFT ALREADY ON THE START SCREEN IS KEPT, after the page's location:
+      // Edit names the page, and does not throw away what was typed.
+      const draft = ui.get().chat === null ? text.value.replace(/^Edit [^\n]*?: /, "") : "";
+      text.value = words + draft;
+      pendingPage = page;
+      autosize();
+      paint();
+      text.focus({ preventScroll: true });
+      text.setSelectionRange(text.value.length, text.value.length);
+    },
+    focus() {
+      text.focus({ preventScroll: true });
+      text.setSelectionRange(text.value.length, text.value.length);
+    },
+    fresh() {
+      pendingPage = null;
+    },
+    say(words) {
+      said = words;
+      paint();
+    },
+  };
+}

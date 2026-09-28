@@ -76,7 +76,7 @@
 // An embedded session dies with its parent, and a `unembed` notice closes one
 // sooner.
 
-/** @import { BridgeContext, Frame, FrameHost, GuestNotice, HostEvent, HostRequest, RuntimeRequest } from "../../contracts/types.ts" */
+/** @import { BridgeContext, Frame, FrameHost, GuestNotice, HostEvent, HostRequest, PageId, RuntimeRequest, TouchKind } from "../../contracts/types.ts" */
 /** @import { PageBridge } from "../bridge/bridge.js" */
 
 import { isGuestNotice } from "../../contracts/guards.js";
@@ -186,9 +186,15 @@ const sameCtx = (a, b) => a.page === b.page;
  *   a test, or a tab that has not chosen a folder — still builds one.
  * @param {string} [faces] the box's `@font-face` rules, from `faces.js` via
  *   boot.js. Optional for the same reason `assets` is.
+ * @param {{ touched?: (page: PageId, what: TouchKind) => void }} [hear] WHERE A
+ *   BOX'S `touch` NOTICE GOES UP: the page the box on screen is mounted on —
+ *   the OUTERMOST box, for a touch in a page drawn inside it, because the
+ *   person touched the screen that box is — and which way. It is how the
+ *   switcher hears a person's hand on a page it cannot see into. A callback a
+ *   higher layer registered, which is the only way data goes up.
  * @returns {FrameHost}
  */
-export function makeFrameHost(bridge, assets, faces) {
+export function makeFrameHost(bridge, assets, faces, hear = {}) {
   /**
    * ONE REALM THE HOST TALKS TO — a box of its own, or a page drawn inside one.
    * The two differ in how they were opened and in nothing the ports care about.
@@ -215,6 +221,9 @@ export function makeFrameHost(bridge, assets, faces) {
    * @property {number} depth 0 for a box; one more for each nesting
    * @property {Map<string, Session>} embeds the sessions this realm opened,
    *   by the token its `page.embed` answer carried. Closed with it.
+   * @property {Session} top the box of its own this realm is drawn in: itself
+   *   for a box, the outermost one for a page drawn inside another. A touch in
+   *   a nested page is a touch of the screen that box is.
    */
 
   /**
@@ -318,6 +327,18 @@ export function makeFrameHost(bridge, assets, faces) {
       // A realm letting go of a page it embedded. Only its own: the token is
       // looked up in this session's map, so a box cannot close a sibling's.
       if (msg.kind === "unembed") { closeEmbed(m, msg.embed); return; }
+      // THE PERSON'S HAND ON THE PAGE, and nothing about where or what. Two
+      // things hear it: the bridge, which honours this realm's own `open` only
+      // shortly after one — keyed by this realm's context, so it is THIS box
+      // and not another on the same page — and the switcher, which is told
+      // the page of the box on screen, because a touch in a page drawn inside
+      // another is a touch of the screen the outer box is. Never a DOM event:
+      // a scroll is a touch a second, and nothing on the canvas repaints for it.
+      if (msg.kind === "touch") {
+        bridge.touched?.(m.ctx);
+        if (hear.touched) hear.touched(m.top.ctx.page, msg.what);
+        return;
+      }
       notify(m, msg);
       return;
     }
@@ -393,6 +414,7 @@ export function makeFrameHost(bridge, assets, faces) {
       queued: [],
       depth: parent.depth + 1,
       embeds: new Map(),
+      top: parent.top,
     };
     runtime.port1.onmessage = (pev) => fromGuest(e, "runtime", pev.data);
     guest.port1.onmessage = (pev) => fromGuest(e, "guest", pev.data);
@@ -553,6 +575,8 @@ export function makeFrameHost(bridge, assets, faces) {
         queued: [],
         depth: 0,
         embeds: new Map(),
+        // Itself, set just below: a box is its own outermost box.
+        top: /** @type {any} */ (null),
         // Closes over `m` itself; both bodies run long after it is assigned.
         frame: {
           el,
@@ -561,6 +585,7 @@ export function makeFrameHost(bridge, assets, faces) {
         },
       };
       if (had) shut(m); // the html changed, so the old realm is going away
+      m.top = m;
       m.ctx = ctx;
       m.html = html;
       mounts.set(key, m);
@@ -580,6 +605,13 @@ export function makeFrameHost(bridge, assets, faces) {
     },
 
     broadcast(ev) {
+      // THE AGENT SCREEN'S EVENTS ARE NEVER BROADCAST, and this is where that
+      // is enforced rather than remembered. `look.state` and `look.patch` carry
+      // the chats — every agent's words — and go through the Agent view's own
+      // `Frame.post`, to the one box it mounted, and nowhere else: never a
+      // broadcast, never a scan of sessions by page. A broadcast of one is a
+      // programming error, and it throws before any box hears it.
+      if (ev.kind.startsWith("look.")) throw new Error(`${ev.kind} is posted to the Agent screen's own frame, never broadcast`);
       // Only `edit` and `theme` are broadcast. `mounted` belongs to one box and
       // is not an announcement — the `ports` message is what says which page a
       // box is on, and it says it in the same breath as granting the channel

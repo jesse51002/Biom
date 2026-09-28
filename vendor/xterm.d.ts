@@ -19,31 +19,17 @@ export interface ITheme {
   cursor?: string;
   cursorAccent?: string;
   selectionBackground?: string;
-  selectionForeground?: string;
 }
 
 export interface ITerminalOptions {
-  cols?: number;
-  rows?: number;
-  allowProposedApi?: boolean;
   cursorBlink?: boolean;
   disableStdin?: boolean;
   fontFamily?: string;
   fontSize?: number;
   lineHeight?: number;
-  macOptionIsMeta?: boolean;
   macOptionClickForcesSelection?: boolean;
   scrollback?: number;
   theme?: ITheme;
-}
-
-export interface IBuffer {
-  readonly viewportY: number;
-  readonly baseY: number;
-}
-
-export interface IBufferNamespace {
-  readonly active: IBuffer;
 }
 
 export interface ITerminalAddon extends IDisposable {
@@ -54,20 +40,12 @@ export declare class Terminal implements IDisposable {
   constructor(options?: ITerminalOptions);
   readonly cols: number;
   readonly rows: number;
-  readonly element: HTMLElement | undefined;
-  readonly buffer: IBufferNamespace;
   options: ITerminalOptions;
-  onBell: IEvent<void>;
   onData: IEvent<string>;
-  onScroll: IEvent<number>;
-  onTitleChange: IEvent<string>;
-  onWriteParsed: IEvent<void>;
   open(parent: HTMLElement): void;
   write(data: string | Uint8Array, callback?: () => void): void;
-  reset(): void;
   focus(): void;
   resize(columns: number, rows: number): void;
-  scrollToBottom(): void;
   hasSelection(): boolean;
   getSelection(): string;
   selectAll(): void;

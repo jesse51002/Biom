@@ -28,10 +28,17 @@ import type { Presets } from "../../contracts/types.ts";
 import type { Runs } from "../../contracts/types.ts";
 import type { Tables } from "../../contracts/types.ts";
 import type { Vault } from "../../contracts/types.ts";
+import type { Writer } from "../../contracts/types.ts";
 import type { ThemeStore } from "../workspace/presets.ts";
 import type { Mirror } from "../domain/mirror.ts";
 import type { Sharer } from "../domain/share.ts";
-import { follow } from "../domain/mirror.ts";
+import type { EditReport, History } from "../domain/history.ts";
+import type { Agents } from "../workspace/agents.ts";
+import type { Chats } from "../workspace/chats.ts";
+import type { Settings } from "../workspace/settings.ts";
+import type { PageIndex } from "../domain/pageindex.ts";
+import { PAGE_DOC, pageDir } from "../domain/pages.ts";
+import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
 
 /** THE MIRROR NEVER FAILS A WRITE, AND NEVER FAILS A REDRAW. It is derived: the
  *  page is already saved when this runs, and the next draw of that page rewrites
@@ -47,6 +54,9 @@ export const mirrored = (what: Promise<unknown>): Promise<void> =>
   what.then(() => {}, (e: unknown) => { console.warn("the markdown mirror", e); });
 import { PROTOCOL } from "../../contracts/wire.js";
 import { fail } from "../../contracts/wire.js";
+import { DESIGN_PAGE } from "../../contracts/wire.js";
+import { LOCATE_MAX, SEARCH_MAX, foldId } from "../../contracts/wire.js";
+import { isChatRequest, isHistoryRequest, isPageRequest, isWindowId } from "../../contracts/guards.js";
 
 // Undo is deliberately absent from this file. The vault is a git repo and the
 // server commits ahead of every write, but that belongs to the layer that knows
@@ -74,9 +84,10 @@ export interface Deps {
   /** THE MARKDOWN MIRROR. It is touched from this layer and not from `pages.ts`
    *  for the reason `restack` is: the mirror READS a page through `Pages`, so a
    *  page write cannot call it without a cycle, and this is the lowest layer
-   *  holding both. Every mutation below re-projects the page it changed in the
-   *  same request, so the projection is swept into the same commit as the change
-   *  it mirrors. */
+   *  holding both. Every mutation below ASKS its queue to re-project the page
+   *  it changed and answers without waiting: the projection lands within a
+   *  moment, in the background, and rides the next commit. Nothing a request
+   *  answers waits on the mirror. */
   mirror: Mirror;
   /** SHARE A PAGE — the stop-gap. Built by the composition root against the
    *  folder, because the rewrite reads the folder's own assets. Answered in
@@ -114,6 +125,30 @@ export interface Deps {
    *  the manifest form's picker. The root reads the environment; this layer
    *  never does, and no value ever reaches the wire. */
   envNames: () => string[];
+  /** THE HISTORY — what each window has open, what changed and who changed
+   *  it. Built against a vault like `pages`. Every write a WINDOW makes through
+   *  this route is one edit in it, stamped `you` by `app`: see `handle`.
+   *  Optional, and absent records nothing — every caller from before it. */
+  history?: History;
+  /** WHAT AGENTS THIS MACHINE HAS, as this workspace sees them — found,
+   *  probed, installed and signed in. Built against a vault, because a probe
+   *  runs in its folder. Optional, and absent answers every `agents.*` kind
+   *  `unsupported`: every caller from before the chats. */
+  agents?: Agents;
+  /** THE CHATS: one agent process per chat, and Biom's own copy of each
+   *  stream. Built against a vault like `pages`. Optional for the reason
+   *  `agents` is. */
+  chats?: Chats;
+  /** THE CHAT'S KEPT CHOICES — `.biom/settings.json`. Optional, and absent
+   *  answers `settings.*` `unsupported`: every caller from before them. */
+  settings?: Settings;
+  /** THE INDEX OF PAGE HEADS — what a window asks about pages it has not
+   *  loaded: by id or identity (`page.locate`), by name (`page.search`), and
+   *  what a `[[wikilink]]` names. Built against a vault like `pages`, and told
+   *  here of every page the app moves or renames, so the page is found at its
+   *  new id without a sweep. Optional, and absent answers the three
+   *  `unsupported`: every caller from before it. */
+  index?: Pick<PageIndex, "locate" | "search" | "resolveLink" | "moved" | "invalidate">;
 }
 
 /** The closed enumeration, as a set, so a `code` thrown by a lower layer can be
@@ -179,8 +214,132 @@ function codeOf(e: unknown, fallback: HostErrorCode): HostErrorCode {
  * Resolve one ApiRequest. Never throws: every failure comes back as an
  * `ok: false` carrying a code from the closed enumeration, because a contract
  * whose error case is "it throws something" is not a contract.
+ *
+ * AND A WRITE A WINDOW MADE IS ONE EDIT IN THE HISTORY, recorded HERE and
+ * nowhere below. The envelope's `window` — the transport's to write, over
+ * whatever a request carried — is the one fact that says a person's window
+ * made it, and this is the one layer holding both that and what the request
+ * named: one request is one edit, however many files the domain touched to
+ * carry it out — a page moved is every file under it copied, and that is
+ * still one thing somebody did. So the writer is stamped here, on the way
+ * out, once the answer is `ok`, and never threaded through `Files`: the
+ * domain's interfaces are the frozen contract's, and a write counted file by
+ * file would be counted wrong. A request with no `window` — a test, a tool, a
+ * run's script over the API — is nobody's and records nothing. The history is
+ * awaited, so a window that has its answer has its edit in the history too; a
+ * history that fails is logged and never fails the write, which has already
+ * happened.
  */
 export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  const res = await answer(req, deps);
+  if (res.ok && deps.history !== undefined) await recorded(req, res.value, deps.history);
+  return res;
+}
+
+/** What `writeOf` answers: `EditReport` less who wrote it and how. */
+export type Written = Omit<EditReport, "via" | "writer">;
+
+/**
+ * WHAT A WRITE CHANGED, as the history is told it: the file the request
+ * wrote, vault-relative — the format's vocabulary rather than the
+ * filesystem's — or, for a table's schema or rows, no file and the table's
+ * place. The page itself — made, moved, renamed, removed — is its directory.
+ * A keystroke's save is a `burst`, which the history coalesces into one edit
+ * per bout of typing: a slot, a variable, a table's rows, and the editors'
+ * quiet saves. Nothing else is, so a page made and then removed is two edits.
+ * Read off the request and, where the request cannot say, off the answer: the
+ * id a made, moved or renamed page has now, the folder a new automation was
+ * given. The screen each path is shown on is the history's address table,
+ * not this.
+ *
+ * Null for every kind that is not a write, and for the ones that are nobody's
+ * change or cannot be named:
+ *   - `page.projection` and `vault.commit` are the framework writing for
+ *     itself — the markdown mirror, the editors' one commit;
+ *   - `sql` is a query nothing here reads for what it writes, and a write Biom
+ *     cannot name is left out rather than guessed at;
+ *   - `run.start` and `run.kill`: a run writes its own files, and runs wait for
+ *     the door;
+ *   - `theme.set`: no screen shows the theme and none writes it, and naming it
+ *     would take a file name this layer has never been handed.
+ * Exported so its table is tested on its own.
+ */
+export function writeOf(req: ApiRequest, value: unknown): Written | null {
+  const page = (id: PageId, file?: string, burst = false): Written =>
+    ({ path: file === undefined ? pageDir(id) : `${pageDir(id)}/${file}`, ...(burst ? { burst } : {}) });
+  const table = (name: string, burst = false): Written => ({ path: null, place: { view: "table", id: name }, ...(burst ? { burst } : {}) });
+  switch (req.kind) {
+    case "section.write":
+    case "variables.patch":
+      return page(req.page, PAGE_DOC, true);
+    case "section.order":
+    case "section.remove":
+    case "doc.writeRaw":
+      return page(req.page, PAGE_DOC);
+    case "page.writeFile":
+      return page(req.page, req.file, req.quiet === true);
+    case "page.remove":
+      return page(req.page);
+    case "page.create":
+      return typeof value === "object" && value !== null && typeof (value as PageRef).id === "string" ? page((value as PageRef).id) : null;
+    case "page.move":
+    case "page.rename":
+      return typeof value === "string" ? page(value) : null;
+    case "design.patch":
+      return page(DESIGN_PAGE, PAGE_DOC);
+    case "design.writeFile":
+      return page(DESIGN_PAGE, req.file);
+    case "automation.set":
+      return page(req.page, `${AUTOMATIONS_DIR}/${req.automation}/${MANIFEST}`, req.quiet === true);
+    case "automation.create": {
+      const folder = typeof value === "object" && value !== null ? (value as { folder?: unknown }).folder : undefined;
+      return typeof folder === "string" ? page(req.page, `${AUTOMATIONS_DIR}/${folder}`) : null;
+    }
+    case "vault.writeFile":
+      return { path: req.file, ...(req.quiet === true ? { burst: true } : {}) };
+    // A TABLE'S ROWS ARE A BURST, all three: the history says the table changed
+    // and not how, so two such lines a moment apart say nothing one does not —
+    // and a page's code adding rows in a loop would otherwise be a line a row.
+    case "row.insert":
+    case "row.update":
+    case "row.remove":
+      return table(req.name, true);
+    case "table.remove":
+    case "table.setParent":
+    case "table.importCsv":
+      return table(req.name);
+    case "table.create":
+    case "table.alter":
+      // The name the table has NOW: an alter may rename it.
+      return table(req.schema.name);
+    default:
+      return null;
+  }
+}
+
+/** One edit for one write, stamped with the window that made it. */
+async function recorded(req: ApiRequest, value: unknown, history: History): Promise<void> {
+  // Checked by `answer` already: absent, or a window id.
+  const window = (req as Envelope).window;
+  if (window === undefined) return;
+  let write: Written | null;
+  try {
+    write = writeOf(req, value);
+  } catch (e) {
+    console.warn("the history could not name a write", String(req.kind), e);
+    return;
+  }
+  if (write === null) return;
+  const writer: Writer = { kind: "you", window };
+  try {
+    await history.edit({ ...write, via: "app", writer });
+  } catch (e) {
+    console.warn("the history", e);
+  }
+}
+
+/** The answer itself: the envelope, then one case per kind. */
+async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   // The envelope is checked at runtime even though the parameter is typed: this
   // is where JSON off the wire arrives, and a type is not a parse. `null` and a
   // bare string are both valid JSON and both arrive here.
@@ -190,6 +349,10 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
   if (id === "") return err("", "bad_request", "the envelope carries no correlation id");
   if (env.g !== PROTOCOL) return err(id, "bad_request", "unknown protocol major");
   if (typeof env.kind !== "string") return err(id, "bad_request", "the envelope names no kind");
+  // WHICH WINDOW ASKED. Absent is every caller from before it, and a write
+  // nobody in a window made; malformed is refused, as every guard refuses it,
+  // because this is the field the history stamps a person's writes with.
+  if (env.window !== undefined && !isWindowId(env.window)) return err(id, "bad_request", "the envelope names a window that is not one");
 
   try {
     switch (req.kind) {
@@ -248,6 +411,47 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
 
       case "children.all":
         return ok(id, await deps.pages.childrenAll());
+
+      /* ── pages the window has not loaded ─────────────────────────────── */
+
+      // ANSWERED FROM THE INDEX OF PAGE HEADS, never from a list of every page:
+      // a window over a two-thousand-page workspace holds the levels it has
+      // open and asks for anything else by id, by identity or by name. The
+      // guard narrows both first, so its bounds are the only ones.
+      case "page.locate":
+      case "page.search": {
+        if (!isPageRequest(req)) {
+          return err(id, "bad_request", (req as { kind: string }).kind === "page.locate"
+            ? `a locate names ids or uids, and at most ${LOCATE_MAX} of each`
+            : `a search is a few words, and asks for at most ${SEARCH_MAX} pages`);
+        }
+        const index = deps.index;
+        if (index === undefined) return refused(id, "finding a page by its id, identity or name");
+        if (req.kind === "page.locate") return ok(id, await index.locate({ ids: req.ids, uids: req.uids }));
+        return ok(id, await index.search(req.query, req.limit ?? SEARCH_MAX));
+      }
+
+      // WHAT A `[[wikilink]]` NAMES, asked by a box through the window, which
+      // no longer holds every page to answer it from. A page first — the
+      // design doc, the id exactly, folded, by its tail, by its name, each
+      // only where it is unambiguous — and then a table, by its name exactly
+      // and then folded. Null where nothing is named, which is a dead link
+      // and not an error.
+      case "link.resolve": {
+        if (typeof req.target !== "string" || req.target === "") return err(id, "bad_request", "a link names a page or a table");
+        const index = deps.index;
+        if (index === undefined) return refused(id, "following a link");
+        const page = await index.resolveLink(req.target);
+        if (page !== null) return ok(id, page);
+        const want = req.target.trim().replace(/^\/+|\/+$/g, "");
+        if (want === "") return ok(id, null);
+        const tables = deps.tables.list();
+        const only = (test: (name: string) => boolean): { kind: "table"; id: string } | null => {
+          const hits = tables.filter((t) => test(t.name));
+          return hits.length === 1 ? { kind: "table", id: hits[0]!.name } : null;
+        };
+        return ok(id, only((name) => name === want) ?? only((name) => foldId(name) === foldId(want)));
+      }
 
       // ANOTHER PAGE'S VARIABLES — the local-first join. A page can read what
       // another page knows and draw something richer than a table with it, and
@@ -339,17 +543,21 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         return ok(id, await deps.share.share(req.page, req.html));
       case "page.create": {
         const made = await deps.pages.create(req.init);
-        await mirrored(follow(deps.mirror, made.id, true));
+        deps.mirror.queue.follow(made.id, true);
         return ok(id, made);
       }
 
       case "page.remove":
         await deps.pages.remove(req.page);
+        // THE INDEX LETS GO OF IT NOW, and everything under it: the watcher's
+        // settle would otherwise find the rows' folder gone and take the app's
+        // own remove for a page deleted from outside.
+        await forgotten(deps, req.page);
         // The page is gone, so its projection is a file about nothing. The
         // parent is re-projected because it lists its children and has just lost
         // one.
-        await mirrored(deps.mirror.drop(req.page));
-        await mirrored(follow(deps.mirror, req.page, true));
+        deps.mirror.queue.drop(req.page);
+        deps.mirror.queue.follow(req.page, true);
         return ok(id, null);
 
       case "page.rename":
@@ -362,8 +570,9 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           const to = await deps.pages.rename(req.page, req.name);
           if (to !== req.page) restack(deps, req.page, to);
           if (to !== req.page) relocated(deps, req.page, to);
-          if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
-          await mirrored(follow(deps.mirror, to, true));
+          if (to !== req.page) indexed(deps, req.page, to);
+          if (to !== req.page) deps.mirror.queue.rename(req.page, to);
+          deps.mirror.queue.follow(to, true);
           return ok(id, to);
         } catch (e) {
           console.error("page.rename", e);
@@ -399,7 +608,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
       case "section.remove":
         try {
           const left = await deps.pages.removeSection(req.page, req.section);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, left);
         } catch (e) {
           console.error("section.remove", e);
@@ -435,7 +644,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
       case "section.write":
         try {
           await deps.pages.writeSlot(req.page, req.section, req.part, req.data);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, null);
         } catch (e) {
           console.error("section.write", e);
@@ -461,7 +670,11 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
       // runtime that drew the whole page is what may speak for it.
       case "page.projection":
         try {
-          await deps.mirror.write(req.page, req.markdown);
+          // IN ITS TURN ON THE MIRROR'S QUEUE, after the projections already
+          // asked for this page: one of them under way when these words
+          // arrived would otherwise land after them, and a page only its box
+          // can project would be left with the host's empty file.
+          await deps.mirror.queue.write(req.page, req.markdown);
           return ok(id, null);
         } catch (e) {
           const said = e instanceof Error && e.message !== "" ? e.message : "";
@@ -487,7 +700,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
       case "section.order":
         try {
           const now = await deps.pages.setSections(req.page, req.sections);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, now);
         } catch (e) {
           console.error("section.order", e);
@@ -530,6 +743,8 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           // reason: a run's row names its page, a page's id is where it sits,
           // and the registry is not told by the filesystem.
           if (to !== req.page) relocated(deps, req.page, to);
+          // AND THE INDEX'S ROWS, which are keyed by folder.
+          if (to !== req.page) indexed(deps, req.page, to);
           // The old path names nothing now and the new one names a page nobody
           // has drawn yet, so both halves are done here rather than waiting for
           // somebody to open it. The mirror is CARRIED rather than dropped and
@@ -538,9 +753,9 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
           // projecting only the new one deletes the whole subtree's markdown.
           // Both parents are re-projected too, because a parent lists its
           // children and one has just left while another arrived.
-          if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
-          await mirrored(follow(deps.mirror, req.page, true));
-          await mirrored(follow(deps.mirror, to, true));
+          if (to !== req.page) deps.mirror.queue.rename(req.page, to);
+          deps.mirror.queue.follow(req.page, true);
+          deps.mirror.queue.follow(to, true);
           return ok(id, to);
         } catch (e) {
           console.error("page.move", e);
@@ -572,7 +787,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         // what every other section on the page says.
         try {
           const merged = await deps.docs.merge(req.page, req.section, req.patch);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, merged);
         } catch (e) {
           console.error("variables.patch", e);
@@ -585,7 +800,7 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         // page's words with its shape and this is the only way back to them.
         try {
           const doc = await deps.docs.writeRaw(req.page, req.text);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, doc);
         } catch (e) {
           console.error("doc.writeRaw", e);
@@ -827,6 +1042,42 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
         await deps.runs.commit(req.message);
         return ok(id, null);
 
+      /* ── the agents and the chats: this machine's own window only ────── */
+      //
+      // Only this machine's own window reaches these: the composition root's
+      // `gate` on `route` refused everything else before the body was answered.
+      // Each is narrowed by the contract's own guard before a field is read,
+      // because this is where words reach a program allowed everything on this
+      // machine. NOTHING WAITS ON AN AGENT: each answers the state as it now
+      // stands, and a probe's verdict, an install, a reply and a light arrive
+      // on the stream.
+      case "agents.list":
+      case "agents.probe":
+      case "agents.start":
+      case "agents.registry":
+      case "agents.install":
+      case "agents.signIn":
+      case "chat.new":
+      case "chat.list":
+      case "chat.read":
+      case "chat.send":
+      case "chat.cancel":
+      case "chat.config":
+      case "chat.switchAgent":
+      case "chat.close":
+      case "chat.commands":
+      case "chat.delete":
+      case "chat.sendQueued":
+      case "chat.unqueue":
+      case "settings.read":
+      case "settings.set":
+        return await chatAnswer(id, req, deps);
+
+      /* ── what each window has open, and the history ─────────────────── */
+      case "window.report":
+      case "window.list":
+      case "history.read":
+        return await historyAnswer(id, req, deps);
     }
   } catch (e) {
     // A thrown error carrying one of the closed codes is a REFUSAL the domain
@@ -856,6 +1107,131 @@ export async function handle(req: ApiRequest, deps: Deps): Promise<ApiResponse> 
   return err(id, "unknown_kind", "not a request this host answers");
 }
 
+/** What a refusal from the agents or the chats says when it brought no
+ *  sentence of its own. Theirs are written for a person and name an agent or
+ *  a chat, never a path, a command or a value — so where one is given it is
+ *  said as it is, the way `vault.open` passes its domain's. */
+const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
+  not_found: "there is no such chat or agent",
+  bad_request: "that is not something an agent or a chat can be asked",
+  limit: "that is more than this chat takes at once",
+  unsupported: "that cannot be done now",
+  fetch_failed: "the ACP Registry could not be reached",
+};
+
+/** Answer one agent or chat kind. The guard first — every field read below is
+ *  one it has checked — then the one module call the kind is. A throw carrying
+ *  one of the closed codes is a refusal the module chose to make, said in its
+ *  own sentence; anything else is the host failing, and is logged. */
+async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  if (!isChatRequest(req)) return err(id, "bad_request", CHAT_SENTENCES.bad_request as string);
+  // THE KEPT CHOICES need neither the agents nor the chats: what the next
+  // chat starts on is read and the view set with no agent anywhere.
+  if (req.kind === "settings.read" || req.kind === "settings.set") {
+    const settings = deps.settings;
+    if (settings === undefined) return refused(id, "the chat's kept choices");
+    if (req.kind === "settings.read") return ok(id, settings.read());
+    return ok(id, await settings.set(req.view === undefined ? {} : { view: req.view }));
+  }
+  const agents = deps.agents;
+  const chats = deps.chats;
+  if (agents === undefined || chats === undefined) return refused(id, "agents or chats");
+  try {
+    switch (req.kind) {
+      case "agents.list":
+        return ok(id, agents.list());
+      case "agents.probe":
+        return ok(id, agents.probe(req.agent));
+      case "agents.start":
+        return ok(id, agents.start(req.agent));
+      case "agents.registry":
+        return ok(id, await agents.registry());
+      case "agents.install":
+        return ok(id, agents.install(req.agent));
+      case "agents.signIn":
+        return ok(id, await agents.signIn(req.agent, req.method));
+      case "chat.new": {
+        // Field by field, so nothing the guard did not name rides along.
+        const init: Parameters<Chats["create"]>[0] = {};
+        if (req.agent !== undefined) init.agent = req.agent;
+        if (req.text !== undefined) init.text = req.text;
+        if (req.page !== undefined) init.page = req.page;
+        if (req.config !== undefined) init.config = { ...req.config };
+        return ok(id, await chats.create(init));
+      }
+      case "chat.list":
+        // Whole once every kept log is scanned, which the root awaits at
+        // mount; awaited again here so a caller can never see half a list.
+        await chats.loaded;
+        return ok(id, chats.list());
+      case "chat.read":
+        return ok(id, await chats.read(req.chat, req.since));
+      case "chat.send":
+        // Out now to an idle chat, or into its queue: the answer says which.
+        return ok(id, await chats.send(req.chat, req.text));
+      case "chat.sendQueued":
+        return ok(id, await chats.sendQueued(req.chat));
+      case "chat.unqueue":
+        return ok(id, await chats.unqueue(req.chat, req.queued));
+      case "chat.cancel":
+        return ok(id, await chats.cancel(req.chat));
+      case "chat.config":
+        return ok(id, await chats.config(req.chat, req.option, req.value));
+      case "chat.switchAgent":
+        return ok(id, await chats.switchAgent(req.chat, req.agent));
+      case "chat.close":
+        return ok(id, await chats.close(req.chat));
+      case "chat.commands": {
+        const q: { chat?: string; agent?: string } = {};
+        if (req.chat !== undefined) q.chat = req.chat;
+        if (req.agent !== undefined) q.agent = req.agent;
+        return ok(id, await chats.commands(q));
+      }
+      case "chat.delete":
+        // Said only after the person's Delete in Biom's own dialog: the look
+        // can ask for that dialog and never for this.
+        await chats.delete(req.chat);
+        return ok(id, null);
+    }
+  } catch (e) {
+    const code = codeOf(e, "internal");
+    if (code === "internal") {
+      // The kind and the error's NAME, never its message: an agent's own
+      // words can be anywhere in one.
+      console.error(`${req.kind} failed`, e instanceof Error ? e.name : typeof e);
+      return err(id, "internal", "the host could not answer that");
+    }
+    const said = e instanceof Error ? e.message.replace(/\s+/g, " ").trim() : "";
+    return err(id, code, said !== "" ? said : CHAT_SENTENCES[code] ?? "that could not be done");
+  }
+  return err(id, "unknown_kind", "not a request this host answers");
+}
+
+/** Answer a window's report, every window's context, or the history. The
+ *  report names its window by the envelope — the guard refuses one that does
+ *  not — and the context's `agent` is the history's to derive from its chat,
+ *  whatever the window sent there. With no history, the two reads answer
+ *  empty, and a report is refused: it has nowhere to go. */
+async function historyAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
+  if (!isHistoryRequest(req)) {
+    return err(id, "bad_request", (req as { kind: string }).kind === "window.report"
+      ? "a report names its window and what that window has open"
+      : "that is not a read of the history");
+  }
+  switch (req.kind) {
+    case "window.report": {
+      const history = deps.history;
+      if (history === undefined) return refused(id, "a history");
+      return ok(id, await history.report(req.window as string, req.context, req.moved));
+    }
+    case "window.list":
+      return ok(id, deps.history?.windows() ?? []);
+    case "history.read":
+      return ok(id, deps.history?.read(req.since) ?? { entries: [], head: 0 });
+  }
+  return err(id, "unknown_kind", "not a request this host answers");
+}
+
 /** Follow a page move with the runs that were started under it. THE REGISTRY
  *  NEVER FAILS A MOVE: the page has already moved when this runs, and a row
  *  left naming the old id is re-pointed by identity on the next settle or
@@ -866,6 +1242,30 @@ function relocated(deps: Deps, from: PageId, to: PageId): void {
     deps.runs.relocate(from, to);
   } catch (e) {
     console.warn("the runs under a moved page", e);
+  }
+}
+
+/** Follow a page move with the index of page heads, by the same prefix rule:
+ *  its rows are keyed by folder, and a page found by its `uid` at the folder it
+ *  left would otherwise wait on a sweep of the workspace to be found at the
+ *  one it went to. THE INDEX NEVER FAILS A MOVE: a row it could not carry is
+ *  read again from disk when it is next asked. */
+function indexed(deps: Deps, from: PageId, to: PageId): void {
+  try {
+    deps.index?.moved(from, to);
+  } catch (e) {
+    console.warn("the page index, after a move", e);
+  }
+}
+
+/** Tell the index a page the app removed is gone. NEVER FAILS A REMOVE: the
+ *  page is already gone, and a row left behind is dropped the next time it is
+ *  asked about. */
+async function forgotten(deps: Deps, id: PageId): Promise<void> {
+  try {
+    await deps.index?.invalidate([pageDir(id)]);
+  } catch (e) {
+    console.warn("the page index, after a remove", e);
   }
 }
 
@@ -916,10 +1316,19 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
     return err(id, "bad_request", "only http and https can be reached");
   }
 
+  // NO COOKIE LEAVES THROUGH HERE EITHER. A page choosing its own headers may
+  // set Host and Origin to anything — that is why neither is what this
+  // server's own local kinds trust — but it must never be able to present a
+  // cookie, least of all this server's capability to itself. Dropped whatever
+  // its case.
+  const sent = init?.headers === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(init.headers).filter(([k]) => k.toLowerCase() !== "cookie"));
+
   try {
     const res = await fetch(target, {
       method: init?.method ?? "GET",
-      headers: init?.headers,
+      headers: sent,
       body: init?.body,
       redirect: "follow",
       signal: AbortSignal.timeout(20000),
@@ -943,7 +1352,28 @@ async function proxy(id: string, url: string, init?: { method?: string; headers?
  * never seen a Request, which is what makes fetch → postMessage → an in-process
  * call a replacement of this function alone.
  */
-export async function route(request: Request, deps: Deps): Promise<Response> {
+/**
+ * One HTTP request in, one response out.
+ *
+ * `gate` is the composition root's answer to *may this request say this kind* —
+ * a sentence refusing it, or null — asked once the body is read and before
+ * anything is answered. It exists for the kinds that answer only this
+ * machine's own window (`isLocalKind` in `contracts/guards.js`): the facts it
+ * needs — the peer address, the Host, the Origin, `Sec-Fetch-Site`, the
+ * capability cookie — are the server's, and this layer never sees a socket. A refusal is `identity`, and
+ * its sentence names no check: telling a caller which one failed is telling it
+ * which to forge next. Absent, nothing is gated — every test of `handle` and
+ * every caller that predates it.
+ *
+ * `own` is the same question without a kind: *is this request this machine's
+ * own window* — the check a window's report must pass. A request that is not
+ * has its `window` dropped before it is answered, so its write is answered as
+ * ever and recorded as nobody's: A WINDOW IS NAMED ONLY BY A WINDOW THAT COULD
+ * REPORT FOR IT. Without this, anything holding the launch token — a run's
+ * script, which may read every window's id off `window.list` — could put its
+ * writes in the history as the person's. Absent, a `window` is taken as sent.
+ */
+export async function route(request: Request, deps: Deps, gate?: (kind: string) => string | null, own?: () => boolean): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Use POST", { status: 405, headers: { allow: "POST" } });
   }
@@ -963,8 +1393,14 @@ export async function route(request: Request, deps: Deps): Promise<Response> {
     return new Response("Forbidden", { status: 403 });
   }
   // Requiring JSON forces a preflight this server never answers, so a simple
-  // request cannot reach the switch above.
-  if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
+  // request cannot reach the switch above. BY THE TYPE'S ESSENCE, EXACTLY —
+  // what comes before the first `;`, trimmed and in lower case — and never by
+  // containing the word: `text/plain; x=application/json` is a simple request a
+  // browser sends from any page without asking, and a substring check let it
+  // through. From a page on another localhost port it carried the person's
+  // capability cookie to every kind this route answers.
+  const type = (request.headers.get("content-type") ?? "").split(";")[0] ?? "";
+  if (type.trim().toLowerCase() !== "application/json") {
     return new Response("Expected application/json", { status: 415 });
   }
 
@@ -973,6 +1409,23 @@ export async function route(request: Request, deps: Deps): Promise<Response> {
     body = await request.json();
   } catch {
     return json({ id: "", g: PROTOCOL, ok: false, error: fail("bad_request", "the body is not json") as HostError });
+  }
+
+  if (gate !== undefined && typeof body === "object" && body !== null) {
+    const { id, kind } = body as { id?: unknown; kind?: unknown };
+    if (typeof kind === "string" && gate(kind) !== null) {
+      return json({
+        id: typeof id === "string" ? id : "",
+        g: PROTOCOL,
+        ok: false,
+        error: fail("identity", "this is answered only to this machine's own window") as HostError,
+      });
+    }
+  }
+
+  if (own !== undefined && typeof body === "object" && body !== null && "window" in body && !own()) {
+    const { window: _named, ...rest } = body as Record<string, unknown>;
+    body = rest;
   }
 
   return json(await handle(body as ApiRequest, deps));

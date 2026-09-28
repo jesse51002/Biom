@@ -1,0 +1,34 @@
+name: Values
+uid: scopesfixvalues01
+plugin: biom-doc
+contents:
+  - name: bare
+    parts:
+      body: No page scope here, so {{who}} and {{rate}} stay as written.
+  - name: typed
+    variables:
+      count: 3
+      ratio: 0.25
+      lit: true
+      dim: false
+      none: null
+      mixed:
+        - one
+        - 2
+        - null
+        - false
+    parts:
+      body: Count {{count}}, ratio {{ratio}}, lit {{lit}}, dim {{dim}}, none [{{none}}], mixed {{mixed}}.
+  - name: partonly
+    parts:
+      body:
+        type: markdown
+        data: Only the part has {{mine}}, and {{count}} is not in its scope.
+        variables:
+          mine: its own
+  - name: nothing
+    data: list.html
+    variables:
+      count: 0
+    parts:
+      items: []

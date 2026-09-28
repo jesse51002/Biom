@@ -23,7 +23,7 @@ Everything below this line is about `plugin: biom-doc`.
 name: Q3 review                 # what a reader sees. Optional; the directory's
                                 # last segment stands in, but that is an id
 uid: qm4vxbco4bt2xruw           # the framework's, written in the first time the
-                                # page is opened. Leave it alone; never type one
+                                # server meets the page. Leave it alone; never type one
 plugin: biom-doc
 variables:                      # this page's own values. See variables.md
   quarter: Q3

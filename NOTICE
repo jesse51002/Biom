@@ -9,9 +9,10 @@ first-party source file carries `SPDX-License-Identifier: AGPL-3.0-only`.
 THIRD-PARTY CODE
 
 Everything under `vendor/` is somebody else's, served as it sits and never
-edited. One entry here per licence file in that directory; the full text of
-each is the file named beside it. `vendor/README.md` says which upstream build
-each one is and why that build.
+patched; the Noto faces are converted, and their entry says how. One entry here
+per licence file anywhere under that directory; the full text of each is the
+file named beside it. `vendor/README.md` says which upstream build each one is
+and why that build.
 
   markdown-it — MIT
     Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
@@ -39,9 +40,14 @@ each one is and why that build.
     Copyright (c) 2019, The xterm.js authors
     vendor/addon-fit.LICENSE
 
+  Noto Emoji animations — CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+    © Google. Downscaled to 64 px and re-encoded as animated WebP; the
+    frames and their timing are Google's.
+    vendor/noto/LICENSE
+
 THE DECLARATION FILES BESIDE THEM ARE OURS
 
-`vendor/markdown-it.d.ts` and `vendor/yaml.d.ts` are hand-written here and
-deliberately partial — they declare the part of each library this code uses and
-no more. They are first-party, under the AGPL-3.0 like the rest of this
-repository, and are not copies of any upstream declaration.
+Every `.d.ts` under `vendor/` is hand-written here and deliberately partial —
+it declares the part of its library this code uses and no more. They are
+first-party, under the AGPL-3.0 like the rest of this repository, and are not
+copies of any upstream declaration.

@@ -1,0 +1,3549 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "aed972cc18bfbb191d5c2fecaf88ac2a52b53f5167fa30de71a6e0d189faf890",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "# Design\n\nHow this workspace looks is decided here. It ships in Biom's own colours — charcoal, cream and one sunflower — and to change it you tell your agent the feel you want, in your own words. Scroll: _these are three of them._\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "title",
+          "via": "slot"
+        }
+      ],
+      "name": "title"
+    },
+    {
+      "markup": "052515c941b9ac23c9e13679891968a35f51a13d5b7571dd00b658d762954dca",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The default\n\n_as it ships_\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "label",
+          "section": "default",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "### Shipments\n\nNine went out on Tuesday. Two are still with the courier.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "specimen",
+          "section": "default",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "This week",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "week",
+          "section": "default",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "| Open | |\n|---|---|\n| Courier | 6 |\n| Pickup | 2 |\n| Post | 1 |\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "open",
+          "section": "default",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "default",
+          "via": "script"
+        }
+      ],
+      "name": "default"
+    },
+    {
+      "markup": "1d3939f7fac41b7768614be2e87a83e1cba69f173d03249b7acf29755682c8ae",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "\"Set it like **a newspaper**.\"",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "said",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Despatch — Week Thirty-Seven",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "edition",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Yard & Courier",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "desk",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Nine Out by Tuesday, Two Still With the Courier\n\nThe week's run cleared the yard a day early. What is left is one pallet at the depot and a pickup nobody has come for.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "headline",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Eleven consignments were booked for the week and nine of them were on a van before Tuesday closed, which is a day and a half earlier than the yard has managed since the spring. The gain came from the Tuesday double-run, which took six drops on one sheet instead of two.\n\n> \"A day and a half earlier than the spring, on one sheet instead of two.\"\n\nWhat remains is plainer than it looks. One pallet sits at the depot awaiting a slot on Thursday's trunk, and a single pickup has been ready at the counter since Monday morning with nobody named against it.\n\nFriday was left deliberately light. The yard holds one slot back for whatever the week puts in front of it, and this week it put nothing, so the slot goes unused and the run ends on twenty per cent.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Despatches, by day",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "chartlabel",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Tuesday carries the week. The red column is the double-run; the others are ordinary days.",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "caption",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "### Still open\n\n| Route | Out | Left | |\n|---|---|---|---|\n| Courier, morning | 6 | 2 | **Running** |\n| Counter pickup | 2 | 1 | Waiting |\n| Post, second class | 1 | 0 | Cleared |\n| Depot trunk | 0 | 1 | Thursday |\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#16161A",
+              "ink2": "#44444C",
+              "ink3": "#606068",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#16161A",
+              "ruleSoft": "#BEB5A1",
+              "spot": "#A81E12",
+              "spot2": "#3A4C6B",
+              "stock": "#E9E4D8",
+              "stockLo": "#E2DCCD"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": "table",
+          "section": "news",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B",
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD"
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "news",
+          "via": "script"
+        }
+      ],
+      "name": "news"
+    },
+    {
+      "markup": "d38338b8881717ba1cd2851b3fb2f6766537d0b26f3baf49c82826c7f11e3067",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "\"Make it feel like **a field notebook**.\"",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#332E26",
+              "ink2": "#5E564A",
+              "ink3": "#6F675C",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#CFC4AE",
+              "ruleSoft": "#E2D9C8",
+              "spot": "#2E5E7E",
+              "spot2": "#8A6027",
+              "stock": "#F5F0E6",
+              "stockLo": "#EFE8DA"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": "said",
+          "section": "paper",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## What went out this week",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#332E26",
+              "ink2": "#5E564A",
+              "ink3": "#6F675C",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#CFC4AE",
+              "ruleSoft": "#E2D9C8",
+              "spot": "#2E5E7E",
+              "spot2": "#8A6027",
+              "stock": "#F5F0E6",
+              "stockLo": "#EFE8DA"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": "headline",
+          "section": "paper",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Nine of the eleven were away before Tuesday closed. That is earlier than usual, and the reason is worth writing down while it is still true: **the Tuesday double-run took six drops on one sheet**, which the yard has not tried since the spring and will probably try again.\n\nTwo are still out. One pallet is waiting on Thursday's trunk at the depot, which is ordinary. The other is a counter pickup that has been ready since Monday with nobody's name against it, which is not.\n\n> Worth checking\n>\n> Friday is light on purpose — one slot held back for whatever turns up. Nothing turned up. If that happens a third week running, the slot is not a reserve, it is a gap.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#332E26",
+              "ink2": "#5E564A",
+              "ink3": "#6F675C",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#CFC4AE",
+              "ruleSoft": "#E2D9C8",
+              "spot": "#2E5E7E",
+              "spot2": "#8A6027",
+              "stock": "#F5F0E6",
+              "stockLo": "#EFE8DA"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "paper",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Parcels leaving, Monday to Friday",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#332E26",
+              "ink2": "#5E564A",
+              "ink3": "#6F675C",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#CFC4AE",
+              "ruleSoft": "#E2D9C8",
+              "spot": "#2E5E7E",
+              "spot2": "#8A6027",
+              "stock": "#F5F0E6",
+              "stockLo": "#EFE8DA"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": "plotlabel",
+          "section": "paper",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "### Still out\n\n| Route | Left | When |\n|---|---|---|\n| Courier, morning | 2 | **Today** |\n| Counter pickup | 1 | Unclaimed |\n| Depot trunk | 1 | Thursday |\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#332E26",
+              "ink2": "#5E564A",
+              "ink3": "#6F675C",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#CFC4AE",
+              "ruleSoft": "#E2D9C8",
+              "spot": "#2E5E7E",
+              "spot2": "#8A6027",
+              "stock": "#F5F0E6",
+              "stockLo": "#EFE8DA"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": "table",
+          "section": "paper",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027",
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA"
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "paper",
+          "via": "script"
+        }
+      ],
+      "name": "paper"
+    },
+    {
+      "markup": "37dbcee8120f4ab5f2122ed2d6c22206c8dfb81f0a29d482c6c18af860fb7567",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "\"Make it **an instrument panel**.\"",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "said",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Despatch",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "headline",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "WK37 · 11 BOOKED · **9 CLEARED** · 2 OPEN",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "stamp",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Nine cleared the yard by Tuesday. Two remain: one pallet held for the Thursday trunk, one counter pickup unclaimed since Monday.",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "sub",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Channel load — units per day",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "meterlabel",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "**Hold** Counter pickup unclaimed",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "hold",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "4d 02h",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "held",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "### Route status\n\n| Route | Out | Left | State |\n|---|---|---|---|\n| COURIER AM | 6 | 2 | RUNNING |\n| COUNTER | 2 | 1 | HOLD |\n| POST 2C | 1 | 0 | CLEAR |\n| DEPOT TRUNK | 0 | 1 | THU 06:00 |\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "ink": "#D3DCD7",
+              "ink2": "#8D9A94",
+              "ink3": "#74847E",
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ],
+              "rule": "#243029",
+              "ruleSoft": "#1A211E",
+              "spot": "#4FD08A",
+              "spot2": "#E2A33C",
+              "stock": "#0C0F0E",
+              "stockLo": "#131817"
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": "status",
+          "section": "panel",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C",
+            "stock": "#0C0F0E",
+            "stockLo": "#131817"
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "panel",
+          "via": "script"
+        }
+      ],
+      "name": "panel"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Brand\n\nA working tool, not a dashboard. Plain over clever, specific over general. It should feel like something kept rather than something bought.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "brand",
+          "via": "slot"
+        }
+      ],
+      "name": "brand"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Voice\n\n- A control says what it does. _Save quote to jobs_, not _Submit_.\n- Errors name the problem and the fix. No apologies.\n- No subtext under a heading that the heading already said.\n- British spelling. Money to two decimals, right-aligned.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "voice",
+          "via": "slot"
+        }
+      ],
+      "name": "voice"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Patterns\n\n- **A block, not a new kind of page.** Asked for something interactive, the answer is a block on a doc that already exists. A page that takes the whole sheet has to argue for itself.\n- **There is no folder.** Any page may hold other pages and tables, and a page that draws them is what a folder was. Never build a second kind.\n- **Blocks, not layouts.** A page is a stack of sections that reorder. Anything new is a block.\n- **Data lives in tables.** A page reads and writes them through its settings, never inline.\n- **The render is a layer.** How a doc is drawn is swappable, one piece at a time, and separate from what it says.\n- **No frames.** One border around the app. Blocks and lists are separated by space and rules.\n- **Full canvas.** A page takes whatever the panels leave. Prose keeps a measure; nothing else does.\n- **Always live.** Prose is editable where it sits, with no mode to turn on. The only switch is for the slots inside HTML.\n- **Install before you invent.** Something from the market that nearly works, then adapted, beats a page written from nothing.\n- **Say what changed.** Anything the agent does shows a receipt and an undo.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "patterns",
+          "via": "slot"
+        }
+      ],
+      "name": "patterns"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Density\n\nCloser to a spreadsheet than a marketing page. Small type is fine where it is reference; body text is not. A screen that needs scrolling to find one number is wrong.\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "density",
+          "via": "slot"
+        }
+      ],
+      "name": "density"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "_Ships with the workspace and is an ordinary page — so it can show a pattern rather than describe it. It is a default, not a ruling: edit it, and everything generated here changes with it._\n",
+            "vars": {
+              "day": [
+                "Mon",
+                "Tue",
+                "Wed",
+                "Thu",
+                "Fri"
+              ],
+              "newsSwatch": [
+                "Stock",
+                "Stock lo",
+                "Rule",
+                "Ink 2",
+                "Ink",
+                "Spot",
+                "Spot 2"
+              ],
+              "out": [
+                3,
+                6,
+                2,
+                4,
+                1
+              ],
+              "panelSwatch": [
+                "STOCK",
+                "PANEL",
+                "RULE",
+                "INK",
+                "SPOT",
+                "WARN"
+              ],
+              "paperSwatch": [
+                "Paper",
+                "Shade",
+                "Pencil",
+                "Ink",
+                "Blue",
+                "Ochre"
+              ]
+            }
+          },
+          "ctx": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "note",
+          "via": "slot"
+        }
+      ],
+      "name": "note"
+    }
+  ]
+}

@@ -1,65 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The terminal's own socket. Layer 7, beside `http.js` and `events.js`, and not
-// either of them: the API route is one request and one answer, the events
-// stream is one-way and carries nothing, and a terminal is bytes in both
-// directions for as long as a shell runs.
-//
-// IT IS A PIPE WITH A RECONNECT. It opens one WebSocket to this vault's
-// `/terminal`, says `hello` every time it opens, hands up every server event and
-// every output frame, and reopens after a drop with a backoff. It keeps NOTHING
-// to send later: a keystroke typed while the socket is down is refused here, not
-// queued, because replaying input into a shell is typing a command nobody typed
-// at the moment it lands. The one thing that IS resent — a create whose answer
-// was lost — is the store's decision, and it goes with the same nonce so the
-// server can tell a retry from a second terminal.
+// The sign-in terminal's wire. Layer 7, beside `http.js` and `events.js`, and
+// not either of them: the API route is one request and one answer, the events
+// stream is one-way, and a terminal is bytes in both directions for as long as
+// one command runs.
 //
 // THE WIRE IS SPELLED TWICE. `server/workspace/terminals.ts` is the other copy,
-// and `tests/terminal-wire.test.ts` holds the two equal. Not `contracts/`: that
-// directory is frozen, and no artifact may ever be able to name a terminal kind.
+// and `tests/terminal-wire.test.ts` holds the two equal. Not `contracts/`: no
+// box may ever be able to name a terminal kind.
 
 /** Under the vault prefix. */
 export const TERMINAL_ROUTE = "/terminal";
-export const TERMINAL_OPS = ["hello", "create", "input", "resize", "end", "label", "dismiss"];
-export const TERMINAL_EVENTS = ["sessions", "created", "failed", "state", "removed", "resync", "error"];
-export const FRAME_OUTPUT = 1;
-export const FRAME_REPLAY = 2;
-
-/** @typedef {"idle" | "connecting" | "open" | "closed"} LinkState */
-/**
- * @typedef {{ kind: "link", state: LinkState }
- *   | { kind: "event", event: Record<string, any> }
- *   | { kind: "bytes", replay: boolean, id: string, data: Uint8Array }} LinkMessage
- */
-/**
- * @typedef {object} TerminalLink
- * @property {() => void} connect Open the socket if it is not; idempotent.
- * @property {() => void} close Close it and stop reconnecting.
- * @property {(msg: Record<string, unknown>) => boolean} send False when there is
- *   no open socket, in which case nothing was sent and nothing will be.
- * @property {() => LinkState} state
- * @property {(hear: (m: LinkMessage) => void) => () => void} on
- */
-
-const decoder = new TextDecoder();
-
-/**
- * A binary frame back into its parts: kind, id length, id, bytes.
- * @param {ArrayBuffer | Uint8Array} buf
- * @returns {{ replay: boolean, id: string, data: Uint8Array } | null}
- */
-export function decodeFrame(buf) {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  if (bytes.length < 2) return null;
-  const kind = bytes[0];
-  const len = bytes[1] ?? 0;
-  if (kind !== FRAME_OUTPUT && kind !== FRAME_REPLAY) return null;
-  if (bytes.length < 2 + len) return null;
-  return {
-    replay: kind === FRAME_REPLAY,
-    id: decoder.decode(bytes.subarray(2, 2 + len)),
-    data: bytes.subarray(2 + len),
-  };
-}
+/** What this side says: `create` once with the ticket and a size, then `input`
+ *  and `resize`. Closing the socket is how the command is ended. */
+export const TERMINAL_OPS = ["create", "input", "resize"];
+/** What the server says: `started`, `exited` with the exit, and `error` with a
+ *  sentence. Output arrives as raw binary. */
+export const TERMINAL_EVENTS = ["started", "exited", "error"];
 
 /**
  * The socket address for a vault. The per-launch token rides as a query exactly
@@ -74,135 +30,106 @@ export function terminalUrl(where, baseUrl, token) {
   return `${scheme}//${where.host}${baseUrl}${TERMINAL_ROUTE}${query}`;
 }
 
-/** How long to wait before the nth reopen, in ms. */
-export const backoff = (/** @type {number} */ n) => Math.min(5000, 400 * 2 ** Math.min(n, 4));
+/** @typedef {"connecting" | "open" | "closed"} SocketState */
+/**
+ * What the socket hands up, in order: `open` once, then events and bytes, then
+ * `closed` exactly once — whether the server closed it, the network did, or it
+ * never opened at all.
+ * @typedef {{ kind: "open" }
+ *   | { kind: "event", event: Record<string, any> }
+ *   | { kind: "bytes", data: Uint8Array }
+ *   | { kind: "closed" }} SocketMessage
+ */
+/**
+ * @typedef {object} TerminalSocket
+ * @property {(msg: Record<string, unknown>) => boolean} send False when the
+ *   socket is not open, in which case nothing was sent and nothing will be.
+ * @property {() => void} close Close it. Closing is how the command is ended.
+ * @property {() => SocketState} state
+ */
 
 /**
- * @param {{ url: string, WebSocket?: any, setTimeout?: typeof setTimeout, clearTimeout?: typeof clearTimeout }} opts
- * @returns {TerminalLink}
+ * ONE SIGN-IN'S SOCKET, opened once and NEVER REOPENED. The command on the other
+ * end lives exactly as long as this socket: a drop has already ended it on the
+ * server, so a reconnect would find nothing to reattach to and would need a new
+ * ticket besides. It keeps nothing to send later — a keystroke typed while the
+ * socket is not open is refused here, not queued, because typing into a
+ * command at a moment nobody chose is typing nobody did.
+ *
+ * @param {{ url: string, hear: (m: SocketMessage) => void, WebSocket?: any }} opts
+ * @returns {TerminalSocket}
  */
-export function makeTerminalLink(opts) {
+export function openTerminalSocket(opts) {
   const Socket = opts.WebSocket ?? (typeof WebSocket === "function" ? WebSocket : null);
-  const later = opts.setTimeout ?? setTimeout;
-  const cancel = opts.clearTimeout ?? clearTimeout;
-  /** @type {Set<(m: LinkMessage) => void>} */
-  const hears = new Set();
-  /** @type {any} */
-  let socket = null;
-  /** @type {LinkState} */
-  let state = "idle";
-  let wanted = false;
-  let tries = 0;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let timer = null;
-
-  /** @param {LinkMessage} m */
+  /** @type {SocketState} */
+  let state = "connecting";
+  /** @param {SocketMessage} m */
   const tell = (m) => {
-    for (const hear of [...hears]) {
-      try {
-        hear(m);
-      } catch (e) {
-        console.warn("a terminal listener threw", e);
-      }
+    try {
+      opts.hear(m);
+    } catch (e) {
+      console.warn("a terminal listener threw", e);
     }
   };
-  /** @param {LinkState} next */
-  const become = (next) => {
-    if (state === next) return;
-    state = next;
-    tell({ kind: "link", state });
+  const closed = () => {
+    if (state === "closed") return;
+    state = "closed";
+    tell({ kind: "closed" });
   };
 
-  function open() {
-    if (!wanted || socket !== null || Socket === null) return;
-    become("connecting");
-    /** @type {any} */
-    let ws;
-    try {
-      ws = new Socket(opts.url);
-    } catch {
-      retry();
-      return;
-    }
-    socket = ws;
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
-      if (socket !== ws) return;
-      tries = 0;
-      become("open");
-      ws.send(JSON.stringify({ op: "hello" }));
-    };
-    ws.onmessage = (/** @type {{ data: unknown }} */ e) => {
-      if (socket !== ws) return;
-      if (typeof e.data === "string") {
-        /** @type {unknown} */
-        let event;
-        try {
-          event = JSON.parse(e.data);
-        } catch {
-          return;
-        }
-        if (event && typeof event === "object") tell({ kind: "event", event: /** @type {Record<string, any>} */ (event) });
+  /** @type {any} */
+  let ws = null;
+  try {
+    if (Socket === null) throw new Error("this window has no WebSocket");
+    ws = new Socket(opts.url);
+  } catch {
+    // Said on the next turn, so the caller has its handle before it hears.
+    queueMicrotask(closed);
+    return { send: () => false, close: () => {}, state: () => state };
+  }
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    if (state !== "connecting") return;
+    state = "open";
+    tell({ kind: "open" });
+  };
+  ws.onmessage = (/** @type {{ data: unknown }} */ e) => {
+    if (state !== "open") return;
+    if (typeof e.data === "string") {
+      /** @type {unknown} */
+      let event;
+      try {
+        event = JSON.parse(e.data);
+      } catch {
         return;
       }
-      if (e.data instanceof ArrayBuffer) {
-        const f = decodeFrame(e.data);
-        if (f) tell({ kind: "bytes", replay: f.replay, id: f.id, data: f.data });
-      }
-    };
-    ws.onclose = () => {
-      if (socket !== ws) return;
-      socket = null;
-      become("closed");
-      retry();
-    };
-    // `onclose` always follows an error, and is where the retry is armed.
-    ws.onerror = () => {};
-  }
-
-  function retry() {
-    socket = null;
-    if (!wanted || timer !== null) return;
-    if (state !== "closed") become("closed");
-    timer = later(() => {
-      timer = null;
-      open();
-    }, backoff(tries++));
-  }
+      if (event && typeof event === "object") tell({ kind: "event", event: /** @type {Record<string, any>} */ (event) });
+      return;
+    }
+    if (e.data instanceof ArrayBuffer) tell({ kind: "bytes", data: new Uint8Array(e.data) });
+  };
+  // `onclose` always follows an error, and is where it is said.
+  ws.onerror = () => {};
+  ws.onclose = closed;
 
   return {
-    connect() {
-      wanted = true;
-      open();
-    },
-    close() {
-      wanted = false;
-      if (timer !== null) cancel(timer);
-      timer = null;
-      const ws = socket;
-      socket = null;
-      if (ws) {
-        try {
-          ws.close();
-        } catch {
-          /* already closing */
-        }
-      }
-      become("idle");
-    },
     send(msg) {
-      if (socket === null || state !== "open") return false;
+      if (state !== "open") return false;
       try {
-        socket.send(JSON.stringify(msg));
+        ws.send(JSON.stringify(msg));
         return true;
       } catch {
         return false;
       }
     },
-    state: () => state,
-    on(hear) {
-      hears.add(hear);
-      return () => hears.delete(hear);
+    close() {
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+      closed();
     },
+    state: () => state,
   };
 }
