@@ -670,7 +670,11 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       // runtime that drew the whole page is what may speak for it.
       case "page.projection":
         try {
-          await deps.mirror.write(req.page, req.markdown);
+          // IN ITS TURN ON THE MIRROR'S QUEUE, after the projections already
+          // asked for this page: one of them under way when these words
+          // arrived would otherwise land after them, and a page only its box
+          // can project would be left with the host's empty file.
+          await deps.mirror.queue.write(req.page, req.markdown);
           return ok(id, null);
         } catch (e) {
           const said = e instanceof Error && e.message !== "" ? e.message : "";

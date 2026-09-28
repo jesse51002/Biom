@@ -196,3 +196,51 @@ test.if(process.platform !== "win32")("A MOUNT AFTER WHICH NOTHING CHANGED write
     await rm(data, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("A BOX'S PROJECTION LANDS AFTER A PROJECTION ALREADY UNDER WAY FOR ITS PAGE, never beneath it", async () => {
+  const v = await vault(0);
+  try {
+    // A page only its own box can project: the host's projection of it is an
+    // empty file where there is none yet, and the box's words replace it.
+    await mkdir(join(v.root, "pages/home/children/Board"), { recursive: true });
+    await writeFile(join(v.root, "pages/home/children/Board/content.yaml"), "name: Board\nuid: inventedboard001\nplugin: html\n");
+    const board = mirrorPath("home/Board");
+    // The host's projection reads whether the file is there, and its answer —
+    // nothing yet — is held until the box's words have had every chance to
+    // land.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let reached!: () => void;
+    const atGate = new Promise<void>((r) => { reached = r; });
+    let holding = true;
+    const files = new Proxy(v.files, {
+      get(target, key, receiver) {
+        if (key === "read") {
+          return async (rel: string) => {
+            const text = await target.read(rel);
+            if (rel === board && holding) {
+              holding = false;
+              reached();
+              await gate;
+            }
+            return text;
+          };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    }) as DiskFiles;
+    const mirror = makeMirror(files, makePages(files, yaml), makeDocs(files, yaml));
+    const deps = { mirror } as unknown as Deps;
+    mirror.queue.follow("home/Board");
+    await atGate;
+    const answered = handle({ id: "b1", g: PROTOCOL, kind: "page.projection", page: "home/Board", markdown: "- a card only the box knows" } as ApiRequest, deps);
+    // Every chance: until the box's answer comes back, or a moment passes.
+    await Promise.race([answered, Bun.sleep(200)]);
+    release();
+    expect((await answered).ok).toBe(true);
+    await mirror.queue.idle();
+    expect(String(await v.files.read(board))).toContain("- a card only the box knows");
+  } finally {
+    await v.drop();
+  }
+});

@@ -95,6 +95,11 @@ export interface MirrorQueue {
   drop(id: PageId): void;
   /** Carry a moved page's files to its new id, soon. */
   rename(from: PageId, to: PageId): void;
+  /** STORE THE WORDS A PAGE'S OWN BOX COMPUTED, in their turn: after every
+   *  task already asked, so a projection of that page already under way
+   *  cannot land after them and put the host's empty file back over them.
+   *  Settles once they are on disk, and fails as `Mirror.write` fails. */
+  write(id: PageId, markdown: string): Promise<void>;
   /** Settles when every task asked so far is done. */
   idle(): Promise<void>;
   /** Tasks asked and not yet done. */
@@ -522,7 +527,11 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
    *  problem — the mirror is derived, and the next write of that page, or the
    *  next mount, writes it again. */
   function makeQueue(): MirrorQueue {
-    type Task = { kind: "project"; id: PageId } | { kind: "drop"; id: PageId } | { kind: "rename"; from: PageId; to: PageId };
+    type Task =
+      | { kind: "project"; id: PageId }
+      | { kind: "drop"; id: PageId }
+      | { kind: "rename"; from: PageId; to: PageId }
+      | { kind: "write"; id: PageId; markdown: string; done: () => void; failed: (e: unknown) => void };
     const tasks: Task[] = [];
     let running: Promise<void> | null = null;
 
@@ -542,7 +551,17 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
     const run = async (t: Task): Promise<void> => {
       if (t.kind === "project") await mirror.project(t.id);
       else if (t.kind === "drop") await mirror.drop(t.id);
-      else await mirror.rename(t.from, t.to);
+      else if (t.kind === "rename") await mirror.rename(t.from, t.to);
+      else {
+        // The caller's to report, as a refusal it chose the words of — never
+        // a line in this log.
+        try {
+          await mirror.write(t.id, t.markdown);
+          t.done();
+        } catch (e) {
+          t.failed(e);
+        }
+      }
     };
 
     const start = (): void => {
@@ -582,6 +601,12 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
         if (from === to || from.startsWith("@") || to.startsWith("@")) return;
         tasks.push({ kind: "rename", from, to });
         start();
+      },
+      write(id, markdown) {
+        return new Promise<void>((done, failed) => {
+          tasks.push({ kind: "write", id, markdown, done, failed });
+          start();
+        });
       },
       async idle() {
         while (running !== null) await running;
