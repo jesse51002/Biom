@@ -487,9 +487,9 @@ walk("10. a page the agent makes is brought up beside the chat, though the histo
   // IDLE IN THIS WINDOW, and not only on the server. Step 9 ends on the
   // server's word that its turn ended, and this window hears it a push later:
   // the chat gathers its pushes and the stream gathers them again. Until then
-  // the window counts the turn as running, its button is Stop, and Enter sends
-  // nothing — so an Enter pressed in that gap left the words in the box, no
-  // turn began, and this step waited out its bound for a turn never sent.
+  // the window counts the turn as running and its button is Stop; what is
+  // typed then still goes, but this step means to start a turn, so it waits
+  // until the window agrees there is none running.
   await until("this window heard the turn from 9 end: its button is Send, not Stop", 10000, async () =>
     (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Send");
   const input = page.locator("#agentta");

@@ -334,16 +334,23 @@ async function touchPage(): Promise<void> {
   await Bun.sleep(300);
 }
 
-/** Type into Biom's own input box and send, as the person does — once this
- *  window's button is Send. A turn the server has ended reaches the window a
- *  push later, and until it does the button is Stop and Enter sends nothing:
- *  a step that waited on the server alone could type into that gap. */
-async function send(words: string): Promise<void> {
-  await until("this window's button is Send, not Stop", 10000, async () =>
-    (await page.evaluate(() => document.querySelector(".agentdock .send")?.getAttribute("aria-label") ?? null)) === "Send");
+/** Type into Biom's own input box and press Enter, as the person does. What
+ *  is typed while a turn runs is queued behind it. */
+async function typeAndEnter(words: string): Promise<void> {
   const input = page.locator("#agentta");
   await input.fill(words);
   await input.press("Enter");
+}
+
+/** Send a message that starts a turn — once this window's button is Send,
+ *  with nothing typed. A turn the server has ended reaches the window a push
+ *  later; typed in that gap the message still goes, but a step that means to
+ *  start a turn waits until the window agrees there is none, so what it sends
+ *  is never taken for a message queued behind one. */
+async function send(words: string): Promise<void> {
+  await until("this window's button is Send, not Stop", 10000, async () =>
+    (await page.evaluate(() => document.querySelector(".agentdock .send")?.getAttribute("aria-label") ?? null)) === "Send");
+  await typeAndEnter(words);
 }
 
 /** Wait for a chat's turn to be running, which is after this window sent. */
@@ -1474,7 +1481,7 @@ walk("20f", "a message sent while a turn runs waits in the queue under it and go
   const Q = (await hash()).split("/")[2] as string;
   await running(Q);
   // B, sent while A runs: Queued, under the running turn.
-  await send("Queue walk b\n!sleep 3000");
+  await typeAndEnter("Queue walk b\n!sleep 3000");
   const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
   await until("b shows Queued", 8000, async () => { const b = await bubbles(); return b.length === 1 && /Queued/i.test(b[0] ?? "") && (b[0] ?? "").includes("Queue walk b"); });
   expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000"]);
@@ -1483,7 +1490,7 @@ walk("20f", "a message sent while a turn runs waits in the queue under it and go
   await until("b went out when a ended", 20000, async () => (await promptsOf(Q)).length === 2 && (await bubbles()).length === 0);
   await running(Q);
   // C, queued behind B; then Stop, with nothing typed.
-  await send("Queue walk c");
+  await typeAndEnter("Queue walk c");
   await until("c shows Queued", 8000, async () => (await bubbles()).length === 1);
   await until("the button is Stop", 5000, async () => (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Stop");
   await page.locator(".agentdock .send").click();

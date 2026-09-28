@@ -670,11 +670,15 @@ Agent screen walk then the startup walk still failed eleven in eleven with
 and passed three in three as two processes. A new file goes in `E2E_SERVER`
 and gets a process of its own.
 
-**A step that types into the input waits for the window's own Send.** A walk
+**A step that means to start a turn waits for the window's own Send.** A walk
 that waited for a turn to end on the server's word can type before the window
-has heard it — the chat gathers its pushes and the stream gathers them again —
-and Enter while the window still shows Stop sends nothing, by design. The chat
-walk's `send()` waits for Send; the Agent screen walk's step 10 does the same.
+has heard it — the chat gathers its pushes and the stream gathers them again.
+What is typed then is no longer lost: the server sends it to an idle chat at
+once, or queues it behind a turn still running. But a step that means a new
+turn waits until the window agrees there is none, so its message is never
+taken for one queued: the chat walk's `send()` waits for Send, and its
+`typeAndEnter()` is for a message meant for the queue; the Agent screen walk's
+step 10 waits too.
 
 ## 14. What is deliberately not built
 
