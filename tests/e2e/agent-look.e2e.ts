@@ -368,7 +368,8 @@ test("THE START SCREEN HANDED OVER WHOLE AGAIN AND AGAIN, as the host does whene
   try {
     await post(page, box, { kind: "look.state", state: lookState({}) });
     // Inside the box: each word that arrives, and after each frame is painted
-    // whether the middle of the ribbon, which it always crosses, is dark.
+    // whether a strip right across the ribbon's middle row is dark — where
+    // the ribbon twists thin one stretch of it can be, the whole never.
     await box.evaluate(() => {
       const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
       const w = window as any;
@@ -379,7 +380,7 @@ test("THE START SCREEN HANDED OVER WHOLE AGAIN AND AGAIN, as the host does whene
       const c = root.querySelector(".fx canvas") as HTMLCanvasElement;
       const g = c.getContext("2d")!;
       const look = () => requestAnimationFrame(() => setTimeout(() => {
-        const px = g.getImageData(Math.round(c.width * 0.5) - 40, Math.round(c.height * 0.58) - 40, 80, 80).data;
+        const px = g.getImageData(0, Math.round(c.height * 0.58) - 4, c.width, 8).data;
         let lit = 0;
         for (let i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
         w.__frames++;
