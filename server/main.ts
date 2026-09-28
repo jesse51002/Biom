@@ -579,9 +579,12 @@ interface Mounted {
    *  back, over exactly those, is not a change — see `consider`. Bounded; a
    *  write-back nobody reports simply ages out. */
   ownWrites: Map<string, OwnWrite>;
-  /** Documents the background identify gave an identity: pages already there
-   *  when the folder opened, whose write-back is the server's own even where
-   *  the watcher never knew the page. */
+  /** Documents whose `uid` write-back is the server's own even where the
+   *  watcher's baseline does not hold the bytes it replaced: pages the
+   *  background identify found already there when the folder opened, and
+   *  pages a settle gave one just after taking their arrival. Never a page
+   *  whose arrival is still to be taken — its write-back would be all the
+   *  watcher saw of it. */
   ownPages: Set<string>;
   /** When this mount began, by this server's clock: a document older than
    *  this was there before the folder opened, and one newer is arriving. */
@@ -1688,9 +1691,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     if (held.seen.matches(abs, text)) return null;
     // THE SERVER'S OWN WRITE-BACK OF A `uid`, exactly as it wrote it, to a page
     // the watcher already knew — or one the background identify found already
-    // there. It is not a change of the page, and a second redraw for it was a
-    // second full reload in every window. A page the watcher has never seen
-    // arriving with those bytes is still an arrival, below.
+    // there, or one whose arrival a settle had just taken (`ownPages`). It is
+    // not a change of the page, and a second redraw for it was a second full
+    // reload in every window. A page the watcher has never seen arriving with
+    // those bytes is still an arrival, below.
     // ONLY where the watcher's baseline still holds the bytes the write-back
     // replaced: an outside save that landed between the identity's read and
     // its write is in the file too, has never been reported, and is reported.
@@ -1838,8 +1842,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // A SETTLE THAT SAW A PAGE ARRIVE OR LEAVE GIVES AN IDENTITY TO EVERY PAGE
       // WITHOUT ONE — after the arrival was read as one above, and before the
       // windows are told, so the level they reread already carries it. What is
-      // written back is the server's own, and the next settle says nothing of
-      // it (`ownPages`). A settle of edits alone gives none: writing into a page
+      // written back into a page whose arrival this settle took is the server's
+      // own, and the next settle says nothing of it (`ownPages`); into any
+      // other, only where the watcher already holds the bytes it replaced,
+      // below. A settle of edits alone gives none: writing into a page
       // somebody is editing, on every edit, would make their next save a change
       // of ours, and such a page is given one where the history first names it.
       // Every page without one, as the structural settle always gave them, but
@@ -1856,7 +1862,16 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       if (arrivals.size > 0) {
         for (const id of arrivals) {
           try {
-            held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
+            // MARKED THE SERVER'S OWN ONLY WHERE THIS SETTLE TOOK THE ARRIVAL.
+            // Any other page without a `uid` may be one whose own notification
+            // is still on its way — written while this settle ran, and listed
+            // by the index when something read its level in between — and
+            // marked, its write-back was all the next settle saw of it: its
+            // arrival, its markdown and its name on the stream were dropped as
+            // nothing that happened. Unmarked, its write-back is silent only
+            // where the watcher's baseline holds the bytes it replaced
+            // (`consider`), and a page the watcher never took is taken now.
+            if (touched.get(id)?.structural === true) held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
             await held.identities.of(id);
           } catch (e) {
             console.warn("a page that arrived could not be given an identity", e instanceof Error ? e.message : e);
