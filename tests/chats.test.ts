@@ -1040,6 +1040,17 @@ only("a kept value the agent no longer offers is skipped without a word, and the
   expect(updates.some((u) => u.kind === "error")).toBe(false);
 });
 
+only("a kept value the agent is on already asks it for nothing", async () => {
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probeOf([RAW_MODEL, RAW_MODE]) })],
+    scenarios: { fake: { session: { configOptions: [RAW_MODEL, RAW_MODE] } } },
+    keep: { saved: () => ({ model: "m1", mode: "code" }) },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "hello" });
+  await settled(w.chats, s.id, 1);
+  expect(setBeforePrompt(w.heard())).toEqual([{ sessionId: expect.any(String), configId: "mode", value: "code" }]);
+});
+
 only("an agent whose list was not known when the chat was made starts on its kept choices once its own session says what it offers", async () => {
   const w = world({
     // The probe has not said what the agent offers yet.

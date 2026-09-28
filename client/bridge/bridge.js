@@ -75,7 +75,7 @@ import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, foldId, 
  *  `touched` is the frame host telling it a box's `touch` notice arrived, which
  *  is what an `open` from that box is honoured on (see `open` below).
  *  `answerLook` is the composition root registering the Agent screen's answer
- *  to the look's four kinds; until it is, every one of them is refused.
+ *  to the look's six kinds; until it is, every one of them is refused.
  *  @typedef {Bridge & {
  *    runtime(req: RuntimeRequest, ctx: BridgeContext): Promise<HostResponse>,
  *    touched?(ctx: BridgeContext): void,

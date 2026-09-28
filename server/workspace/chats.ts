@@ -1039,12 +1039,13 @@ export function makeChats(deps: ChatsDeps): Chats {
 
   /** THE KEPT CHOICES, LAID UNDER THE CHAT'S OWN: every value kept for the
    *  chat's agent that these options offer, on each option the person has not
-   *  set for this chat. */
+   *  set for this chat — and none the agent is on already, which would only
+   *  ask it for what it has. */
   const seedFrom = (c: Chat, options: readonly ConfigOption[]): void => {
     if (c.agent === null) return;
     let moved = false;
     for (const [id, value] of offeredChoices(options, savedFor(c.agent))) {
-      if (c.pendingConfig.has(id)) continue;
+      if (c.pendingConfig.has(id) || options.find((o) => o.id === id)?.value === value) continue;
       c.pendingConfig.set(id, value);
       moved = true;
     }

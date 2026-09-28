@@ -103,7 +103,7 @@ const REREAD_AFTER = 600;
  * @typedef {object} AgentView
  * @property {HTMLElement} slot The Agent screen and the panel, one element.
  * @property {(req: LookRequest, ctx: BridgeContext) => null | { code: HostErrorCode, message: string }} answer
- *   The look's four kinds, for the box this view mounted and no other.
+ *   The look's six kinds, for the box this view mounted and no other.
  * @property {() => void} open The rail's **Agent**: the full screen, with the
  *   chat this window last had open.
  * @property {(page: PageId) => void} edit **Edit**: a new chat beside the page,
