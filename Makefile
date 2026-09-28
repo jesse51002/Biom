@@ -213,22 +213,30 @@ test: install
 # `browser` rather than `install`, because layer one needs the Chromium as well
 # as the packages, and that target fetches it once per machine.
 #
-# `--isolate`: EACH FILE IN A FRESH GLOBAL OBJECT, because every file drives
-# its own Playwright in the one runner process, and what one long walk leaves
-# in the shared modules broke the next file's browser. Measured: the chat walk
-# then the Agent screen walk failed three runs in three ("Target page, context
-# or browser has been closed", a Stop that never ended), the other order
-# passed three in three, and with `--isolate` the failing order passed three
-# in three; a bare browser launched after the chat walk hung on its first
-# `evaluate` without it and answered with it.
+# ONE RUNNER PROCESS PER FILE, because every file drives a Playwright of its
+# own and a browser launched after another file in the same runner broke at
+# the boundary. First measured: the chat walk then the Agent screen walk in one
+# `bun test` failed three runs in three ("Target page, context or browser has
+# been closed", a Stop that never ended), which `--isolate` — each file in a
+# fresh global object — fixed. It did not fix the next one, because what breaks
+# is the process and not the modules: the Agent screen walk then the startup
+# walk in one `bun test --isolate` failed eleven runs in eleven, the startup
+# file's first browser losing its pipe within a few dozen milliseconds of its
+# launch and Playwright then waiting without bound for the dead process to
+# close, so the step died of its 90-second timeout; the same two files as two
+# processes passed three in three, and so did the pair with a two-second
+# pause at the boundary. A file that fails does not stop the ones after it,
+# and the target fails if any did.
 #
 #   make e2e                              both layers
 #   make app && make e2e     including the packaged one
 #   make e2e-server                       layer one alone, which is what CI runs
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
+E2E_EACH = fail=0; for f in $(1); do bun test "$$f" || fail=1; done; exit $$fail
+
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test --isolate $(E2E_SERVER) $(E2E_APP)
+	@cd "$(HERE)" && $(call E2E_EACH,$(E2E_SERVER) $(E2E_APP))
 
 ## e2e-server: layer one alone — every end-to-end file but the packaged application's. CI runs this
 #
@@ -249,7 +257,7 @@ E2E_APP = ./tests/e2e/app.e2e.ts
 
 e2e-server: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test --isolate $(E2E_SERVER)
+	@cd "$(HERE)" && $(call E2E_EACH,$(E2E_SERVER))
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #

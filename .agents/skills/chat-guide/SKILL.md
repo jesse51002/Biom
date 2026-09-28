@@ -551,14 +551,16 @@ on that PATH. `tests/e2e/real-agent.e2e.ts` is the one walk against the person's
 own Claude Code, on their login and subscription, and it runs only by name with
 `BIOM_REAL_AGENT=1`: it is in no Makefile list and never in CI.
 
-**The end-to-end targets run `bun test --isolate`** — `make e2e` and CI's
-`make e2e-server` alike, over the one `E2E_SERVER` list — so each file gets a
-fresh global object. Every file drives a Playwright of its own inside the one
-runner process, and what one long walk left in the shared modules broke the
-next file's browser: the chat walk then the Agent screen walk failed three runs
-in three with *Target page, context or browser has been closed* and a Stop that
-never ended, and passed three in three isolated. A new file goes in
-`E2E_SERVER` and inherits the flag.
+**The end-to-end targets run each file in a `bun test` process of its own** —
+`make e2e` and CI's `make e2e-server` alike, over the one `E2E_SERVER` list.
+Every file drives a Playwright of its own, and a browser launched after another
+file in the same runner broke at the boundary: the chat walk then the Agent
+screen walk failed three runs in three with *Target page, context or browser
+has been closed* and a Stop that never ended, which `--isolate` fixed, and the
+Agent screen walk then the startup walk still failed eleven in eleven with
+`--isolate` — the startup file's first browser lost its pipe as it launched —
+and passed three in three as two processes. A new file goes in `E2E_SERVER`
+and gets a process of its own.
 
 ## 14. What is deliberately not built
 
