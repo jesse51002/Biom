@@ -2176,7 +2176,7 @@ test("a framework screen's id as a page route is refused as not found, and never
   expect(g.ws.calls).toContain("loadPage:@design");
 });
 
-test("a page route naming a framework screen gets no page chrome, even after that screen was open (O52)", async () => {
+test("a page route naming a framework screen gets no page chrome, even after that screen was open", async () => {
   // Map and Design leave their read in the store, `@map` or `@design`, so a
   // page route naming that id must not take it for an open page: no Share, no
   // Instructions or Automations, no Edit, no Sections, and a sentence's face.
