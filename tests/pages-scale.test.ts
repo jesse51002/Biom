@@ -136,3 +136,27 @@ test("WITHOUT THE INDEX the same answers cost the same: a level one parse, a rea
   expect(await spend(counting, () => domain.read("home/Specs/2026-09-01-Specs_0"))).toBe(1);
   expect(await spend(counting, () => domain.list())).toBe(0);
 }, 30000);
+
+test("A TYPE SCALE IS PARSED ONCE and read again only when its stat moves", async () => {
+  const at = join(root, pageDir("home/Docs"), "markdown.yaml");
+  const house = join(root, "markdown.yaml");
+  writeFileSync(house, "measure: 40ch\n");
+  writeFileSync(at, "measure: 48ch\n");
+  try {
+    const counting = countingYaml(real);
+    const domain = makePages(makeFiles(root), counting.yaml, () => []);
+    // The page, the house scale and the page's own: three the first time …
+    expect(await spend(counting, () => domain.read("home/Docs"))).toBe(3);
+    // … and the page alone after, while neither scale has moved.
+    expect(await spend(counting, () => domain.read("home/Docs"))).toBe(1);
+    expect((await domain.read("home/Docs"))!.markdown).toMatchObject({ "--md-measure": "48ch" });
+    writeFileSync(at, "measure: 52ch\n");
+    expect(await spend(counting, () => domain.read("home/Docs"))).toBe(2);
+    expect((await domain.read("home/Docs"))!.markdown).toMatchObject({ "--md-measure": "52ch" });
+    rmSync(at);
+    expect((await domain.read("home/Docs"))!.markdown).toMatchObject({ "--md-measure": "40ch" });
+  } finally {
+    rmSync(at, { force: true });
+    rmSync(house, { force: true });
+  }
+});

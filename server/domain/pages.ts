@@ -164,6 +164,8 @@ const CHILD_DRAW = "child.html";
  *  identity; the second is a document's texture, and a brief and a reference
  *  page reasonably disagree about it. */
 const SCALE = "markdown.yaml";
+/** How many parsed type scales a pages domain keeps, the most recently read. */
+const SCALES_KEPT = 256;
 /** The bundled default, IN THE VAULT, put there by the seeder along with the
  *  rest of `base/`. `pages.create` copies it into every new page so an agent
  *  working in a vault finds the file already written and edits it rather than
@@ -1224,17 +1226,43 @@ export function makePages(
     }
   };
 
+  /** THE TYPE SCALES ALREADY PARSED, by path, each with the stat it was read
+   *  under — every page read asks for two, the house's and its own, and a
+   *  scale changes about never. Kept only where the files can be stat'd, and
+   *  only while the stat agrees; the oldest go past `SCALES_KEPT`. */
+  const scales = new Map<string, { ino: number; size: number; mtime: number; scale: MarkdownScale }>();
+  const statOf = typeof (files as Partial<DiskFiles>).stat === "function" ? (files as DiskFiles).stat.bind(files) : null;
+
   /** One `markdown.yaml`, or nothing. A file that will not parse is nothing too:
    *  a broken type scale must not be the reason a page stops opening, and the
    *  checker is where it is said out loud. */
   async function oneScale(path: string): Promise<MarkdownScale> {
+    const st = statOf === null ? null : await statOf(path).catch(() => null);
+    if (statOf !== null) {
+      if (st === null || st.dir) {
+        scales.delete(path);
+        return {};
+      }
+      const had = scales.get(path);
+      if (had !== undefined && had.ino === st.ino && had.size === st.size && had.mtime === st.mtimeMs) return had.scale;
+    }
     const text = await files.read(path);
     if (text === null) return {};
+    let scale: MarkdownScale;
     try {
-      return scaleOf(yaml.parseAny(text));
+      scale = scaleOf(yaml.parseAny(text));
     } catch {
-      return {};
+      scale = {};
     }
+    if (st !== null && !st.dir) {
+      scales.delete(path);
+      scales.set(path, { ino: st.ino, size: st.size, mtime: st.mtimeMs, scale });
+      if (scales.size > SCALES_KEPT) {
+        const oldest = scales.keys().next();
+        if (!oldest.done) scales.delete(oldest.value);
+      }
+    }
+    return scale;
   }
 
   /** The house scale with this page's own merged over it, one property at a
