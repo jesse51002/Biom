@@ -78,12 +78,17 @@
 //
 // THE CHOICES ARE KEPT (*Chat*, `picker`). The agent a chat is made with or
 // switched to, and every model, mode and effort the person sets, are handed up
-// through `picked` and `chose` to be kept in the workspace's settings. A new
-// chat, and a chat switched to another agent, start on that agent's kept
-// values: laid under whatever the person set for this chat, on each picker
-// the agent's list still offers them on — the probe's list at once, so the
-// pickers show them, and the session's own when it first opens, for an agent
-// whose list was not known yet. A value the list no longer offers is skipped.
+// through `picked` and `chose` to be kept in the workspace's settings.
+//
+// AND EACH CHAT KEEPS ITS OWN (`choices`, in its log): what the person picked
+// in it, what it started on, and what the agent switched itself to while it
+// ran. EVERY SESSION A CHAT'S AGENT OPENS IS BROUGHT BACK TO THEM — a new one
+// after a restart or an idle end on an agent that cannot reopen its own, and a
+// resumed or reloaded one that comes back on other values — and a new one then
+// takes the workspace's kept values for anything the chat never chose. A value
+// the agent no longer offers is skipped, and one it is on already asks it for
+// nothing. The kept values are laid on a new chat at once, against the probe's
+// list, so its pickers show them before anything starts.
 //
 // THE KEPT LOG. Every chat's stream is appended, as it arrives, to
 // `<logDir>/chats/<id>.jsonl` — under `.biom/`, which ignores itself in git
@@ -473,9 +478,10 @@ interface Chat {
   gen: number;
   cancelling: boolean;
   pendingConfig: Map<string, ConfigValue>;
-  /** The kept choices are owed to this chat's next session: it is new, or
-   *  switched to another agent, and no session of it has opened since. */
-  seed: boolean;
+  /** THE CHAT'S OWN CHOICES, by option id: what the person picked in it, what
+   *  it started on, and what its agent switched itself to — for the agent it
+   *  is with now. Every session the agent opens is brought back to them. */
+  choices: Map<string, ConfigValue>;
   options: ConfigOption[] | null;
   agentCommands: SlashCommand[] | null;
   sentConfig: string | null;
@@ -522,7 +528,7 @@ type LogRecord =
   | { t: "target"; agent: AgentKey | null; harness: string | null }
   | { t: "session"; agent: AgentKey; id: string }
   | { t: "config"; values: Record<string, ConfigValue> }
-  | { t: "seed"; on: boolean }
+  | { t: "choices"; values: Record<string, ConfigValue> }
   | { t: "queue"; items: { id: string; text: string }[]; held: boolean }
   | { t: "u"; u: ChatUpdate };
 
@@ -672,7 +678,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     id, name: "", face: null, agent: null, harness: null, page, created, updated: created,
     phase: "idle", turn: 0, stop: null, reason: null, endedAt: null,
     live: null, session: null, handoff: false, held: null, gen: 0, cancelling: false,
-    pendingConfig: new Map(), seed: false, options: null, agentCommands: null, sentConfig: null, sentCommands: null,
+    pendingConfig: new Map(), choices: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
     tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false,
@@ -827,14 +833,24 @@ export function makeChats(deps: ChatsDeps): Chats {
     const c = fresh(head.id, typeof head.created === "number" ? head.created : now(), head.page ?? null, text !== "" && !text.endsWith("\n"));
     let lastPrompt = 0;
     let lastEnd = 0;
+    // A log from before a chat kept its own choices has none: its values are
+    // read back from the config it kept for its agent since it last changed.
+    let sawChoices = false;
+    const sinceTarget = new Map<string, ConfigValue>();
     const toolsSeen = new Set<string>();
     for (const r of records) {
       if (r.t === "target") {
         c.agent = r.agent;
         c.harness = r.harness;
+        sinceTarget.clear();
       } else if (r.t === "session") c.session = { agent: r.agent, id: r.id };
-      else if (r.t === "config") c.pendingConfig = new Map(Object.entries(isObj(r.values) ? r.values : {}));
-      else if (r.t === "seed") c.seed = r.on === true;
+      else if (r.t === "config") {
+        c.pendingConfig = new Map(Object.entries(isObj(r.values) ? r.values : {}));
+        for (const [k, v] of c.pendingConfig) sinceTarget.set(k, v);
+      } else if (r.t === "choices") {
+        sawChoices = true;
+        c.choices = new Map(Object.entries(isObj(r.values) ? r.values : {}).filter((e): e is [string, ConfigValue] => typeof e[1] === "string" || typeof e[1] === "boolean"));
+      }
       else if (r.t === "queue") {
         c.waiting = Array.isArray(r.items) ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text })) : [];
         c.waitingHeld = r.held === true;
@@ -867,6 +883,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     // A QUEUE READ BACK AFTER A RESTART IS HELD: the person sends it when
     // they are there to see it go.
     if (c.waiting.length > 0) c.waitingHeld = true;
+    if (!sawChoices) c.choices = new Map([...sinceTarget].filter((e): e is [string, ConfigValue] => typeof e[1] === "string" || typeof e[1] === "boolean"));
     return { chat: c, interrupted: lastPrompt > lastEnd };
   };
 
@@ -949,7 +966,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     out.push({ t: "target", agent: c.agent, harness: c.harness });
     if (c.session) out.push({ t: "session", agent: c.session.agent, id: c.session.id });
     if (c.pendingConfig.size > 0) out.push({ t: "config", values: Object.fromEntries(c.pendingConfig) });
-    if (c.seed) out.push({ t: "seed", on: true });
+    if (c.choices.size > 0) out.push({ t: "choices", values: Object.fromEntries(c.choices) });
     if (c.waiting.length > 0) out.push({ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld });
     for (const u of c.updates ?? []) out.push({ t: "u", u });
     return out;
@@ -993,7 +1010,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     target(c, first.key);
     // A held chat taken by the first agent Active starts on that agent's
     // kept choices, as one made with it would.
-    if (c.seed) seedFrom(c, first.options);
+    seedFrom(c, first.options);
     return true;
   };
 
@@ -1037,37 +1054,75 @@ export function makeChats(deps: ChatsDeps): Chats {
     }
   };
 
-  /** THE KEPT CHOICES, LAID UNDER THE CHAT'S OWN: every value kept for the
-   *  chat's agent that these options offer, on each option the person has not
-   *  set for this chat — and none the agent is on already, which would only
-   *  ask it for what it has. */
+  const keepPending = (c: Chat): void => {
+    c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+  };
+  const keepChoices = (c: Chat): void => {
+    c.log.append([{ t: "choices", values: Object.fromEntries(c.choices) }]);
+  };
+
+  /** THE WORKSPACE'S KEPT VALUES, for what the chat never chose: every value
+   *  kept for the chat's agent that these options offer, on each option the
+   *  chat has no choice of its own for — and none the agent is on already,
+   *  which would only ask it for what it has. What is laid on becomes the
+   *  chat's own. */
   const seedFrom = (c: Chat, options: readonly ConfigOption[]): void => {
     if (c.agent === null) return;
     let moved = false;
     for (const [id, value] of offeredChoices(options, savedFor(c.agent))) {
-      if (c.pendingConfig.has(id) || options.find((o) => o.id === id)?.value === value) continue;
+      if (c.choices.has(id) || c.pendingConfig.has(id) || options.find((o) => o.id === id)?.value === value) continue;
       c.pendingConfig.set(id, value);
+      c.choices.set(id, value);
       moved = true;
     }
-    if (moved) c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+    if (moved) {
+      keepPending(c);
+      keepChoices(c);
+    }
   };
 
-  /** A new chat, or one switched to another agent: the kept choices are owed
-   *  to its next session, and laid on at once where the agent's list is
-   *  known, so the pickers show them before anything starts. */
+  /** A new chat, or one switched to another agent: the kept values laid on at
+   *  once where the agent's list is known, so the pickers show them before
+   *  anything starts. */
   const owe = (c: Chat): void => {
-    c.seed = true;
-    c.log.append([{ t: "seed", on: true }]);
     seedFrom(c, infoOf(c.agent)?.options ?? []);
   };
 
-  /** THE FIRST SESSION OPENED SINCE: its own list is the truth, and a value
-   *  kept that the probe's list could not say yet is laid on now. */
-  const repay = (c: Chat): void => {
-    if (!c.seed) return;
-    seedFrom(c, c.options ?? []);
-    c.seed = false;
-    c.log.append([{ t: "seed", on: false }]);
+  /** A SESSION OPENED, and its own list is the truth: brought back to the
+   *  chat's choices it offers and is not on — a new one after a restart or an
+   *  idle end, a resumed or reloaded one that came back on other values — and,
+   *  where it is new, the workspace's kept values laid on for anything the
+   *  chat never chose. A resumed session is not second-guessed past that: a
+   *  change the agent made itself while the chat ran is already one of the
+   *  chat's choices, so bringing it back undoes nothing the agent meant. */
+  const restore = (c: Chat, fresh: boolean): void => {
+    const options = c.options ?? [];
+    let moved = false;
+    for (const [id, value] of c.choices) {
+      if (c.pendingConfig.has(id)) continue;
+      const o = options.find((x) => x.id === id);
+      // One the agent no longer offers is skipped, and kept in case it does again.
+      if (!o || !offers(o, value) || o.value === value) continue;
+      c.pendingConfig.set(id, value);
+      moved = true;
+    }
+    if (moved) keepPending(c);
+    if (fresh) seedFrom(c, options);
+  };
+
+  /** WHAT THE AGENT SWITCHED ITSELF TO, while the chat ran: a value it now
+   *  reports that it was not on before is the chat's from then on. Not while
+   *  it replays a reloaded session, whose values are the past's. */
+  const tookItself = (c: Chat, live: Live, before: readonly ConfigOption[] | null): void => {
+    if (!live.opened || live.replaying || before === null) return;
+    let moved = false;
+    for (const o of c.options ?? []) {
+      const was = before.find((x) => x.id === o.id);
+      if (!was || was.value === o.value || c.choices.get(o.id) === o.value) continue;
+      c.choices.set(o.id, o.value);
+      moved = true;
+    }
+    if (moved) keepChoices(c);
   };
 
   const emitConfig = (c: Chat): void => {
@@ -1129,6 +1184,11 @@ export function makeChats(deps: ChatsDeps): Chats {
       if (c.pendingConfig.size === 0) return;
       for (const [option, value] of [...c.pendingConfig]) {
         if (live.gone || !live.conn || live.sessionId === null) return;
+        // One the session is on already asks the agent for nothing.
+        if ((c.options ?? []).find((o) => o.id === option)?.value === value) {
+          if (c.pendingConfig.get(option) === value) c.pendingConfig.delete(option);
+          continue;
+        }
         const req = setConfigRequest(live.sessionId, option, value, live.legacyMode);
         try {
           const r = await live.conn.request(req.method, req.params, { timeoutMs: CONFIG_MS });
@@ -1140,6 +1200,11 @@ export function makeChats(deps: ChatsDeps): Chats {
           if (isClosed(e)) return;
           const name = shownOptions(c).find((o) => o.id === option)?.name ?? option;
           emit(c, { kind: "error", message: `${live.harness} would not change ${name}.` });
+          // Refused, it is no choice of the chat's to bring back next time.
+          if (c.choices.get(option) === value) {
+            c.choices.delete(option);
+            keepChoices(c);
+          }
         }
         // Only a value nobody picked again while it was being applied.
         if (c.pendingConfig.get(option) === value) c.pendingConfig.delete(option);
@@ -1561,6 +1626,7 @@ export function makeChats(deps: ChatsDeps): Chats {
   };
 
   const open = async (c: Chat, live: Live): Promise<boolean> => {
+    let opened: "new" | "reopened" = "new";
     let launch: AgentLaunch | null = null;
     try {
       launch = await deps.launch(live.key);
@@ -1611,7 +1677,7 @@ export function makeChats(deps: ChatsDeps): Chats {
         }
         if (live.gone) return false;
       }
-      await session(c, live, conn, init.resume, init.loadSession);
+      opened = await session(c, live, conn, init.resume, init.loadSession);
     } catch (e) {
       if (live.gone) return false;
       if (isAuthRequired(e)) {
@@ -1628,7 +1694,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     const early = live.early;
     live.early = [];
     for (const n of early) if (n.sessionId === live.sessionId) apply(c, live, n.update);
-    repay(c);
+    restore(c, opened === "new");
     await applyConfig(c, live);
     emitConfig(c);
     touch(c);
@@ -1637,7 +1703,7 @@ export function makeChats(deps: ChatsDeps): Chats {
 
   /** Open the chat's session: reopen the one it had where the agent can,
    *  otherwise a new one, handed the chat so far. */
-  const session = async (c: Chat, live: Live, conn: AcpConnection, resume: boolean, load: boolean): Promise<void> => {
+  const session = async (c: Chat, live: Live, conn: AcpConnection, resume: boolean, load: boolean): Promise<"new" | "reopened"> => {
     const had = c.session;
     const reopen = async (method: "session/resume" | "session/load", id: string): Promise<boolean> => {
       live.sessionId = id;
@@ -1660,8 +1726,8 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
     };
     if (had && had.agent === live.key) {
-      if (resume && (await reopen("session/resume", had.id))) return;
-      if (load && (await reopen("session/load", had.id))) return;
+      if (resume && (await reopen("session/resume", had.id))) return "reopened";
+      if (load && (await reopen("session/load", had.id))) return "reopened";
     }
     const facts = readSession(await conn.request("session/new", newSessionParams(root), { timeoutMs: START_MS }));
     if (facts.sessionId === null) throw new AcpRpcError(INVALID_PARAMS, "the agent opened a session with no id");
@@ -1673,6 +1739,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     c.log.append([{ t: "session", agent: live.key, id: facts.sessionId }]);
     // A new session knows nothing: hand it every earlier turn.
     c.handoff = (c.updates ?? []).some((u) => u.kind === "prompt" && u.turn < c.turn);
+    return "new";
   };
 
   const wire = (c: Chat, live: Live, conn: AcpConnection): void => {
@@ -1748,18 +1815,24 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.agentCommands = toSlashCommands(u.availableCommands);
         void emitCommands(c);
         return;
-      case "config_option_update":
+      case "config_option_update": {
         if (!Array.isArray(u.configOptions)) return;
+        const before = c.options;
         live.rawConfig = u.configOptions;
         takeOptions(c, live);
+        tookItself(c, live, before);
         emitConfig(c);
         return;
-      case "current_mode_update":
+      }
+      case "current_mode_update": {
         if (!isObj(live.rawModes) || typeof u.currentModeId !== "string") return;
+        const before = c.options;
         live.rawModes = { ...live.rawModes, currentModeId: u.currentModeId };
         takeOptions(c, live);
+        tookItself(c, live, before);
         emitConfig(c);
         return;
+      }
       case "usage_update": {
         const usage = toUsage(u);
         if (usage) emit(c, { kind: "usage", ...usage });
@@ -2030,7 +2103,12 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.log.append([{ t: "chat", v: 1, id, created, page }]);
       if (isObj(init.config)) {
         for (const [k, v] of Object.entries(init.config)) if (typeof v === "string" || typeof v === "boolean") c.pendingConfig.set(k, v);
-        if (c.pendingConfig.size > 0) c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+        if (c.pendingConfig.size > 0) {
+          // What the person set for this chat on the start screen is its own.
+          c.choices = new Map(c.pendingConfig);
+          keepPending(c);
+          keepChoices(c);
+        }
       }
       if (typeof init.agent === "string" && init.agent !== "") {
         target(c, init.agent);
@@ -2145,6 +2223,8 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
       c.pendingConfig.set(option, value);
       c.log.append([{ t: "config", values: Object.fromEntries(c.pendingConfig) }]);
+      c.choices.set(option, value);
+      keepChoices(c);
       if (c.agent !== null) keepChoice(c.agent, known, option, value);
       emitConfig(c);
       const live = c.live;
@@ -2170,6 +2250,9 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.agentCommands = null;
       c.pendingConfig.clear();
       c.log.append([{ t: "config", values: {} }]);
+      // The last agent's choices are its own: this one starts on the kept.
+      c.choices.clear();
+      keepChoices(c);
       target(c, key);
       keepAgent(key);
       owe(c);

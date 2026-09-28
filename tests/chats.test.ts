@@ -1501,3 +1501,127 @@ only("deleting a chat nobody has is refused not_found, and a failed session/dele
   await until("the failure to be said", 5000, () => w.said.some((l) => l.includes("own record")));
   expect(w.said.find((l) => l.includes("own record"))).toBe("chats: Fake Agent's own record of a deleted chat was left: it could not be started to delete it");
 });
+
+/* ── a chat's own choices, on every session it opens ──────────────────── */
+
+/** The config set on the agent in the LAST process started, before that
+ *  process's first prompt: what a new or reopened session was brought to. */
+const setInLastProcess = (heard: Record<string, unknown>[]): unknown[] => {
+  const start = heard.map((h) => h.fake === "started").lastIndexOf(true);
+  const after = heard.slice(start);
+  const prompt = after.findIndex((h) => h.method === "session/prompt");
+  return after.slice(0, prompt < 0 ? after.length : prompt).filter((h) => h.method === "session/set_config_option").map((h) => {
+    const p = h.params as { configId: string; value: unknown };
+    return [p.configId, p.value];
+  });
+};
+const MODES = [RAW_MODEL, RAW_MODE];
+
+only("A CHAT KEEPS ITS OWN PICKS ACROSS A RESTART: its next session is new, on an agent that cannot resume, and is brought back to the mode picked in it, before the workspace's", async () => {
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })],
+    scenarios: { fake: { session: { configOptions: MODES } } },
+    // The workspace keeps another mode, which this chat never took.
+    keep: { saved: () => ({ mode: "ask" }) },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.config(s.id, "mode", "code");
+  await until("the pick to reach the agent", 5000, () => w.heard().some((h) => h.method === "session/set_config_option"));
+  await w.chats.endAll();
+  // THE SERVER STARTS AGAIN; the agent cannot resume, so the session is new.
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the restart");
+  await settled(again, s.id, 2);
+  expect(w.heard().filter((h) => h.method === "session/resume" || h.method === "session/load")).toEqual([]);
+  expect(setInLastProcess(w.heard())).toEqual([["mode", "code"]]);
+  const shown = lastConfig((await again.read(s.id)).updates);
+  expect(shown.find((o) => o.id === "mode")?.value).toBe("code");
+});
+
+only("a chat whose idle agent was ended is brought back to its picks when the next message starts a new one", async () => {
+  const w = world({ agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })], scenarios: { fake: { session: { configOptions: MODES } } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.config(s.id, "model", "m2");
+  await until("the pick to reach the agent", 5000, () => w.heard().some((h) => h.method === "session/set_config_option"));
+  w.skewBy(31 * 60_000);
+  expect(w.chats.reap()).toBe(1);
+  await w.chats.send(s.id, "after the reap");
+  await settled(w.chats, s.id, 2);
+  expect(startedPids(w.heard()).length).toBe(2);
+  expect(setInLastProcess(w.heard())).toEqual([["model", "m2"]]);
+});
+
+only("a mode the agent took itself during the chat is kept as the chat's, and its next new session is brought back to it", async () => {
+  const planned = [RAW_MODEL, { ...RAW_MODE, currentValue: "code" }];
+  const w = world({
+    agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })],
+    scenarios: { fake: { session: { configOptions: MODES }, turns: [[{ config: planned }, { reply: "switched myself" }]] } },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "switch yourself" });
+  await settled(w.chats, s.id, 1);
+  expect(lastConfig((await w.chats.read(s.id)).updates).find((o) => o.id === "mode")?.value).toBe("code");
+  await w.chats.endAll();
+  w.scenarios.fake = { session: { configOptions: MODES } };
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the restart");
+  await settled(again, s.id, 2);
+  expect(setInLastProcess(w.heard())).toEqual([["mode", "code"]]);
+});
+
+only("a pick the agent no longer offers is skipped without a word, and one it is on already asks for nothing", async () => {
+  const w = world({ agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })], scenarios: { fake: { session: { configOptions: MODES } } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.config(s.id, "mode", "code");
+  await w.chats.config(s.id, "model", "m2");
+  await until("both picks to reach the agent", 5000, () => w.heard().filter((h) => h.method === "session/set_config_option").length === 2);
+  await w.chats.endAll();
+  // The agent comes back without the mode picked, and already on the model.
+  const later = [{ ...RAW_MODEL, currentValue: "m2" }, { ...RAW_MODE, options: [{ value: "ask", name: "Ask" }] }];
+  w.scenarios.fake = { session: { configOptions: later } };
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the restart");
+  await settled(again, s.id, 2);
+  expect(setInLastProcess(w.heard())).toEqual([]);
+  expect((await again.read(s.id)).updates.filter((u) => u.kind === "error" && u.turn === 2)).toEqual([]);
+});
+
+only("A RESUMED SESSION THAT COMES BACK ON OTHER VALUES is brought back to the chat's picks", async () => {
+  const resumes = { loadSession: false, sessionCapabilities: { resume: {} } };
+  const w = world({ agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })], scenarios: { fake: { agentCapabilities: resumes, session: { configOptions: MODES } } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.config(s.id, "mode", "code");
+  await until("the pick to reach the agent", 5000, () => w.heard().some((h) => h.method === "session/set_config_option"));
+  await w.chats.endAll();
+  // A new process resumes the session, and reports the mode it started with.
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the restart");
+  await settled(again, s.id, 2);
+  expect(w.heard().some((h) => h.method === "session/resume")).toBe(true);
+  expect(setInLastProcess(w.heard())).toEqual([["mode", "code"]]);
+});
+
+only("a chat kept before it kept its own choices reads them back from the config its log kept for its agent", async () => {
+  const w = world({ agents: [info("fake", "Fake Agent", { options: probeOf(MODES) })], scenarios: { fake: { session: { configOptions: MODES } } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await settled(w.chats, s.id, 1);
+  await w.chats.config(s.id, "mode", "code");
+  await until("the pick to reach the agent", 5000, () => w.heard().some((h) => h.method === "session/set_config_option"));
+  await w.chats.endAll();
+  // The log as an older build wrote it: no record of the chat's own choices.
+  const file = join(w.root, ".biom", "chats", `${s.id}.jsonl`);
+  const lines = readFileSync(file, "utf8").split("\n").filter((l) => l !== "" && !l.startsWith('{"t":"choices"'));
+  writeFileSync(file, lines.join("\n") + "\n");
+  const again = w.make();
+  await again.loaded;
+  await again.send(s.id, "after the restart");
+  await settled(again, s.id, 2);
+  expect(setInLastProcess(w.heard())).toEqual([["mode", "code"]]);
+});

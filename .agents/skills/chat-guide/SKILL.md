@@ -316,12 +316,27 @@ process that made it.
   chat, on each picker the agent's list STILL offers them on — a model the
   agent has dropped is skipped without a word (`offeredChoices` in
   `choices.ts`). They are laid on at once against the probe's list, so the
-  pickers show them before anything starts, and owed (`seed`, in the kept
-  log) to the chat's first session, which lays on what the probe's list could
-  not say yet. The view is the one choice a window keeps itself, through
+  pickers show them before anything starts. The view is the one choice a
+  window keeps itself, through
   `settings.set`. A file that will not read is said once in the log, put aside
   as `settings.json.bad`, and the defaults are used: Tool calls, no agent,
   nothing kept.
+- **Each chat keeps its own choices too** (`choices`, a record in its kept
+  log): what the person picked in it, what it started on, and what the agent
+  switched itself to while it ran (a `config_option_update` or
+  `current_mode_update` naming a value it was not on — never one replayed by
+  `session/load`). **Every session the chat's agent opens is brought back to
+  them** (`restore`): a NEW one — after a restart or an idle end, on an agent
+  that cannot resume or load, or after a switch — and a resumed or reloaded
+  one that comes back on other values. Bringing a resumed session back undoes
+  nothing the agent meant, because a change it made itself is already one of
+  the chat's choices. A new session then takes the workspace's kept values
+  for anything the chat never chose, and those become the chat's. A value the
+  agent no longer offers is skipped and kept, in case it offers it again; one
+  it is on already asks it for nothing; one it refuses is dropped. A switch
+  starts the chat's choices again for the new agent. A log from before the
+  chat kept choices of its own reads them back from the config it kept for its
+  agent since it last changed.
 
 ## 7. The files, and every write reported once
 
@@ -363,8 +378,7 @@ Runs and agents outside Biom are not recorded: they wait for the door.
 **Every chat's stream is appended as it arrives to `.biom/chats/<id>.jsonl`**
 — under `.biom/`, which ignores itself in git and which the watcher skips: a
 header, the chat's agent, its session, the config kept for the next start,
-whether the workspace's kept choices are still owed to its next session, and
-every update. At construction every log is scanned for its summary
+the chat's own choices, and every update. At construction every log is scanned for its summary
 (`Chats.loaded`; `chat.list` awaits it), and a chat's updates are read into
 memory only when somebody reads or writes it. A turn the server died in is
 ended `crashed` on the scan, and a line torn by a crash spoils only itself.
