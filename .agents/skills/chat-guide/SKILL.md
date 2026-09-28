@@ -532,7 +532,35 @@ that page's; the
 crumbs name the open chat with its lamp, and the strip counts the chats and the
 Active agents.
 
-## 13. What is deliberately not built
+## 13. Testing it with an agent
+
+**No test runs an agent of the person's unless it is asked to by name.** The
+agent every test talks to is `tests/fake-acp-agent.ts`: a real process speaking
+ACP over stdio, driven by a scenario in `FAKE_ACP_SCENARIO`, which
+`installFakeAgent` puts on a PATH under `claude-agent-acp` — a command name the
+known-agents table already lists, so the server finds it by its real path and no
+environment variable changes how anything loads.
+
+**An end-to-end server finds no agent of the person's.** A window opens on the
+Agent screen, and its first `agents.list` looks through the login shell, so a
+server started with a developer's own environment found their real Claude
+Code, Codex and OpenCode, fetched adapters with npx and left processes running.
+`withoutAgents()` in `tests/e2e/harness.ts` gives a server bun, `/usr/bin`,
+`/bin` and `/bin/sh`, and a walk that wants an agent puts the scripted one first
+on that PATH. `tests/e2e/real-agent.e2e.ts` is the one walk against the person's
+own Claude Code, on their login and subscription, and it runs only by name with
+`BIOM_REAL_AGENT=1`: it is in no Makefile list and never in CI.
+
+**The end-to-end targets run `bun test --isolate`** — `make e2e` and CI's
+`make e2e-server` alike, over the one `E2E_SERVER` list — so each file gets a
+fresh global object. Every file drives a Playwright of its own inside the one
+runner process, and what one long walk left in the shared modules broke the
+next file's browser: the chat walk then the Agent screen walk failed three runs
+in three with *Target page, context or browser has been closed* and a Stop that
+never ended, and passed three in three isolated. A new file goes in
+`E2E_SERVER` and inherits the flag.
+
+## 14. What is deliberately not built
 
 - **The door**: no MCP server is handed to an agent; runs and agents outside
   Biom are not in the history; a write the watcher sees from no nameable writer
@@ -580,6 +608,9 @@ tests/agent-input.test.js       the agent menu and More agents: two states, one 
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser
 tests/e2e/agent-screen.e2e.ts   the host side on a screen, against the scripted agent
+tests/e2e/chat.e2e.ts           both specs on a screen: a turn, the lights, the switcher on the window's clock
+tests/e2e/real-agent.e2e.ts     the person's own Claude Code, opt-in: BIOM_REAL_AGENT=1, never in CI
+tests/e2e/harness.ts            withoutAgents: a server's PATH with no agent of the person's on it
 ```
 
 ## This is a living document

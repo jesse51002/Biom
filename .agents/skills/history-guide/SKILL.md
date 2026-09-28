@@ -363,6 +363,7 @@ guest/biom.js                  touches(): the `touch` notice
 tests/address.test.ts  history.test.ts  history-route.test.ts  history-store.test.js  page-identity.test.ts
 tests/switcher.test.js  touch.test.js  ui-moves.test.js  stream.test.js  stream-feeds.test.ts
 tests/e2e/server.e2e.ts        a page's Instructions as an address, and a page's code refused the screen
+tests/e2e/chat.e2e.ts          the switcher on a screen, on the window's own clock through Playwright's
 ```
 
 ## This is a living document
