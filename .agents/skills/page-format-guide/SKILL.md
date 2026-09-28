@@ -316,8 +316,10 @@ rather than leaving a blank in a paragraph.
 markdown comes back over the wire raw, with its braces still in it. **Prose is
 editable in place and writes back**, so resolving on the server would round-trip
 `62` over the top of `{{rate}}` and destroy the variable the first time somebody
-touched the paragraph it sits in. `Part.vars` is what to resolve against, already
-merged nearest-first by the server.
+touched the paragraph it sits in. `Part.vars` is the part's own `variables:` and
+`DrawnSection.vars` the section's own, and the page's travel once, in
+`Page.variables`, so whoever draws or projects a part merges the three, nearest
+first.
 
 **A variable is a scalar or a list of scalars, and nothing else.** Flatness is
 what makes one key map onto one editable region. Anything nested is refused at the

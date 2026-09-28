@@ -340,8 +340,9 @@ registering three plugins keeps the two that were fine — a refusal is about on
 plugin, not about the file.
 
 **`node` is the element to fill**, and nothing outside it is the plugin's
-business. **`content` is the resolved part the server sent** — `{ kind, md, vars }`
-for markdown, `{ kind, file, html, vars }` for an html part, `{ kind, table }`, or
+business. **`content` is the resolved part the server sent**, its `vars` the
+three scopes merged nearest first — `{ kind, md, vars }` for markdown,
+`{ kind, file, html, vars }` for an html part, `{ kind, table }`, or
 `{ kind: "child", child, draw? }` — and it is **`null` for a `data-g-plugin`
 node**. Both cases go through the same `mount`, because a plugin with two entry
 points would be two plugins wearing one name.

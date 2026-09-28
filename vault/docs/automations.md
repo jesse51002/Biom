@@ -107,7 +107,10 @@ Scratch written here stays here — only what goes through `vault/` or the API i
 real. The process gets `BIOM_VAULT`, `BIOM_RUN` and `BIOM_API` in its
 environment, the names it asked for, and the floor every process needs (`PATH`,
 `HOME` and their kin) — nothing else of the server's. Rows go to the workspace's
-tables through the API at `BIOM_API`, never by opening `workspace.db`.
+tables through the API at `BIOM_API`, never by opening `workspace.db`. A page
+read's sections and parts carry their own variables; the page's are `variables`
+on the answer, and a value resolves nearest first — the part's, the section's,
+the page's.
 
 **`.biom/` is the framework's folder inside your workspace and it ignores
 itself**: the registry `runs.db`, every run directory, each chat's own record
