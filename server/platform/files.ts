@@ -568,6 +568,17 @@ function warn(message: string): void {
  *  the rest. A dangling symlink is followed by hand, because writing through
  *  one lands wherever it points. */
 async function real(p: string): Promise<string> {
+  // THE COMMON CASE, ASKED SYNCHRONOUSLY: a path that is there, resolved by
+  // the C library in one call of a few microseconds. The promise form is the
+  // same question sent through the thread pool, and at three or four times
+  // the price it was most of what a sweep of two thousand folders cost — this
+  // check runs on every access. Same answer, same containment test after it;
+  // a path that is not there yet falls through to the walk below.
+  try {
+    return realpathSync.native(p);
+  } catch {
+    // Not there, or a dangling link: resolved by hand below.
+  }
   let cur = p;
   const tail: string[] = [];
   for (let hop = 0; hop < 32; hop++) {
