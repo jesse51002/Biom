@@ -120,6 +120,14 @@ function oneAtATime<T>(abs: string, run: () => Promise<T>): Promise<T> {
  *  spellings of one folder are one queue; a commit that fails does not hold up
  *  the next. */
 const commitTails = new Map<string, Promise<void>>();
+
+/** The siblings `write` and `replace` fill before renaming them onto a path —
+ *  `.<name>.<eight hex>.tmp` — as a pathspec git leaves out of `add`. */
+const HALF_WRITTEN = ":(exclude,glob)**/.*.????????.tmp";
+/** What git says when a file its walk listed is gone before it could be read. */
+const VANISHED = /unable to stat|No such file or directory|unable to index file/i;
+/** How many fresh walks an add gets after one met a vanished file. */
+const ADD_RETRIES = 3;
 function oneCommitAtATime(root: string, run: () => Promise<void>): Promise<void> {
   const prev = commitTails.get(root) ?? Promise.resolve();
   const next = prev.then(run);
@@ -488,7 +496,18 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): DiskFiles {
         /* the root as given; a folder that is not there commits nothing anyway */
       }
       await oneCommitAtATime(key, async () => {
-        const added = await git(["add", "-A"]);
+        // A FILE THAT WENT WHILE GIT LISTED THE TREE. Every write here is a
+        // sibling renamed onto the path, and `git add -A` stats whatever its walk
+        // met — so a write landing during the walk made the sibling vanish under
+        // it, git refused the whole add, and the commit, the undo point asked
+        // for, was never made. The mirror writes in the background beside every
+        // commit now, so this was a lost commit in a busy minute, not a rarity.
+        // The siblings are left out by name, and a file somebody else's program
+        // removed mid-walk is asked about once more on a fresh walk.
+        let added = await git(["add", "-A", "--", ".", HALF_WRITTEN]);
+        for (let again = 0; added.code !== 0 && again < ADD_RETRIES && VANISHED.test(added.err); again++) {
+          added = await git(["add", "-A", "--", ".", HALF_WRITTEN]);
+        }
         if (added.code !== 0) return warn(added.err || "git add failed");
 
         const done = await git(["commit", "-m", message]);

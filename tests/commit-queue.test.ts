@@ -8,6 +8,8 @@
 // fail with a warning and a lost commit. Background work — identities given
 // after a sweep, the mirror's commit — runs beside the person's own writes
 // now, so every commit over one root is queued, in the order it was asked.
+// And a write landing while git walks the tree — every write here is a
+// sibling renamed onto its path — never costs the commit.
 // The vault is a temporary folder and every file and message is invented.
 
 import { test, expect } from "bun:test";
@@ -78,3 +80,35 @@ test("a failed commit never throws and never holds the queue: the next one still
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test.if(process.platform !== "win32")("A WRITE LANDING WHILE GIT WALKS THE TREE costs no commit: forty commits beside a writer renaming files into place, and every one made", async () => {
+  const root = await mkdtemp(join(tmpdir(), "biom-commit-walk-"));
+  await initVault(root);
+  const files = makeFiles(root);
+  const said: string[] = [];
+  const was = console.warn;
+  console.warn = (...a: unknown[]) => void said.push(a.map(String).join(" "));
+  // The markdown mirror's shape: a file rewritten over and over in the
+  // background, each write a sibling renamed onto the path.
+  let writing = true;
+  const writer = (async () => {
+    for (let i = 0; writing; i++) await files.write(`_markdown/n${i % 50}.md`, `invented ${i}\n`.repeat(2000));
+  })();
+  try {
+    const count = () => Number(spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim());
+    let made = 0;
+    for (let c = 0; c < 40; c++) {
+      await files.write(`pages/p${c}.yaml`, `invented ${c}\n`);
+      const before = count();
+      await files.commit(`Invented commit ${c}`);
+      if (count() > before) made++;
+    }
+    expect(said).toEqual([]);
+    expect(made).toBe(40);
+  } finally {
+    writing = false;
+    await writer;
+    console.warn = was;
+    await rm(root, { recursive: true, force: true });
+  }
+}, 120_000);
