@@ -636,6 +636,12 @@ export function makeAgentView(deps) {
           void askDelete(req.chat);
           return null;
         }
+        case "look.unqueue": {
+          // A queued message's ×: the person's words taken out, none sent.
+          if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
+          void chats.unqueue(req.chat, req.queued).catch((e) => console.warn("[biom] the queued message could not be taken out", e));
+          return null;
+        }
         case "look.panel": {
           if (req.to === "screen") {
             if (mode !== "screen") toScreen(true);

@@ -665,7 +665,7 @@ walk("2", "the start screen has the turning line, View chat history and Ask anyt
 
 /* ── 4 · a turn ──────────────────────────────────────────────────────────── */
 
-walk("4", "a turn: the loader on the message, the light amber then green, the chat named in the history, one message at a time, and Stop while it runs", async () => {
+walk("4", "a turn: the loader on the message, the light amber then green, the chat named in the history, one message at a time with the next queued, and Stop while it runs", async () => {
   await send("hello\n!sleep 2500");
   await until("the message made a chat", 10000, async () => /^#\/agent\/[A-Za-z0-9_-]{8,}$/.test(await hash()));
   turnChat = (await hash()).split("/")[2] as string;
@@ -676,9 +676,12 @@ walk("4", "a turn: the loader on the message, the light amber then green, the ch
   await until("the light is amber on the bar", 8000, async () => (await crumbLamp()) === "led lit pulse");
   expect((await page.locator(".agentdock .send").getAttribute("aria-label"))).toBe("Stop");
   await shot("chat-04-running.png");
-  // ONE MESSAGE AT A TIME: a second send while it runs is refused.
-  const second = await call("chat.send", { chat: turnChat, text: "A second invented message" }).then(() => "sent", (e: { code?: string }) => e.code ?? "refused");
-  expect(second).toBe("limit");
+  // ONE MESSAGE AT A TIME: a second send while it runs waits in the chat's
+  // queue — and is taken out again here, so this turn stays the only one.
+  const second = await call<{ queued: { id: string; place: number } | null }>("chat.send", { chat: turnChat, text: "A second invented message" });
+  expect(second.queued?.place).toBe(1);
+  await call("chat.unqueue", { chat: turnChat, queued: second.queued?.id });
+  expect((await summaryOf(turnChat))?.queued).toBe(0);
 
   await until("the turn ended", 20000, async () => (await summaryOf(turnChat))?.stop === "end_turn");
   await until("the light is green on the bar", 8000, async () => (await crumbLamp()) === "led green");

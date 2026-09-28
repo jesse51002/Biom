@@ -977,6 +977,63 @@ test("the look asks to delete a chat only by an id of the grammar, and never wit
   expect(M.request("chat.delete", { chat: cid("done") })).toBe(null);
 });
 
+test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble a message saying Queued, each with a × that asks by ids alone; held, it says so", async () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  const root = w.root();
+  const col = one(root, "col");
+  expect(one(root, "queue").hidden).toBe(true);
+  const now = Date.now();
+  const queued = (/** @type {number} */ seq, /** @type {string} */ id, /** @type {string} */ text) => ({ seq, at: now, turn: 2, kind: "queued", id, text });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [queued(30, "q1nvented-queued-01", "Then draw it again, smaller."), queued(31, "q1nvented-queued-02", "And <b>not</b> in red.")] });
+  const box = one(root, "queue");
+  expect(box.hidden).toBe(false);
+  // Under the running turn: the column's last child.
+  expect(col.lastChild).toBe(box);
+  const items = () => byClass(root, "qitem").map((q) => [one(q, "qlabel").textContent, one(q, "qtext").textContent]);
+  expect(items()).toEqual([["Queued", "Then draw it again, smaller."], ["Queued", "And <b>not</b> in red."]]);
+  // The person's words are words: no element came of them.
+  expect(everything(one(byClass(root, "qitem")[1], "qtext")).length).toBe(0);
+  // The × asks the host to take one out, by the chat and its id, and sends no words.
+  const x = one(byClass(root, "qitem")[1], "qx");
+  expect(x.localName).toBe("button");
+  expect(x.getAttribute("aria-label")).toBe("Remove from the queue");
+  x.fire("click");
+  await Promise.resolve();
+  expect(w.calls).toEqual([{ kind: "look.unqueue", chat: cid("live"), queued: "q1nvented-queued-02" }]);
+  // Taken out by the server, it is gone; one sent goes as its turn begins,
+  // and that turn is drawn above what still waits.
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 32, at: now, turn: 2, kind: "unqueued", id: "q1nvented-queued-02", sent: false }] });
+  expect(items()).toEqual([["Queued", "Then draw it again, smaller."]]);
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [queued(33, "q1nvented-queued-03", "One more.")] });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [
+    { seq: 34, at: now, turn: 2, kind: "turn", phase: "idle", stop: "end_turn", reason: null },
+    { seq: 35, at: now, turn: 2, kind: "unqueued", id: "q1nvented-queued-01", sent: true },
+    { seq: 36, at: now, turn: 3, kind: "prompt", text: "Then draw it again, smaller." },
+  ] });
+  expect(items()).toEqual([["Queued", "One more."]]);
+  const turns = byClass(root, "turnw");
+  expect(turns.length).toBe(3);
+  expect(col.lastChild).toBe(box);
+  expect(col.childNodes.indexOf(turns[2])).toBe(col.childNodes.indexOf(box) - 1);
+  // Held: the summary says the queue waits for the person, and the bubble says so.
+  const chats = chatState("live").chats.map((/** @type {any} */ c) => (c.id === cid("live") ? { ...c, phase: "idle", light: "none", stop: "cancelled", queued: 1, queueHeld: true } : c));
+  w.hear({ kind: "look.patch", chat: cid("live"), chats });
+  expect(items()).toEqual([["Queued · held", "One more."]]);
+  // Another chat opened has its own queue, and this one's is not drawn.
+  w.hear({ kind: "look.state", state: chatState("done") });
+  expect(one(w.root(), "queue").hidden).toBe(true);
+  expect(byClass(w.root(), "qitem").length).toBe(0);
+  w.teardown();
+});
+
+test("the look asks to take a queued message out only by the chat's id and the message's", () => {
+  expect(M.request("look.unqueue", { chat: cid("live"), queued: "q1nvented-queued-01", text: "x" })).toEqual({ kind: "look.unqueue", params: { chat: cid("live"), queued: "q1nvented-queued-01" } });
+  expect(M.request("look.unqueue", { chat: cid("live") })).toBe(null);
+  expect(M.request("look.unqueue", { chat: cid("live"), id: "q1nvented-queued-01" })).toBe(null);
+  expect(M.request("look.unqueue", { chat: cid("live"), queued: "has spaces in it" })).toBe(null);
+});
+
 test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of its kinds with ids and closed words only", () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
@@ -991,13 +1048,17 @@ test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of 
   press();
   w.hear({ kind: "look.state", state: chatState("evil") });
   press();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 40, at: Date.now(), turn: 2, kind: "queued", id: "q1nvented-queued-01", text: "Invented words the person queued" }] });
+  press();
   expect(w.calls.length).toBeGreaterThan(8);
-  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], open: ["target"] };
+  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], "look.unqueue": ["chat", "queued"], open: ["target"] };
   for (const c of w.calls) {
     const { kind, ...rest } = c;
     expect(Object.keys(allowed)).toContain(kind);
     expect(Object.keys(rest).every((k) => /** @type {any} */ (allowed)[kind].includes(k))).toBe(true);
-    if (kind === "look.open" || kind === "look.delete") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    if (kind === "look.open" || kind === "look.delete" || kind === "look.unqueue") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    if (kind === "look.unqueue") expect(rest.queued).toBe("q1nvented-queued-01");
     if (kind === "look.panel") expect(["screen", "beside", "closed"]).toContain(rest.to);
     if (kind === "look.list") expect(typeof rest.open).toBe("boolean");
     if (kind === "open") expect(Object.keys(rest.target).sort()).toEqual(["id", "kind"]);

@@ -21,6 +21,11 @@
 // one before it, because only the last of each is ever read. Only the open
 // chat's stream is held at all — a chat in the background is its summary.
 //
+// WHEN THIS WINDOW SENT is the switcher's `lastSent`, and a message that
+// waits in the chat's queue is not sent yet: it is sent when it goes out,
+// which the stream says with an `unqueued` update for its id. So a queued
+// message never hands the screen over early, and one going out does.
+//
 // A CHAT DELETED — here, or in another window, which the stream says with a
 // push saying `deleted`, or while this window's stream was shut, which the
 // list read on its reopening says by leaving it out — is dropped from the list
@@ -35,7 +40,7 @@
 // IT DOES NO OTHER I/O. Which chat a window has open is the ui store's
 // (`UiState.chat`); the composition root remembers it for the session.
 
-/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSettings, ChatSummary, ChatUpdate, ChatView, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, PickerCategory, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
+/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSent, ChatSettings, ChatSummary, ChatUpdate, ChatView, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, PickerCategory, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
 /** @import { Ui } from "./ui.js" */
 
 import { emitter } from "../../contracts/emitter.js";
@@ -79,7 +84,11 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {(chat: ChatId) => number | null} lastSent When THIS WINDOW last
  *   sent a message in the chat, by its own clock — the switcher's `lastSent`.
  * @property {(init: { agent?: AgentKey, text?: string, page?: PageId, config?: Record<string, ConfigValue> }) => Promise<ChatSummary>} create
- * @property {(chat: ChatId, text: string) => Promise<ChatSummary>} send
+ * @property {(chat: ChatId, text: string) => Promise<ChatSent>} send Out now
+ *   to an idle chat, else into its queue: the answer says which.
+ * @property {(chat: ChatId) => Promise<ChatSummary>} sendQueued Send a held queue.
+ * @property {(chat: ChatId, queued: string) => Promise<ChatSummary>} unqueue Take
+ *   one message out of the queue.
  * @property {(chat: ChatId) => Promise<ChatSummary>} cancel
  * @property {(chat: ChatId, option: string, value: ConfigValue) => Promise<ChatSummary>} config
  * @property {(chat: ChatId, agent: AgentKey) => Promise<ChatSummary>} switchAgent
@@ -239,6 +248,22 @@ export function makeChatStore(deps) {
   let gen = 0;
   /** @type {Map<ChatId, number>} */
   const sent = new Map();
+  /** The queued messages this window sent, by id, to the chat each waits in:
+   *  sent, for `lastSent`, when the stream says it went out.
+   *  @type {Map<string, ChatId>} */
+  const mine = new Map();
+
+  /** A MESSAGE OF THIS WINDOW'S WENT OUT OF A QUEUE, or was taken out: sent
+   *  now, by this window's clock, or forgotten. @param {readonly unknown[]} updates */
+  function outOfQueue(updates) {
+    for (const u of updates) {
+      if (!isObj(u) || u.kind !== "unqueued" || typeof u.id !== "string") continue;
+      const chat = mine.get(u.id);
+      if (chat === undefined) continue;
+      mine.delete(u.id);
+      if (u.sent === true) sent.set(chat, now());
+    }
+  }
   /** @type {ChatSettings | null} */
   let settings = null;
   /** Every chat this window has seen deleted: dropped, and never taken back
@@ -400,6 +425,7 @@ export function makeChatStore(deps) {
     }
     // What the stream brought meanwhile is never lost, read or no read.
     for (const b of batches) took = took.concat(fold(h, b));
+    outOfQueue(took);
     emit();
     if (took.length) grew.emit({ chat, updates: took });
     if (failed !== null) throw failed;
@@ -474,6 +500,7 @@ export function makeChatStore(deps) {
         if (drop(push.chat.id)) emit();
         return;
       }
+      if (Array.isArray(push.updates)) outOfQueue(push.updates);
       let moved = takeSummary(push.chat);
       const updates = Array.isArray(push.updates) ? push.updates : [];
       /** @type {ChatUpdate[]} */
@@ -532,8 +559,31 @@ export function makeChatStore(deps) {
     },
 
     async send(chat, text) {
-      sent.set(chat, now());
-      return summarised(await ask({ kind: "chat.send", chat, text }));
+      // SENT NOW unless a turn is going, when it will be queued: the time is
+      // taken before the call, because the agent's first write can reach this
+      // window before the answer does.
+      const was = sent.get(chat);
+      const busy = (chats.find((c) => c.id === chat)?.phase ?? "idle") !== "idle";
+      const at = now();
+      if (!busy) sent.set(chat, at);
+      /** @type {ChatSent} */
+      const r = await ask({ kind: "chat.send", chat, text });
+      const queued = isObj(r) && isObj(r.queued) && typeof r.queued.id === "string" ? r.queued : null;
+      if (queued !== null) {
+        // It waits: it is sent when the stream says it went out.
+        if (!busy) { if (was === undefined) sent.delete(chat); else sent.set(chat, was); }
+        mine.set(queued.id, chat);
+      } else if (busy) sent.set(chat, at);
+      if (isObj(r) && isSummary(r.chat)) summarised(r.chat);
+      return r;
+    },
+
+    async sendQueued(chat) {
+      return summarised(await ask({ kind: "chat.sendQueued", chat }));
+    },
+
+    async unqueue(chat, queued) {
+      return summarised(await ask({ kind: "chat.unqueue", chat, queued }));
     },
 
     async cancel(chat) {

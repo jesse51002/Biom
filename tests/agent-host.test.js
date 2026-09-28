@@ -266,7 +266,7 @@ test("a read that fails for a reason that may pass leaves nothing open, so the c
 
 test("lastSent is this window's clock at the moment it sent, for the switcher", async () => {
   let t = 100;
-  const { transport } = transportOf({ "chat.new": (req) => summary({ id: OTHER, phase: req.text ? "starting" : "idle" }), "chat.send": () => summary() });
+  const { transport } = transportOf({ "chat.new": (req) => summary({ id: OTHER, phase: req.text ? "starting" : "idle" }), "chat.send": () => ({ chat: summary({ phase: "starting" }), queued: null }) });
   const store = makeChatStore({ transport, now: () => t });
   expect(store.lastSent(CHAT)).toBe(null);
   await store.create({ agent: "claude-acp" });
@@ -277,6 +277,47 @@ test("lastSent is this window's clock at the moment it sent, for the switcher", 
   t = 300;
   await store.send(CHAT, "Invented again");
   expect(store.lastSent(CHAT)).toBe(300);
+});
+
+test("A QUEUED MESSAGE IS SENT WHEN IT GOES OUT, not when it was queued: lastSent moves only when the stream says this window's message left the queue for its turn", async () => {
+  let t = 100;
+  let n = 0;
+  const { transport, calls } = transportOf({
+    "chat.send": () => ({ chat: summary({ phase: "running", updated: 20 + n, queued: 1 }), queued: { id: `q1nvented-queued-0${++n}`, place: n } }),
+  });
+  const store = makeChatStore({ transport, now: () => t });
+  // A turn is going in the chat, sent at 100.
+  store.takeChat({ chat: summary({ phase: "running", updated: 15 }), updates: [] });
+  await store.send(CHAT, "queued behind it");
+  await store.send(CHAT, "and another");
+  expect(calls.map((c) => c.kind)).toEqual(["chat.send", "chat.send"]);
+  expect(store.lastSent(CHAT)).toBe(null);
+  // Another window's queued message going out is not this window's send.
+  t = 400;
+  store.takeChat({ chat: summary({ updated: 40 }), updates: [up(9, "unqueued", { id: "q1nvented-elsewhere", sent: true })] });
+  expect(store.lastSent(CHAT)).toBe(null);
+  // Taken out, it never goes: nothing is sent.
+  store.takeChat({ chat: summary({ updated: 41 }), updates: [up(10, "unqueued", { id: "q1nvented-queued-02", sent: false })] });
+  expect(store.lastSent(CHAT)).toBe(null);
+  // This window's goes out: sent now, by this window's clock.
+  t = 500;
+  store.takeChat({ chat: summary({ updated: 50, phase: "running" }), updates: [up(11, "unqueued", { id: "q1nvented-queued-01", sent: true }), up(12, "prompt", { text: "queued behind it" }, 2)] });
+  expect(store.lastSent(CHAT)).toBe(500);
+});
+
+test("a message sent to an idle chat is sent at once, and one queued after all puts lastSent back", async () => {
+  let t = 100;
+  let queue = false;
+  const { transport } = transportOf({ "chat.send": () => ({ chat: summary(), queued: queue ? { id: "q1nvented-queued-09", place: 1 } : null }) });
+  const store = makeChatStore({ transport, now: () => t });
+  store.takeChat({ chat: summary({ phase: "idle" }), updates: [] });
+  await store.send(CHAT, "out at once");
+  expect(store.lastSent(CHAT)).toBe(100);
+  // The chat looked idle and a turn had begun: the server queued it.
+  t = 200;
+  queue = true;
+  await store.send(CHAT, "queued after all");
+  expect(store.lastSent(CHAT)).toBe(100);
 });
 
 test("a chat the server does not have is refused, and the store is left with nothing loading", async () => {
@@ -803,6 +844,15 @@ test("THE CHAT ON SCREEN DELETED — here or in another window — sends the ful
   await new Promise((r) => setTimeout(r, 0));
   q.chats.takeChat({ chat: summary({ id: OTHER }), updates: [], deleted: true });
   expect(q.ui.get().route.id).toBe(CHAT);
+});
+
+test("a queued message's × takes it out through the chat store, for the look's own box alone", async () => {
+  const s = await stand({ answers: { "chat.unqueue": () => summary({ queued: 0 }) } });
+  expect(s.view.answer(/** @type {any} */ (look("look.unqueue", { chat: CHAT, queued: "q1nvented-queued-01" })), { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.view.answer(/** @type {any} */ (look("look.unqueue", { chat: CHAT, queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toBe(null);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "chat.unqueue").map((c) => [c.chat, c.queued])).toEqual([[CHAT, "q1nvented-queued-01"]]);
+  expect(s.view.answer(/** @type {any} */ (look("look.unqueue", { chat: "c1nvented-no-such-chat", queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
 });
 
 test("a flood too big for a patch is handed over whole instead", async () => {

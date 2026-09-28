@@ -241,7 +241,9 @@ in the order they bind:
    offered. More than two minutes ago is what lets it move, so a touch exactly
    `idle` ago still holds; a touch counts only after the person's latest
    message to that chat — one at the same instant is the act that sent it.
-   When that was is the chat store's `lastSent`, by this window's clock.
+   When that was is the chat store's `lastSent`, by this window's clock — and
+   a message that waited in the chat's queue counts from when it went out,
+   which the stream says with its `unqueued`, never from when it was queued.
 5. **No bouncing**: inside `settle` of the last move the write WAITS and is
    decided again when the settle ends, rather than dropped.
 6. Otherwise it moves, with the chat in the panel beside the page — never a

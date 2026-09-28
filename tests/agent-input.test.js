@@ -576,3 +576,74 @@ test("Cancel, Escape, a press outside and a second question are each no", async 
   expect(answers).toEqual([false, false, false, false, true]);
   expect(doc.body.querySelector(".aask")).toBe(null);
 });
+
+/* ── the queue ─────────────────────────────────────────────────────────── */
+
+test("WHILE A TURN RUNS the button is Stop with nothing typed and Send with words, the text area stays open, and Enter queues what is typed", async () => {
+  const s = stand(AGENTS, {
+    answers: {
+      "chat.send": () => ({ chat: aChat({ phase: "running", queued: 1 }), queued: { id: "q1nvented-queued-01", place: 1 } }),
+      "chat.cancel": () => aChat({ phase: "running" }),
+    },
+  });
+  s.chats.takeChat({ chat: aChat({ phase: "running", light: "working" }), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  const send = /** @type {El} */ (s.input.el.querySelector("button.send"));
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  expect(send.getAttribute("aria-label")).toBe("Stop");
+  expect(send.hasAttribute("disabled")).toBe(false);
+  expect(text.readOnly).toBe(false);
+  // Words typed: Send, which queues them behind the turn.
+  text.value = "Invented words for after";
+  text.fire("input");
+  expect(send.getAttribute("aria-label")).toBe("Send");
+  expect(send.title).toBe("Queue it behind this turn");
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "chat.send").map((c) => c.text)).toEqual(["Invented words for after"]);
+  expect(text.value).toBe("");
+  // Nothing typed again: Stop, and pressing it stops.
+  s.input.sync();
+  expect(send.getAttribute("aria-label")).toBe("Stop");
+  send.fire("pointerdown");
+  send.fire("click");
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "chat.cancel").length).toBe(1);
+});
+
+test("Escape stops the turn, words typed or not", async () => {
+  const s = stand(AGENTS, { answers: { "chat.cancel": () => aChat({ phase: "running" }) } });
+  s.chats.takeChat({ chat: aChat({ phase: "running", light: "working" }), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  text.value = "half a thought";
+  text.fire("input");
+  text.fire("keydown", { key: "Escape" });
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "chat.cancel").length).toBe(1);
+  expect(text.value).toBe("half a thought");
+});
+
+test("SEND QUEUED shows under the input while the queue is held, says how many, and sends it", async () => {
+  const s = stand(AGENTS, { answers: { "chat.sendQueued": () => aChat({ phase: "starting", queued: 0, queueHeld: false, updated: 22 }) } });
+  s.chats.takeChat({ chat: aChat({ phase: "running", queued: 2, queueHeld: false }), updates: [] });
+  s.ui.set({ chat: CHAT_ID });
+  s.input.sync();
+  const button = /** @type {El} */ (s.input.el.querySelector("button.sendqueued"));
+  // Waiting for the turn is not waiting for the person.
+  expect(button.hidden).toBe(true);
+  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 2, queueHeld: true, updated: 20 }), updates: [] });
+  s.input.sync();
+  expect(button.hidden).toBe(false);
+  expect(button.text).toBe("Send 2 queued");
+  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 1, queueHeld: true, updated: 21 }), updates: [] });
+  s.input.sync();
+  expect(button.text).toBe("Send queued");
+  button.fire("click");
+  await settle();
+  expect(s.calls.filter((c) => c.kind === "chat.sendQueued").map((c) => c.chat)).toEqual([CHAT_ID]);
+  s.input.sync();
+  expect(button.hidden).toBe(true);
+});

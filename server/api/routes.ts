@@ -1006,6 +1006,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.close":
       case "chat.commands":
       case "chat.delete":
+      case "chat.sendQueued":
+      case "chat.unqueue":
       case "settings.read":
       case "settings.set":
         return await chatAnswer(id, req, deps);
@@ -1051,7 +1053,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
 const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
   not_found: "there is no such chat or agent",
   bad_request: "that is not something an agent or a chat can be asked",
-  limit: "one message at a time: this chat's turn is still going",
+  limit: "that is more than this chat takes at once",
   unsupported: "that cannot be done now",
   fetch_failed: "the ACP Registry could not be reached",
 };
@@ -1104,7 +1106,12 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
       case "chat.read":
         return ok(id, await chats.read(req.chat, req.since));
       case "chat.send":
+        // Out now to an idle chat, or into its queue: the answer says which.
         return ok(id, await chats.send(req.chat, req.text));
+      case "chat.sendQueued":
+        return ok(id, await chats.sendQueued(req.chat));
+      case "chat.unqueue":
+        return ok(id, await chats.unqueue(req.chat, req.queued));
       case "chat.cancel":
         return ok(id, await chats.cancel(req.chat));
       case "chat.config":

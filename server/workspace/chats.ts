@@ -25,10 +25,18 @@
 // nothing. A refusal is retried at most twice, so an agent whose probe opens a
 // session and whose chat session refuses cannot loop.
 //
-// ONE MESSAGE AT A TIME. `send` while a turn is held, starting or running is
-// refused with `limit`; Stop is `session/cancel`, and an agent that has not
-// answered it within a grace is ended, because the next message cannot wait
-// on it. The stop reason turns the light: amber while working, green for ten
+// ONE MESSAGE AT A TIME, AND THE REST WAIT IN THE CHAT'S QUEUE. ACP has no
+// queue, so it is Biom's: `send` while a turn is held, starting or running
+// puts the message in the chat's queue — said as a `queued` update, and kept
+// in the chat's log so it survives a reload and a restart — and answers its
+// place. When a turn ends `end_turn`, the next queued message goes out by
+// itself, one a turn, said as `unqueued` and then the next turn's `prompt`.
+// After Stop, a red end, or a restart, the queue is HELD: nothing goes out
+// until the person asks (`sendQueued`), and a message sent to an idle chat
+// meanwhile goes out on its own and leaves the queue held. One queued message
+// is taken out by its id (`unqueue`). Stop is `session/cancel`, and an agent
+// that has not answered it within a grace is ended, because the next message
+// cannot wait on it. The stop reason turns the light: amber while working, green for ten
 // minutes after `end_turn`, none after `cancelled`, red for `refusal`,
 // `max_tokens`, `max_turn_requests` and a crash — and red STAYS until the
 // next turn starts, as the Chat spec's mockup has it. The light is computed
@@ -131,7 +139,7 @@ import { appendFile, mkdir, readFile, readdir, realpath, rename, rm, stat, write
 import { dirname, join, relative, resolve } from "node:path";
 
 import type {
-  AgentId, AgentInfo, AgentKey, AgentLaunch, ChangedFile, ChatId, ChatLight, ChatPush, ChatRead, ChatSummary, ChatUpdate, ConfigOption,
+  AgentId, AgentInfo, AgentKey, AgentLaunch, ChangedFile, ChatId, ChatLight, ChatPush, ChatRead, ChatSent, ChatSummary, ChatUpdate, ConfigOption,
   ConfigValue, EditVia, Face, Files, HostErrorCode, PageId, PickerCategory, Place, SlashCommand, TurnEnd, TurnPhase, Writer,
 } from "../../contracts/types.ts";
 import type { AcpConnection, AcpExit } from "../platform/acp.ts";
@@ -283,7 +291,12 @@ export interface Chats {
   /** Every chat, the most recently changed first. */
   list(): ChatSummary[];
   read(chat: ChatId, since?: number): Promise<ChatRead>;
-  send(chat: ChatId, text: string): Promise<ChatSummary>;
+  /** The person's message: out now to an idle chat, else into its queue. */
+  send(chat: ChatId, text: string): Promise<ChatSent>;
+  /** Send a held queue: its next message now if no turn runs, one a turn after. */
+  sendQueued(chat: ChatId): Promise<ChatSummary>;
+  /** Take one message out of the queue, by its id. */
+  unqueue(chat: ChatId, id: string): Promise<ChatSummary>;
   cancel(chat: ChatId): Promise<ChatSummary>;
   config(chat: ChatId, option: string, value: ConfigValue): Promise<ChatSummary>;
   switchAgent(chat: ChatId, agent: AgentKey): Promise<ChatSummary>;
@@ -336,6 +349,9 @@ export const GREEN_MS = 10 * 60 * 1000;
  *  an agent run through `npx` may be fetching it. There is no deadline on a
  *  turn. */
 const START_MS = 120_000;
+/** How many messages one chat's queue holds. A bound on a list nobody means
+ *  to fill: past it, a message is refused `limit` with a sentence. */
+export const QUEUE_MAX = 50;
 /** How long each step of deleting an agent's own record of a deleted chat's
  *  session may take — starting the agent, `initialize`, `session/delete`. It
  *  is best effort, and a step past this is given up in words. */
@@ -490,6 +506,11 @@ interface Chat {
   ending: Promise<unknown> | null;
   /** Deleted: nothing of it is published or written again. */
   removed: boolean;
+  /** THE QUEUE: the person's messages sent while a turn ran, in order. */
+  waiting: { id: string; text: string }[];
+  /** The queue waits for the person — after Stop, a red end or a restart —
+   *  rather than for the turn. */
+  waitingHeld: boolean;
   log: LogWriter;
 }
 
@@ -502,6 +523,7 @@ type LogRecord =
   | { t: "session"; agent: AgentKey; id: string }
   | { t: "config"; values: Record<string, ConfigValue> }
   | { t: "seed"; on: boolean }
+  | { t: "queue"; items: { id: string; text: string }[]; held: boolean }
   | { t: "u"; u: ChatUpdate };
 
 interface LogWriter {
@@ -642,8 +664,8 @@ export function makeChats(deps: ChatsDeps): Chats {
     reason: c.reason,
     created: c.created,
     updated: c.updated,
-    queued: 0,
-    queueHeld: false,
+    queued: c.waiting.length,
+    queueHeld: c.waitingHeld && c.waiting.length > 0,
   });
 
   const fresh = (id: ChatId, created: number, page: Place | null, torn: boolean): Chat => ({
@@ -653,7 +675,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     pendingConfig: new Map(), seed: false, options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
-    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false,
+    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false,
     log: makeLog(join(logDir, `${id}.jsonl`), torn, say),
   });
 
@@ -813,6 +835,10 @@ export function makeChats(deps: ChatsDeps): Chats {
       } else if (r.t === "session") c.session = { agent: r.agent, id: r.id };
       else if (r.t === "config") c.pendingConfig = new Map(Object.entries(isObj(r.values) ? r.values : {}));
       else if (r.t === "seed") c.seed = r.on === true;
+      else if (r.t === "queue") {
+        c.waiting = Array.isArray(r.items) ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text })) : [];
+        c.waitingHeld = r.held === true;
+      }
       else if (r.t === "u" && isObj(r.u)) {
         const u = r.u;
         if (typeof u.seq === "number") c.seq = Math.max(c.seq, u.seq);
@@ -838,6 +864,9 @@ export function makeChats(deps: ChatsDeps): Chats {
         }
       }
     }
+    // A QUEUE READ BACK AFTER A RESTART IS HELD: the person sends it when
+    // they are there to see it go.
+    if (c.waiting.length > 0) c.waitingHeld = true;
     return { chat: c, interrupted: lastPrompt > lastEnd };
   };
 
@@ -921,6 +950,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.session) out.push({ t: "session", agent: c.session.agent, id: c.session.id });
     if (c.pendingConfig.size > 0) out.push({ t: "config", values: Object.fromEntries(c.pendingConfig) });
     if (c.seed) out.push({ t: "seed", on: true });
+    if (c.waiting.length > 0) out.push({ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld });
     for (const u of c.updates ?? []) out.push({ t: "u", u });
     return out;
   };
@@ -1203,7 +1233,33 @@ export function makeChats(deps: ChatsDeps): Chats {
       touch(c);
       signal({ kind: "end", chat: c.id, turn });
       maybeCompact(c);
+      // THE QUEUE: after a finished turn its next message goes out by
+      // itself; after Stop, a red end or a crash it waits for the person.
+      if (c.waiting.length > 0) {
+        if (stop === "end_turn" && !c.waitingHeld && !stopping) sendNext(c);
+        else if (!c.waitingHeld) {
+          c.waitingHeld = true;
+          keepQueue(c);
+          touch(c, false);
+        }
+      }
     });
+
+  /** The queue as it stands, kept in the chat's log. */
+  const keepQueue = (c: Chat): void => {
+    c.log.append([{ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld }]);
+  };
+
+  /** THE NEXT QUEUED MESSAGE GOES OUT: out of the queue, said, and sent as
+   *  the next turn's prompt, exactly as if the person had sent it now. */
+  const sendNext = (c: Chat): void => {
+    const next = c.waiting.shift();
+    if (!next) return;
+    if (c.waiting.length === 0) c.waitingHeld = false;
+    keepQueue(c);
+    emit(c, { kind: "unqueued", id: next.id, sent: true });
+    beginTurn(c, next.text);
+  };
 
   const reasonOf = (stop: TurnEnd, harness: string): string | null => {
     switch (stop) {
@@ -2006,9 +2062,43 @@ export function makeChats(deps: ChatsDeps): Chats {
     async send(id, text) {
       const c = await must(id);
       if (typeof text !== "string" || text.trim() === "") throw bad("bad_request", "a message has words in it");
-      if (c.phase !== "idle") throw bad("limit", "one message at a time: this chat's turn is still going");
       if (stopping) throw bad("unsupported", "Biom is stopping");
+      if (c.phase !== "idle") {
+        // A TURN IS GOING: the message waits in the chat's queue, and the
+        // answer says its place.
+        if (c.waiting.length >= QUEUE_MAX) throw bad("limit", `${QUEUE_MAX} messages already wait in this chat's queue: send or remove some first`);
+        const q = { id: randomUUID(), text };
+        c.waiting.push(q);
+        keepQueue(c);
+        emit(c, { kind: "queued", id: q.id, text });
+        touch(c);
+        return { chat: summary(c), queued: { id: q.id, place: c.waiting.length } };
+      }
       beginTurn(c, text);
+      return { chat: summary(c), queued: null };
+    },
+
+    async sendQueued(id) {
+      const c = await must(id);
+      if (stopping) throw bad("unsupported", "Biom is stopping");
+      if (c.waiting.length === 0) return summary(c);
+      c.waitingHeld = false;
+      keepQueue(c);
+      touch(c);
+      // No turn going: the next goes now. One going: when it ends `end_turn`.
+      if (c.phase === "idle") sendNext(c);
+      return summary(c);
+    },
+
+    async unqueue(id, qid) {
+      const c = await must(id);
+      const at = c.waiting.findIndex((q) => q.id === qid);
+      if (at < 0) throw bad("not_found", "no such message waits in this chat's queue");
+      c.waiting.splice(at, 1);
+      if (c.waiting.length === 0) c.waitingHeld = false;
+      keepQueue(c);
+      emit(c, { kind: "unqueued", id: qid, sent: false });
+      touch(c);
       return summary(c);
     },
 

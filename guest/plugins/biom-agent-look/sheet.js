@@ -188,6 +188,16 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 /* the person's message, and the agent's status on it */
 .uw { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; max-width: min(84%, 560px); margin-bottom: 22px; }
 .u { position: relative; max-width: 100%; background: var(--l-field-2); border: 1px solid var(--stock-edge); padding: 10px 15px 11px; font: 15.5px/1.55 var(--l-sheet); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* what waits in the chat's queue, under the running turn */
+.queue { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.qitem { max-width: min(84%, 560px); border: 1px dashed var(--stock-edge); background: color-mix(in srgb, var(--l-field-2) 55%, transparent); padding: 6px 8px 9px 14px; color: var(--ink-3); animation: fadein calc(.3s * var(--l-m)) var(--l-ease); }
+.qhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qlabel { font: 10.5px var(--l-gauge); letter-spacing: .14em; text-transform: uppercase; color: var(--l-small); }
+.qtext { font: 15px/1.5 var(--l-sheet); white-space: pre-wrap; overflow-wrap: anywhere; }
+.qx { width: 22px; height: 22px; display: grid; place-items: center; color: var(--ink-3); transition: background calc(.12s * var(--l-m)), color calc(.12s * var(--l-m)); }
+.qx .ico { width: 12px; height: 12px; }
+.qx:hover { color: var(--ink); background: var(--l-wash); }
 .u.enter { animation: uin calc(.55s * var(--l-m)) var(--l-ease) calc(.14s * var(--l-m)) both; }
 @keyframes uin { from { opacity: 0; transform: translateY(22px) scale(.98); } }
 .mood { position: absolute; left: 10px; top: calc(100% - 9px); display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; background: var(--stock-hi); border: 1px solid var(--stock-edge); white-space: nowrap; }

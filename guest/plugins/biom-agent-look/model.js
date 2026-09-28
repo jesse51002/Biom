@@ -507,7 +507,10 @@
     const order = [];
     /** @type {Map<string, ToolEntry>} */
     const tools = new Map();
-    const chat = { harness: /** @type {string | null} */ (null), agent: /** @type {string | null} */ (null), options: /** @type {any[]} */ ([]), name: /** @type {string | null} */ (null), seq: 0, count: 0 };
+    const chat = { harness: /** @type {string | null} */ (null), agent: /** @type {string | null} */ (null), options: /** @type {any[]} */ ([]), name: /** @type {string | null} */ (null), seq: 0, count: 0,
+      /** THE CHAT'S QUEUE: the person's messages waiting behind the turn, by
+       *  id, in the order they were queued — `queued` in, `unqueued` out. */
+      queue: /** @type {Map<string, string>} */ (new Map()) };
 
     /** @param {string} name @param {...any} args */
     const tell = (name, ...args) => { const fn = sink[name]; if (typeof fn === "function") fn(...args); };
@@ -652,6 +655,15 @@
           if (Array.isArray(u.options)) chat.options = u.options;
           tell("config", chat);
           return;
+        case "queued":
+          // No turn of its own: it waits under whichever turn is going.
+          if (typeof u.id !== "string" || typeof u.text !== "string" || chat.queue.has(u.id)) return;
+          chat.queue.set(u.id, u.text);
+          tell("queue", chat);
+          return;
+        case "unqueued":
+          if (typeof u.id === "string" && chat.queue.delete(u.id)) tell("queue", chat);
+          return;
         case "error": {
           const t = turnOf(n, at);
           t.errors.push(typeof u.message === "string" ? u.message : "Something went wrong.");
@@ -711,7 +723,9 @@
     if (kind === "look.panel") return q.to === "screen" || q.to === "beside" || q.to === "closed" ? { kind: kind, params: { to: q.to } } : null;
     if (kind === "look.delete") return typeof q.chat === "string" && CHAT_ID.test(q.chat) ? { kind: kind, params: { chat: q.chat } } : null;
     if (kind === "look.unqueue") {
-      return typeof q.chat === "string" && CHAT_ID.test(q.chat) && typeof q.id === "string" && CHAT_ID.test(q.id) ? { kind: kind, params: { chat: q.chat, id: q.id } } : null;
+      // The message by `queued`: `id` is the envelope's own, and a field of
+      // that name would be written over by the call's.
+      return typeof q.chat === "string" && CHAT_ID.test(q.chat) && typeof q.queued === "string" && CHAT_ID.test(q.queued) ? { kind: kind, params: { chat: q.chat, queued: q.queued } } : null;
     }
     if (kind === "open") {
       const t = q.target;

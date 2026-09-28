@@ -15,8 +15,9 @@
 // effort, each a chip with the agent's own list, a list longer than five
 // showing five and **More models**, and in a chat the View beside them —
 // Plain, Tool calls, Thinking — kept in the workspace's settings and handed
-// to the look; Send, which is **Stop** while a turn runs
-// because a chat takes one message at a time; **Go to *page*** above it when
+// to the look; Send, which sends — or, while a turn runs, QUEUES — whatever is
+// typed, and is **Stop** while a turn runs and nothing is, because a chat
+// takes one message at a time; **Go to *page*** above it when
 // the switcher offers the page the open chat wrote; the / menu of the agent's
 // commands and the workspace's skills; and one line under it saying the turn
 // is working, or what went wrong.
@@ -30,6 +31,12 @@
 // and the pickers show that agent's kept values its list still offers — which
 // is what the server starts the new chat on. What is picked here overrides
 // them for the chat the first message makes, and the server keeps it then.
+//
+// A MESSAGE SENT WHILE A TURN RUNS WAITS IN THE CHAT'S QUEUE, the server's
+// (*Chat*, `acp`), so the text area stays editable while a turn runs and Enter
+// sends or queues; the look draws what waits. After Stop, an error or a
+// restart the queue is held, and **Send queued** under the input sends it.
+// Escape still stops.
 //
 // TYPING HERE IS NOT A TOUCH. The whole dock carries `NOT_TOUCH`, because
 // talking to the agent is not taking the screen back from it.
@@ -168,7 +175,7 @@ export function makeAgentInput(deps) {
   let pressedAs = null;
   const send = h("button.send", {
     type: "button", "aria-label": "",
-    onpointerdown: () => { pressedAs = { was: now().busy ? "stop" : "send", at: Date.now() }; },
+    onpointerdown: () => { pressedAs = { was: stopsNow() ? "stop" : "send", at: Date.now() }; },
     onclick: () => press(),
   }, icon("up"));
   const cbar = h("div.cbar", agentChip, sep, ...chipsFor.map((c) => c.el), viewChip, send);
@@ -179,7 +186,10 @@ export function makeAgentInput(deps) {
   const workingText = h("span.wt", "Working");
   const working = h("span.working", h("span.leds3", h("i"), h("i"), h("i")), workingText);
   const saidLine = h("span.said", { role: "status" });
-  const below = h("div.below", working, saidLine);
+  /** A HELD QUEUE, SENT: what waits after Stop, an error or a restart goes
+   *  only when the person says so. */
+  const sendQueued = h("button.sendqueued", { type: "button", hidden: "", onclick: () => void releaseQueue() });
+  const below = h("div.below", working, saidLine, sendQueued);
   const el = h("div.agentdock", { [NOT_TOUCH]: "" }, follow, composer, below);
 
   /* ── what the dock is for, now ─────────────────────────────────────── */
@@ -204,6 +214,12 @@ export function makeAgentInput(deps) {
     const view = s.settings?.view ?? DEFAULT_VIEW;
     const name = chat !== null ? chat.harness ?? agent?.name ?? "No agent yet" : agent?.name ?? (s.agentsKnown ? "No agent yet" : "Looking for agents");
     return { u, s, chatId, chat, agentKey, agent, busy, options, name, view };
+  }
+
+  /** THE BUTTON IS STOP while a turn runs and nothing is typed; with words
+   *  in the input it sends them, or queues them behind the turn. */
+  function stopsNow() {
+    return now().busy && text.value.trim() === "";
   }
 
   function autosize() {
@@ -245,13 +261,14 @@ export function makeAgentInput(deps) {
     viewChip.hidden = n.chatId === null;
     viewName.textContent = VIEW_WORDS[n.view].name;
 
-    if (send.getAttribute("aria-label") !== (n.busy ? "Stop" : "Send")) {
-      send.className = n.busy ? "send stop" : "send";
-      send.replaceChildren(icon(n.busy ? "stop" : "up"));
-      send.setAttribute("aria-label", n.busy ? "Stop" : "Send");
-      send.title = n.busy ? "Stop" : "";
+    const stopMode = n.busy && text.value.trim() === "";
+    if (send.getAttribute("aria-label") !== (stopMode ? "Stop" : "Send")) {
+      send.className = stopMode ? "send stop" : "send";
+      send.replaceChildren(icon(stopMode ? "stop" : "up"));
+      send.setAttribute("aria-label", stopMode ? "Stop" : "Send");
     }
-    if (n.busy) send.toggleAttribute("disabled", stopping);
+    send.title = stopMode ? "Stop" : n.busy ? "Queue it behind this turn" : "";
+    if (stopMode) send.toggleAttribute("disabled", stopping);
     else send.toggleAttribute("disabled", sending || text.value.trim() === "");
 
     const offer = switcher?.get().offer ?? null;
@@ -265,8 +282,11 @@ export function makeAgentInput(deps) {
     const phase = n.chat?.phase ?? "idle";
     working.hidden = !n.busy;
     workingText.textContent = phase === "held" ? "Waiting for an agent" : phase === "starting" ? "Starting " + n.name : "Working";
+    const heldQueue = n.chat !== null && n.chat.queueHeld === true && n.chat.queued > 0 ? n.chat.queued : 0;
+    sendQueued.hidden = heldQueue === 0;
+    if (heldQueue) sendQueued.textContent = heldQueue === 1 ? "Send queued" : "Send " + heldQueue + " queued";
     saidLine.textContent = said;
-    below.hidden = n.chatId === null && said === "";
+    below.hidden = n.chatId === null && said === "" && heldQueue === 0;
 
     held(n.chat);
     tell();
@@ -345,18 +365,14 @@ export function makeAgentInput(deps) {
   function press() {
     const intent = pressedAs !== null && Date.now() - pressedAs.at < 2000 ? pressedAs.was : null;
     pressedAs = null;
-    const busy = now().busy;
-    if (intent === "stop" || (intent === null && busy)) { void stop(); return; }
-    if (!busy) void submit();
+    if (intent === "stop" || (intent === null && stopsNow())) { void stop(); return; }
+    void submit();
   }
 
   async function submit() {
     const words = text.value;
     if (words.trim() === "" || sending) return;
     const n = now();
-    // ONE MESSAGE AT A TIME: while a turn runs the button is Stop and Enter
-    // sends nothing.
-    if (n.busy) return;
     // A CHAT THIS WINDOW NAMES AND HAS NOT READ YET is not the start screen:
     // sending now would make a new chat of words meant for this one.
     if (n.chatId !== null && n.chat === null) {
@@ -386,7 +402,7 @@ export function makeAgentInput(deps) {
       autosize();
     } catch (e) {
       const code = codeOf(e);
-      if (code === "limit") said = "One message at a time: this chat’s turn is still going.";
+      if (code === "limit") said = "Not sent: " + sentence(e);
       else if (code === "timeout" || code === "fetch_failed") {
         // IT MAY HAVE GONE: the server can have taken it and the answer been
         // lost. The list is read again, and the person is told to look
@@ -398,6 +414,16 @@ export function makeAgentInput(deps) {
       sending = false;
       paint();
     }
+  }
+
+  /** SEND QUEUED: the held queue goes — its next message now, the rest one
+   *  a turn. */
+  async function releaseQueue() {
+    const n = now();
+    if (n.chat === null) return;
+    try { await chats.sendQueued(n.chat.id); }
+    catch (e) { said = "Not sent: " + sentence(e); }
+    paint();
   }
 
   async function stop() {
@@ -427,8 +453,9 @@ export function makeAgentInput(deps) {
       return;
     }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      // Sent, or queued behind the turn that is going.
       e.preventDefault();
-      if (!now().busy) void submit();
+      void submit();
       return;
     }
     if (e.key === "Escape" && now().busy && menu === null) {

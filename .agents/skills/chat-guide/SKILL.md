@@ -29,7 +29,9 @@ description: >-
   "install an agent", "checksum", "login env", "TYPESAFE_API_KEY", "Jev",
   "face", "held message", "Stop", "light", "kept log", "jsonl", "reap",
   "idle agent", "AgentId", "onEdit", "changed", "look", "look.state",
-  "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS".
+  "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS",
+  "settings.json", "kept choices", "view", "Plain", "Thinking", "Used N tools",
+  "queue", "queued", "Send queued", "delete a chat", "session/delete".
 ---
 
 # Chat — an agent already on this machine, one process per chat, over ACP
@@ -268,9 +270,20 @@ process that made it.
   sign-in is held, and goes out once that agent has been seen Inactive and then
   Active again — never on the list it was refused against, and through at most
   two refusals.
-- **One message at a time.** `chat.send` while a turn is held, starting or
-  running is refused `limit`. **Stop** is `session/cancel`; an agent that has
-  not answered within fifteen seconds (`cancelGraceMs`, where a test gives
+- **One message at a time, and the rest wait in the chat's queue** — Biom's,
+  because ACP has none. `chat.send` while a turn is held, starting or running
+  puts the message in the queue, said as a `queued` update, kept in the chat's
+  log (a `queue` record) and answered as a `ChatSent` with its place; the
+  summary carries `queued` and `queueHeld`. When a turn ends `end_turn` the
+  next queued message goes out by itself, one a turn — `unqueued` with `sent`,
+  then the next turn's `prompt`. After **Stop**, a red end, a crash or a
+  restart the queue is HELD and nothing goes out until the person sends it
+  (`chat.sendQueued`, **Send queued**); a message sent to the idle chat
+  meanwhile goes out on its own and leaves the queue held, and a queue emptied
+  is held no more. `chat.unqueue` takes one out by `queued`, its id — never
+  `id`, which is the envelope's own. At most `QUEUE_MAX` (fifty) wait; one
+  more is refused `limit` in words. **Stop** is `session/cancel`; an agent that
+  has not answered within fifteen seconds (`cancelGraceMs`, where a test gives
   another) is ended. Switching agent mid-turn is
   refused — Stop first — and a switch on a held chat re-targets it and mints
   nothing.
@@ -582,7 +595,17 @@ pick, or the last chat's agent, before it — and the pickers show that agent's
 kept values its list still offers (`keptValues`), which is what the server
 lays on the chat the first message makes; the store reads the kept choices on
 every open of the stream, after this window makes a chat, sets a picker or
-switches agent, and whenever the dock comes back to the start screen; Send is **Stop** while a turn runs; **Go to *page*** is drawn
+switches agent, and whenever the dock comes back to the start screen. **The
+text area stays open while a turn runs**: with words in it the button is Send,
+and sends them — or queues them behind the turn — and with none while a turn
+runs it is **Stop**, as Escape is; **Send queued** shows under it while the
+chat's queue is held. The look draws what waits: a muted bubble a message
+under the running turn, *Queued* (*Queued · held*), each with a × saying
+`look.unqueue`, which the Agent view answers with `chat.unqueue` and nothing
+sent. **A queued message is sent when it goes out**, not when it was queued:
+the store's `lastSent` moves when the stream's `unqueued` says this window's
+message left the queue for its turn, so queueing never hands the screen over
+early. **Go to *page*** is drawn
 above it from the switcher's offer; the / menu lists the agent's commands and
 the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same

@@ -811,6 +811,39 @@
     /** @type {Set<any>} prose blocks with words not yet drawn */
     const dirty = new Set();
 
+    /* ── the queue ──────────────────────────────────────────────────────── */
+
+    /** WHAT WAITS IN THE CHAT'S QUEUE, under the running turn: each message a
+     *  muted bubble saying *Queued* — *Queued · held* once the queue waits
+     *  for the person — with a × that asks the host to take it out, by the
+     *  chat and the message's id, and sends nothing. Always the column's
+     *  last child, so a turn that begins is drawn above it. */
+    const qbox = h("div", "queue");
+    qbox.hidden = true;
+    let queueSig = "";
+    function drawQueue() {
+      const items = T ? [...T.chat.queue] : [];
+      const c = current();
+      const held = !!(c && c.queueHeld === true);
+      const sig = items.map((q) => q[0] + "\u0001" + q[1]).join("\u0002") + "|" + held;
+      if (sig === queueSig) return;
+      queueSig = sig;
+      qbox.replaceChildren();
+      qbox.hidden = items.length === 0;
+      for (const [id, words] of items) {
+        const it = h("div", "qitem");
+        const head = h("div", "qhead");
+        head.appendChild(h("span", "qlabel", held ? "Queued · held" : "Queued"));
+        const x = button("button", "qx", "Remove from the queue");
+        x.appendChild(icon("close"));
+        x.addEventListener("click", () => { if (S && typeof S.chat === "string") ask("look.unqueue", { chat: S.chat, queued: id }); });
+        head.appendChild(x);
+        it.appendChild(head);
+        it.appendChild(h("div", "qtext", words));
+        qbox.appendChild(it);
+      }
+    }
+
     /** Where a turn is: live while it is the chat's latest and running.
      *  @param {any} t */
     function liveOf(t) {
@@ -1320,6 +1353,7 @@
       col.replaceChildren();
       earlier = null;
       T = null;
+      queueSig = "";
       if (S.chat === null) return;
       T = M.makeTranscript();
       for (const u of Array.isArray(S.updates) ? S.updates : []) T.add(u);
@@ -1333,6 +1367,8 @@
         col.appendChild(v.wrap);
       }
       drawEarlier();
+      col.appendChild(qbox);
+      drawQueue();
       T.listen(sink);
       // A chat opens at its end.
       pinned = true;
@@ -1355,7 +1391,8 @@
         views.set(t.n, v);
         const next = drawn.find((n) => n > t.n);
         const at = next === undefined ? null : views.get(next);
-        col.insertBefore(v.wrap, at ? at.wrap : null);
+        // The newest turn goes above what waits in the queue.
+        col.insertBefore(v.wrap, at ? at.wrap : qbox.parentNode === col ? qbox : null);
       },
       /** The person's message arriving slides up into place, as it does in
        *  the mockup. @param {any} t */
@@ -1404,6 +1441,7 @@
       error(t) { let v = views.get(t.n); if (!v) { sink.turn(t); v = views.get(t.n); } if (v) paintTurn(v); },
       config() {},
       name() {},
+      queue() { drawQueue(); },
     };
 
     /** Every drawn turn repainted where its liveness may have moved: the
@@ -1487,7 +1525,7 @@
         if (patch.input) setInput(patch.input);
         if (patch.view !== undefined) setView(patch.view);
         if (Array.isArray(patch.updates) && patch.updates.length && patch.chat === heldChat) foldNew(patch.updates);
-        if (patch.chats) { drawList(); drawHead(); drawMenu(); drawStart(); refreshLive(); }
+        if (patch.chats) { drawList(); drawHead(); drawMenu(); drawStart(); refreshLive(); drawQueue(); }
         if (patch.names && T) for (const v of views.values()) { const t = T.turn(v.n); if (t && t.changed) paintChanges(v, t); }
         if (patch.beside !== undefined) drawMin();
       }

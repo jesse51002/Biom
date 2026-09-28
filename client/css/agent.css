@@ -131,6 +131,10 @@
 .agentdock .below .working{display:inline-flex; align-items:center; gap:8px; color:var(--ink-2)}
 .agentdock .below .said{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .agentdock .below .said:empty{display:none}
+/* A held queue, sent only when the person says so. */
+.agentdock .below .sendqueued{margin-left:auto; font:11.5px var(--gauge-face); letter-spacing:.02em; color:var(--ink); border:1px solid var(--stock-edge); background:var(--stock-hi); padding:3px 10px; cursor:pointer; pointer-events:auto}
+.agentdock .below .sendqueued:hover{background:var(--agent-field-3)}
+.agentdock .below .sendqueued[hidden]{display:none}
 .agentdock[data-at="center"] .below .working{display:none}
 
 /* GO TO PAGE, above the input, while the switcher offers what the chat wrote. */
