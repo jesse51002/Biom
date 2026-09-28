@@ -55,7 +55,9 @@ import { capturePage } from "./platform/capture.ts";
 import { makeBucket } from "./platform/bucket.ts";
 import { makeTables } from "./domain/tables.ts";
 import { BIOM_DIR, RUNS_DB, VAULT_SKILLS, makeRuns } from "./domain/runs.ts";
-import { checkVaultFormat } from "./workspace/migrate.ts";
+import { checkVaultFormatOnce } from "./workspace/migrate.ts";
+import { makePageIndex } from "./domain/pageindex.ts";
+import type { IndexNews, PageIndex, PageIndexDeps } from "./domain/pageindex.ts";
 import { makePresets, makeTheme } from "./workspace/presets.ts";
 import {
   bootVault,
@@ -96,6 +98,7 @@ import type { RunRow } from "../contracts/types.ts";
 import type { DirListing } from "../contracts/types.ts";
 import type { PageId } from "../contracts/types.ts";
 import type { PageRef } from "../contracts/types.ts";
+import type { YamlCodec } from "../contracts/types.ts";
 import type { Vault } from "../contracts/types.ts";
 import type { VaultInfo } from "../contracts/types.ts";
 import type { AgentInfo } from "../contracts/types.ts";
@@ -108,7 +111,7 @@ import type { WindowId } from "../contracts/types.ts";
 import { API_ROUTE, ERRORS, EVENTS_ROUTE, PROTOCOL, SHIM_ROUTE, STREAM, WINDOW_PARAM, fail, vaultBase, vaultOf } from "../contracts/wire.js";
 import { isLocalKind, isWindowId } from "../contracts/guards.js";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -443,6 +446,13 @@ export interface HostPaths {
    *  the map instead. Defaults to whatever this build embedded, which is nothing
    *  at all when it was run from source. */
   carried?: EmbeddedMap;
+  /** THE PAGE INDEX EACH FOLDER IS GIVEN — `makePageIndex` over its
+   *  `.biom/pages.db`. A test hands a fake, to say what a sweep found or to
+   *  hold one. */
+  pageIndex?: (deps: PageIndexDeps) => PageIndex;
+  /** The YAML codec every folder's modules parse with; a test counts its
+   *  parses. */
+  yaml?: YamlCodec & { formatAny: (value: unknown) => string };
   /** WHERE THE AGENTS BIOM INSTALLS ARE KEPT: `agents/` under the per-user
    *  data directory, shared by every vault and never inside one. A test names
    *  a folder of its own, so nothing it does reaches the person's. */
@@ -561,6 +571,22 @@ interface Mounted {
   /** The registry of runs, `.biom/runs.db`, the second database under a
    *  vault. Closed with the first. */
   runsDb: Db;
+  /** The page index's cache, `.biom/pages.db`, the third database. */
+  pagesDb: Db;
+  /** THE SERVER'S OWN IDENTITY WRITE-BACKS, by absolute path: the bytes each
+   *  replaced and the bytes it wrote. The watcher bringing exactly those bytes
+   *  back, over exactly those, is not a change — see `consider`. Bounded; a
+   *  write-back nobody reports simply ages out. */
+  ownWrites: Map<string, OwnWrite>;
+  /** Documents the background identify gave an identity: pages already there
+   *  when the folder opened, whose write-back is the server's own even where
+   *  the watcher never knew the page. */
+  ownPages: Set<string>;
+  /** When this mount began, by this server's clock: a document older than
+   *  this was there before the folder opened, and one newer is arriving. */
+  openedAt: number;
+  /** Every page's head, kept and trusted only while a stat agrees. */
+  index: PageIndex;
   runs: Runs;
   /** WHAT EACH WINDOW HAS OPEN AND WHAT CHANGED, in memory. */
   history: History;
@@ -916,6 +942,100 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
   }
 
+  /** THE PAGE INDEX FOR ONE FOLDER, over `.biom/pages.db`: the one a test
+   *  hands in, else `makePageIndex`. A cache and never the truth, so a file it
+   *  cannot use is thrown away — closed by the index, deleted here with its
+   *  `-wal` and `-shm`, and opened fresh. */
+  function openIndex(deps: PageIndexDeps, file: string): PageIndex {
+    const reset = (): Db => {
+      for (const f of [file, `${file}-wal`, `${file}-shm`]) rmSync(f, { force: true });
+      return makeDb(file);
+    };
+    return (at.pageIndex ?? makePageIndex)({ ...deps, reset });
+  }
+
+  /** THE WORK THE MOUNT USED TO DO BEFORE ANYTHING COULD BE SERVED, done
+   *  after it, in the background, in order, each step's failure a line in the
+   *  log and never a stopped server:
+   *
+   *    1. the index's sweep — every page folder stat'ed, a head read only
+   *       where it moved;
+   *    2. an identity for every page it found without one, behind one commit;
+   *    3. the runs of every page whose folder moved re-pointed by identity —
+   *       what the sweep saw move, and every row whose folder is gone, found
+   *       by its `uid`;
+   *    4. the markdown mirror brought up to date;
+   *    5. the framework's guide, skills and harness links, and the plugin
+   *       mirror.
+   *
+   *  Each yields as it goes, so a request waiting is answered in between. */
+  async function afterMountAll(held: Mounted): Promise<void> {
+    let news: IndexNews = { noUid: [], moved: [], gone: [] };
+    try {
+      news = await held.index.sweep();
+    } catch (e) {
+      console.warn("the page index could not be swept", e instanceof Error ? e.message : e);
+    }
+    await identify(held, news.noUid);
+    await relocateRuns(held, news.moved);
+    await mirrorOnMount(held);
+    await afterMount(held.files, held.path);
+  }
+
+  /** An identity for each page found without one, behind ONE commit taken
+   *  first — so a vault with a hundred such pages is one commit and not a
+   *  hundred. */
+  async function identify(held: Mounted, noUid: readonly PageId[]): Promise<void> {
+    if (noUid.length === 0) return;
+    try {
+      // ONLY A PAGE THAT WAS THERE BEFORE THE FOLDER OPENED. One made since —
+      // an agent's, while the sweep ran — is arriving: the watcher's settle
+      // gives it its identity after taking its arrival, or the history does
+      // when it is first named, and its document here is all the watcher has
+      // to tell of it. What this writes back is the server's own, and the
+      // watcher is told so (`ownPages`).
+      const there: PageId[] = [];
+      for (const id of noUid) {
+        const was = await held.files.stat(`${pageDir(id)}/${PAGE_DOC}`);
+        if (was !== null && was.mtimeMs < held.openedAt) there.push(id);
+      }
+      if (there.length === 0) return;
+      await held.files.commit("Before every page was given an identity");
+      for (const id of there) {
+        held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
+        await held.identities.of(id);
+        await breathe();
+      }
+      await held.identities.written();
+    } catch (e) {
+      console.warn("pages could not be given an identity", e instanceof Error ? e.message : e);
+    }
+  }
+
+  /** The runs of pages that moved while nothing watched: the moves the index
+   *  saw, and every row whose page folder is gone, found where its identity
+   *  is now. */
+  async function relocateRuns(held: Mounted, moved: IndexNews["moved"]): Promise<void> {
+    try {
+      for (const m of moved) held.runs.relocate(m.from, m.to);
+      const lost = new Map<string, PageId>();
+      for (const row of held.runs.list()) {
+        if (row.uid === null || lost.has(row.uid)) continue;
+        let dir: string;
+        try {
+          dir = pageDir(row.page);
+        } catch {
+          continue;
+        }
+        if ((await held.files.stat(`${dir}/${PAGE_DOC}`)) === null) lost.set(row.uid, row.page);
+      }
+      if (lost.size === 0) return;
+      held.runs.relocateAll(await held.index.locate({ uids: [...lost.keys()] }));
+    } catch (e) {
+      console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
+    }
+  }
+
   /** THE LIST. Every module in the server, constructed against one folder.
    *  Called once on boot and once per `open`, which is what makes the vault
    *  swappable at all — there is no state above this to migrate, because
@@ -925,6 +1045,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // thing to type, and the path is compared against a resolved one every time
     // a vault is opened — two spellings of one folder would swap it for itself.
     const path = resolve(where);
+    const openedAt = Date.now();
     // Asked BEFORE anything is written, because seeding is what makes it true
     // and the answer decides whether this run gets a base commit.
     const fresh = !seeded(path);
@@ -951,8 +1072,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // IS its markup and that markup lived in the render layer rather than in the
     // vault; so an old workspace refuses out loud instead of half-opening.
     // migrate.ts carries the whole of that argument.
+    //
+    // ONCE PER VAULT PER BUILD: the walk reads every document and every
+    // markup file, so a vault that passed it under this build says so in
+    // `.biom/format` and the next start skips it.
     try {
-      await checkVaultFormat(path, await shipped);
+      await checkVaultFormatOnce(path, await shipped, `${VERSION} ${await frameworkVersion()}`);
     } catch (e) {
       // Named here rather than in the message, which crosses into the API and
       // must never carry a path. This is the log, and the log is where somebody
@@ -971,8 +1096,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     const biom = join(path, BIOM_DIR);
     if (!existsSync(join(biom, ".gitignore"))) await Bun.write(join(biom, ".gitignore"), "*\n");
     const runsDb = makeDb(join(biom, RUNS_DB));
+    // THE THIRD: every page's head, a cache the page index keeps and never the
+    // truth — beside the runs, in the folder git never sees.
+    const pagesDbFile = join(biom, PAGES_DB);
+    const pagesDb = makeDb(pagesDbFile);
     try {
-      return await build(path, db, runsDb, seen, files, fresh);
+      return await build(path, db, runsDb, pagesDb, pagesDbFile, seen, files, fresh, openedAt);
     } catch (e) {
       // THE HANDLES GO BACK WHEN THE MOUNT DOES NOT HAPPEN. Everything below
       // this line can throw — a database locked by another process, one written
@@ -981,6 +1110,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // the process against a folder the person is about to try again.
       db.close();
       runsDb.close();
+      pagesDb.close();
       throw e;
     }
   }
@@ -988,15 +1118,21 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   /** THE REST OF THE MOUNT, once the database is open. It is a function of its
    *  own for one reason: everything in it may throw, and the one thing that has
    *  to happen when it does is above. */
-  async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: DiskFiles, fresh: boolean): Promise<Mounted> {
-    const yaml = { parse, parseAny, format, formatAny };
+  async function build(path: string, db: Db, runsDb: Db, pagesDb: Db, pagesDbFile: string, seen: Seen, files: DiskFiles, fresh: boolean, openedAt: number): Promise<Mounted> {
+    const yaml = at.yaml ?? { parse, parseAny, format, formatAny };
     const tables = makeTables(db);
+    // THE PAGE INDEX: every page's head, kept in `.biom/pages.db` and trusted
+    // only while a stat agrees, so a level, a lookup and a search read the
+    // rows they need rather than parsing every page. Read through `Files` with
+    // NO BASELINE, so nothing it reads silences the watcher. Swept once after
+    // the mount, in the background; nothing here waits for it.
+    const index = openIndex({ db: pagesDb, disk: makeFiles(path), yaml, tables: () => tables.list(), now: Date.now }, pagesDbFile);
     // THE THREE RUNGS OF EVERY PLUGIN'S VARIABLES, merged per page. Built here
     // and handed to the page reader as a function, because `domain/plugins.ts`
     // and `domain/pages.ts` are siblings and the layering rule forbids one
     // reaching the other.
     const plugins = makePlugins(files, pluginRoot, parseAny);
-    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, plugins.extensionsFor);
+    const pages = makePages(files, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, plugins.extensionsFor, index);
     // Rooted at `design/` rather than at the vault: the design doc is ONE page
     // and it sits beside `pages/`, so the module reads its `content.yaml` and
     // its sections from the root of what it is handed. That placement is what
@@ -1063,12 +1199,18 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // before the watcher's settle had taken its verdict, then read as a page it
     // already had — no arrival, no identity, no rail. What it writes is under
     // `_markdown/`, which the watcher never looks at.
+    //
+    // AND IT NEVER WRITES A PAGE. Reading a page can reconcile it — a child
+    // that arrived gets its section, and the document is written — and a read
+    // in the background writing a page is a read-modify-write racing the
+    // person's own: measured, a rename lost to a projection that read the page
+    // a moment before it. So the pages it reads through are a view that writes
+    // nothing; its own writes are under `_markdown/`, through `quiet`.
     const quiet = makeFiles(path);
-    const mirror = makeMirror(
-      quiet,
-      makePages(quiet, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, makePlugins(quiet, pluginRoot, parseAny).extensionsFor),
-      makeDocs(quiet, yaml),
-    );
+    const looking = readOnly(quiet);
+    const quietPages = makePages(looking, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, makePlugins(looking, pluginRoot, parseAny).extensionsFor, index);
+    const quietDocs = makeDocs(looking, yaml);
+    const mirror = makeMirror(quiet, quietPages, quietDocs);
 
     // Idempotent by observation: a folder with a page or a table in it has been
     // used, and re-seeding would overwrite somebody's work with fixtures. So
@@ -1081,14 +1223,6 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // happened months ago.
     if (fresh) await files.commit("The workspace as it was seeded");
 
-    // EVERY PAGE GETS AN IDENTITY, on mount, file by file, never touching a
-    // page that has one. The commit ahead of the sweep is the page module's.
-    // A vault that cannot be written is still a vault that opens.
-    try {
-      await pages.identify();
-    } catch (e) {
-      console.warn("pages could not be identified", e);
-    }
 
     // AUTOMATIONS AND RUNS, over the second database. Handed the walk of a page
     // directory and the page list because `pages.ts` is its sibling and there
@@ -1102,7 +1236,13 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       yaml,
       process: PROCESS,
       dirOf: pageDir,
-      refOf: async (id) => (await pages.list()).find((p) => p.id === id) ?? null,
+      // ONE PAGE'S HEAD, never the page list: this is asked once per page
+      // holding automations on the Automations screen, and it was a full list
+      // each time.
+      refOf: async (id) => {
+        const head = await index.head(id);
+        return head === null ? null : { id: head.id, name: head.name, ...(head.uid === null ? {} : { uid: head.uid }) };
+      },
       env: () => Bun.env,
       templates: seedRoot(TEMPLATES_DIR, at.templates ?? TEMPLATES),
       api: () => apiFor(path),
@@ -1118,15 +1258,9 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // not update reads `lost` here.
     const lost = runs.reconcile();
     if (lost > 0) console.log(`runs               →  ${lost} marked lost from a previous run of the server`);
-    // AND EVERY ROW NAMES ITS PAGE WHERE THE PAGE IS NOW. A page moved while
-    // this server was not running — by an agent, by hand — kept its identity
-    // and lost its id; the row is re-pointed by identity here, once, and
-    // again after every structural change the watcher settles.
-    try {
-      runs.relocateAll(await pages.list());
-    } catch (e) {
-      console.warn("runs could not be re-pointed at their pages", e);
-    }
+    // A ROW WHOSE PAGE MOVED while this server was not running is re-pointed
+    // by identity after the mount, in the background, from what the index's
+    // sweep finds — `afterMount` — and never by a list of every page here.
 
     /* ── the history, the agents and the chats ──────────────────────── */
 
@@ -1144,14 +1278,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // or a new one, and that is written into the file the way mount writes
     // one. Seeded from the tree as mount left it, so an existing page keeps its
     // own. Written through the same baseline-free files, for the same reason.
-    const identities = makeIdentities(makeFiles(path), yaml, (what, e) => console.warn(what, e instanceof Error ? e.message : e));
-    try {
-      identities.saw(await pages.list());
-    } catch (e) {
-      console.warn("the pages' identities could not be read", e);
-    }
+    const ownWrites = new Map<string, OwnWrite>();
+    const ownPages = new Set<string>();
+    // THROUGH FILES WITH NO BASELINE, as ever — a read that made an agent's new
+    // page known would lose its arrival — AND EVERY WRITE REMEMBERED, so the
+    // watcher bringing the server's own write-back of a `uid` back is known for
+    // what it is rather than taken for a second change of the page.
+    const identities = makeIdentities(remembering(makeFiles(path), path, ownWrites), yaml, (what, e) => console.warn(what, e instanceof Error ? e.message : e), index);
+    // ONE HEAD, and an identity given only where the page has none — never a
+    // list of every page, at mount or at any append.
     const uidOf = async (id: PageId): Promise<string | null> => {
       try {
+        const head = await index.head(id);
+        if (head !== null && head.uid !== null) return head.uid;
         return await identities.of(id);
       } catch {
         return null;
@@ -1316,7 +1455,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       },
     };
     return {
-      path, db, runsDb, runs, seen, history, agents, chats, jev: jevStatus, identities,
+      path, db, runsDb, pagesDb, ownWrites, ownPages, openedAt, index, runs, seen, history, agents, chats, jev: jevStatus, identities,
       deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings },
       settled: Promise.resolve(), files,
     };
@@ -1358,10 +1497,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
       // caller awaits resolves with the mount; the rewrite and the mirror start
       // from here and are reachable through `settled` for whoever has to wait.
-      m.settled = (async () => {
-        await mirrorOnMount(m);
-        await afterMount(m.files, m.path);
-      })();
+      m.settled = afterMountAll(m);
       return m;
     });
     mounted.set(abs, started);
@@ -1484,6 +1620,22 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // a read that landed between the outside write and this verdict saw the
     // new bytes, and the screen may not have — `Seen.sight` in `files.ts`.
     if (held.seen.matches(abs, text)) return null;
+    // THE SERVER'S OWN WRITE-BACK OF A `uid`, exactly as it wrote it, to a page
+    // the watcher already knew — or one the background identify found already
+    // there. It is not a change of the page, and a second redraw for it was a
+    // second full reload in every window. A page the watcher has never seen
+    // arriving with those bytes is still an arrival, below.
+    // ONLY where the watcher's baseline still holds the bytes the write-back
+    // replaced: an outside save that landed between the identity's read and
+    // its write is in the file too, has never been reported, and is reported.
+    const own = held.ownWrites.get(abs);
+    const over = own !== undefined && own.before !== null && held.seen.matches(abs, own.before);
+    if (own !== undefined && own.after === text && (over || held.ownPages.has(abs))) {
+      held.ownWrites.delete(abs);
+      held.ownPages.delete(abs);
+      held.seen.note(abs, text);
+      return null;
+    }
     if (!parses(rel, text)) return null;
     const fresh = !held.seen.known(abs);
     // REPORTED, from here on: the same bytes notified again are nothing new.
@@ -1863,6 +2015,12 @@ export async function makeHost(at: HostPaths): Promise<Host> {
           stopAgents(m);
           m.db.close();
           m.runsDb.close();
+          try {
+            m.index.close();
+          } catch {
+            /* a cache; nothing to keep */
+          }
+          m.pagesDb.close();
         }).catch(() => {});
       }
       mounted.clear();
@@ -1906,6 +2064,73 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     return n;
   }
 }
+
+/** How many of the server's own write-backs are remembered at once. */
+const OWN_WRITES_MAX = 4096;
+
+/** FILES THAT READ AND NEVER WRITE: every write, replace, removal and commit
+ *  answered as done and nothing done — for a reader in the background whose
+ *  reads may try to tidy what they read. */
+export function readOnly(files: DiskFiles): DiskFiles {
+  return new Proxy(files, {
+    get(target, key, receiver) {
+      if (key === "write" || key === "remove" || key === "commit") return async () => {};
+      if (key === "replace") return async () => false;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+/** One write-back: what was in the file just before it, and what it wrote. */
+interface OwnWrite {
+  before: string | null;
+  after: string;
+}
+
+/** FILES THAT REMEMBER WHAT THEY WROTE, by absolute path — the bytes of every
+ *  `write` and `replace`, and what the file held just before — and are
+ *  otherwise the files they wrap. */
+function remembering(files: DiskFiles, root: string, into: Map<string, OwnWrite>): DiskFiles {
+  const keep = async (target: DiskFiles, rel: string, after: string): Promise<void> => {
+    let before: string | null = null;
+    try {
+      before = await target.read(rel);
+    } catch {
+      before = null;
+    }
+    const abs = join(root, rel);
+    into.delete(abs);
+    into.set(abs, { before, after });
+    if (into.size > OWN_WRITES_MAX) {
+      const oldest = into.keys().next();
+      if (!oldest.done) into.delete(oldest.value);
+    }
+  };
+  return new Proxy(files, {
+    get(target, key, receiver) {
+      if (key === "write") {
+        return async (rel: string, text: string) => {
+          await keep(target, rel, text);
+          return await target.write(rel, text);
+        };
+      }
+      if (key === "replace") {
+        return async (rel: string, text: string) => {
+          await keep(target, rel, text);
+          return await target.replace(rel, text);
+        };
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+/** The page index's cache file, under `.biom/`. */
+export const PAGES_DB = "pages.db";
+
+/** Hand the thread back for a moment, so a request waiting is answered
+ *  before the next page of background work. */
+const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 /* ── everything else the server serves is static ────────────────────────── */
 

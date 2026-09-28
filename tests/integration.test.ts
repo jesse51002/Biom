@@ -30,6 +30,7 @@ import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makePages } from "../server/domain/pages.ts";
 import { makeDocs } from "../server/domain/docs.ts";
 import { makeMirror } from "../server/domain/mirror.ts";
+import { readOnly } from "../server/main.ts";
 import { makeDesign } from "../server/domain/design.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
@@ -62,12 +63,16 @@ function boot(dir: string) {
   // written against, and a caller with no directory of presets says so by
   // omitting the root rather than pointing at one that is not there.
   const presets = makePresets({ pages, tables, files, yaml });
-  const deps = { pages, design, docs, tables, presets, theme, mirror: makeMirror(files, pages) };
+  const deps = { pages, design, docs, tables, presets, theme, mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
 
   // The transport, in process. The client cannot tell this from fetch, which is
   // the whole point of there being one envelope and one route.
   const transport = { call: (req: ApiRequest): Promise<ApiResponse> => handle(req, deps as never) };
-  return { deps, db, ws: makeWorkspace(transport), transport };
+  // THE DATABASE CLOSES ONCE THE MIRROR HAS CAUGHT UP. Its projections run in
+  // the background and read the tables for a page's children; closed under
+  // them, each says so on the console, into whichever test is running then.
+  const closing = { close: () => void deps.mirror.queue.idle().then(() => db.close(), () => db.close()) };
+  return { deps, db: closing, ws: makeWorkspace(transport), transport };
 }
 
 /** One page id, one document. Written whole, because that is what the format is
@@ -336,7 +341,7 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   const pages = makePages(files, yaml, () => tables.list());
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
-    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
+    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
@@ -520,7 +525,7 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   const pages = makePages(files, yaml, () => tables.list());
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
-    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
+    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);

@@ -43,6 +43,7 @@ import { makeMirror } from "../server/domain/mirror.ts";
 import { makePages, pageDir } from "../server/domain/pages.ts";
 import { makeRuns } from "../server/domain/runs.ts";
 import { makeRunFs } from "../server/platform/rundir.ts";
+import { readOnly } from "../server/main.ts";
 import { makeDb } from "../server/platform/db.ts";
 import type { ProcessRunner, RunRow } from "../contracts/types.ts";
 import { PROTOCOL } from "../contracts/wire.js";
@@ -220,7 +221,9 @@ async function workspace() {
     pages, tables, files, yaml,
     vaultSeed: makeFiles(seedRoot),
   });
-  const mirror = makeMirror(files, pages);
+  // The mirror reads pages through a view that never writes, as the server
+  // builds it: its reads run in the background beside the writes below.
+  const mirror = makeMirror(files, makePages(readOnly(files), yaml, tables.list), makeDocs(readOnly(files), yaml));
   /** What the host does on open: the seeder's fill, then the framework's
    *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
   const furnish = async () => {
@@ -269,7 +272,9 @@ async function workspace() {
     files,
     presets,
     furnish,
-    async drop() { await rm(root, { recursive: true, force: true }); },
+    // The mirror's projections finish before the folder goes, so none of them
+    // speaks into the next test.
+    async drop() { await mirror.queue.idle(); await rm(root, { recursive: true, force: true }); },
   };
 }
 

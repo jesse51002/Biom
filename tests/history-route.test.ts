@@ -21,6 +21,7 @@ import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makeDesign } from "../server/domain/design.ts";
 import { makeDocs } from "../server/domain/docs.ts";
 import { makeMirror } from "../server/domain/mirror.ts";
+import { readOnly } from "../server/main.ts";
 import { makePages, pageDir } from "../server/domain/pages.ts";
 import { PROTOCOL } from "../contracts/wire.js";
 import type { ApiRequest, ApiResponse, PageRef, TableName } from "../contracts/types.ts";
@@ -72,7 +73,7 @@ async function world(over: { history?: History | null } = {}) {
   const deps = {
     pages, docs, tables,
     design: makeDesign(makeFiles(join(root, "design")), yaml),
-    mirror: makeMirror(files, pages),
+    mirror: makeMirror(files, makePages(readOnly(files), yaml, tables.list), makeDocs(readOnly(files), yaml)),
     runs: { commit: async (m: string) => { commits.push(m); } },
     ...(history === null ? {} : { history }),
   } as unknown as Parameters<typeof handle>[1];
@@ -91,7 +92,9 @@ async function world(over: { history?: History | null } = {}) {
     root, history: history as History, commits, call, post,
     tick: (ms: number) => { clock += ms; },
     edits: () => (history as History).read().entries.filter((e) => e.kind === "edit"),
-    async drop() { await rm(root, { recursive: true, force: true }); },
+    // The mirror's projections finish before the folder goes, so none of them
+    // speaks into the next test.
+    async drop() { await (deps as { mirror: { queue: { idle(): Promise<void> } } }).mirror.queue.idle(); await rm(root, { recursive: true, force: true }); },
   };
 }
 

@@ -460,8 +460,9 @@ test.if(unix)("A PAGE MADE FROM OUTSIDE, with a stream open, is given its uid on
     put(vault, "home/Outside", AGENT_DOC("Outside"));
     expect(await until(() => existsSync(docPath(vault, "home/Outside")) && uidOnDisk(vault, "home/Outside") !== null, 10000)).toBe(true);
     const uid = uidOnDisk(vault, "home/Outside");
-    // The page's arrival was still heard as one: the rail learns of it.
-    expect(heard).toBeGreaterThan(0);
+    // The page's arrival was still heard as one: the rail learns of it — once
+    // the watcher's settle has run, which the uid may now come before.
+    expect(await until(() => heard > 0, 5000)).toBe(true);
     const tree = value(await call(host, vault, { kind: "page.list" })) as PageRef[];
     expect(tree.find((p) => p.id === "home/Outside")?.uid).toBe(uid);
     // And the history, asked now, names it by the same uid.
