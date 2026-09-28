@@ -608,6 +608,9 @@ interface Mounted {
   deps: Omit<Deps, "vault" | "production" | "live" | "envNames">;
   /** See `Host.settled`. Set by `hold` once the mount has answered. */
   settled: Promise<void>;
+  /** The host closed this folder: the work after the mount stops where it
+   *  stands, and writes, commits and says nothing more about it. */
+  closed: boolean;
   /** The vault's own files, held for the work `hold` starts after the mount. */
   files: DiskFiles;
 }
@@ -935,10 +938,15 @@ export async function makeHost(at: HostPaths): Promise<Host> {
    *  otherwise sweep whatever the person was in the middle of. */
   async function mirrorOnMount(held: Mounted): Promise<void> {
     try {
-      const done = await refresh(held.deps.mirror, held.files, await pageDirs(held.files));
+      const done = await refresh(held.deps.mirror, held.files, await pageDirs(held.files), async () => {
+        if (held.closed) throw CLOSED;
+        await breathe();
+      });
       await held.deps.mirror.queue.idle();
+      if (held.closed) return;
       if (done.wrote || done.queued > 0) await held.files.commit("The markdown mirror, brought up to date on mount");
     } catch (e) {
+      if (e === CLOSED || held.closed) return;
       // A mirror that cannot be written is not a workspace that cannot be
       // opened. It is derived, and the next write of any page rewrites its file.
       console.warn("the markdown mirror could not be brought up to date", e);
@@ -977,11 +985,19 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     try {
       news = await held.index.sweep();
     } catch (e) {
-      console.warn("the page index could not be swept", e instanceof Error ? e.message : e);
+      if (!held.closed) console.warn("the page index could not be swept", e instanceof Error ? e.message : e);
     }
+    // A FOLDER CLOSED WHILE THIS RAN is let go between steps, and inside the
+    // long ones: its databases are closed, and a test's folder may already be
+    // gone from the disk — a write now would put a folder back, and a warning
+    // would land in whatever runs next.
+    if (held.closed) return;
     await identify(held, news.noUid);
+    if (held.closed) return;
     await relocateRuns(held, news.moved);
+    if (held.closed) return;
     await mirrorOnMount(held);
+    if (held.closed) return;
     await afterMount(held.files, held.path);
   }
 
@@ -1002,9 +1018,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         const was = await held.files.stat(`${pageDir(id)}/${PAGE_DOC}`);
         if (was !== null && was.mtimeMs < held.openedAt) there.push(id);
       }
-      if (there.length === 0) return;
+      if (there.length === 0 || held.closed) return;
       await held.files.commit("Before every page was given an identity");
       for (const id of there) {
+        if (held.closed) return;
         held.ownPages.add(join(held.path, pageDir(id), PAGE_DOC));
         await held.identities.of(id);
         await breathe();
@@ -1027,7 +1044,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
         }
       }
     } catch (e) {
-      console.warn("pages could not be given an identity", e instanceof Error ? e.message : e);
+      if (!held.closed) console.warn("pages could not be given an identity", e instanceof Error ? e.message : e);
     }
   }
 
@@ -1051,7 +1068,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       if (lost.size === 0) return;
       held.runs.relocateAll(await held.index.locate({ uids: [...lost.keys()] }));
     } catch (e) {
-      console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
+      if (!held.closed) console.warn("runs could not be re-pointed at their pages", e instanceof Error ? e.message : e);
     }
   }
 
@@ -1489,7 +1506,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     return {
       path, db, runsDb, pagesDb, ownWrites, ownPages, openedAt, index, runs, seen, history, agents, chats, jev: jevStatus, identities,
       deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings, index },
-      settled: Promise.resolve(), files,
+      settled: Promise.resolve(), closed: false, files,
     };
   }
 
@@ -2198,6 +2215,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       live.clear();
       for (const held of mounted.values()) {
         void held.then((m) => {
+          // THE WORK AFTER THE MOUNT STOPS HERE, before a database it reads
+          // is closed under it.
+          m.closed = true;
+          m.deps.mirror.queue.stop();
           // One still mounting when this ran: what it started goes now.
           stopAgents(m);
           m.db.close();
@@ -2287,6 +2308,9 @@ export function changeOf(
   if (beyond || pages.size + levels.size > LOCATE_MAX) return { pages: [], levels: [], all: true };
   return { pages: [...pages], levels: [...levels] };
 }
+
+/** What the mirror's pass on mount is stopped with when its folder closes. */
+const CLOSED = new Error("the folder closed");
 
 /** How many of the server's own write-backs are remembered at once. */
 const OWN_WRITES_MAX = 4096;

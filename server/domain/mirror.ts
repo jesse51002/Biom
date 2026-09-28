@@ -102,6 +102,10 @@ export interface MirrorQueue {
   write(id: PageId, markdown: string): Promise<void>;
   /** Settles when every task asked so far is done. */
   idle(): Promise<void>;
+  /** THE FOLDER CLOSED: every task not yet started is let go, a `write`
+   *  waiting among them fails, and nothing asked from now on is done. A task
+   *  under way finishes. */
+  stop(): void;
   /** Tasks asked and not yet done. */
   pending(): number;
 }
@@ -534,11 +538,14 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
       | { kind: "write"; id: PageId; markdown: string; done: () => void; failed: (e: unknown) => void };
     const tasks: Task[] = [];
     let running: Promise<void> | null = null;
+    let stopped = false;
+    const closed = (): Error => Object.assign(new Error("the folder is closed"), { code: "unsupported" });
 
     /** Ask for one page's projection, unless the same ask is already waiting
      *  in the run of projections at the end of the queue — never across a drop
      *  or a rename, whose order against it matters. */
     const project = (id: PageId): void => {
+      if (stopped) return;
       for (let i = tasks.length - 1; i >= 0; i--) {
         const t = tasks[i] as Task;
         if (t.kind !== "project") break;
@@ -572,7 +579,9 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
             try {
               await run(t);
             } catch (e) {
-              console.warn("the markdown mirror", e instanceof Error ? e.message : e);
+              // A task under way when its folder closed fails on the closed
+              // database, and that is nothing to report.
+              if (!stopped) console.warn("the markdown mirror", e instanceof Error ? e.message : e);
             }
             await pause();
           }
@@ -593,20 +602,25 @@ export function makeMirror(files: Files, pages: Pages, docs: Docs | null = null,
         if (parent !== null) project(parent);
       },
       drop(id) {
-        if (typeof id !== "string" || id === "" || id.startsWith("@")) return;
+        if (stopped || typeof id !== "string" || id === "" || id.startsWith("@")) return;
         tasks.push({ kind: "drop", id });
         start();
       },
       rename(from, to) {
-        if (from === to || from.startsWith("@") || to.startsWith("@")) return;
+        if (stopped || from === to || from.startsWith("@") || to.startsWith("@")) return;
         tasks.push({ kind: "rename", from, to });
         start();
       },
       write(id, markdown) {
+        if (stopped) return Promise.reject(closed());
         return new Promise<void>((done, failed) => {
           tasks.push({ kind: "write", id, markdown, done, failed });
           start();
         });
+      },
+      stop() {
+        stopped = true;
+        for (const t of tasks.splice(0)) if (t.kind === "write") t.failed(closed());
       },
       async idle() {
         while (running !== null) await running;

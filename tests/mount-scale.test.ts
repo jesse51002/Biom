@@ -18,10 +18,12 @@
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { makeHost } from "../server/main.ts";
+import { initVault } from "../server/platform/files.ts";
 import type { Host } from "../server/main.ts";
 import { handle } from "../server/api/routes.ts";
 import { FORMAT_STAMP } from "../server/workspace/migrate.ts";
@@ -271,3 +273,30 @@ test.if(process.platform !== "win32")("PAGES GIVEN AN IDENTITY AFTER THE MOUNT a
     host.close();
   }
 }, 30_000);
+
+test.if(process.platform !== "win32")("CLOSING A HOST ENDS THE WORK AFTER ITS MOUNT: nothing is written, committed or said about the folder once it is closed", async () => {
+  const quiet = join(ground, "closing");
+  await bigVault(quiet, 600);
+  await initVault(quiet);
+  const commits = () => spawnSync("git", ["rev-list", "--count", "--all"], { cwd: quiet, encoding: "utf8" }).stdout.trim();
+  const mirrored = () => {
+    const out = spawnSync("find", [join(quiet, "_markdown"), "-name", "*.md"], { encoding: "utf8" }).stdout;
+    return out.split("\n").filter(Boolean).length;
+  };
+  const said: string[] = [];
+  const was = console.warn;
+  const host = await makeHost({ vault: quiet, memory: join(data, "vaults-closing.json"), presets: join(FRAMEWORK, "presets"), agentsHome: join(data, "agents") });
+  await host.deps(quiet);
+  host.close();
+  console.warn = (...a: unknown[]) => void said.push(a.map(String).join(" "));
+  try {
+    // A task under way when it closed may finish; nothing after it starts.
+    await Bun.sleep(100);
+    const at = { md: mirrored(), commits: commits() };
+    await Bun.sleep(1500);
+    expect({ md: mirrored(), commits: commits() }).toEqual(at);
+    expect(said).toEqual([]);
+  } finally {
+    console.warn = was;
+  }
+}, 60_000);
