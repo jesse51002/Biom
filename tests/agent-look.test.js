@@ -670,6 +670,21 @@ test("reduced motion asked for while the start screen shows stops the word and r
   w.teardown();
 });
 
+test("INTO A CHAT THE START SCREEN'S TWO LINES LEAVE, every time: going takes the coming in off, and coming back takes the leaving off", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: lookState({}) });
+  const lines = () => [one(w.root(), "hero-top").className, one(w.root(), "hero-bot").className];
+  w.hear({ kind: "look.state", state: chatState("done") });
+  expect(lines()).toEqual(["hero hero-top leaving", "hero hero-bot leaving"]);
+  w.hear({ kind: "look.state", state: lookState({}) });
+  expect(lines()).toEqual(["hero hero-top arriving", "hero hero-bot arriving"]);
+  // A finished coming in held on its last frame stands in front of the
+  // leaving's transition, and the lines would vanish rather than lift away.
+  w.hear({ kind: "look.state", state: chatState("done") });
+  expect(lines()).toEqual(["hero hero-top leaving", "hero hero-bot leaving"]);
+  w.teardown();
+});
+
 test("the look draws a chat: the list, each turn in order, the loader on the running message and the face on the finished one", () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });

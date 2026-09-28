@@ -14,15 +14,15 @@
 //
 // WHAT IT HOLDS: the start screen, and its line frame by frame — the word
 // turning as one word on one centre, the swap as wide as its word at any size,
-// and nothing restarted by the start screen handed over again and again; a
-// chat mid-turn, a finished one, a red one and the panel draw; a patch appends
-// where it belongs and leaves the rest of the thread's nodes alone, and a
-// stale one is dropped; the chat's ⋯ and its View menu, worked from the
-// keyboard, fit on a desktop, at the panel's narrowest and at a phone's width;
-// an agent's words never become markup; the look asks for nothing but its own
-// kinds and `open`; reduced motion rests still with faces as text; and a
-// pagehide leaves nothing behind. Pictures of each land in `dist/e2e/`, or in
-// `LOOK_SHOTS` if set.
+// nothing restarted by the start screen handed over again and again, and its
+// two lines fading as they lift away into a chat every time; a chat mid-turn,
+// a finished one, a red one and the panel draw; a patch appends where it
+// belongs and leaves the rest of the thread's nodes alone, and a stale one is
+// dropped; the chat's ⋯ and its View menu, worked from the keyboard, fit on a
+// desktop, at the panel's narrowest and at a phone's width; an agent's words
+// never become markup; the look asks for nothing but its own kinds and `open`;
+// reduced motion rests still with faces as text; and a pagehide leaves nothing
+// behind. Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -310,6 +310,41 @@ test("THE SWAP IS ITS WORD'S WIDTH, and follows the word's size between turns: n
       const after = await fit();
       expect([after.word, after.words]).toEqual([before.word, 1]);
       expect([width, after.size, Math.abs(after.swap - after.text) <= 1 ? "fits" : `${Math.round(after.swap - after.text)}px off`]).toEqual([width, after.size, "fits"]);
+    }
+  } finally { await ctx.close(); }
+}, 60000);
+
+test("INTO A CHAT THE START SCREEN'S LINES FADE AS THEY LIFT AWAY, the second time as the first", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    /** The top line's opacity in each frame from the chat's state landing
+     *  until it is gone. */
+    const leave = async (): Promise<number[]> => {
+      const seen = box.evaluate((bound) => new Promise<number[]>((done, fail) => {
+        const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
+        const look = root.querySelector(".g-look")!;
+        const hero = root.querySelector(".hero-top")!;
+        const late = setTimeout(() => fail(new Error("the chat never drew")), bound);
+        const was: number[] = [];
+        const watch = new MutationObserver(() => {
+          if (look.getAttribute("data-state") !== "live") return;
+          watch.disconnect();
+          const tick = () => { const cs = getComputedStyle(hero); if (cs.display === "none") { clearTimeout(late); done(was); return; } was.push(parseFloat(cs.opacity)); requestAnimationFrame(tick); };
+          tick();
+        });
+        watch.observe(look, { attributes: true, attributeFilter: ["data-state"] });
+      }), BOUND);
+      await page.evaluate((m) => (window as any).__host.post(m), { kind: "look.state", state: chatState("done") } as any);
+      return await seen;
+    };
+    await post(page, box, { kind: "look.state", state: lookState({}) });
+    const first = await leave();
+    await post(page, box, { kind: "look.state", state: lookState({}) });
+    // The lines come back in, and have finished coming in.
+    await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".hero-top")!.getAnimations().every((a) => a.playState === "finished"), null, { timeout: BOUND });
+    const second = await leave();
+    for (const [which, was] of [["first", first], ["second", second]] as const) {
+      expect([which, was.some((o) => o > 0.05 && o < 0.95)]).toEqual([which, true]);
     }
   } finally { await ctx.close(); }
 }, 60000);

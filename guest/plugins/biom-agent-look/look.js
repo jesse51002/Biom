@@ -737,6 +737,8 @@
     let wordAt = 0;
     /** @type {any} */
     let wordTimer = null;
+    /** @type {any} what takes the leaving off the two lines once they have gone */
+    let heroTimer = null;
     let startShown = true;
     /** False until the first state is drawn: the screen a box opens on is
      *  simply there, and only a change after that is animated. */
@@ -776,18 +778,30 @@
      *  schedule and the ribbon its frames. */
     function startScreen() {
       const empty = !S || S.chat === null;
-      root.setAttribute("data-state", empty ? "empty" : "live");
       if (empty !== startShown) {
         startShown = empty;
-        if (empty) {
-          for (const hero of [heroTop, heroBot]) { hero.classList.remove("leaving"); hero.classList.remove("arriving"); void hero.offsetWidth; if (!still && settled) hero.classList.add("arriving"); }
-        } else if (!still && settled) {
-          for (const hero of [heroTop, heroBot]) hero.classList.add("leaving");
-          later(() => { heroTop.classList.remove("leaving"); heroBot.classList.remove("leaving"); }, 560);
-        }
+        heroes(empty);
       }
+      root.setAttribute("data-state", empty ? "empty" : "live");
       runStart();
       drawStart();
+    }
+
+    /** THE TWO LINES COMING IN OR GOING, once a change, and before the root
+     *  says which screen it is. Each takes the other off, and the lines are
+     *  drawn as they stand before the next is put on: a coming in restarts,
+     *  and a leaving's transition starts from the lines as they were — put on
+     *  in the same change that took the coming in off, the browser started
+     *  none and the lines vanished rather than lifted away. A leaving's end,
+     *  due a little later, is forgotten, so a leave begun after it is not cut
+     *  short by it. @param {boolean} shown */
+    function heroes(shown) {
+      if (heroTimer !== null) { win.clearTimeout(heroTimer); timers.delete(heroTimer); heroTimer = null; }
+      for (const hero of [heroTop, heroBot]) { hero.classList.remove("leaving"); hero.classList.remove("arriving"); }
+      if (still || !settled) return;
+      void heroTop.offsetWidth;
+      for (const hero of [heroTop, heroBot]) hero.classList.add(shown ? "arriving" : "leaving");
+      if (!shown) heroTimer = later(() => { heroTimer = null; heroTop.classList.remove("leaving"); heroBot.classList.remove("leaving"); }, 560);
     }
 
     /** What moves on the start screen, running while it shows: the word
