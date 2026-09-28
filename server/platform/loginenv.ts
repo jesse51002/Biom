@@ -93,7 +93,8 @@ export interface LoginEnv {
    *  concurrent ones included, answers the same reading — until `forget`. */
   read(): Promise<Record<string, string>>;
   /** Drop the reading: the next `read` asks the shell again, bounded as the
-   *  first was, and every read after that answers the new one. */
+   *  first was, and every read after that answers the new one — unless the
+   *  shell fails that time, when the last reading it did answer stands. */
   forget(): void;
   /** Why the reading is the server's own environment, or null — null too
    *  while the first reading has not landed. */
@@ -244,10 +245,17 @@ export async function readLoginEnv(opts: LoginEnvOptions): Promise<LoginEnvRead>
 export function makeLoginEnv(opts: LoginEnvOptions): LoginEnv {
   let reading: Promise<LoginEnvRead> | null = null;
   let why: string | null = null;
+  /** The last reading the shell itself answered. A re-read that falls back to
+   *  the server's own environment — a shell that timed out or failed this
+   *  once — never replaces it: it is every vault's agents' PATH, their
+   *  keys and Jev's, and losing it would lose them all until a restart. */
+  let good: LoginEnvRead | null = null;
   return {
     read() {
       if (reading === null) {
         reading = readLoginEnv(opts).then((r) => {
+          if (r.from === "server" && good !== null) return good;
+          if (r.from === "shell") good = r;
           why = r.reason;
           return r;
         });

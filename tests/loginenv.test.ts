@@ -130,6 +130,32 @@ test("A READING DROPPED IS TAKEN AGAIN on the next read — once, however many a
   expect(readFileSync(count, "utf8").trim().split("\n").length).toBe(2);
 });
 
+test("A RE-READ THAT FAILS KEEPS THE GOOD READING: a shell that hangs after forget leaves the person's environment and its reason as they were, and a later good one replaces it", async () => {
+  const hang = join(dir, "hang-now");
+  const key = join(dir, "key-now");
+  writeFileSync(key, "invented-one");
+  // Exports the key the file holds, on a PATH of the profile's own — and
+  // hangs past the bound while `hang` exists. Invented.
+  const sh = shell("hangs-later", `[ -f "${hang}" ] && sleep 30\nexport PATH="/login/only/bin:$PATH"\nexport INVENTED_AGENT_KEY="$(cat "${key}")"`);
+  const login = makeLoginEnv({ shell: sh, base, cwd: dir, timeoutMs: 400 });
+  const good = await login.read();
+  expect(good.INVENTED_AGENT_KEY).toBe("invented-one");
+  expect(good.PATH?.startsWith("/login/only/bin:")).toBe(true);
+
+  writeFileSync(hang, "");
+  login.forget();
+  const kept = await login.read();
+  expect(kept).toBe(good);
+  expect(login.reason()).toBeNull();
+
+  rmSync(hang);
+  writeFileSync(key, "invented-two");
+  login.forget();
+  const next = await login.read();
+  expect(next.INVENTED_AGENT_KEY).toBe("invented-two");
+  expect(login.reason()).toBeNull();
+}, 10_000);
+
 test("a missing shell, and Windows, answer the server's environment with a reason that names no value", async () => {
   const missing = await readLoginEnv({ shell: join(dir, "no-such-shell"), base, cwd: dir });
   expect(missing.from).toBe("server");
