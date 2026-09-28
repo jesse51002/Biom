@@ -58,7 +58,8 @@ beforeAll(async () => {
     }
   }
   throw new Error("the framework did not come up");
-});
+  // Bounded by its own loop, not bun's five-second default for a hook.
+}, 20_000);
 
 afterAll(() => {
   proc?.kill();
