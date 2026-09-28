@@ -14,13 +14,9 @@
 // four pages could see that. This walk makes the same shape of workspace and
 // asks the same thing of it.
 //
-// THE VAULT IS WRITTEN STRAIGHT TO DISK BEFORE THE SERVER MOUNTS IT, because
-// making two thousand pages through the wire would be most of the run. It is
-// nested as a real one is — a few top-level pages, children, grandchildren and
-// two levels of dated notes below them, each a plain `content.yaml` about the
-// size of a real page, with an identity already in it — and it holds tables
-// an agent made with its own SQL, as the owner's does: every page's children
-// are read with the tables counted, which is part of why a real tree is slow.
+// THE VAULT IS WRITTEN STRAIGHT TO DISK BEFORE THE SERVER MOUNTS IT, by
+// `bigvault-fixture.ts`, because making two thousand pages through the wire
+// would be most of the run.
 //
 // WHAT IT WALKS, in order:
 //
@@ -34,14 +30,14 @@
 // Every page, word, table and id here is invented.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { Database } from "bun:sqlite";
 import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
 
 import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, shotsDir } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
+import { TOPS, dirOf, invent } from "./bigvault-fixture.ts";
 import { installFakeAgent } from "../fake-acp-agent.ts";
 import type { AgentInfo, ChatSummary, WindowContext } from "../../contracts/types.ts";
 
@@ -60,96 +56,13 @@ const FOLLOW_MS = 60_000;
  *  bound for a server answering and not for this. */
 const MOUNT_MS = 180_000;
 
-/* ── the invented workspace ──────────────────────────────────────────────── */
-
-/** How many pages each level holds under every page of the one above it:
- *  eight top-level pages, eleven under each, then three, three and one — 1,944
- *  pages and the root, deepest where a real workspace is deepest. */
-const SHAPE = [8, 11, 3, 3, 1] as const;
-const TOPS = ["Ledger", "Harbour", "Orchard", "Foundry", "Almanac", "Lantern", "Quarry", "Meadow"];
-const WORDS = "amber basalt cedar delta ember fjord granite harbour indigo juniper kestrel lantern meadow nimbus orchard pebble quartz river saffron thistle umber willow yarrow zephyr".split(" ");
-/** Agent-made tables, as the owner's workspace holds twenty-six. */
-const TABLES = 25;
-
-const word = (i: number): string => WORDS[i % WORDS.length] as string;
-const title = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-const words = (seed: number, n: number): string => Array.from({ length: n }, (_, i) => word(seed * 7 + i * 3)).join(" ");
-
-/** One page's document: a name, an identity, a doc page with a summary, a
- *  list of notes and one section — about twelve kilobytes, between the median
- *  page of the workspace this was measured on (nine) and its mean (sixteen). */
-function docOf(name: string, n: number): string {
-  const notes = Array.from({ length: 40 }, (_, i) => `    - ${JSON.stringify(words(n + i, 40))}`).join("\n");
-  return [
-    `name: ${name}`,
-    `uid: invented${String(n).padStart(6, "0")}`,
-    "plugin: biom-doc",
-    "variables:",
-    `  summary: ${JSON.stringify(words(n, 24))}`,
-    "  notes:",
-    notes,
-    "contents:",
-    "  - name: body",
-    "    parts:",
-    `      body: ${JSON.stringify(`# ${name}\n\n${words(n, 80)}`)}`,
-    "",
-  ].join("\n");
-}
-
-/** WRITE THE WORKSPACE, answering how many pages it holds and the id of one
- *  page two levels down, under which the agent will make its own. */
-function invent(vault: string): { pages: number; under: string } {
-  let n = 0;
-  let under = "";
-  const put = (dir: string, name: string): void => {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "content.yaml"), docOf(name, n++), "utf8");
-  };
-  const down = (dir: string, id: string, depth: number): void => {
-    const count = SHAPE[depth];
-    if (count === undefined) return;
-    for (let i = 0; i < count; i++) {
-      // Top-level pages by name; the two levels below by a word and a number;
-      // below those, dated notes, as a folder of decisions is kept.
-      const name = depth === 0 ? (TOPS[i] as string)
-        : depth < 3 ? `${title(word(n))} ${i + 1}`
-        : `2026-${String((n % 12) + 1).padStart(2, "0")}-${String((n % 28) + 1).padStart(2, "0")} ${title(word(n))} ${title(word(n + 5))} ${i + 1}`;
-      const seg = name.replace(/ /g, "_");
-      const at = join(dir, "children", seg);
-      put(at, name);
-      if (depth === 1 && under === "") under = `${id}/${seg}`;
-      down(at, `${id}/${seg}`, depth + 1);
-    }
-  };
-  const home = join(vault, "pages", "home");
-  put(home, "Home");
-  down(home, "home", 0);
-
-  // THE TABLES AN AGENT MADE WITH ITS OWN SQL, in the workspace's database
-  // before the server has opened it; the server lists them as the agent's.
-  const db = new Database(join(vault, "workspace.db"));
-  try {
-    for (let t = 0; t < TABLES; t++) {
-      const name = `invented_${word(t)}_${t}`;
-      db.run(`CREATE TABLE "${name}" (id INTEGER PRIMARY KEY, label TEXT, amount REAL)`);
-      const row = db.prepare(`INSERT INTO "${name}" (label, amount) VALUES (?, ?)`);
-      db.transaction(() => {
-        for (let i = 0; i < 200; i++) row.run(`${word(t + i)} ${i}`, i * 1.5);
-      })();
-    }
-  } finally {
-    db.close();
-  }
-  return { pages: n, under };
-}
-
 /* ── the walk's furniture ────────────────────────────────────────────────── */
 
 let box: Sandbox;
 let before = "";
 let base = "";
 let vault = "";
-let made = { pages: 0, under: "" };
+let made: { pages: number; under: string } = { pages: 0, under: "" };
 let server: ReturnType<typeof Bun.spawn> | null = null;
 const said = { out: "", err: "" };
 let browser: Browser | null = null;
@@ -300,7 +213,7 @@ walk("1. a window on a workspace of about two thousand pages opens on the Agent 
     const rows = await page.locator("ul.tree li.treerow").allInnerTexts();
     return TOPS.every((t) => rows.some((r) => r.includes(t)));
   });
-  await until("no read of the tree is on the way", 60000, () => reads.length > 0 && !reading());
+  await until("no read of the tree is on the way", 60000, () => !reading());
 });
 
 walk("2. a first message makes the chat, and its turn ends", "big-2.png", async () => {
@@ -315,7 +228,7 @@ walk("2. a first message makes the chat, and its turn ends", "big-2.png", async 
 
 walk("3. a page the agent makes three levels down is brought up beside the chat, with Go back to over it, and the time it took is printed", "big-3.png", async () => {
   const id = `${made.under}/Invented_Brief`;
-  const rel = join("pages", ...id.split("/").flatMap((s, i) => (i === 0 ? [s] : ["children", s])), "content.yaml");
+  const rel = join(dirOf(id), "content.yaml");
   const route = "#/page/" + encodeURIComponent(id);
   await until("no read of the tree is on the way", 60000, () => !reading());
   // IDLE IN THIS WINDOW, and not only on the server, as the Agent screen
