@@ -3212,6 +3212,39 @@ test("the Go back to view names the person's work, keeps its button until the na
   expect(draw()).toBe(null);
 });
 
+test("A HASH SET WHILE THE WINDOW BOOTS IS THE ADDRESS IT ENDS UP ON, and is not written over by the one it loaded with", async () => {
+  /** @type {string[]} */
+  const assigned = [];
+  const location = {
+    // The window loaded on Notes; while it booted — before the shell was
+    // listening — the address moved to Board.
+    _hash: "#/page/board",
+    get hash() { return this._hash; },
+    set hash(v) { assigned.push(v); this._hash = v; },
+  };
+  globalThis.window = {
+    addEventListener() {}, removeEventListener() {}, location,
+    history: { state: null, replaceState: (/** @type {any} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => { location._hash = url; } },
+  };
+  const g = harness(DOC, { view: "page", id: "notes" });
+  await tick();
+  g.ws.emit();
+  await tick();
+  expect(g.ui.get().route).toEqual({ view: "page", id: "board", screen: "page" });
+  expect(location.hash).toBe("#/page/board");
+  expect(assigned).toEqual([]);
+  // It is the person's address, as a typed hash is.
+  expect(moverOf(g.ui)).toBe("you");
+});
+
+test("a tab with no folder stays on the start page, whatever its hash says", async () => {
+  const location = { hash: "#/page/board" };
+  globalThis.window = { addEventListener() {}, removeEventListener() {}, location };
+  const g = harness(DOC, { view: "vault", id: "" });
+  await tick();
+  expect(g.ui.get().route.view).toBe("vault");
+});
+
 test("NO HASH LOOP: a repaint between the browser's Back and its hashchange never writes the old route back, and a typed hash is put right in its own entry", async () => {
   /** @type {Function | null} */
   let onHash = null;

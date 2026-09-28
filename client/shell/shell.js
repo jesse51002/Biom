@@ -1472,6 +1472,21 @@ export function makeShell(deps) {
      * @param {HTMLElement} el
      */
     mount(el) {
+      // THE ADDRESS THE WINDOW ENDS UP ON IS THE LATEST ONE. The route was
+      // read from the hash when the window's stores were built, and the shell
+      // listens for the hash moving only from here on — so a hash set while the
+      // window was still booting (a person's Back, a walk going somewhere the
+      // moment the page reloads) was never heard, and the first repaint wrote
+      // the address it loaded with back over it. What the browser says now is
+      // taken as the person's open, as a typed hash is. A tab with no folder
+      // has one screen, the start page, whatever its hash says.
+      if (typeof window !== "undefined" && window.location && ui.get().route.view !== "vault") {
+        const now = parseHash(window.location.hash);
+        if (!sameAddress(now, ui.get().route)) {
+          written = hashOf(now);
+          ui.open(now.view, now.id, now.screen);
+        }
+      }
       root = el;
       fill(el, app);
       sizer.mount(app, bed, rack);
