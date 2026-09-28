@@ -159,7 +159,7 @@ test("the runtime's merge is idempotent: the answer spelled own-only hands every
 // `content` with its `vars` merged, rebuilt in the box, because `biom-grid`
 // and any workspace's own part-kind plugin read `content.vars` before
 // `ctx.vars`. Before the edit the runtime hands the answer's part as it came.
-test.failing("the answer spelled own-only hands every mount the same content too", () => {
+test("the answer spelled own-only hands every mount the same content too", () => {
   for (const id of CORPUS_PAGES) {
     const { want } = scopesOf(id, old.get(id) as Wire);
     const own = JSON.parse(pretty(drawnMounts(ownWire(old.get(id) as Wire))));

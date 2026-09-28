@@ -489,6 +489,15 @@
   function fillSlots(el, drawn, vars, env, name) {
     const parts = drawn.parts || {};
 
+    // WHAT A SLOT PLUGIN IS HANDED CARRIES THE WHOLE SCOPE. The wire sends each
+    // part's own `vars` and the page's once, and a plugin — `biom-grid`, or a
+    // workspace's own for a part kind — may read `content.vars` before
+    // `ctx.vars`, so the content is handed over rebuilt with the merge. Only a
+    // part that has `vars` gets one: a child or a table never had it.
+    /** @param {any} content @param {Record<string, any>} scope */
+    const withScope = (content, scope) =>
+      content && typeof content === "object" && "vars" in content ? Object.assign({}, content, { vars: scope }) : content;
+
     // Both queries are taken BEFORE anything is mounted. A plugin fills its node
     // by replacing what is inside it, so a `data-g-plugin` node that lived inside
     // a slot is gone by the time the slot has been drawn — and mounting markup a
@@ -524,11 +533,12 @@
           if (!itemDef) {
             fail(holder, 'nothing draws a "' + String(item.kind) + '" item');
           } else {
+            const scope = merge(vars, item.vars);
             mountWith(
-              itemDef, holder, item,
+              itemDef, holder, withScope(item, scope),
               makeCtx({
                 page: env.page, section: name, part: id, plugin: itemDef.id,
-                vars: merge(vars, item.vars), root: el, bucket: name,
+                vars: scope, root: el, bucket: name,
                 node: holder, call: env.call,
               }),
             );
@@ -550,19 +560,20 @@
       // for a grid and stays at the reading measure for prose — without the
       // section knowing what any plugin draws.
       node.setAttribute("data-g-kind", String(content.kind));
+      // The third scope. `content.vars` is the part's own and wins, then the
+      // section's, then the page's — nearest first, so a bare name in prose is
+      // always the closest one and never a surprise.
+      const scope = merge(vars, content.vars);
       mountWith(
         def,
         node,
-        content,
+        withScope(content, scope),
         makeCtx({
           page: env.page,
           section: name,
           part: id,
           plugin: def.id,
-          // The third scope. `content.vars` is the part's own and wins, then the
-          // section's, then the page's — nearest first, so a bare name in prose
-          // is always the closest one and never a surprise.
-          vars: merge(vars, content.vars),
+          vars: scope,
           root: el,
           bucket: name,
           node: node,
