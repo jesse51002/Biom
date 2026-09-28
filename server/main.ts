@@ -1636,9 +1636,20 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // A DIRECTORY, or a path that is gone. The two are told apart by whether
       // anything is still there, and only one of them is a change.
       if (await Bun.file(doc).exists()) {
-        // A page directory. One this process already knows reports through its
-        // own files; one it has never seen is a page that has just arrived.
-        return held.seen.known(doc) ? null : { structural: true };
+        // A PAGE DIRECTORY, NAMED BY ITS PARENT'S `children/`: an entry there
+        // came, which is a page arriving — whoever has read it since. A
+        // window following an agent's write, or the history naming the page,
+        // reads it before this runs, so "has this process seen it" said an
+        // arrival was an edit and no level was named. Only the process's own
+        // write — a page it made, moved or renamed, whose document it NOTED
+        // with these very bytes — is not news; a sighting is.
+        let text: string | null = null;
+        try {
+          text = await Bun.file(doc).text();
+        } catch {
+          text = null;
+        }
+        return text !== null && held.seen.matches(doc, text) ? null : { structural: true };
       }
       // GONE, OR A DIRECTORY THAT IS NOT A PAGE — and the question asked here
       // has to be one the baseline can answer. It is keyed by FILE and is never

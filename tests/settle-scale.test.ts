@@ -140,6 +140,24 @@ test.if(unix)("A PAGE AN AGENT MAKES, found by its uid before the watcher's sett
   }
 }, 30_000);
 
+test.if(unix)("A PAGE A WINDOW READ BEFORE THE WATCHER'S SETTLE is still an arrival that names its parent's level", async () => {
+  const w = await stand();
+  try {
+    await Bun.sleep(300);
+    w.changes.length = 0;
+    // Made from outside, and read at once — the switcher following an agent's
+    // write, or the history naming it — before the settle has run.
+    await w.put("home/Left/Seen", "Seen", "invsettleseen01");
+    expect((await call(w.host, w.vault, { kind: "page.read", page: "home/Left/Seen" })).ok).toBe(true);
+    expect(await until(() => w.changes.length > 0)).toBe(true);
+    await Bun.sleep(300);
+    expect(w.changes.flatMap((c) => c.levels)).toContain("home/Left");
+  } finally {
+    w.off();
+    w.host.close();
+  }
+}, 30_000);
+
 test.if(unix)("A FIRST CHILD names the level above its parent too, where the parent's row learns that it holds a page", async () => {
   const w = await stand();
   try {
