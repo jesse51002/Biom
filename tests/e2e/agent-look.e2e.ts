@@ -13,14 +13,15 @@
 // listens on a port.
 //
 // WHAT IT HOLDS: the start screen, and its word turning as one word on one
-// centre frame by frame; a chat mid-turn, a finished one, a red one and the
-// panel draw; a patch appends where it belongs and leaves the rest of the
-// thread's nodes alone, and a stale one is dropped; the chat's ⋯ and its View
-// menu, worked from the keyboard, fit on a desktop, at the panel's narrowest
-// and at a phone's width; an agent's words never become markup; the look asks
-// for nothing but its own kinds and `open`; reduced motion rests still with
-// faces as text; and a pagehide leaves nothing behind. Pictures of each land
-// in `dist/e2e/`, or in `LOOK_SHOTS` if set.
+// centre frame by frame, and the swap as wide as its word whatever size the
+// line is drawn at; a chat mid-turn, a finished one, a red one and the panel
+// draw; a patch appends where it belongs and leaves the rest of the thread's
+// nodes alone, and a stale one is dropped; the chat's ⋯ and its View menu,
+// worked from the keyboard, fit on a desktop, at the panel's narrowest and at
+// a phone's width; an agent's words never become markup; the look asks for
+// nothing but its own kinds and `open`; reduced motion rests still with faces
+// as text; and a pagehide leaves nothing behind. Pictures of each land in
+// `dist/e2e/`, or in `LOOK_SHOTS` if set.
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
@@ -279,6 +280,35 @@ test("THE TWO WORDS OF A TURN SHARE ONE CENTRE in every frame, the wider leaving
       const which = pairs[0].words.map((w: any) => w.word).join(" → ");
       const apart = Math.max(...pairs.map((f) => Math.abs(centre(f.words[0]) - centre(f.words[1]))));
       expect([which, apart <= 1 ? "one centre" : `${Math.round(apart)}px apart`]).toEqual([which, "one centre"]);
+    }
+  } finally { await ctx.close(); }
+}, 60000);
+
+test("THE SWAP IS ITS WORD'S WIDTH, and follows the word's size between turns: narrower than 620 pixels and wide again, without waiting for the next word", async () => {
+  const { ctx, page, box } = await open();
+  try {
+    await post(page, box, { kind: "look.state", state: lookState({}) });
+    /** The swap and the word in it once the swap has come to rest: two
+     *  frames for a change of size to be seen, then its width's transition. */
+    const fit = async () => {
+      await box.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".swap")!.getAnimations().length === 0, null, { timeout: BOUND });
+      return await inLook<any>(box, `
+        const swap = root.querySelector(".swap");
+        const r = document.createRange(); r.selectNodeContents(swap.lastElementChild);
+        return { word: swap.lastElementChild.textContent, words: swap.children.length, size: getComputedStyle(swap).fontSize, swap: swap.getBoundingClientRect().width, text: r.getBoundingClientRect().width };`);
+    };
+    // Each step is taken just after a turn, well inside the rest before the
+    // next, and holds the same word throughout: nothing here waits on a turn.
+    for (const width of [560, 1180]) {
+      await turnFrames(box);
+      const before = await fit();
+      expect(Math.abs(before.swap - before.text)).toBeLessThanOrEqual(1);
+      await page.setViewportSize({ width, height: 780 });
+      await box.waitForFunction((was) => getComputedStyle(document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".swap")!).fontSize !== was, before.size, { timeout: BOUND });
+      const after = await fit();
+      expect([after.word, after.words]).toEqual([before.word, 1]);
+      expect([width, after.size, Math.abs(after.swap - after.text) <= 1 ? "fits" : `${Math.round(after.swap - after.text)}px off`]).toEqual([width, after.size, "fits"]);
     }
   } finally { await ctx.close(); }
 }, 60000);

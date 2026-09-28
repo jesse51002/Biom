@@ -560,7 +560,7 @@ function fakeWorld(opts = /** @type {{ reduced?: boolean }} */ ({})) {
     cancelAnimationFrame: (/** @type {number} */ id) => { live.frames.delete(id); frameFns.delete(id); },
     matchMedia: () => media,
     getComputedStyle: () => ({ getPropertyValue: () => "", color: "" }),
-    ResizeObserver: class { constructor() { live.observers.add(this); } observe() {} disconnect() { live.observers.delete(this); } },
+    ResizeObserver: class { constructor() { live.observers.add(this); } observe() {} unobserve() {} disconnect() { live.observers.delete(this); } },
     devicePixelRatio: 1,
   };
   /** @type {Map<number, any>} */

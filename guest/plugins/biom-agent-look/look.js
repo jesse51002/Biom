@@ -741,26 +741,31 @@
      *  simply there, and only a change after that is animated. */
     let settled = false;
 
+    /** THE SWAP IS AS WIDE AS THE WORD ARRIVING, AS IT IS DRAWN, and the line
+     *  re-centres as its width moves there. Each word is its own width in the
+     *  swap, so the newest is watched rather than measured once: a face that
+     *  loads after it and a stage that takes the line under 620 pixels change
+     *  its size, and the swap follows without waiting for the next turn.
+     *  Without an observer the swap is as wide as what it holds. */
+    /** @type {any} */
+    let fits = null;
+    if (typeof win.ResizeObserver === "function") {
+      fits = new win.ResizeObserver((/** @type {any[]} */ seen) => {
+        const w = seen[seen.length - 1].contentRect.width;
+        if (w > 0) swap.style.setProperty("width", w + "px");
+      });
+      fits.observe(swap.lastElementChild);
+    }
+
     function nextWord() {
       wordAt = (wordAt + 1) % WORDS.length;
       const old = swap.lastElementChild;
       const n = h("span", "word-in", WORDS[wordAt]);
       swap.appendChild(n);
-      fitWord();
+      if (fits) { fits.unobserve(old); fits.observe(n); }
       void n.offsetWidth;
       n.classList.remove("word-in");
       if (old) { old.classList.add("word-out"); later(() => old.remove(), 500); }
-    }
-    /** The word's own width, so the line re-centres as it turns. */
-    function fitWord() {
-      const probe = h("span", "", WORDS[wordAt]);
-      probe.style.setProperty("position", "absolute");
-      probe.style.setProperty("visibility", "hidden");
-      probe.style.setProperty("white-space", "nowrap");
-      line.appendChild(probe);
-      const w = probe.getBoundingClientRect ? probe.getBoundingClientRect().width : 0;
-      probe.remove();
-      if (w > 0) swap.style.setProperty("width", w + "px");
     }
 
     /** THE START SCREEN SHOWN OR CLEARED, and everything that moves on it
@@ -775,7 +780,6 @@
           for (const hero of [heroTop, heroBot]) { hero.classList.remove("leaving"); hero.classList.remove("arriving"); void hero.offsetWidth; if (!still && settled) hero.classList.add("arriving"); }
         }
         ribbon.enter();
-        fitWord();
         if (!still) { wordTimer = win.setInterval(() => { if (!gone) nextWord(); }, 2600); timers.add(wordTimer); }
       } else {
         if (startShown) {
@@ -1667,6 +1671,7 @@
       if (typeof win.cancelAnimationFrame === "function") for (const f of frames) win.cancelAnimationFrame(f);
       frames.clear();
       ribbon.destroy();
+      if (fits) fits.disconnect();
       if (sizes) sizes.disconnect();
       for (const fn of undo.splice(0)) { try { fn(); } catch { /* one listener's removal failing is not a reason to leave the rest */ } }
       views.clear();
