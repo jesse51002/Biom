@@ -304,9 +304,9 @@ test("A RUN OF TOOL CALLS IS ONE LINE: how many, one or many, while it runs with
   expect(M.runWords(/** @type {any} */ (null), false).label).toBe("Used 0 tools");
 });
 
-test("a chat has three views, and a view the look does not know is Tool calls", () => {
-  expect(["plain", "tools", "thinking"].map(M.viewOf)).toEqual(["plain", "tools", "thinking"]);
-  for (const v of [undefined, null, "", "Plain", "constructor", 3]) expect([v, M.viewOf(v)]).toEqual([v, "tools"]);
+test("a chat has three views, and a view the look does not know is Plain, the default", () => {
+  expect(["plain", "thinking", "tools"].map(M.viewOf)).toEqual(["plain", "thinking", "tools"]);
+  for (const v of [undefined, null, "", "Tools", "constructor", 3]) expect([v, M.viewOf(v)]).toEqual([v, "plain"]);
 });
 
 test("the list is grouped as the mockup groups it, newest first, and each row says what the chat is doing and with what", () => {
@@ -657,7 +657,7 @@ const runs = (root) => byClass(root, "grp").map((g) => ({
 }));
 
 test("EACH RUN OF TOOL CALLS IS ONE SHUT LINE in every view: Used N tools, Using N tools with the call under way while it runs, and a failure marked while it is shut", () => {
-  for (const view of ["plain", "tools", "thinking"]) {
+  for (const view of ["plain", "thinking", "tools"]) {
     const w = mounted();
     w.hear({ kind: "look.state", state: chatState("live", { view }) });
     const look = one(w.root(), "g-look");
@@ -713,9 +713,9 @@ test("a run line opens to its calls and each call to its diff, and both stay as 
   w.teardown();
 });
 
-test("thinking is drawn both ways at once and the view picks which: folded to its line, opened by a press, and written out in Thinking", () => {
+test("thinking is drawn both ways at once and the view picks which: folded to its line in Plain, opened by a press, and written out in Thinking and Tool calls", () => {
   const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("done", { view: "tools", updates: [
+  w.hear({ kind: "look.state", state: chatState("done", { view: "plain", updates: [
     ...chatState("done").updates.slice(0, 3),
     { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: "Read the run first, then say what wants the person's eye." },
     ...chatState("done").updates.slice(3),
@@ -732,12 +732,15 @@ test("thinking is drawn both ways at once and the view picks which: folded to it
   expect(think.getAttribute("aria-expanded")).toBe("true");
   think.fire("click");
   expect(thinkw.hasAttribute("data-open")).toBe(false);
-  // The sheet says what each view shows, by the root's attribute.
+  // The sheet says what each view shows, by the root's attribute — a
+  // ladder: the thinking written out in every view but Plain, and the runs
+  // of tool calls in Tool calls alone.
   const sheet = glob.__gAgentLookSheet;
   expect(sheet).toContain(".thinkw[data-open] .thought { display: block;");
-  expect(sheet).toContain(".g-look[data-view=thinking] .thinkw .think { display: none; }");
-  expect(sheet).toMatch(/\.g-look\[data-view=thinking\] \.thinkw \.thought \{ display: block;[^}]*border-left: 1px solid var\(--rule\);[^}]*font: italic/);
-  expect(sheet).toContain(".g-look[data-view=plain] .acts { display: none; }");
+  expect(sheet).toContain(".g-look:not([data-view=plain]) .thinkw .think { display: none; }");
+  expect(sheet).toMatch(/\.g-look:not\(\[data-view=plain\]\) \.thinkw \.thought \{ display: block;[^}]*border-left: 1px solid var\(--rule\);[^}]*font: italic/);
+  expect(sheet).toContain(".g-look:not([data-view=tools]) .acts { display: none; }");
+  expect(sheet).not.toMatch(/data-view=(plain|thinking|tools)\][^{]*\.acts \{ display: block/);
   w.teardown();
 });
 
@@ -751,7 +754,7 @@ test("A VIEW PICKED MOVES NO NODE: the root's view changes and every turn, run a
     log.scrollHeight = 5000 + before.length;
     log.scrollTop = 0;
     w.hear({ kind: "look.patch", chat: cid("live"), view });
-    expect(one(root, "g-look").getAttribute("data-view")).toBe(view === "nonsense" ? "tools" : view);
+    expect(one(root, "g-look").getAttribute("data-view")).toBe(view === "nonsense" ? "plain" : view);
     expect(everything(root)).toEqual(before);
     // The reader was at the end, so the end is where they are left.
     expect(log.scrollTop).toBe(log.scrollHeight);

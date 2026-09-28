@@ -187,7 +187,7 @@
     const root = h("div", "g-look");
     root.setAttribute("data-mode", "screen");
     root.setAttribute("data-state", "empty");
-    root.setAttribute("data-view", "tools");
+    root.setAttribute("data-view", "plain");
     shadow.appendChild(root);
 
     // The history, down the left on the full screen.
@@ -710,16 +710,18 @@
     }
 
     /** THE VIEW THE PERSON PICKED, on the root: the sheet shows each block by
-     *  it — a run of tool calls not drawn in Plain, the thinking written out
-     *  in Thinking — so a view picked moves no node and draws nothing again,
-     *  and a reader at the end of the chat is kept there.
+     *  it — the thinking written out in Thinking and Tool calls, a run of tool
+     *  calls drawn in Tool calls alone — so a view picked moves no node and
+     *  draws nothing again, and a reader at the end of the chat is kept there.
      *  @param {any} v */
     function setView(v) {
       const want = M.viewOf(v);
       if (root.getAttribute("data-view") === want) return;
       root.setAttribute("data-view", want);
       markViews();
-      if (pinned) { pin(); frame(pin); }
+      // Only a chat has an end to keep the reader at: the start screen, which
+      // a kept view reaches on the first state, asks for no frame.
+      if (pinned && S && S.chat !== null) { pin(); frame(pin); }
     }
 
     /** Biom's input box sits over this box; the look leaves it `height`. @param {any} input */
@@ -1048,8 +1050,8 @@
     /** A BLOCK OF THINKING, drawn both ways at once: the one line it folds
      *  to — *Thinking*, then *Thought for Ns*, which opens it — and the words
      *  themselves. Which shows is the root's `data-view` in the sheet, so a
-     *  view picked moves no node: folded in Plain and Tool calls (the words
-     *  there only while the line is opened), written out in Thinking. The
+     *  view picked moves no node: folded in Plain (the words there only while
+     *  the line is opened), written out in Thinking and Tool calls. The
      *  words are a text node, appended as they stream and bounded.
      *  @param {any} b a thinking block @param {any} t its turn */
     function thinkView(b, t) {
@@ -1140,8 +1142,8 @@
      *  never folded out of sight. Opened, each call is its own line, which
      *  opens to its diff or its output as before. Both are buttons, both keep
      *  whether they are open while the turn streams — a call joining an open
-     *  run leaves it open, one joining a shut run leaves it shut — and in
-     *  Plain the whole run is not drawn at all (the sheet, by the root's
+     *  run leaves it open, one joining a shut run leaves it shut — and the
+     *  whole run is shown in Tool calls alone (the sheet, by the root's
      *  `data-view`), so a view picked moves no node.
      *  @param {any} b a block of tool lines @param {any} t its turn */
     function actsView(b, t) {

@@ -232,10 +232,10 @@
   });
 
   /** The view this look draws for a word: the word, where it is one of the
-   *  three, and Tool calls for one it does not know. @param {any} v
-   *  @returns {"plain" | "thinking" | "tools"} */
+   *  three, and Plain — the default, the words alone — for one it does not
+   *  know. @param {any} v @returns {"plain" | "thinking" | "tools"} */
   function viewOf(v) {
-    return VIEWS.indexOf(v) >= 0 ? v : "tools";
+    return VIEWS.indexOf(v) >= 0 ? v : "plain";
   }
 
   /* ── diffs ─────────────────────────────────────────────────────────────── */

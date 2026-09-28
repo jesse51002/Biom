@@ -518,18 +518,21 @@ only ever as text; it draws incrementally, the latest forty turns with more on
 a press, a diff, an output and a block of thinking bounded where they are
 drawn.
 
-**A chat has three views, and none of them draws a wall of tool calls**
-(`LookState.view`, `ChatView`): **Plain** is the words, the thinking folded to
-its one line and no tool calls at all; **Tool calls**, the default, keeps the
-thinking folded and draws each RUN of tool calls — every call with no thinking
-and no reply between them, the transcript's `acts` block — as ONE line, *Used
-3 tools ›* (*Used 1 tool*), which opens to the calls one by one, each opening
-to its diff or its output as before; **Thinking** writes the thinking out where
-it came, muted italic with a thin rule down its left, between the same shut
-runs. While the turn runs, its current run reads *Using 3 tools* with the call
-under way after it, muted, and a run holding a failed call carries its red
-mark and *1 failed* on the shut line, so a failure is never folded out of
-sight. The run line and each call line are buttons, reached by Tab and worked
+**A chat has three views, a ladder, and none of them draws a wall of tool
+calls** (`LookState.view`, `ChatView`, in the order of `CHAT_VIEWS`): each adds
+to the one before and the tools come last, because Biom is a second brain
+before it is a place to build software. **Plain**, the default, is the words,
+the thinking folded to its one line and no tool calls at all; **Thinking**
+writes the thinking out where it came, muted italic with a thin rule down its
+left, and still draws no tool calls; **Tool calls** writes the thinking out
+too and adds each RUN of tool calls — every call with no thinking and no reply
+between them, the transcript's `acts` block — as ONE line, *Used 3 tools ›*
+(*Used 1 tool*), which opens to the calls one by one, each opening to its diff
+or its output as before. A workspace that has kept no view opens on Plain, and
+a view it kept stays as it was. While the turn runs, its current run reads
+*Using 3 tools* with the call under way after it, muted, and a run holding a
+failed call carries its red mark and *1 failed* on the shut line, so in Tool
+calls a failure is never folded out of sight. The run line and each call line are buttons, reached by Tab and worked
 by Enter and Space, and each keeps whether it is open while the turn streams:
 a call joining an open run leaves it open, one joining a shut run leaves it
 shut. **A view picked moves no node**: every block is drawn both ways at once

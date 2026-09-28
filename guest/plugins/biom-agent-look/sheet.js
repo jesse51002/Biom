@@ -241,10 +241,13 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .thinkw[data-open] .thought { display: block; animation: fadein calc(.25s * var(--l-m)); }
 .thought .more { display: block; margin-top: 6px; font: normal 11.5px var(--l-gauge); letter-spacing: .02em; color: var(--l-small); white-space: normal; }
 
-/* the three views, by the root's data-view: a view picked moves no node */
-.g-look[data-view=thinking] .thinkw .think { display: none; }
-.g-look[data-view=thinking] .thinkw .thought { display: block; margin: 0; padding: 1px 0 1px 13px; border-left: 1px solid var(--rule); font: italic 14.5px/1.62 var(--l-sheet); color: color-mix(in srgb, var(--ink-2) 70%, var(--ink-3)); max-height: none; overflow: visible; animation: none; }
-.g-look[data-view=plain] .acts { display: none; }
+/* the three views, by the root's data-view — a ladder, each adding to the one
+   before: Plain folds the thinking to its line and draws no tool calls,
+   Thinking writes the thinking out, and Tool calls adds each run of tool
+   calls. A view picked moves no node. */
+.g-look:not([data-view=plain]) .thinkw .think { display: none; }
+.g-look:not([data-view=plain]) .thinkw .thought { display: block; margin: 0; padding: 1px 0 1px 13px; border-left: 1px solid var(--rule); font: italic 14.5px/1.62 var(--l-sheet); color: color-mix(in srgb, var(--ink-2) 70%, var(--ink-3)); max-height: none; overflow: visible; animation: none; }
+.g-look:not([data-view=tools]) .acts { display: none; }
 
 /* a run of tool calls: one line that opens to them */
 .acts { display: flex; flex-direction: column; gap: 1px; }

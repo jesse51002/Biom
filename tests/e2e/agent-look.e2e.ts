@@ -360,7 +360,7 @@ test("a turn that ended red says why, a handover is a line in the thread, and a 
   } finally { await ctx.close(); }
 }, 60000);
 
-test("THE THREE VIEWS, as a browser lays them out: Plain draws no tool calls, Tool calls one shut line a run, Thinking the thinking written out — and a failure shows while its run is shut", async () => {
+test("THE THREE VIEWS, as a browser lays them out — a ladder: Plain the words with the thinking folded, Thinking the thinking written out and no tool calls, Tool calls both and one shut line a run — and a failure shows while its run is shut", async () => {
   const { ctx, page, box } = await open();
   try {
     const shown = (sel: string) => `[...root.querySelectorAll(${JSON.stringify(sel)})].map((e) => getComputedStyle(e).display !== "none" && e.getBoundingClientRect().height > 0)`;
@@ -370,29 +370,30 @@ test("THE THREE VIEWS, as a browser lays them out: Plain draws no tool calls, To
       style: (() => { const t = root.querySelector(".thought"); if (!t) return ""; const c = getComputedStyle(t); return c.fontStyle + "|" + c.borderLeftStyle + "|" + c.borderLeftWidth; })(),
       failed: [...root.querySelectorAll(".grp .gfail")].map((f) => getComputedStyle(f).display !== "none" ? f.textContent : ""),
     };`);
-    await post(page, box, { kind: "look.state", state: chatState("live", { view: "tools" }) });
+    await post(page, box, { kind: "look.state", state: chatState("live", { view: "plain" }) });
     let seen = await look();
-    expect(seen.view).toBe("tools");
-    expect(seen.runs).toEqual([true, true]);
-    expect(seen.lists).toEqual([false, false]);
-    expect(seen.folds).toEqual([true, true]);
-    expect(seen.thoughts).toEqual([false, false]);
-    await shot(page, "view-tools");
-    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "thinking" });
-    seen = await look();
-    expect(seen.view).toBe("thinking");
-    expect(seen.runs).toEqual([true, true]);
-    expect(seen.folds).toEqual([false, false]);
-    expect(seen.thoughts).toEqual([true, true]);
-    expect(seen.style).toBe("italic|solid|1px");
-    await shot(page, "view-thinking");
-    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "plain" });
-    seen = await look();
     expect(seen.view).toBe("plain");
     expect(seen.runs).toEqual([false, false]);
     expect(seen.folds).toEqual([true, true]);
     expect(seen.thoughts).toEqual([false, false]);
     await shot(page, "view-plain");
+    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "thinking" });
+    seen = await look();
+    expect(seen.view).toBe("thinking");
+    expect(seen.runs).toEqual([false, false]);
+    expect(seen.folds).toEqual([false, false]);
+    expect(seen.thoughts).toEqual([true, true]);
+    expect(seen.style).toBe("italic|solid|1px");
+    await shot(page, "view-thinking");
+    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "tools" });
+    seen = await look();
+    expect(seen.view).toBe("tools");
+    expect(seen.runs).toEqual([true, true]);
+    expect(seen.lists).toEqual([false, false]);
+    expect(seen.folds).toEqual([false, false]);
+    expect(seen.thoughts).toEqual([true, true]);
+    expect(seen.style).toBe("italic|solid|1px");
+    await shot(page, "view-tools");
     // The red chat's run holds a failed call: marked on the shut line.
     await post(page, box, { kind: "look.state", state: chatState("red", { view: "tools" }) });
     seen = await look();
@@ -477,9 +478,21 @@ test("THE CHAT'S ⋯ AND ITS VIEW MENU, as a browser lays them out: worked from 
       await box.locator(".viewmenu button.mi[data-view=tools]").click();
       expect((await calls(page, 1)).filter((c) => c.kind === "look.view")).toEqual([{ kind: "look.view", view: "tools" }]);
       expect(await inLook<string>(box, `return root.querySelector(".g-look").getAttribute("data-view");`)).toBe("thinking");
+      // A picture of each view with its menu open, on the desktop and in the
+      // panel: a chat mid-turn, which has thinking and tool calls to show.
+      if (at.name === "phone") continue;
+      for (const v of ["plain", "thinking", "tools"]) {
+        await post(page, box, { kind: "look.state", state: chatState("live", { mode: at.mode, view: v }) });
+        await box.locator("button.chatmore").click();
+        await box.locator(".viewmenu").waitFor({ state: "visible", timeout: BOUND });
+        await box.evaluate(() => Promise.all(document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".viewmenu")!.getAnimations().map((a) => a.finished)));
+        expect(await inLook<string>(box, `return root.querySelector(".viewmenu button.mi[aria-checked=true]").dataset.view;`)).toBe(v);
+        await shot(page, "view-menu-" + at.name + "-" + v);
+        await page.keyboard.press("Escape");
+      }
     } finally { await ctx.close(); }
   }
-}, 90000);
+}, 120000);
 
 test("beside a page: the panel's head, the history as a dropdown, and only the look's own kinds asked for", async () => {
   const { ctx, page, box } = await open({ width: 460, height: 760 });
@@ -507,10 +520,11 @@ test("beside a page: the panel's head, the history as a dropdown, and only the l
 test("AN AGENT'S WORDS NEVER BECOME MARKUP: not in a reply, a thought, a tool, a diff, a path, a page's name or a face", async () => {
   const { ctx, page, box } = await open();
   try {
-    await post(page, box, { kind: "look.state", state: chatState("evil") });
+    // In Tool calls, which draws everything: the thought written out, and
+    // each run and call opened.
+    await post(page, box, { kind: "look.state", state: chatState("evil", { view: "tools" }) });
     await box.locator(".grp").first().click();
     await box.locator(".act").first().click();
-    await box.locator(".think").first().click();
     await box.waitForTimeout(400);
     const seen = await inLook<any>(box, `
       const all = [...root.querySelectorAll("*")];
