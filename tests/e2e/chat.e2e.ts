@@ -65,12 +65,12 @@
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chromium } from "playwright";
 import type { Browser, Frame, Page } from "playwright";
 
-import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
+import { HERE, SHOTS, BOUNDS, sandbox, withoutAgents, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
 import { installFakeAgent } from "../fake-acp-agent.ts";
 import type { Scenario } from "../fake-acp-agent.ts";
@@ -412,11 +412,11 @@ beforeAll(async () => {
   server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
     cwd: HERE,
     env: {
-      ...box.env,
+      // No agent of this machine's — bun and the system only, and /bin/sh as
+      // the login shell (`withoutAgents`) — with the fake's place first.
+      ...withoutAgents(box.env),
       PORT: String(port),
-      // Only the agent's place, bun and the system: no agent of this machine's.
-      PATH: [bin, dirname(process.execPath), "/usr/bin", "/bin"].join(":"),
-      SHELL: "/bin/sh",
+      PATH: [bin, withoutAgents(box.env).PATH].join(":"),
       BIOM_JEV_ENDPOINT: `http://127.0.0.1:${jev.port}/v1/systemone`,
       TYPESAFE_API_KEY: KEY,
     },
