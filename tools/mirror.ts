@@ -30,6 +30,7 @@ import { makeFiles } from "../server/platform/files.ts";
 import { makeDb } from "../server/platform/db.ts";
 import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makePages } from "../server/domain/pages.ts";
+import { makeDocs } from "../server/domain/docs.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makeMirror, rebuild } from "../server/domain/mirror.ts";
 import { walkPlugins } from "../server/domain/plugins.ts";
@@ -69,9 +70,13 @@ async function mirrorOf(path: string, shipped: Shipped): Promise<number | null> 
   const db = makeDb(`${root}/workspace.db`);
   try {
     const tables = makeTables(db);
-    const pages = makePages(files, { parse, parseAny, format }, () => tables.list());
-    const mirror = makeMirror(files, pages);
+    const yaml = { parse, parseAny, format };
+    const pages = makePages(files, yaml, () => tables.list());
+    const mirror = makeMirror(files, pages, makeDocs(files, yaml));
 
+    // THE FULL REBUILD, on purpose: every page projected through the mirror's
+    // queue, and `rebuild` answers once the queue is idle — so what is
+    // committed below is the whole of it.
     const refs = await pages.list();
     const changed = await rebuild(mirror, refs);
     // COMMITTED, or an indexer that follows commits cannot see it.

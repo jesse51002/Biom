@@ -36,7 +36,6 @@ import type { EditReport, History } from "../domain/history.ts";
 import type { Agents } from "../workspace/agents.ts";
 import type { Chats } from "../workspace/chats.ts";
 import type { Settings } from "../workspace/settings.ts";
-import { follow } from "../domain/mirror.ts";
 import { PAGE_DOC, pageDir } from "../domain/pages.ts";
 import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
 
@@ -83,9 +82,10 @@ export interface Deps {
   /** THE MARKDOWN MIRROR. It is touched from this layer and not from `pages.ts`
    *  for the reason `restack` is: the mirror READS a page through `Pages`, so a
    *  page write cannot call it without a cycle, and this is the lowest layer
-   *  holding both. Every mutation below re-projects the page it changed in the
-   *  same request, so the projection is swept into the same commit as the change
-   *  it mirrors. */
+   *  holding both. Every mutation below ASKS its queue to re-project the page
+   *  it changed and answers without waiting: the projection lands within a
+   *  moment, in the background, and rides the next commit. Nothing a request
+   *  answers waits on the mirror. */
   mirror: Mirror;
   /** SHARE A PAGE — the stop-gap. Built by the composition root against the
    *  folder, because the rewrite reads the folder's own assets. Answered in
@@ -493,7 +493,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
         return ok(id, await deps.share.share(req.page, req.html));
       case "page.create": {
         const made = await deps.pages.create(req.init);
-        await mirrored(follow(deps.mirror, made.id, true));
+        deps.mirror.queue.follow(made.id, true);
         return ok(id, made);
       }
 
@@ -502,8 +502,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
         // The page is gone, so its projection is a file about nothing. The
         // parent is re-projected because it lists its children and has just lost
         // one.
-        await mirrored(deps.mirror.drop(req.page));
-        await mirrored(follow(deps.mirror, req.page, true));
+        deps.mirror.queue.drop(req.page);
+        deps.mirror.queue.follow(req.page, true);
         return ok(id, null);
 
       case "page.rename":
@@ -516,8 +516,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
           const to = await deps.pages.rename(req.page, req.name);
           if (to !== req.page) restack(deps, req.page, to);
           if (to !== req.page) relocated(deps, req.page, to);
-          if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
-          await mirrored(follow(deps.mirror, to, true));
+          if (to !== req.page) deps.mirror.queue.rename(req.page, to);
+          deps.mirror.queue.follow(to, true);
           return ok(id, to);
         } catch (e) {
           console.error("page.rename", e);
@@ -553,7 +553,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "section.remove":
         try {
           const left = await deps.pages.removeSection(req.page, req.section);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, left);
         } catch (e) {
           console.error("section.remove", e);
@@ -589,7 +589,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "section.write":
         try {
           await deps.pages.writeSlot(req.page, req.section, req.part, req.data);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, null);
         } catch (e) {
           console.error("section.write", e);
@@ -641,7 +641,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "section.order":
         try {
           const now = await deps.pages.setSections(req.page, req.sections);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, now);
         } catch (e) {
           console.error("section.order", e);
@@ -692,9 +692,9 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
           // projecting only the new one deletes the whole subtree's markdown.
           // Both parents are re-projected too, because a parent lists its
           // children and one has just left while another arrived.
-          if (to !== req.page) await mirrored(deps.mirror.rename(req.page, to));
-          await mirrored(follow(deps.mirror, req.page, true));
-          await mirrored(follow(deps.mirror, to, true));
+          if (to !== req.page) deps.mirror.queue.rename(req.page, to);
+          deps.mirror.queue.follow(req.page, true);
+          deps.mirror.queue.follow(to, true);
           return ok(id, to);
         } catch (e) {
           console.error("page.move", e);
@@ -726,7 +726,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
         // what every other section on the page says.
         try {
           const merged = await deps.docs.merge(req.page, req.section, req.patch);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, merged);
         } catch (e) {
           console.error("variables.patch", e);
@@ -739,7 +739,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
         // page's words with its shape and this is the only way back to them.
         try {
           const doc = await deps.docs.writeRaw(req.page, req.text);
-          await mirrored(follow(deps.mirror, req.page));
+          deps.mirror.queue.follow(req.page);
           return ok(id, doc);
         } catch (e) {
           console.error("doc.writeRaw", e);

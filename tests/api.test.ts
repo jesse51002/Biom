@@ -612,7 +612,9 @@ test("page.rename writes the name, moves the directory, and answers the new id",
     expect(kids.find((c) => c.id === to)?.name).toBe("Field notes");
     expect(kids.some((c) => c.id === notes.id)).toBe(false);
     // The mirror was carried rather than dropped: the new path has a file and
-    // the old one does not.
+    // the old one does not — once the mirror's queue has caught up, which the
+    // rename did not wait for.
+    await w.deps.mirror.queue.idle();
     expect(existsSync(join(w.vault, "_markdown", `${to}.md`))).toBe(true);
     expect(existsSync(join(w.vault, "_markdown", `${notes.id}.md`))).toBe(false);
 
@@ -1267,6 +1269,7 @@ test("a page's variables come back out as its frontmatter, and cannot claim the 
         + "  generated: false\n"
         + "contents:\n  - name: note\n    parts:\n      body: Prompt to app.\n",
     });
+    await w.deps.mirror.queue.idle();
     const md = String(await w.files.read(`_markdown/${page.id}.md`));
 
     // Carried, with a string kept a string: a date left unquoted comes back as a
@@ -1288,16 +1291,19 @@ test("a page's variables come back out as its frontmatter, and cannot claim the 
   } finally { await w.drop(); }
 });
 
-test("a page that is removed takes its projection with it, in the same request", async () => {
+test("a page that is removed takes its projection with it", async () => {
   const w = await workspace();
   try {
     const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
     const home = value(await call({ kind: "page.create", init: { parent: null, name: "Home" } })) as PageRef;
     const kid = value(await call({ kind: "page.create", init: { parent: home.id, name: "Gone" } })) as PageRef;
-    // The create wrote it, so nobody has to open a page for its file to exist.
+    // The create asked for it, so nobody has to open a page for its file to
+    // exist — in the background, a moment after the create answered.
+    await w.deps.mirror.queue.idle();
     expect(await w.files.read(`_markdown/${kid.id}.md`)).not.toBeNull();
 
     expect((await call({ kind: "page.remove", page: kid.id })).ok).toBe(true);
+    await w.deps.mirror.queue.idle();
     expect(await w.files.read(`_markdown/${kid.id}.md`)).toBeNull();
     // And the parent no longer lists it: a page arriving or leaving changes the
     // page above it as much as itself.
@@ -1325,6 +1331,7 @@ test("a moved page takes its mirror, and everything under it, to the new id", as
     await call({ kind: "page.projection", page: board.id, markdown: "- a card nobody else can compute" });
 
     const to = value(await call({ kind: "page.move", page: notes.id, parent: clients.id })) as PageId;
+    await w.deps.mirror.queue.idle();
 
     // The whole subtree came across.
     expect(await w.files.read(`_markdown/${to}.md`)).not.toBeNull();
@@ -1364,6 +1371,7 @@ test("typing in a slot rewrites that page's projection and nothing else", async 
       part: Object.keys(first.parts)[0]!, data: "## Standing charge\n\nIt is 62p a day.",
     });
     expect(written.ok).toBe(true);
+    await w.deps.mirror.queue.idle();
     const md = String(await w.files.read(`_markdown/${page.id}.md`));
     expect(md).toContain("## Standing charge");
     expect(md).toContain("It is 62p a day.");

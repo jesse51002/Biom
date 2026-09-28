@@ -26,7 +26,7 @@
 //   make fresh    →  drop the per-user default vault; the next run reseeds
 
 import { hasHistory, initVault, makeFiles, makeSeen, within } from "./platform/files.ts";
-import type { Seen } from "./platform/files.ts";
+import type { DiskFiles, Seen } from "./platform/files.ts";
 import { SETTLE, insideOf, watchTree, watched } from "./platform/watch.ts";
 import type { Watcher } from "./platform/watch.ts";
 import {
@@ -49,7 +49,7 @@ import type { Identities } from "./domain/pages.ts";
 import { makePlugins, walkPlugins } from "./domain/plugins.ts";
 import type { PluginWalk } from "./domain/plugins.ts";
 import { makeDocs } from "./domain/docs.ts";
-import { follow, makeMirror, pageAt, rebuild } from "./domain/mirror.ts";
+import { makeMirror, pageAt, refresh } from "./domain/mirror.ts";
 import { makeSharer } from "./domain/share.ts";
 import { capturePage } from "./platform/capture.ts";
 import { makeBucket } from "./platform/bucket.ts";
@@ -87,7 +87,7 @@ import type { Settings } from "./workspace/settings.ts";
 import { TERMINAL_ROUTE, makeTerminals } from "./workspace/terminals.ts";
 import type { Attachment } from "./workspace/terminals.ts";
 import type { Tickets } from "./workspace/terminals.ts";
-import { mirrored, route } from "./api/routes.ts";
+import { route } from "./api/routes.ts";
 import type { Deps } from "./api/routes.ts";
 import type { Db } from "../contracts/types.ts";
 import type { Files } from "../contracts/types.ts";
@@ -582,7 +582,7 @@ interface Mounted {
   /** See `Host.settled`. Set by `hold` once the mount has answered. */
   settled: Promise<void>;
   /** The vault's own files, held for the work `hold` starts after the mount. */
-  files: Files;
+  files: DiskFiles;
 }
 
 /** Does this file parse? A half-written `content.yaml` is a normal intermediate
@@ -896,6 +896,26 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     }
   }
 
+  /** THE MARKDOWN MIRROR, BROUGHT UP TO DATE AFTER A MOUNT, off the mount path
+   *  and in the background: a page is projected only where its document or its
+   *  children changed since its `.md` was written, and what is no longer a
+   *  page is taken away. The walk of page folders is a readdir walk, never a
+   *  parse; the projections go through the mirror's queue, which yields
+   *  between pages. Committed only where something changed, because a mount
+   *  that writes nothing should leave no trace — `git add -A` here would
+   *  otherwise sweep whatever the person was in the middle of. */
+  async function mirrorOnMount(held: Mounted): Promise<void> {
+    try {
+      const done = await refresh(held.deps.mirror, held.files, await pageDirs(held.files));
+      await held.deps.mirror.queue.idle();
+      if (done.wrote || done.queued > 0) await held.files.commit("The markdown mirror, brought up to date on mount");
+    } catch (e) {
+      // A mirror that cannot be written is not a workspace that cannot be
+      // opened. It is derived, and the next write of any page rewrites its file.
+      console.warn("the markdown mirror could not be brought up to date", e);
+    }
+  }
+
   /** THE LIST. Every module in the server, constructed against one folder.
    *  Called once on boot and once per `open`, which is what makes the vault
    *  swappable at all — there is no state above this to migrate, because
@@ -968,7 +988,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
   /** THE REST OF THE MOUNT, once the database is open. It is a function of its
    *  own for one reason: everything in it may throw, and the one thing that has
    *  to happen when it does is above. */
-  async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: Files, fresh: boolean): Promise<Mounted> {
+  async function build(path: string, db: Db, runsDb: Db, seen: Seen, files: DiskFiles, fresh: boolean): Promise<Mounted> {
     const yaml = { parse, parseAny, format, formatAny };
     const tables = makeTables(db);
     // THE THREE RUNGS OF EVERY PLUGIN'S VARIABLES, merged per page. Built here
@@ -1035,7 +1055,20 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     // THE MARKDOWN MIRROR. `_markdown/` is deliberately NOT in that .gitignore:
     // the whole point of it is to be readable by something that reads a repo of
     // markdown, and a mirror nobody clones is a mirror of nothing.
-    const mirror = makeMirror(files, pages);
+    //
+    // IT READS THE PAGES AS A STRANGER WOULD — through `Files` with NO
+    // BASELINE, its own pages, docs and plugin rungs over them. It works in the
+    // background now, beside the watcher, and a read through the vault's own
+    // files makes the path KNOWN: a page an agent has just made, projected
+    // before the watcher's settle had taken its verdict, then read as a page it
+    // already had — no arrival, no identity, no rail. What it writes is under
+    // `_markdown/`, which the watcher never looks at.
+    const quiet = makeFiles(path);
+    const mirror = makeMirror(
+      quiet,
+      makePages(quiet, yaml, () => tables.list(), section, basename(path), rootPage, pluginRoot, makePlugins(quiet, pluginRoot, parseAny).extensionsFor),
+      makeDocs(quiet, yaml),
+    );
 
     // Idempotent by observation: a folder with a page or a table in it has been
     // used, and re-seeding would overwrite somebody's work with fixtures. So
@@ -1093,21 +1126,6 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       runs.relocateAll(await pages.list());
     } catch (e) {
       console.warn("runs could not be re-pointed at their pages", e);
-    }
-
-    // EVERY PAGE'S PROJECTION, REBUILT. A doc page is pure data, so the local
-    // process can render one without the box — which is what answers the page
-    // nobody has opened since the mirror shipped, and the page removed while
-    // this process was not running. It commits only where something changed,
-    // because a mount that writes nothing should leave no trace: `git add -A`
-    // here would otherwise sweep whatever the person was in the middle of.
-    try {
-      const changed = await rebuild(mirror, await pages.list());
-      if (changed) await files.commit("The markdown mirror, rebuilt on mount");
-    } catch (e) {
-      // A mirror that cannot be written is not a workspace that cannot be
-      // opened. It is derived, and the next draw of any page rewrites its file.
-      console.warn("the markdown mirror could not be rebuilt", e);
     }
 
     /* ── the history, the agents and the chats ──────────────────────── */
@@ -1340,7 +1358,10 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // AFTER THE MOUNT HAS ANSWERED AND NOT AS PART OF IT. The promise every
       // caller awaits resolves with the mount; the rewrite and the mirror start
       // from here and are reachable through `settled` for whoever has to wait.
-      m.settled = afterMount(m.files, m.path);
+      m.settled = (async () => {
+        await mirrorOnMount(m);
+        await afterMount(m.files, m.path);
+      })();
       return m;
     });
     mounted.set(abs, started);
@@ -1519,16 +1540,17 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       // `_markdown/` goes stale: a file edited outside the app.
       for (const [id, what] of touched) {
         // A PAGE DELETED FROM OUTSIDE LOSES ITS MARKDOWN. `project` returns on a
-        // page it cannot read, so `follow` on its own leaves a file about
+        // page it cannot read, so a projection on its own leaves a file about
         // nothing behind — the app's own path in `server/api/routes.ts` drops
         // first for exactly this reason, and this one has to do the same. Asked
         // of DISK rather than of the baseline, so the answer cannot depend on
         // which of a deleted page's paths the burst happened to report first.
         const gone = !(await Bun.file(`${what.dir}/${PAGE_DOC}`).exists());
-        if (gone) await mirrored(held.deps.mirror.drop(id));
+        if (gone) held.deps.mirror.queue.drop(id);
         // A page arriving or leaving changes the page above it as much as
-        // itself, so a departure is structural whatever named it.
-        await mirrored(follow(held.deps.mirror, id, what.structural || gone));
+        // itself, so a departure is structural whatever named it. ASKED, NOT
+        // AWAITED: the projection follows in the background.
+        held.deps.mirror.queue.follow(id, what.structural || gone);
       }
       if (!moved) return;
       // A PAGE MOVED FROM OUTSIDE takes its runs with it: the rows are
