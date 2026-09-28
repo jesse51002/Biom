@@ -270,12 +270,14 @@ test("installing copies the directory, and the preset's own document wins", asyn
   expect(hero!.html).toContain('data-g-part="headline"');
 
   // A bare string in `parts` is markdown, and it comes back RAW — `{{quarter}}`
-  // still in it, because interpolation happens where the part is drawn.
+  // still in it, because interpolation happens where the part is drawn, against
+  // the page's value, which travels once on the page.
   expect(intro!.parts["body"]).toEqual({
     kind: "markdown",
     md: "We shipped {{quarter}} on time.\n",
-    vars: { quarter: "Q3" },
+    vars: {},
   });
+  expect(page!.variables).toEqual({ quarter: "Q3" });
   expect(hero!.parts["headline"]).toMatchObject({ kind: "markdown", md: "# Ship faster" });
 
   // And it is really on disk where the id says: `pages/home/children/Job-board`.

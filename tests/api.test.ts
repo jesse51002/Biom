@@ -495,8 +495,10 @@ test("every ApiRequest kind round-trips", async () => {
     const typed = value(await call({ kind: "page.read", page: made.id })) as Page;
     // RAW, braces and all. Interpolation happens where the part is drawn.
     expect(slot(typed, "title", "body")).toContain("{{rate}}");
-    // And the page's value is what it resolves against, gathered nearest-first.
-    expect(typed.sections.find((s) => s.name === "title")?.vars).toMatchObject({ rate: 62 });
+    // And the page's value is what it resolves against: the page's, sent once,
+    // under the section's own, which this one has none of.
+    expect(typed.variables).toMatchObject({ rate: 62 });
+    expect(typed.sections.find((s) => s.name === "title")?.vars).toEqual({});
 
     // THE ORDER, AND WHAT IS IN IT: adding, reordering and removing in one kind,
     // because `contents` IS the order.
@@ -1007,7 +1009,8 @@ test("doc.raw and doc.writeRaw are the way back from a document that will not pa
     // edited the paragraph it sits in.
     const read = value(await call({ kind: "page.read", page: page.id })) as Page;
     expect(slot(read, "intro", "body")).toContain("{{rate}}");
-    expect(read.sections[0]?.parts["body"]).toMatchObject({ vars: { rate: 62 } });
+    expect(read.variables).toMatchObject({ rate: 62 });
+    expect((read.sections[0]?.parts["body"] as { vars?: unknown } | undefined)?.vars).toEqual({});
 
     // Somebody breaks it by hand, which is the state this pair exists for.
     await writeFile(yaml, "name: Rates\n\tcontents: [oh dear\n");

@@ -162,15 +162,17 @@ test("a slot write lands on ONE scope, and the section it belongs to carries it"
   const intro = read?.sections.find((s) => s.name === "intro");
   const calc = read?.sections.find((s) => s.name === "calc");
 
-  // The page's value is in scope everywhere; the section's is in scope on the
-  // one section. A slot write that landed a scope out would have changed what
+  // The page's value is the page's, sent once; the section's is the one
+  // section's own. A slot write that landed a scope out would have changed what
   // the paragraph one section up resolves against.
-  expect(intro?.vars).toEqual({ rate: 62 });
-  expect(calc?.vars).toEqual({ rate: 62, title: "What a job costs" });
-  // AND THE SAME SCOPE REACHES THE PART, because a part is drawn from its own
-  // `vars` and never reaches up for the section's.
-  expect(partOf(read, "intro")).toMatchObject({ kind: "markdown", vars: { rate: 62 } });
-  expect(partOf(read, "calc", "total")).toMatchObject({ vars: { rate: 62, title: "What a job costs" } });
+  expect(read?.variables).toEqual({ rate: 62 });
+  expect(intro?.vars).toEqual({});
+  expect(calc?.vars).toEqual({ title: "What a job costs" });
+  // AND A PART CARRIES ITS OWN, which neither of these has: the three scopes
+  // are merged where the part is drawn.
+  expect(partOf(read, "intro")).toMatchObject({ kind: "markdown" });
+  expect((partOf(read, "intro") as { vars?: unknown } | undefined)?.vars).toEqual({});
+  expect((partOf(read, "calc", "total") as { vars?: unknown } | undefined)?.vars).toEqual({});
 
   // AND THE TEXT IS RAW, braces and all. Interpolation is the client's job
   // because prose is edited in place and writes back: resolving on the server
@@ -254,8 +256,9 @@ test("a paragraph holding {{rate}} round-trips the braces and never the number",
   const second = boot(root);
   const read = await second.ws.loadPage(page.id);
   expect(mdOf(read, "intro")).toBe("The base rate is {{rate}} an hour, still.\n");
-  // The variable itself is untouched, and still in scope on the section.
-  expect(read?.sections.find((s) => s.name === "intro")?.vars).toEqual({ rate: 62 });
+  // The variable itself is untouched, and still the page's.
+  expect(read?.variables).toEqual({ rate: 62 });
+  expect(read?.sections.find((s) => s.name === "intro")?.vars).toEqual({});
   expect(readFileSync(join(dirOf(root, page.id), "content.yaml"), "utf8")).not.toContain("62 an hour");
   second.db.close();
 });

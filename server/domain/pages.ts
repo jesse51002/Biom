@@ -466,17 +466,19 @@ function rowsOf(v: unknown): string[][] {
  *  THE MARKDOWN COMES BACK RAW, with `{{name}}` still in it. Interpolation
  *  happens where the part is drawn, because prose is editable in place and
  *  writes back: resolving here would round-trip `62` over the top of `{{rate}}`
- *  the first time somebody touched the paragraph it sits in. `vars` is what to
- *  resolve against, NEAREST FIRST — the part's own values over the section's
- *  over the page's. */
+ *  the first time somebody touched the paragraph it sits in. `vars` is the
+ *  section's OWN values, and each part's is the part's own: the page's travel
+ *  once, in `Page.variables`, and whoever draws or projects a part merges the
+ *  three, nearest last. Merging here wrote the page's values into every section
+ *  and every part of the answer, which is how a page of 649 child rows came to
+ *  be 65 MB on the wire. */
 export async function drawSection(
   section: Section,
-  pageVars: Variables,
   read: (file: string) => Promise<string | null>,
   fallbackHtml: string,
   child: (content: Content) => Promise<Part | null> = async () => null,
 ): Promise<DrawnSection> {
-  const vars: Variables = { ...pageVars, ...(section.variables ?? {}) };
+  const vars: Variables = { ...(section.variables ?? {}) };
 
   // The section's own markup, or the shipped default. A file NAMED here that is
   // not on disk takes the default too: the slots still draw, so the words are
@@ -501,7 +503,7 @@ export async function drawSection(
       for (const one of held) {
         const content = contentOf(one);
         if (content === null) continue;
-        const item = await partOf(content, vars, read, child);
+        const item = await partOf(content, read, child);
         if (item !== null) items.push(item);
       }
       parts[slot] = { kind: "list", items };
@@ -510,7 +512,7 @@ export async function drawSection(
 
     const content = contentOf(held);
     if (content === null) continue;
-    const part = await partOf(content, vars, read, child);
+    const part = await partOf(content, read, child);
     if (part !== null) parts[slot] = part;
   }
 
@@ -519,11 +521,10 @@ export async function drawSection(
 
 async function partOf(
   content: Content,
-  sectionVars: Variables,
   read: (file: string) => Promise<string | null>,
   child: (content: Content) => Promise<Part | null>,
 ): Promise<Part | null> {
-  const vars: Variables = { ...sectionVars, ...(content.variables ?? {}) };
+  const vars: Variables = { ...(content.variables ?? {}) };
 
   switch (content.type) {
     case "markdown":
@@ -1465,7 +1466,6 @@ export function makePages(
 
         const drawn = await drawSection(
           asked,
-          doc.variables,
           (f) => files.read(`${dir}/${f}`),
           defaultSection,
           async (content) => {

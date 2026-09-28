@@ -168,7 +168,7 @@ test("the answer spelled own-only hands every mount the same content too", () =>
 });
 
 // THE SERVER'S HALF: nothing on the wire is a merge any more.
-test.failing("every section's and every part's vars on the answer is its own", () => {
+test("every section's and every part's vars on the answer is its own", () => {
   for (const id of CORPUS_PAGES) {
     const wire = now.get(id) as Wire;
     expect([id, JSON.parse(stable(wire))]).toStrictEqual([id, JSON.parse(stable(ownWire(wire)))]);
@@ -232,7 +232,7 @@ test("a page the shape of Talks draws, projects and mirrors as it did", () => {
 // THE POINT OF THE EDIT, measured. The answer is weighed without its markup —
 // every section's html, every html part's and every child's own drawing — so
 // what is held is what the edit changes: the variables, sent once.
-test.failing("the Talks-shaped answer, less its markup, is under a megabyte", () => {
+test("the Talks-shaped answer, less its markup, is under a megabyte", () => {
   const whole = Buffer.byteLength(JSON.stringify(talks));
   expect(whole - markupBytes(talks)).toBeLessThan(1_000_000);
 }, 30_000);

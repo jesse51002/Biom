@@ -134,7 +134,7 @@ export function makeDesign(
         // design doc cannot drift from `pages/`. A `child` part resolves to
         // nothing here and that is correct: this doc is not in the tree, so it
         // has no children to draw.
-        sections.push(await drawSection(section, doc.variables, (f) => files.read(f), defaultSection));
+        sections.push(await drawSection(section, (f) => files.read(f), defaultSection));
       }
 
       return {

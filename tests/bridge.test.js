@@ -59,7 +59,9 @@ const PAGE = {
 
 /** A doc, with the values grouped where they are used. `calc` carries its own
  *  `heading` and the page carries `rate`, so the scope `calc` sees is both —
- *  nearest last — and that is what a slot in `calc.html` reads and writes.
+ *  nearest last — and that is what a slot in `calc.html` reads and writes. The
+ *  answer spells each scope once, as its own: the page's in `variables`, a
+ *  section's and a part's in their `vars`, merged where they are drawn.
  *
  *  `split` is the shape the old flat list could not express at all: ONE section
  *  holding two markdown slots. It is here because `doc.get` has to walk slots as
@@ -70,20 +72,19 @@ const NOTES = {
   variables: { rate: 62, heading: "The page's own" },
   sections: [
     section("intro", {
-      body: { kind: "markdown", md: "# Notes\n\nThe rate is {{rate}}.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      body: { kind: "markdown", md: "# Notes\n\nThe rate is {{rate}}.", vars: {} },
+    }),
     section("split", {
-      left: { kind: "markdown", md: "Left column.", vars: { rate: 62, heading: "The page's own" } },
-      right: { kind: "markdown", md: "Right column.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      left: { kind: "markdown", md: "Left column.", vars: {} },
+      right: { kind: "markdown", md: "Right column.", vars: {} },
+    }),
     section("grid", { body: { kind: "table", table: "jobs" } }),
     section("calc", {
-      body: { kind: "html", file: "calc.html", html: "<p></p>",
-              vars: { rate: 62, heading: "What a job costs", done: "Done" } },
-    }, { vars: { rate: 62, heading: "What a job costs", done: "Done" } }),
+      body: { kind: "html", file: "calc.html", html: "<p></p>", vars: {} },
+    }, { vars: { heading: "What a job costs", done: "Done" } }),
     section("outro", {
-      body: { kind: "markdown", md: "Last.", vars: { rate: 62, heading: "The page's own" } },
-    }, { vars: { rate: 62, heading: "The page's own" } }),
+      body: { kind: "markdown", md: "Last.", vars: {} },
+    }),
   ],
   page: [],
   ports: null,

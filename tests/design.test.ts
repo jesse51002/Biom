@@ -307,14 +307,11 @@ test("a patch and an html slot survive a full rebuild from the same directory", 
   const part = partAt(read, "mark", "figure");
   expect(part).toMatchObject({ kind: "html", file: "mark.html" });
   expect(part && "html" in part ? part.html : "").toContain("One accent");
-  // The part carries the variables in scope for it, nearest first — the slot's
-  // own over the section's over the doc's.
-  expect(part && "vars" in part ? part.vars : {}).toMatchObject({
-    mood: "quiet",
-    caption: "One accent, and it is never red.",
-  });
-  // The section's own `vars` are the same scope one step out.
-  expect(read.sections.find((s) => s.name === "mark")?.vars).toMatchObject({ mood: "quiet" });
+  // The part carries its own variables, which this slot has none of, and the
+  // section its own; the doc's are `variables`. They are merged, nearest first,
+  // where the part is drawn.
+  expect(part && "vars" in part ? part.vars : null).toEqual({});
+  expect(read.sections.find((s) => s.name === "mark")?.vars).toEqual({ caption: "One accent, and it is never red." });
   // Written where the doc lives, not under pages/.
   expect(readFileSync(join(root, "design", "mark.html"), "utf8")).toContain("data-g-part");
   second.db.close();
