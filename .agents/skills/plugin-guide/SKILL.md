@@ -523,7 +523,11 @@ look's own**: `LookState` names no view — the sixteenth contracts edit took
 out the three the host used to hand over, and `look.view`, which picked one —
 so a look a workspace writes draws a chat whichever way it likes, and the
 default one draws it one way, the thinking folded and each run of tool calls
-one line (`chat-guide`).
+one line (`chat-guide`). **What a look may ask is the eight kinds `chat-guide`
+lists**, each by ids or a closed word: a look that draws the queue offers
+each message's × as `look.unqueue` and its Send now as `look.sendNow`, both
+naming the chat and the message's `queued` id, or leaves either out; the
+host keeps the queue, and the look draws what the stream says of it.
 
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands

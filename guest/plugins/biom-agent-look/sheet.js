@@ -209,6 +209,10 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .qhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .qlabel { font: 10.5px var(--l-gauge); letter-spacing: .14em; text-transform: uppercase; color: var(--l-small); }
 .qtext { font: 15px/1.5 var(--l-sheet); white-space: pre-wrap; overflow-wrap: anywhere; }
+.qacts { display: inline-flex; align-items: center; gap: 2px; }
+.qnow { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; font: 10.5px var(--l-gauge); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); transition: background calc(.12s * var(--l-m)), color calc(.12s * var(--l-m)); }
+.qnow .ico { width: 11px; height: 11px; }
+.qnow:hover, .qnow:focus-visible { color: var(--ink); background: var(--l-wash); }
 .qx { width: 22px; height: 22px; display: grid; place-items: center; color: var(--ink-3); transition: background calc(.12s * var(--l-m)), color calc(.12s * var(--l-m)); }
 .qx .ico { width: 12px; height: 12px; }
 .qx:hover { color: var(--ink); background: var(--l-wash); }

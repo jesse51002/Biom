@@ -65,6 +65,8 @@
 //   20f. The queue: a message sent mid-turn waits under it and goes out when
 //       the turn ends; two queued behind a turn and then Stop both go out, in
 //       order, with nothing held and no Send queued.
+//   20g. Send now: two queued behind a turn, Send now pressed on the second,
+//       and the turn stops, the second goes out first, then the first.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
 // EVERY PRODUCT BUG THIS WALK FOUND is fixed and asserted as a plain step:
@@ -1583,6 +1585,45 @@ walk("20f", "a message sent while a turn runs waits in the queue under it and go
   await until("no bubble is left", 5000, async () => (await bubbles()).length === 0);
   expect(await page.locator(".agentdock .sendqueued").isVisible()).toBe(false);
   await shot("chat-20f-stopped.png");
+});
+
+walk("20g", "Send now on the second of two queued messages stops the turn, sends that one first and then the other, with nothing held", async () => {
+  expect(Q).not.toBe("");
+  if ((await hash()) !== `#/agent/${Q}`) {
+    await page.goto(at(`#/agent/${Q}`), { waitUntil: "domcontentloaded" });
+    await until("the queue walk's chat drew", BOUNDS.draw, () => lookSays("Queue walk d"));
+  }
+  await send("Queue walk e\n!sleep 4000");
+  await running(Q);
+  await typeAndEnter("Queue walk f");
+  await until("f shows Queued", 8000, async () => (await bubbles()).length === 1);
+  await typeAndEnter("Queue walk g");
+  await until("g shows Queued after f", 8000, async () => { const b = await bubbles(); return b.length === 2 && (b[0] ?? "").includes("Queue walk f") && (b[1] ?? "").includes("Queue walk g"); });
+  // Each bubble carries its own Send now, a button beside its ×.
+  const f = await lookFrame();
+  const second = f.locator(".queue .qitem").nth(1);
+  expect(await second.locator("button.qnow").getAttribute("aria-label")).toBe("Send now");
+  expect(((await second.locator("button.qnow").textContent()) ?? "").trim()).toBe("Send now");
+  expect(await f.locator(".queue button.qnow").count()).toBe(2);
+  await shot("chat-20g-send-now.png");
+  // SEND NOW ON THE SECOND: the turn stops as Stop stops it, g goes out the
+  // moment it has ended, and f after it — nothing held on the way.
+  await second.locator("button.qnow").click();
+  const heldEver: boolean[] = [];
+  await until("g then f went out, and f's turn ended", 30000, async () => {
+    const s = await summaryOf(Q);
+    heldEver.push(s?.queueHeld === true || (await page.locator(".agentdock .sendqueued").isVisible()));
+    return turnEnded(Q, 7);
+  });
+  expect(heldEver.every((h) => !h)).toBe(true);
+  expect((await promptsOf(Q)).slice(4)).toEqual(["Queue walk e\n!sleep 4000", "Queue walk g", "Queue walk f"]);
+  const ends = (await readChat(Q)).updates.filter((u) => u.kind === "turn" && (u as { phase: string }).phase === "idle").map((u) => (u as { stop: string }).stop);
+  expect(ends.slice(4)).toEqual(["cancelled", "end_turn", "end_turn"]);
+  // Each went out once, g first.
+  const out = (await readChat(Q)).updates.filter((u) => u.kind === "unqueued").map((u) => (u as { sent: boolean }).sent);
+  expect(out.slice(-2)).toEqual([true, true]);
+  await until("no bubble is left", 5000, async () => (await bubbles()).length === 0);
+  await shot("chat-20g-sent.png");
 });
 
 walk("21", "nothing threw on stderr, nothing was written outside the sandbox, and no agent process is left once the server stops", async () => {

@@ -29,7 +29,8 @@
 // WHEN THIS WINDOW SENT is the switcher's `lastSent`, and a message that
 // waits in the chat's queue is not sent yet: it is sent when it goes out,
 // which the stream says with an `unqueued` update for its id. So a queued
-// message never hands the screen over early, and one going out does.
+// message never hands the screen over early, and one going out does — one
+// this window sent with Send now as much as one it queued.
 //
 // A CHAT DELETED — here, or in another window, which the stream says with a
 // push saying `deleted`, or while this window's stream was shut, which the
@@ -93,6 +94,9 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {(chat: ChatId) => Promise<ChatSummary>} sendQueued Send a held queue.
  * @property {(chat: ChatId, queued: string) => Promise<ChatSummary>} unqueue Take
  *   one message out of the queue.
+ * @property {(chat: ChatId, queued: string) => Promise<ChatSummary>} sendNow
+ *   Send one queued message now: the turn running stopped, and that message
+ *   out the moment it has ended. This window's once it goes out.
  * @property {(chat: ChatId) => Promise<ChatSummary>} cancel
  * @property {(chat: ChatId, option: string, value: ConfigValue) => Promise<ChatSummary>} config
  * @property {(chat: ChatId, agent: AgentKey) => Promise<ChatSummary>} switchAgent
@@ -254,8 +258,9 @@ export function makeChatStore(deps) {
   let gen = 0;
   /** @type {Map<ChatId, number>} */
   const sent = new Map();
-  /** The queued messages this window sent, by id, to the chat each waits in:
-   *  sent, for `lastSent`, when the stream says it went out.
+  /** The queued messages this window sent, by id, to the chat each waits in —
+   *  queued here, or sent now from here — sent, for `lastSent`, when the
+   *  stream says it went out.
    *  @type {Map<string, ChatId>} */
   const mine = new Map();
 
@@ -586,6 +591,19 @@ export function makeChatStore(deps) {
 
     async unqueue(chat, queued) {
       return summarised(await ask({ kind: "chat.unqueue", chat, queued }));
+    },
+
+    async sendNow(chat, queued) {
+      // SENT WHEN IT GOES OUT, as any queued message is, and by this window
+      // whichever window queued it: Send now pressed here is a send from here.
+      const had = mine.get(queued);
+      mine.set(queued, chat);
+      try {
+        return summarised(await ask({ kind: "chat.sendNow", chat, queued }));
+      } catch (e) {
+        if (had === undefined) mine.delete(queued);
+        throw e;
+      }
     },
 
     async cancel(chat) {

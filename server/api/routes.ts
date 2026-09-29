@@ -1078,6 +1078,7 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.delete":
       case "chat.sendQueued":
       case "chat.unqueue":
+      case "chat.sendNow":
       case "settings.read":
         return await chatAnswer(id, req, deps);
 
@@ -1186,6 +1187,11 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
         return ok(id, await chats.sendQueued(req.chat));
       case "chat.unqueue":
         return ok(id, await chats.unqueue(req.chat, req.queued));
+      case "chat.sendNow":
+        // Stops the turn running and sends that queued message the moment it
+        // has ended; its words, and the page it was sent from, are the ones
+        // it was queued with.
+        return ok(id, await chats.sendNow(req.chat, req.queued));
       case "chat.cancel":
         return ok(id, await chats.cancel(req.chat));
       case "chat.config":

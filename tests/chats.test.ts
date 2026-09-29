@@ -72,6 +72,9 @@ function world(opts: {
   /** How long each commit waits before it starts — a commit queued behind a
    *  slow one. */
   commitDelayMs?: number;
+  /** Where a changed file is placed, in place of the invented table — a
+   *  slow one holds a turn's end open. */
+  placeOf?: ChatsDeps["placeOf"];
 } = {}) {
   const root = opts.root ?? realpathSync(mkdtempSync(join(tmpdir(), "biom-chats-")));
   const logs = realpathSync(mkdtempSync(join(tmpdir(), "biom-heard-")));
@@ -106,7 +109,7 @@ function world(opts: {
       logDir: join(root, ".biom"),
       files: opts.commitDelayMs === undefined ? makeFiles(root) : slowCommits(makeFiles(root), opts.commitDelayMs),
       skills: async () => SKILLS,
-      placeOf: async (p) => (p.startsWith("pages/") ? { view: "page", uid: `uid-${p.split("/")[1]}`, screen: "page" } : null),
+      placeOf: opts.placeOf ?? (async (p) => (p.startsWith("pages/") ? { view: "page", uid: `uid-${p.split("/")[1]}`, screen: "page" } : null)),
       uidOf: async (id) => `uid-${id}`,
       onEdit: (path, via, writer) => void edits.push({ path, via, writer }),
       onTurn: (s) => void signals.push(s),
@@ -382,6 +385,166 @@ only("a queue holds at most its bound, and a message past it is refused in words
   const e = (await w.chats.send(s.id, "one too many").catch((x: unknown) => x)) as { code?: string; message?: string };
   expect(e.code).toBe("limit");
   expect(e.message).toBe(`${QUEUE_MAX} messages already wait in this chat's queue: send or remove some first`);
+});
+
+/* ── Send now ─────────────────────────────────────────────────────────── */
+
+const cancels = (heard: Record<string, unknown>[]): number => heard.filter((h) => h.method === "session/cancel").length;
+
+only("SEND NOW stops the running turn and sends that message the moment it has ended, ahead of the rest, which go on after it in order, one a turn", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  const c = await w.chats.send(s.id, "queued c");
+  const now = await w.chats.sendNow(s.id, b.queued?.id as string);
+  expect([now.queued, now.queueHeld]).toEqual([3, false]);
+  const done = await settled(w.chats, s.id, 4);
+  expect([done.stop, done.queued, done.queueHeld]).toEqual(["end_turn", 0, false]);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["first", "cancelled"], ["queued b", "end_turn"], ["queued a", "end_turn"], ["queued c", "end_turn"]]);
+  expect(promptWords(w.heard())).toEqual(["first", "queued b", "queued a", "queued c"]);
+  // Each left the queue once, as sent — the one sent now first.
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, true], [a.queued?.id, true], [c.queued?.id, true]]);
+  expect(cancels(w.heard())).toBe(1);
+});
+
+only("SEND NOW PRESSED TWICE stops once and sends once, and pressed again on a message the queue has sent is not_found and stops nothing", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }], [{ thought: "b's turn" }, { waitCancel: 8000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  const qid = b.queued?.id as string;
+  await Promise.all([w.chats.sendNow(s.id, qid), w.chats.sendNow(s.id, qid)]);
+  await until("b to be running", 10_000, () => summaryOf(w.chats, s.id).turn === 2 && summaryOf(w.chats, s.id).phase === "running");
+  expect(cancels(w.heard())).toBe(1);
+  // b's turn runs: Send now on b again names a message no longer waiting,
+  // and the turn it would have stopped goes on.
+  const again = (await w.chats.sendNow(s.id, qid).catch((e: unknown) => e)) as { code?: string };
+  expect(again.code).toBe("not_found");
+  await wait(300);
+  expect(summaryOf(w.chats, s.id)).toMatchObject({ turn: 2, phase: "running" });
+  expect(cancels(w.heard())).toBe(1);
+  // One nobody queued, or one taken out, is refused the same way.
+  expect(((await w.chats.sendNow(s.id, "q1nvented-no-such-one").catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
+  await w.chats.unqueue(s.id, a.queued?.id as string);
+  expect(((await w.chats.sendNow(s.id, a.queued?.id as string).catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
+  expect(cancels(w.heard())).toBe(1);
+  expect(promptWords(w.heard())).toEqual(["first", "queued b"]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[qid, true], [a.queued?.id, false]]);
+  await w.chats.cancel(s.id);
+});
+
+only("SEND NOW WHILE THE TURN IS ALREADY ENDING ON ITS OWN: the turn ends as it was ending, and the message picked still goes next", async () => {
+  // The turn writes a file, and placing it is slow: the agent has answered
+  // and the turn's end is being written while Send now arrives.
+  let ending = () => {};
+  const answered = new Promise<void>((r) => { ending = r; });
+  const w = world({
+    scenarios: { fake: { turns: [[{ sleep: 300 }, { write: { path: "written.md", content: "invented" } }, { reply: "done" }]] } },
+    placeOf: async () => { ending(); await wait(600); return null; },
+  });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  await answered;
+  expect(summaryOf(w.chats, s.id)).toMatchObject({ turn: 1, phase: "running" });
+  await w.chats.sendNow(s.id, b.queued?.id as string);
+  await settled(w.chats, s.id, 3);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["first", "end_turn"], ["queued b", "end_turn"], ["queued a", "end_turn"]]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, true], [a.queued?.id, true]]);
+  expect(promptWords(w.heard())).toEqual(["first", "queued b", "queued a"]);
+});
+
+only("SEND NOW WITH NO TURN RUNNING just sends: on a queue held after a red end it goes at once, and the rest go on after it", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 800 }, { stop: "refusal" }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  const red = await settled(w.chats, s.id, 1);
+  expect([red.stop, red.queued, red.queueHeld]).toEqual(["refusal", 2, true]);
+  const now = await w.chats.sendNow(s.id, b.queued?.id as string);
+  expect([now.turn, now.queued, now.queueHeld]).toEqual([2, 1, false]);
+  expect(["held", "starting", "running"]).toContain(now.phase);
+  await settled(w.chats, s.id, 3);
+  expect(promptWords(w.heard())).toEqual(["first", "queued b", "queued a"]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, true], [a.queued?.id, true]]);
+  expect(cancels(w.heard())).toBe(0);
+});
+
+only("SEND NOW ON AN AGENT THAT DOES NOT STOP: it is ended once the grace is out, and the message goes to a fresh process, ahead of the rest", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 20_000 }, { reply: "late" }]] } }, cancelGraceMs: 300 });
+  const s = await w.chats.create({ agent: "fake", text: "ignore Stop" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const [first] = startedPids(w.heard());
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  w.scenarios.fake = {};
+  await w.chats.sendNow(s.id, b.queued?.id as string);
+  // Within the grace it is still the agent's to answer.
+  expect(summaryOf(w.chats, s.id)).toMatchObject({ turn: 1, phase: "running" });
+  await settled(w.chats, s.id, 3);
+  await until("the agent that ignored Stop to be gone", 5000, () => !alivePid(first as number));
+  expect(startedPids(w.heard()).length).toBe(2);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["ignore Stop", "cancelled"], ["queued b", "end_turn"], ["queued a", "end_turn"]]);
+  expect(promptWords(w.heard())).toEqual(["ignore Stop", "queued b", "queued a"]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, true], [a.queued?.id, true]]);
+});
+
+only("STOP WHILE THE MESSAGE SEND NOW PICKED IS BEING SENT withdraws it and sends the next in order, and nothing goes twice", async () => {
+  // Every start is slow, so the message Send now picked is caught while its
+  // fresh agent is starting.
+  const w = world({ scenarios: { fake: { initialize: { delayMs: 700 }, turns: [[{ thought: "busy" }, { sleep: 20_000 }]] } }, cancelGraceMs: 300 });
+  const s = await w.chats.create({ agent: "fake", text: "ignore Stop" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  await w.chats.sendNow(s.id, b.queued?.id as string);
+  await until("b's turn to be starting", 5000, () => summaryOf(w.chats, s.id).turn === 2 && summaryOf(w.chats, s.id).phase === "starting");
+  w.scenarios.fake = {};
+  await w.chats.cancel(s.id);
+  const done = await settled(w.chats, s.id, 3);
+  expect([done.stop, done.queued, done.queueHeld]).toEqual(["end_turn", 0, false]);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["ignore Stop", "cancelled"], ["queued b", "cancelled"], ["queued a", "end_turn"]]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, true], [a.queued?.id, true]]);
+  expect(promptWords(w.heard())).toEqual(["ignore Stop", "queued a"]);
+});
+
+only("A MESSAGE SENT NOW CARRIES THE PAGE IT WAS QUEUED FROM, and so does each one after it", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first", onScreen: SPECS });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  await w.chats.send(s.id, "written on the page", SPECS);
+  const b = await w.chats.send(s.id, "written on the other page", OTHER);
+  await w.chats.sendNow(s.id, b.queued?.id as string);
+  await settled(w.chats, s.id, 3);
+  expect(blocksOf(w.heard())).toEqual([
+    ["first", noteOf(SPECS)],
+    ["written on the other page", noteOf(OTHER)],
+    ["written on the page", noteOf(SPECS)],
+  ]);
+});
+
+only("A RESTART FORGETS WHICH MESSAGE SEND NOW PICKED: the queue is read back held, in the order it was queued, as every window draws it", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 20_000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "kept a");
+  const b = await w.chats.send(s.id, "kept b");
+  await w.chats.sendNow(s.id, b.queued?.id as string);
+  // The server goes before the agent answers Stop.
+  await w.chats.endAll();
+  w.scenarios.fake = {};
+  const again = w.make();
+  await again.loaded;
+  expect(summaryOf(again, s.id)).toMatchObject({ queued: 2, queueHeld: true, stop: "crashed" });
+  await again.sendQueued(s.id);
+  await settled(again, s.id, 3);
+  expect(promptWords(w.heard()).slice(1)).toEqual(["kept a", "kept b"]);
+  expect(await outOfQueue(again, s.id)).toEqual([[a.queued?.id, true], [b.queued?.id, true]]);
 });
 
 only("Stop is session/cancel, the turn ends cancelled with no light, and the agent heard it", async () => {

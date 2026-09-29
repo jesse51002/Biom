@@ -20,11 +20,12 @@
  * which the shim feeds from the host's `look.state` and `look.patch` with the
  * patches already folded in. It says its `look.*` kinds and one more —
  * `look.open`, `look.new`, `look.list`, `look.panel`, `look.delete` from a
- * row's three dots, `look.unqueue` from a queued message's ×, and `open` for
- * a page a turn changed — every one of them built by `request` in the model
- * from an id or a word on a closed list. `look.delete` deletes nothing: Biom
- * asks the person in a dialog of its own, and only their answer there
- * deletes. IT NEVER SENDS TEXT: the input box is Biom's, in the host, over
+ * row's three dots, `look.unqueue` from a queued message's ×, `look.sendNow`
+ * from its Send now, and `open` for a page a turn changed — every one of them
+ * built by `request` in the model from an id or a word on a closed list.
+ * `look.delete` deletes nothing: Biom asks the person in a dialog of its own,
+ * and only their answer there deletes. `look.sendNow` names a message the
+ * person already queued and carries none of its words. IT NEVER SENDS TEXT: the input box is Biom's, in the host, over
  * this box, so only the person's typing ever reaches an agent, and the guards
  * refuse anything else from here anyway.
  *
@@ -72,6 +73,7 @@
     shrink: ["M2.75 9.25h4v4M13.25 6.75h-4v-4M6.75 9.25 2.25 13.75M9.25 6.75l4.5-4.5"],
     close: ["m4 4 8 8M12 4l-8 8"],
     down: ["M8 3v9.5M4 8.5l4 4 4-4"],
+    up: ["M8 13V3.5M4 7.5l4-4 4 4"],
     page: ["M4 1.75h5.2l2.8 2.8v9.7H4Z", "M9 1.9v2.85h2.85"],
     check: ["m3.25 8.5 3 3 6.5-7"],
     dots: ["M3.6 8h.01", "M8 8h.01", "M12.4 8h.01"],
@@ -914,9 +916,11 @@
 
     /** WHAT WAITS IN THE CHAT'S QUEUE, under the running turn: each message a
      *  muted bubble saying *Queued* — *Queued · held* once the queue waits
-     *  for the person — with a × that asks the host to take it out, by the
-     *  chat and the message's id, and sends nothing. Always the column's
-     *  last child, so a turn that begins is drawn above it. */
+     *  for the person — with **Send now**, which asks the host to stop the
+     *  turn and send that message next, and a × that asks it to take the
+     *  message out; each asks by the chat and the message's id, and carries
+     *  none of its words. Always the column's last child, so a turn that
+     *  begins is drawn above it. */
     const qbox = h("div", "queue");
     qbox.hidden = true;
     let queueSig = "";
@@ -933,10 +937,16 @@
         const it = h("div", "qitem");
         const head = h("div", "qhead");
         head.appendChild(h("span", "qlabel", held ? "Queued · held" : "Queued"));
+        const acts = h("span", "qacts");
+        const now = button("button", "qnow", "Send now");
+        now.appendChild(icon("up"));
+        now.appendChild(doc.createTextNode("Send now"));
+        now.addEventListener("click", () => { if (S && typeof S.chat === "string") ask("look.sendNow", { chat: S.chat, queued: id }); });
         const x = button("button", "qx", "Remove from the queue");
         x.appendChild(icon("close"));
         x.addEventListener("click", () => { if (S && typeof S.chat === "string") ask("look.unqueue", { chat: S.chat, queued: id }); });
-        head.appendChild(x);
+        acts.appendChild(now); acts.appendChild(x);
+        head.appendChild(acts);
         it.appendChild(head);
         it.appendChild(h("div", "qtext", words));
         qbox.appendChild(it);

@@ -355,6 +355,30 @@ test("a message sent to an idle chat is sent at once, and one queued after all p
   expect(store.lastSent(CHAT)).toBe(100);
 });
 
+test("A MESSAGE SENT NOW IS SENT WHEN IT GOES OUT, and it is this window's send whichever window queued it; a refusal leaves nothing behind", async () => {
+  let t = 100;
+  let refuse = false;
+  const { transport, calls } = transportOf({
+    "chat.sendNow": () => { if (refuse) throw Object.assign(new Error("no such message waits in this chat's queue"), { code: "not_found" }); return summary({ phase: "running", updated: 30 }); },
+  });
+  const store = makeChatStore({ transport, now: () => t });
+  store.takeChat({ chat: summary({ phase: "running", updated: 15, queued: 2 }), updates: [] });
+  // Queued in another window; Send now pressed in this one.
+  await store.sendNow(CHAT, "q1nvented-elsewhere-1");
+  expect(calls.map((c) => [c.kind, c.chat, c.queued])).toEqual([["chat.sendNow", CHAT, "q1nvented-elsewhere-1"]]);
+  // Pressing it sent nothing yet: the turn it stops has not ended.
+  expect(store.lastSent(CHAT)).toBe(null);
+  t = 600;
+  store.takeChat({ chat: summary({ updated: 60, phase: "running" }), updates: [up(9, "unqueued", { id: "q1nvented-elsewhere-1", sent: true }), up(10, "prompt", { text: "sent now" }, 2)] });
+  expect(store.lastSent(CHAT)).toBe(600);
+  // Refused — gone already — it is not this window's to wait for.
+  refuse = true;
+  await expect(store.sendNow(CHAT, "q1nvented-elsewhere-2")).rejects.toMatchObject({ code: "not_found" });
+  t = 900;
+  store.takeChat({ chat: summary({ updated: 90 }), updates: [up(11, "unqueued", { id: "q1nvented-elsewhere-2", sent: true })] });
+  expect(store.lastSent(CHAT)).toBe(600);
+});
+
 test("a chat the server does not have is refused, and the store is left with nothing loading", async () => {
   const { transport } = transportOf({});
   const store = makeChatStore({ transport });
@@ -889,6 +913,23 @@ test("a queued message's × takes it out through the chat store, for the look's 
   await new Promise((r) => setTimeout(r, 0));
   expect(s.calls.filter((c) => c.kind === "chat.unqueue").map((c) => [c.chat, c.queued])).toEqual([[CHAT, "q1nvented-queued-01"]]);
   expect(s.view.answer(/** @type {any} */ (look("look.unqueue", { chat: "c1nvented-no-such-chat", queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
+});
+
+test("A QUEUED MESSAGE'S SEND NOW goes through the chat store for the look's own box alone; one gone already says nothing, and any other refusal is said under the input", async () => {
+  let refusal = { code: "not_found", message: "no such message waits in this chat's queue" };
+  const s = await stand({ answers: { "chat.sendNow": () => { throw Object.assign(new Error(refusal.message), { code: refusal.code }); } } });
+  const ask = (/** @type {string} */ queued, /** @type {any} */ ctx) => s.view.answer(/** @type {any} */ (look("look.sendNow", { chat: CHAT, queued })), ctx);
+  expect(ask("q1nvented-queued-01", { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.calls.filter((c) => c.kind === "chat.sendNow")).toEqual([]);
+  expect(ask("q1nvented-queued-01", s.mounts[0].ctx)).toBe(null);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "chat.sendNow").map((c) => [c.chat, c.queued])).toEqual([[CHAT, "q1nvented-queued-01"]]);
+  expect(s.said.filter((x) => x[0] === "say")).toEqual([]);
+  refusal = { code: "unsupported", message: "Biom is stopping" };
+  expect(ask("q1nvented-queued-02", s.mounts[0].ctx)).toBe(null);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.said.filter((x) => x[0] === "say")).toEqual([["say", "Not sent now: Biom is stopping"]]);
+  expect(s.view.answer(/** @type {any} */ (look("look.sendNow", { chat: "c1nvented-no-such-chat", queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
 });
 
 test("a flood too big for a patch is handed over whole instead", async () => {

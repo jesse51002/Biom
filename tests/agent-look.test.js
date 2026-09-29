@@ -1088,7 +1088,7 @@ test("the look asks to delete a chat only by an id of the grammar, and never wit
   expect(M.request("chat.delete", { chat: cid("done") })).toBe(null);
 });
 
-test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble a message saying Queued, each with a × that asks by ids alone; held, it says so", async () => {
+test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble a message saying Queued, each with Send now and a × that ask by ids alone; held, it says so", async () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
   const root = w.root();
@@ -1105,8 +1105,24 @@ test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble 
   expect(items()).toEqual([["Queued", "Then draw it again, smaller."], ["Queued", "And <b>not</b> in red."]]);
   // The person's words are words: no element came of them.
   expect(everything(one(byClass(root, "qitem")[1], "qtext")).length).toBe(0);
+  // SEND NOW, beside the ×: a button of its own, which asks the host to stop
+  // the turn and send that message next — by the chat and its id, no words.
+  const second = byClass(root, "qitem")[1];
+  const sendNow = one(second, "qnow");
+  expect(sendNow.localName).toBe("button");
+  expect(sendNow.getAttribute("type")).toBe("button");
+  expect(sendNow.getAttribute("aria-label")).toBe("Send now");
+  expect(sendNow.textContent).toBe("Send now");
+  expect(sendNow.nextSibling).toBe(one(second, "qx"));
+  sendNow.fire("click");
+  await Promise.resolve();
+  expect(w.calls).toEqual([{ kind: "look.sendNow", chat: cid("live"), queued: "q1nvented-queued-02" }]);
+  // Pressed, it draws nothing ahead of the host: the message moves when the
+  // stream says it went.
+  expect(items()).toEqual([["Queued", "Then draw it again, smaller."], ["Queued", "And <b>not</b> in red."]]);
+  w.calls.length = 0;
   // The × asks the host to take one out, by the chat and its id, and sends no words.
-  const x = one(byClass(root, "qitem")[1], "qx");
+  const x = one(second, "qx");
   expect(x.localName).toBe("button");
   expect(x.getAttribute("aria-label")).toBe("Remove from the queue");
   x.fire("click");
@@ -1138,11 +1154,14 @@ test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble 
   w.teardown();
 });
 
-test("the look asks to take a queued message out only by the chat's id and the message's", () => {
-  expect(M.request("look.unqueue", { chat: cid("live"), queued: "q1nvented-queued-01", text: "x" })).toEqual({ kind: "look.unqueue", params: { chat: cid("live"), queued: "q1nvented-queued-01" } });
-  expect(M.request("look.unqueue", { chat: cid("live") })).toBe(null);
-  expect(M.request("look.unqueue", { chat: cid("live"), id: "q1nvented-queued-01" })).toBe(null);
-  expect(M.request("look.unqueue", { chat: cid("live"), queued: "has spaces in it" })).toBe(null);
+test("the look asks to take a queued message out, or to send it now, only by the chat's id and the message's", () => {
+  for (const kind of ["look.unqueue", "look.sendNow"]) {
+    expect(M.request(kind, { chat: cid("live"), queued: "q1nvented-queued-01", text: "x" })).toEqual({ kind, params: { chat: cid("live"), queued: "q1nvented-queued-01" } });
+    expect(M.request(kind, { chat: cid("live") })).toBe(null);
+    expect(M.request(kind, { chat: cid("live"), id: "q1nvented-queued-01" })).toBe(null);
+    expect(M.request(kind, { chat: cid("live"), queued: "has spaces in it" })).toBe(null);
+    expect(M.request(kind, { chat: "short", queued: "q1nvented-queued-01" })).toBe(null);
+  }
 });
 
 test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of its kinds with ids and closed words only", () => {
@@ -1163,13 +1182,13 @@ test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of 
   w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 40, at: Date.now(), turn: 2, kind: "queued", id: "q1nvented-queued-01", text: "Invented words the person queued" }] });
   press();
   expect(w.calls.length).toBeGreaterThan(8);
-  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], "look.unqueue": ["chat", "queued"], open: ["target"] };
+  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], "look.unqueue": ["chat", "queued"], "look.sendNow": ["chat", "queued"], open: ["target"] };
   for (const c of w.calls) {
     const { kind, ...rest } = c;
     expect(Object.keys(allowed)).toContain(kind);
     expect(Object.keys(rest).every((k) => /** @type {any} */ (allowed)[kind].includes(k))).toBe(true);
-    if (kind === "look.open" || kind === "look.delete" || kind === "look.unqueue") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
-    if (kind === "look.unqueue") expect(rest.queued).toBe("q1nvented-queued-01");
+    if (kind === "look.open" || kind === "look.delete" || kind === "look.unqueue" || kind === "look.sendNow") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    if (kind === "look.unqueue" || kind === "look.sendNow") expect(rest.queued).toBe("q1nvented-queued-01");
     if (kind === "look.panel") expect(["screen", "beside", "closed"]).toContain(rest.to);
     if (kind === "look.list") expect(typeof rest.open).toBe("boolean");
     if (kind === "open") expect(Object.keys(rest.target).sort()).toEqual(["id", "kind"]);

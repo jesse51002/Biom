@@ -144,7 +144,8 @@ the framework's `biom-agent-look` unless you say otherwise. A look of your own i
 `look: my-look` in `plugins/biom-agent/extensions.yaml` and a plugin of yours
 called `my-look`; it hears the chats through `biom.onLook(fn)`, as the state
 stands and what just moved, and may ask the host to open a chat, start a new one,
-show the list or move the panel — never to say anything to an agent. The box
+show the list, move the panel, ask whether to delete a chat, or take a queued
+message out or send it now — never to say anything to an agent. The box
 where you type to an agent is the workspace's own and no look draws it. There is
 no page under the Agent screen, so the workspace's rung is the only one.
 

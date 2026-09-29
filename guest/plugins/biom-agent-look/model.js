@@ -715,7 +715,7 @@
     if (kind === "look.list") return typeof q.open === "boolean" ? { kind: kind, params: { open: q.open } } : null;
     if (kind === "look.panel") return q.to === "screen" || q.to === "beside" || q.to === "closed" ? { kind: kind, params: { to: q.to } } : null;
     if (kind === "look.delete") return typeof q.chat === "string" && CHAT_ID.test(q.chat) ? { kind: kind, params: { chat: q.chat } } : null;
-    if (kind === "look.unqueue") {
+    if (kind === "look.unqueue" || kind === "look.sendNow") {
       // The message by `queued`: `id` is the envelope's own, and a field of
       // that name would be written over by the call's.
       return typeof q.chat === "string" && CHAT_ID.test(q.chat) && typeof q.queued === "string" && CHAT_ID.test(q.queued) ? { kind: kind, params: { chat: q.chat, queued: q.queued } } : null;

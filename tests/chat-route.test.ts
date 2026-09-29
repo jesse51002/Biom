@@ -51,6 +51,7 @@ function world(over: { throwWith?: unknown; onScreen?: Deps["onScreen"] } = {}) 
     send: later("chat.send", { chat: { id: CHAT, phase: "running" }, queued: { id: "q1nvented-queued-01", place: 1 } }),
     sendQueued: later("chat.sendQueued", { id: CHAT }),
     unqueue: later("chat.unqueue", { id: CHAT }),
+    sendNow: later("chat.sendNow", { id: CHAT }),
     cancel: later("chat.cancel", { id: CHAT }),
     config: later("chat.config", { id: CHAT }),
     switchAgent: later("chat.switchAgent", { id: CHAT }),
@@ -106,6 +107,8 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.delete", chat: CHAT, confirmed: true }, ["chat.delete", CHAT]],
     [{ kind: "chat.sendQueued", chat: CHAT }, ["chat.sendQueued", CHAT]],
     [{ kind: "chat.unqueue", chat: CHAT, queued: "q1nvented-queued-01", text: "smuggled" }, ["chat.unqueue", CHAT, "q1nvented-queued-01"]],
+    // The words are the queued message's own: none ride along on Send now.
+    [{ kind: "chat.sendNow", chat: CHAT, queued: "q1nvented-queued-01", text: "smuggled" }, ["chat.sendNow", CHAT, "q1nvented-queued-01"]],
     [{ kind: "settings.read" }, ["settings.read"]],
   ];
   const seen = new Set<string>();
@@ -142,6 +145,9 @@ test("A MALFORMED AGENT OR CHAT REQUEST IS REFUSED before any module hears of it
     { kind: "chat.sendQueued" },
     { kind: "chat.unqueue", chat: CHAT },
     { kind: "chat.unqueue", chat: CHAT, queued: "has spaces in it" },
+    { kind: "chat.sendNow", chat: CHAT },
+    { kind: "chat.sendNow", queued: "q1nvented-queued-01" },
+    { kind: "chat.sendNow", chat: CHAT, queued: "short" },
   ];
   for (const req of bad) {
     const w = world();

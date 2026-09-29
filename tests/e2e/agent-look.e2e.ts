@@ -21,7 +21,8 @@
 // rest of the thread's nodes alone, and a stale one is dropped; the chat drawn
 // one way, its thinking folded and each run of tool calls one line, both
 // opening; the full screen's bar, Minimize alone and nothing scrolled under
-// it, on a desktop and at a phone's width; an agent's words never become
+// it, on a desktop and at a phone's width; the queue, each message's Send now
+// and × inside its bubble and worked from the keyboard; an agent's words never become
 // markup; the look asks for nothing but its own kinds and `open`; reduced
 // motion rests still with faces as text; and a pagehide leaves nothing behind.
 // Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
@@ -611,6 +612,40 @@ test("THE FULL SCREEN'S BAR, as a browser lays it out: Minimize alone, inside th
       expect([at.name, seen.bar.every((b: any) => clear(b, seen.log))]).toEqual([at.name, true]);
       expect([at.name, seen.first.t >= seen.log.t, seen.log.t >= Math.max(...seen.bar.map((b: any) => b.b))]).toEqual([at.name, true, true]);
       await shot(page, "bar-" + at.name);
+    } finally { await ctx.close(); }
+  }
+}, 60000);
+
+test("THE QUEUE, as a browser lays it out: each message its bubble, its Send now and its × on one line inside it, both worked from the keyboard, and each asking by ids alone", async () => {
+  for (const at of [{ name: "desktop", width: 1180, height: 780, mode: "screen" }, { name: "panel", width: 460, height: 760, mode: "panel" }]) {
+    const { ctx, page, box } = await open({ width: at.width, height: at.height });
+    try {
+      const now = Date.now();
+      const queued = (seq: number, id: string, text: string) => ({ seq, at: now, turn: 2, kind: "queued", id, text });
+      await post(page, box, { kind: "look.state", state: chatState("live", { mode: at.mode }) });
+      await post(page, box, { kind: "look.patch", chat: cid("live"), updates: [queued(40, "q1nvented-queued-01", "Then draw it again, smaller."), queued(41, "q1nvented-queued-02", "And make the columns the same width as the board's, so the two read as one thing at a glance.")] });
+      await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelectorAll(".queue .qitem").length === 2, null, { timeout: BOUND });
+      const seen = await inLook<any>(box, `
+        const r = (e) => { const b = e.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom) }; };
+        return [...root.querySelectorAll(".queue .qitem")].map((q) => ({ item: r(q), label: r(q.querySelector(".qlabel")), now: r(q.querySelector(".qnow")), x: r(q.querySelector(".qx")),
+          words: q.querySelector(".qnow").textContent, shown: getComputedStyle(q.querySelector(".qnow")).display !== "none" }));`);
+      for (const q of seen) {
+        const inside = (b: any) => b.l >= q.item.l && b.r <= q.item.r && b.t >= q.item.t && b.b <= q.item.b;
+        expect([at.name, q.shown, q.words, inside(q.now), inside(q.x)]).toEqual([at.name, true, "Send now", true, true]);
+        // One line: the label, then Send now, then the ×, none over another.
+        expect([at.name, q.label.r <= q.now.l, q.now.r <= q.x.l, Math.abs(q.now.t - q.x.t) <= 2]).toEqual([at.name, true, true, true]);
+      }
+      await shot(page, "queue-" + at.name);
+      // Tab reaches Send now and Enter presses it; the × after it the same.
+      await box.locator(".queue .qitem").nth(1).locator("button.qnow").focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Tab");
+      expect(await inLook<string>(box, `return root.activeElement ? root.activeElement.getAttribute("aria-label") : "";`)).toBe("Remove from the queue");
+      await page.keyboard.press(" ");
+      expect((await calls(page, 2)).filter((c) => c.kind.startsWith("look."))).toEqual([
+        { kind: "look.sendNow", chat: cid("live"), queued: "q1nvented-queued-02" },
+        { kind: "look.unqueue", chat: cid("live"), queued: "q1nvented-queued-02" },
+      ]);
     } finally { await ctx.close(); }
   }
 }, 60000);

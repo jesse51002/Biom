@@ -652,6 +652,19 @@ export function makeAgentView(deps) {
           void chats.unqueue(req.chat, req.queued).catch((e) => console.warn("[biom] the queued message could not be taken out", e));
           return null;
         }
+        case "look.sendNow": {
+          // A queued message's Send now: the turn running stopped as Stop
+          // stops it, and that message out the moment it has ended. Its words
+          // are the person's own, already waiting; the look named it and
+          // carried none. One no longer waiting has gone already, or been
+          // taken out, and there is nothing to say about it.
+          if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
+          void chats.sendNow(req.chat, req.queued).catch((e) => {
+            if (e && e.code === ERRORS.NOT_FOUND) return;
+            input.say("Not sent now: " + (e instanceof Error && e.message ? e.message : "the server did not answer"));
+          });
+          return null;
+        }
         case "look.panel": {
           if (req.to === "screen") {
             if (mode !== "screen") toScreen(true);
