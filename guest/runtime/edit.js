@@ -125,10 +125,22 @@
    *  frame the runtime is verified in, which has no shim and therefore no
    *  palette, and they are greys rather than an opinion.
    *
-   *  `[data-g-src]` is the SLOT while it is open, so nothing here sets its
-   *  display: a slot a section laid out as a grid keeps its grid. */
+   *  `[data-g-edit-open]` is the SLOT while it is open, so nothing here sets its
+   *  display: a slot a section laid out as a grid keeps its grid.
+   *
+   *  EVERY ATTRIBUTE THIS SHEET MATCHES ON ITS OWN WEARS `data-g-edit-`, and the
+   *  prefix is the fix for a bug rather than a style. A plugin's options are its
+   *  node's `data-g-*` attributes, so a rule here on a bare name paints every
+   *  plugin node that happens to take an option of that name. The empty-block
+   *  placeholder used to be `data-g-blank`, which is also `biom-items`' template
+   *  for a new item — so beside every add button on every page the whole
+   *  template was printed in grey italics, literal `\n`s and all. The open slot
+   *  used to be `data-g-src`, which is also the word a plugin document marks a
+   *  script with and the one a diagram node can take its source by, and such a
+   *  node would have been tinted as a slot somebody was typing in.
+   *  `tests/guest.test.js` holds these names to the editor alone. */
   const CSS = `
-[data-g-src] {
+[data-g-edit-open] {
   min-height: 1.4em;
   outline: 0;
   caret-color: var(--cyan, #1543D6);
@@ -136,7 +148,7 @@
   box-shadow: -0.75rem 0 0 color-mix(in srgb, var(--cyan, #1543D6) 5%, transparent);
   border-radius: 1px;
 }
-[data-g-src] [data-g-seg] {
+[data-g-edit-open] [data-g-seg] {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   /* A typed tab draws four wide rather than the browser's eight, which is
@@ -153,9 +165,9 @@
   padding-inline: 0;
   margin-inline: 0;
 }
-[data-g-blank] { min-height: 1.4em; cursor: text; }
-[data-g-blank]::after {
-  content: attr(data-g-blank);
+[data-g-edit-blank] { min-height: 1.4em; cursor: text; }
+[data-g-edit-blank]::after {
+  content: attr(data-g-edit-blank);
   opacity: 0.38;
   font-style: italic;
   pointer-events: none;
@@ -598,7 +610,7 @@
       // empty slot is still an editable slot.
       if (made.length === 0) {
         const holder = document.createElement("p");
-        holder.setAttribute("data-g-blank", "Write something");
+        holder.setAttribute("data-g-edit-blank", "Write something");
         made.push(holder);
         frag.appendChild(holder);
       }
@@ -607,7 +619,7 @@
 
     if (slot.ranges.length === 0) {
       const holder = document.createElement("p");
-      holder.setAttribute("data-g-blank", "Write something");
+      holder.setAttribute("data-g-edit-blank", "Write something");
       holder.setAttribute("data-g-blk", "0");
       frag.appendChild(holder);
     }
@@ -665,7 +677,7 @@
     if (slot.open.frame) clearTimeout(slot.open.frame);
     slot.open = null;
     slot.node.removeAttribute("contenteditable");
-    slot.node.removeAttribute("data-g-src");
+    slot.node.removeAttribute("data-g-edit-open");
     slot.node.removeAttribute("spellcheck");
   }
 
@@ -775,7 +787,7 @@
     const host = slot.node;
     const text = slot.source;
     host.replaceChildren(...keep(host), ...segments(text, slot.ranges).map((seg) => build(seg, text)));
-    host.setAttribute("data-g-src", "");
+    host.setAttribute("data-g-edit-open", "");
     // `plaintext-only` so a paste brings words rather than somebody else's
     // markup, and so the browser stops trying to be a rich text editor over the
     // top of a plain text format.
@@ -959,7 +971,7 @@
   function onClick(/** @type {MouseEvent} */ ev) {
     const target = /** @type {Element | null} */ (ev.target);
     if (!target || typeof target.closest !== "function") return;
-    if (target.closest("[data-g-src]")) return; // already editing this one
+    if (target.closest("[data-g-edit-open]")) return; // already editing this one
     // A link in prose is a link. Opening the paragraph instead would make every
     // reference on the page unfollowable.
     if (target.closest("a[href]")) return;
