@@ -21,6 +21,11 @@
 // one before it, because only the last of each is ever read. Only the open
 // chat's stream is held at all — a chat in the background is its summary.
 //
+// A MESSAGE GOES IN LINE WITH THIS WINDOW'S REPORTS (`inLine`, the history
+// store's): the server adds the page on screen to it from what this window
+// last reported, so it leaves only once every report made before it has
+// landed, and none made after it overtakes it.
+//
 // WHEN THIS WINDOW SENT is the switcher's `lastSent`, and a message that
 // waits in the chat's queue is not sent yet: it is sent when it goes out,
 // which the stream says with an `unqueued` update for its id. So a queued
@@ -213,12 +218,16 @@ const isSummary = (s) => isObj(s) && typeof s.id === "string" && s.id !== "" && 
 const isAgent = (a) => isObj(a) && typeof a.key === "string" && a.key !== "" && typeof a.name === "string";
 
 /**
- * @param {{ transport: Transport, now?: () => number }} deps
+ * @param {{ transport: Transport, now?: () => number, inLine?: <T>(call: () => Promise<T>) => Promise<T> }} deps
+ *   `inLine` is where a message waits its turn among this window's reports —
+ *   the history store's — so the server reads the page it was sent from. Absent,
+ *   a message goes at once: a window that reports nothing.
  * @returns {ChatStore}
  */
 export function makeChatStore(deps) {
   const { transport } = deps;
   const now = deps.now ?? Date.now;
+  const inLine = deps.inLine ?? ((call) => call());
   const changed = emitter();
   /** @type {{ on: (fn: (v: { chat: ChatId, updates: ChatUpdate[] }) => void) => () => void, emit: (v: { chat: ChatId, updates: ChatUpdate[] }) => void }} */
   const grew = /** @type {any} */ (emitter());
@@ -551,8 +560,9 @@ export function makeChatStore(deps) {
       if (typeof init.page === "string" && init.page !== "") body.page = init.page;
       if (init.config && Object.keys(init.config).length) body.config = init.config;
       const at = now();
+      // A first message goes with the page on screen: in line with the reports.
       /** @type {ChatSummary} */
-      const s = await ask(body);
+      const s = await (body.text === undefined ? ask(body) : inLine(() => ask(body)));
       if (body.text !== undefined && isSummary(s)) sent.set(s.id, at);
       rekept();
       return summarised(s);
@@ -567,7 +577,7 @@ export function makeChatStore(deps) {
       const at = now();
       if (!busy) sent.set(chat, at);
       /** @type {ChatSent} */
-      const r = await ask({ kind: "chat.send", chat, text });
+      const r = await inLine(() => ask({ kind: "chat.send", chat, text }));
       const queued = isObj(r) && isObj(r.queued) && typeof r.queued.id === "string" ? r.queued : null;
       if (queued !== null) {
         // It waits: it is sent when the stream says it went out.

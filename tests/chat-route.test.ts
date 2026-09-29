@@ -27,7 +27,7 @@ const HERE = { address: { view: "page", id: "home", screen: "page" }, panel: tru
 type Call = [string, ...unknown[]];
 
 /** Fakes that record every call and answer something recognisable. */
-function world(over: { throwWith?: unknown } = {}) {
+function world(over: { throwWith?: unknown; onScreen?: Deps["onScreen"] } = {}) {
   const calls: Call[] = [];
   const answer = (name: string, value: unknown) => (...args: unknown[]) => {
     calls.push([name, ...args]);
@@ -68,7 +68,7 @@ function world(over: { throwWith?: unknown } = {}) {
     read: answer("history.read", { entries: [], head: 7 }),
     edit: later("history.edit", null),
   };
-  const deps = { agents, chats, history, settings } as unknown as Deps;
+  const deps = { agents, chats, history, settings, ...(over.onScreen ? { onScreen: over.onScreen } : {}) } as unknown as Deps;
   let n = 0;
   const call = (o: Record<string, unknown>): Promise<ApiResponse> => handle({ id: `r${++n}`, g: PROTOCOL, ...o } as ApiRequest, deps);
   return { calls, call, deps };
@@ -95,7 +95,7 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.list" }, ["chat.list"]],
     [{ kind: "chat.read", chat: CHAT, since: 4 }, ["chat.read", CHAT, 4]],
     [{ kind: "chat.read", chat: CHAT }, ["chat.read", CHAT, undefined]],
-    [{ kind: "chat.send", chat: CHAT, text: "go on" }, ["chat.send", CHAT, "go on"]],
+    [{ kind: "chat.send", chat: CHAT, text: "go on" }, ["chat.send", CHAT, "go on", null]],
     [{ kind: "chat.cancel", chat: CHAT }, ["chat.cancel", CHAT]],
     [{ kind: "chat.config", chat: CHAT, option: "model", value: "fast" }, ["chat.config", CHAT, "model", "fast"]],
     [{ kind: "chat.config", chat: CHAT, option: "thinking", value: true }, ["chat.config", CHAT, "thinking", true]],
@@ -182,6 +182,27 @@ test("a module's own refusal is said in its own sentence; anything else is `inte
   expect(code(r2)).toBe("internal");
   expect(JSON.stringify(r2)).not.toContain("TOKEN");
   expect(JSON.stringify(said)).not.toContain("TOKEN");
+});
+
+test("A MESSAGE CARRIES THE PAGE ON SCREEN IN THE WINDOW THAT SENT IT, asked by the envelope's window; one that cannot be said goes without it", async () => {
+  const SEEN = { page: "home/Specs", name: "Invented Specs", folder: "pages/home/children/Specs", screen: "page" as const };
+  const asked: unknown[] = [];
+  const w = world({ onScreen: async (window) => { asked.push(window); return SEEN; } });
+  expect(value(await w.call({ kind: "chat.send", chat: CHAT, text: "go on", window: WINDOW }))).toBeTruthy();
+  expect(value(await w.call({ kind: "chat.new", agent: AGENT, text: "hello", page: "home", window: WINDOW }))).toBeTruthy();
+  // A chat made with no message has nothing to carry it: nobody is asked.
+  expect(value(await w.call({ kind: "chat.new", agent: AGENT, window: WINDOW }))).toBeTruthy();
+  expect(asked).toEqual([WINDOW, WINDOW]);
+  expect(w.calls).toEqual([
+    ["chat.send", CHAT, "go on", SEEN],
+    ["chat.create", { agent: AGENT, text: "hello", page: "home", onScreen: SEEN }],
+    ["chat.create", { agent: AGENT }],
+  ]);
+
+  // No window named, or a lookup that fails: the message still goes, bare.
+  const failing = world({ onScreen: async () => { throw new Error("the index is gone"); } });
+  expect(value(await failing.call({ kind: "chat.send", chat: CHAT, text: "go on", window: WINDOW }))).toBeTruthy();
+  expect(failing.calls).toEqual([["chat.send", CHAT, "go on", null]]);
 });
 
 test("A BUILD WITH NO AGENTS answers every agent and chat kind `unsupported`, and the history reads answer empty", async () => {

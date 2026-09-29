@@ -327,7 +327,10 @@ test fuzzes every inner kind through a spy transport and finds no such call. A
 chat's agent is a program allowed everything on this machine, so a box that
 could put words in front of one could do anything the person can. `run.start`
 is the one inner kind that starts an agent at all — an automation, from files
-in the vault and a form's inputs — and it is not that. Every `chat.*` and
+in the vault and a form's inputs — and it is not that. Nor is the note Biom
+adds to a message about the page on screen (`chat-guide` §6): its page is the
+host's own report of the window and its name the page's head on disk, which no
+inner kind writes, and the name is neutralised so it cannot close the note. Every `chat.*` and
 `agents.*` kind, and `window.report`, is also answered only to this machine's
 own window, in every build: a loopback peer, a loopback Host on this server's
 port, an Origin that is this server's own where one is sent, a

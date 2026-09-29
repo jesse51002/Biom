@@ -45,6 +45,21 @@
 //
 // PERMISSION IS ANSWERED, NEVER SHOWN: `allow_always`, else `allow_once`.
 //
+// THE PAGE ON SCREEN GOES WITH A MESSAGE, AND THE PERSON NEVER SEES IT (*Chat*,
+// `acp`). A message is handed the page that was on screen in the window that
+// sent it — resolved by the composition root, and kept with the message
+// while it is held or queued, so it is the page the person was looking at
+// when they wrote it — and `session/prompt` carries it after their words as a
+// block of its own, the note `pagenote.ts` writes. It goes when the page is
+// not the one the chat's SESSION was last told: so with the first such
+// message, again only for another page, and again to a session that never
+// heard it — a new one after a switch, or after a restart on an agent that
+// cannot reopen its own. What was told is kept in the log, so it survives a
+// restart, and is kept only once the agent has answered the turn that
+// carried it. Never on a `/` command, never with no page on screen. The
+// prompt update, the chat's name, Jev's signals and the queue hold the words
+// as typed, so nothing of Biom's own ever holds the note.
+//
 // THE FILES. `fs/read_text_file` and `fs/write_text_file` are confined to the
 // vault — resolved, both spellings of a root reached through a symlink tried —
 // and go through `deps.files`, whose `safe()` refuses `..` and a symlink out
@@ -160,6 +175,8 @@ import { offeredChoices, offers, pickerCategoryOf } from "../domain/choices.ts";
 import type { Edit, EditEvent, VaultRoots } from "../domain/edits.ts";
 import { TOOL_EDIT_KINDS, editsOf, toolLineOf, toolPaths } from "../domain/edits.ts";
 import type { TurnSignal } from "../domain/jev.ts";
+import type { PageOnScreen } from "../domain/pagenote.ts";
+import { noteFor, readOnScreen, withoutNotes } from "../domain/pagenote.ts";
 
 /** One workspace skill, as `.agents/skills/<name>/SKILL.md`'s frontmatter
  *  says it: the / menu's half that is not the agent's. */
@@ -292,12 +309,17 @@ export interface ChatsDeps {
 }
 
 export interface Chats {
-  create(init: { agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue> }): Promise<ChatSummary>;
+  /** A new chat, and its first message where `text` is given. `onScreen` is
+   *  the page on screen in the window that sent it, told to the agent with
+   *  it. */
+  create(init: { agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue>; onScreen?: PageOnScreen | null }): Promise<ChatSummary>;
   /** Every chat, the most recently changed first. */
   list(): ChatSummary[];
   read(chat: ChatId, since?: number): Promise<ChatRead>;
-  /** The person's message: out now to an idle chat, else into its queue. */
-  send(chat: ChatId, text: string): Promise<ChatSent>;
+  /** The person's message: out now to an idle chat, else into its queue —
+   *  with the page on screen in the window that sent it, which goes with it
+   *  whenever it goes out. */
+  send(chat: ChatId, text: string, onScreen?: PageOnScreen | null): Promise<ChatSent>;
   /** Send a held queue: its next message now if no turn runs, one a turn after. */
   sendQueued(chat: ChatId): Promise<ChatSummary>;
   /** Take one message out of the queue, by its id. */
@@ -470,11 +492,15 @@ interface Chat {
   session: { agent: AgentKey; id: string } | null;
   /** The session now open is new and knows nothing of the chat so far. */
   handoff: boolean;
-  /** The message waiting to go out, from `send` until `session/prompt`.
+  /** The message waiting to go out, from `send` until `session/prompt`, with
+   *  the page that was on screen when it was sent.
    *  `signin`: its agent refused for want of a sign-in, and it goes out only
    *  once that agent has been seen Inactive (`off`) and then Active again —
    *  never on the list it was refused against. */
-  held: { text: string; tries: number; signin: boolean; off: boolean } | null;
+  held: { text: string; onScreen: PageOnScreen | null; tries: number; signin: boolean; off: boolean } | null;
+  /** THE PAGE THE CHAT'S SESSION WAS LAST TOLD, and which session that was:
+   *  a message on this page to this session carries no note. */
+  told: { onScreen: PageOnScreen; session: string } | null;
   /** Bumped by Stop, a switch and close, so a start in flight can tell it was
    *  overtaken. */
   gen: number;
@@ -514,12 +540,20 @@ interface Chat {
   ending: Promise<unknown> | null;
   /** Deleted: nothing of it is published or written again. */
   removed: boolean;
-  /** THE QUEUE: the person's messages sent while a turn ran, in order. */
-  waiting: { id: string; text: string }[];
+  /** THE QUEUE: the person's messages sent while a turn ran, in order, each
+   *  with the page that was on screen when it was sent. */
+  waiting: Waiting[];
   /** The queue waits for the person — after Stop, a red end or a restart —
    *  rather than for the turn. */
   waitingHeld: boolean;
   log: LogWriter;
+}
+
+/** One message in a chat's queue. */
+interface Waiting {
+  id: string;
+  text: string;
+  onScreen: PageOnScreen | null;
 }
 
 /* ── the kept log ─────────────────────────────────────────────────────── */
@@ -531,7 +565,8 @@ type LogRecord =
   | { t: "session"; agent: AgentKey; id: string }
   | { t: "config"; values: Record<string, ConfigValue> }
   | { t: "choices"; values: Record<string, ConfigValue> }
-  | { t: "queue"; items: { id: string; text: string }[]; held: boolean }
+  | { t: "queue"; items: Waiting[]; held: boolean }
+  | { t: "told"; onScreen: PageOnScreen; session: string }
   | { t: "u"; u: ChatUpdate };
 
 interface LogWriter {
@@ -679,7 +714,7 @@ export function makeChats(deps: ChatsDeps): Chats {
   const fresh = (id: ChatId, created: number, page: Place | null, torn: boolean): Chat => ({
     id, name: "", face: null, agent: null, harness: null, page, created, updated: created,
     phase: "idle", turn: 0, stop: null, reason: null, endedAt: null,
-    live: null, session: null, handoff: false, held: null, gen: 0, cancelling: false,
+    live: null, session: null, handoff: false, held: null, told: null, gen: 0, cancelling: false,
     pendingConfig: new Map(), choices: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
@@ -854,8 +889,13 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.choices = new Map(Object.entries(isObj(r.values) ? r.values : {}).filter((e): e is [string, ConfigValue] => typeof e[1] === "string" || typeof e[1] === "boolean"));
       }
       else if (r.t === "queue") {
-        c.waiting = Array.isArray(r.items) ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text })) : [];
+        c.waiting = Array.isArray(r.items)
+          ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text, onScreen: readOnScreen(q.onScreen) }))
+          : [];
         c.waitingHeld = r.held === true;
+      } else if (r.t === "told") {
+        const onScreen = readOnScreen(r.onScreen);
+        c.told = onScreen !== null && typeof r.session === "string" ? { onScreen, session: r.session } : null;
       }
       else if (r.t === "u" && isObj(r.u)) {
         const u = r.u;
@@ -970,6 +1010,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.pendingConfig.size > 0) out.push({ t: "config", values: Object.fromEntries(c.pendingConfig) });
     if (c.choices.size > 0) out.push({ t: "choices", values: Object.fromEntries(c.choices) });
     if (c.waiting.length > 0) out.push({ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld });
+    if (c.told !== null) out.push({ t: "told", onScreen: c.told.onScreen, session: c.told.session });
     for (const u of c.updates ?? []) out.push({ t: "u", u });
     return out;
   };
@@ -1313,6 +1354,13 @@ export function makeChats(deps: ChatsDeps): Chats {
       }
     });
 
+  /** The page a session has now been told, kept in the chat's log so a
+   *  restart that reopens that session does not tell it again. */
+  const keepTold = (c: Chat, onScreen: PageOnScreen, session: string): void => {
+    c.told = { onScreen, session };
+    c.log.append([{ t: "told", onScreen, session }]);
+  };
+
   /** The queue as it stands, kept in the chat's log. */
   const keepQueue = (c: Chat): void => {
     c.log.append([{ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld }]);
@@ -1326,7 +1374,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.waiting.length === 0) c.waitingHeld = false;
     keepQueue(c);
     emit(c, { kind: "unqueued", id: next.id, sent: true });
-    beginTurn(c, next.text);
+    beginTurn(c, next.text, next.onScreen);
   };
 
   const reasonOf = (stop: TurnEnd, harness: string): string | null => {
@@ -1342,7 +1390,9 @@ export function makeChats(deps: ChatsDeps): Chats {
     }
   };
 
-  const beginTurn = (c: Chat, text: string): void => {
+  /** A TURN BEGINS for the person's words, and the page on screen when they
+   *  sent them, which is held with them until they go out. */
+  const beginTurn = (c: Chat, text: string, onScreen: PageOnScreen | null): void => {
     c.turn += 1;
     c.stop = null;
     c.reason = null;
@@ -1354,7 +1404,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     emit(c, { kind: "prompt", text });
     if (c.name === "") rename(c, nameFrom(text, NAME_MAX));
     signal({ kind: "start", chat: c.id, turn: c.turn, text });
-    c.held = { text, tries: 0, signin: false, off: false };
+    c.held = { text, onScreen, tries: 0, signin: false, off: false };
     if (c.agent === null && adoptIfAny(c)) {
       emitConfig(c);
       void emitCommands(c);
@@ -1395,7 +1445,11 @@ export function makeChats(deps: ChatsDeps): Chats {
   };
 
   /** Everything the chat said before this turn, for a session that did not
-   *  hear it. */
+   *  hear it: the person's words as they typed them — which never held a
+   *  note — and each reply WITHOUT ONE, because a reply that quoted the page
+   *  an earlier session was told would hand the new one a stale page, in a
+   *  tag only Biom may write. What is on screen now goes after the message,
+   *  as this turn's note. */
   const handoffText = (c: Chat): string => {
     const turns: string[] = [];
     let current = -1;
@@ -1403,7 +1457,8 @@ export function makeChats(deps: ChatsDeps): Chats {
     let who = c.harness ?? "the agent";
     let reply = "";
     const endReply = () => {
-      if (reply.trim() !== "") block.push(`${who}: ${reply.trim()}`);
+      const said = withoutNotes(reply).trim();
+      if (said !== "") block.push(`${who}: ${said}`);
       reply = "";
     };
     const endTurn = () => {
@@ -1462,6 +1517,10 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
     const text = await outgoing(c, held.text);
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
+    const session = live.sessionId;
+    // THE PAGE ON SCREEN WHEN IT WAS SENT, after the words, unless this
+    // session was told that very page already.
+    const note = noteFor(held.text, held.onScreen, c.told !== null && c.told.session === session ? c.told.onScreen : null);
     const handoff = c.handoff;
     c.held = null;
     c.handoff = false;
@@ -1469,7 +1528,11 @@ export function makeChats(deps: ChatsDeps): Chats {
     const turn = c.turn;
     let result: unknown;
     try {
-      result = await live.conn.request("session/prompt", promptParams(live.sessionId, text));
+      result = await live.conn.request("session/prompt", promptParams(session, text, note === null ? [] : [note]));
+      // ANSWERED, so the session heard the note: kept, and not said again to
+      // it for that page. A prompt refused, failed or cut off by the agent
+      // going is not known to have been heard, and the next message says it.
+      if (note !== null && held.onScreen !== null) keepTold(c, held.onScreen, session);
     } catch (e) {
       if (c.turn !== turn || c.phase === "idle") return;
       if (isAuthRequired(e)) {
@@ -1840,8 +1903,15 @@ export function makeChats(deps: ChatsDeps): Chats {
         if (usage) emit(c, { kind: "usage", ...usage });
         return;
       }
+      case "user_message_chunk":
+        // THE PERSON'S OWN WORDS, SAID BACK — by an agent replaying a
+        // session, with whatever note it was handed. Never read: Biom keeps
+        // the words itself, as the turn's `prompt`, from before any note was
+        // added, so the bubble, the name, Jev and the history hold them
+        // alone. Anything that comes to read these must read them through
+        // `withoutNotes`.
+        return;
       default:
-        // `user_message_chunk` is the person's own words back.
         // `session_info_update` is the agent's own title for the session,
         // which does not rename the chat: a chat is named once, from its
         // first message, and its name's face is picked for that name (*Chat*,
@@ -2126,7 +2196,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       owe(c);
       emitConfig(c);
       await emitCommands(c);
-      if (typeof init.text === "string" && init.text.trim() !== "") beginTurn(c, init.text);
+      if (typeof init.text === "string" && init.text.trim() !== "") beginTurn(c, init.text, init.onScreen ?? null);
       touch(c);
       return summary(c);
     },
@@ -2143,7 +2213,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       return { chat: summary(c), updates };
     },
 
-    async send(id, text) {
+    async send(id, text, onScreen = null) {
       const c = await must(id);
       if (typeof text !== "string" || text.trim() === "") throw bad("bad_request", "a message has words in it");
       if (stopping) throw bad("unsupported", "Biom is stopping");
@@ -2151,14 +2221,14 @@ export function makeChats(deps: ChatsDeps): Chats {
         // A TURN IS GOING: the message waits in the chat's queue, and the
         // answer says its place.
         if (c.waiting.length >= QUEUE_MAX) throw bad("limit", `${QUEUE_MAX} messages already wait in this chat's queue: send or remove some first`);
-        const q = { id: randomUUID(), text };
+        const q: Waiting = { id: randomUUID(), text, onScreen };
         c.waiting.push(q);
         keepQueue(c);
         emit(c, { kind: "queued", id: q.id, text });
         touch(c);
         return { chat: summary(c), queued: { id: q.id, place: c.waiting.length } };
       }
-      beginTurn(c, text);
+      beginTurn(c, text, onScreen);
       return { chat: summary(c), queued: null };
     },
 

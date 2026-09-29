@@ -32,7 +32,8 @@ description: >-
   "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS",
   "settings.json", "kept choices", "view", "Plain", "Thinking", "Used N tools",
   "⋯", "Chat options", "View menu", "look.view",
-  "queue", "queued", "Send queued", "delete a chat", "session/delete".
+  "queue", "queued", "Send queued", "delete a chat", "session/delete",
+  "biom-context", "page on screen", "the note", "withoutNotes".
 ---
 
 # Chat — an agent already on this machine, one process per chat, over ACP
@@ -298,6 +299,36 @@ process that made it.
 - **A chat is named once**, from the first line of its first message, and its
   name's face picked once. An agent's `session_info_update` title does not
   rename it.
+- **The page on screen goes with a message, and the person never sees it**
+  (`server/domain/pagenote.ts`). A message sent while a page is on screen
+  carries, after the person's words and as a text block of its own in
+  `session/prompt`, Biom's note: the page's name, where its folder is, which
+  of its screens — the page, its Instructions or its Automations — and that it
+  is background that may or may not be what the message is about, wrapped in
+  `<biom-context>`, a tag only Biom writes. **Which page** is read by the
+  composition root off the sending window's context the moment `chat.send` or
+  `chat.new` is answered (`history.contextOf`, then the page's head for its
+  name and folder — never its body), and the window makes that exact: it sends
+  a message only once every report it made before it is answered, and reports
+  nothing after it until the message is. A message held or queued keeps the
+  page it was SENT from — what the person was looking at when they wrote it —
+  in the queue's log record too. **When**: the note goes unless the chat's
+  session was last told that very page (same page, name, folder and screen) —
+  so with the first such message, again only for another page, and again to a
+  session that never heard it, a new one after a switch or after a restart on
+  an agent that cannot reopen its own. What was told, and to which session, is
+  a `told` record in the chat's log, kept only once the agent has answered the
+  turn that carried it. **Never** on a `/` command, whose slash has to lead,
+  and never with no page on screen — the full Agent screen, Design, the Map.
+  **The page's name is neutralised** — one line, no angle bracket left to
+  close the note or forge another, bounded — and no page's code can add to the
+  note: the address is the host's own report and the name is the page's head
+  on disk, which no inner kind writes. **The person never sees it** because
+  nothing of Biom's own holds it: the `prompt` update, the chat's name, Jev's
+  signals, the queue and the history are made from the words as typed.
+  `withoutNotes` is the one strip for text an agent says back — the handoff
+  reads each reply through it — and `user_message_chunk`, the person's words
+  replayed, is never read.
 - **The / menu** is the agent's `available_commands_update` — the probe's until
   the chat's own session sends one — and then every workspace skill it did not
   list, read fresh from `.agents/skills/`. A message naming a skill the agent
@@ -379,7 +410,8 @@ Runs and agents outside Biom are not recorded: they wait for the door.
 **Every chat's stream is appended as it arrives to `.biom/chats/<id>.jsonl`**
 — under `.biom/`, which ignores itself in git and which the watcher skips: a
 header, the chat's agent, its session, the config kept for the next start,
-the chat's own choices, and every update. At construction every log is scanned for its summary
+the chat's own choices, its queue, the page its session was last told, and
+every update. At construction every log is scanned for its summary
 (`Chats.loaded`; `chat.list` awaits it), and a chat's updates are read into
 memory only when somebody reads or writes it. A turn the server died in is
 ended `crashed` on the scan, and a line torn by a crash spoils only itself.
@@ -396,9 +428,10 @@ replaces a tool line by its id.
 `session/resume`, else `session/load` (whose replay is not news and is
 dropped), where the agent offers them. Otherwise, and on every switch of
 agent, the new session's first message is handed the chat so far, oldest
-dropped past a bound — and a handoff a refused message was carrying stays owed
-to the session reopened for its retry. What is owed is kept in memory, so a
-server restart in between loses it.
+dropped past a bound and each reply without any note it quoted — and a
+handoff a refused message was carrying stays owed to the session reopened for
+its retry. What is owed is kept in memory, so a server restart in between
+loses it.
 
 **An idle agent is ended.** `reap()` ends a chat's agent that is at rest — its
 session open, no turn held, starting, running or stopping — whose chat no
@@ -555,9 +588,10 @@ asking box is on `@agent` and the Agent screen has registered its answer
 (`answerLook`), and the answer refuses every box but the one it mounted, by the
 identity of that box's context. A page opened from the look comes up with the
 chat in the panel beside it. **The input box is Biom's, in the host, over the
-box**, so only what the person types there ever reaches an agent: the one line
-of the eleventh contracts edit that may never move, which `boundary-guide`
-states in full.
+box**, so what reaches an agent is what the person types there and Biom's own
+note of the page on screen (§6), and never a word a box says: the one line of
+the eleventh contracts edit that may never move, which `boundary-guide` states
+in full.
 
 ## 12. The host side: one box, and Biom's input box over it
 
@@ -603,8 +637,10 @@ kept per browser.
 
 **The input box is `client/views/agent-input.js`, host DOM over the look's box,
 and the one place a chat's agent is handed words**: the text area's own value,
-sent by Enter or Send as `chat.new` or `chat.send`. Under it the agent, model,
-mode and effort, each the agent's own list, five shown and the rest behind
+sent by Enter or Send as `chat.new` or `chat.send` — in line with the window's
+reports (the history store's `inLine`), so the server adds the page that was
+on screen when it was sent (§6). Under it the agent, model, mode and effort,
+each the agent's own list, five shown and the rest behind
 **More models** — the agent's own choices and nothing else, so nothing there
 reads as how the chat is shown. **The start screen
 starts where the person left off**: the agent chip defaults to the agent the
@@ -684,7 +720,9 @@ strip counts the chats and the Active agents.
 
 **No test runs an agent of the person's unless it is asked to by name.** The
 agent every test talks to is `tests/fake-acp-agent.ts`: a real process speaking
-ACP over stdio, driven by a scenario in `FAKE_ACP_SCENARIO`, which
+ACP over stdio, driven by a scenario in `FAKE_ACP_SCENARIO`, steered and
+echoed by the person's words — a prompt's first block — with every message it
+heard, every block of a prompt included, in the scenario's `log`; which
 `installFakeAgent` puts on a PATH under `claude-agent-acp` — a command name the
 known-agents table already lists, so the server finds it by its real path and no
 environment variable changes how anything loads.
@@ -744,16 +782,17 @@ server/domain/edits.ts          which action is an edit, vault paths, the bounde
 server/domain/shellwrites.ts    a command line's writes, conservatively
 server/domain/jev.ts            STATUS_FACES, NAME_FACES, makeJev, makeJevTurn, makeJevStatus
 server/domain/choices.ts        the kept choices read and written, PICKERS, offeredChoices, pickerCategoryOf
+server/domain/pagenote.ts       PageOnScreen, noteOf, noteFor, isCommand, readOnScreen, withoutNotes: the page on screen as Biom's note
 server/workspace/agents.ts      makeAgents: find, probe, install and its lock, sign in, tickets, AUTH_EVERY_PROCESS, TIMING
-server/workspace/chats.ts       makeChats, readSkills: turns, light, files, onEdit, the kept log, reap, the kept choices laid on
+server/workspace/chats.ts       makeChats, readSkills: turns, light, files, onEdit, the kept log, reap, the kept choices laid on, the note and `told`
 server/workspace/settings.ts    makeSettings: `.biom/settings.json`, read once, written whole, a broken one put aside
-server/api/routes.ts            chatAnswer, CHAT_SENTENCES, the gate and `own` on route
-server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring, events(),
+server/api/routes.ts            chatAnswer, CHAT_SENTENCES, pageOnScreen, the gate and `own` on route
+server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring and onScreen, events(),
                                 localRefusal, the exit handler, endAgentsWithin
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
 guest/plugins/biom-agent-look/  the default look: look.js (nodes, the ⋯ and togglePopup), model.js (decisions, runWords, VIEWS, VIEW_WORDS, viewOf), sheet.js (the views)
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
-client/store/chats.js           makeChatStore, fold, agentMode, showChat, freshThread, the pickers' rules
+client/store/chats.js           makeChatStore (a message sent through `inLine`), fold, agentMode, showChat, freshThread, the pickers' rules
 client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.view kept here)
 client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), NOT_TOUCH
 client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
@@ -762,7 +801,7 @@ client/bridge/bridge.js         answerLook, and the look.* case: @agent only, to
 client/boot.js                  the chat store, the Agent screen, the context kept per session, the cold start
 tests/fake-acp-agent.ts         a scripted ACP agent, a real process; installFakeAgent for a PATH
 tests/acp.test.ts  acp-wire.test.ts  agents-wire.test.ts  agents.test.ts  agents-install.test.ts
-tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.test.ts
+tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.test.ts  pagenote.test.ts
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
 tests/settings.test.ts          the kept choices: the shape, the bounds, the file, a broken one put aside

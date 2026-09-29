@@ -32,6 +32,13 @@
 // knows them without waiting for the stream. The reports still in flight are
 // readable (`unanswered`), because *Go back to* is computed from this window's
 // views and the one being reported is already on screen.
+//
+// A MESSAGE TO AN AGENT GOES IN THE SAME LINE (`inLine`). The server adds the
+// page on screen to a message from the context this window last reported, so
+// the message leaves only once every report made before it is answered —
+// which is when the server has kept that context — and a report made after it
+// waits for the message's answer, by which time the server has read it. Two
+// separate requests promise no order on the way; one line does.
 
 /** @import { HistoryEntry, HistoryRead, Move, Transport, WindowReport } from "../../contracts/types.ts" */
 
@@ -66,6 +73,10 @@ import { isHistoryEntry } from "../transport/chat.js";
  *   Say what this window has open, and who moved it; answers what was appended.
  * @property {() => readonly Unanswered[]} unanswered The reports that moved
  *   the screen and have not been answered yet, oldest first.
+ * @property {<T>(call: () => Promise<T>) => Promise<T>} inLine Make a call in
+ *   line with the reports: once every report made before it is answered, and
+ *   before any made after it leaves. Answers the call's own answer, or its
+ *   failure; the reports after it go on either way.
  */
 
 /** HOW MANY ENTRIES A WINDOW KEEPS, and it is the server's own bound — the
@@ -292,6 +303,12 @@ export function makeHistoryStore(deps) {
 
     unanswered() {
       return inFlight;
+    },
+
+    inLine(call) {
+      const run = queue.then(call);
+      queue = run.then(() => undefined, () => undefined);
+      return run;
     },
   };
 }

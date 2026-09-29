@@ -298,30 +298,38 @@ if (vault !== null) {
   });
 }
 
-/* ── the chats ───────────────────────────────────────────────────────────── */
+/* ── the history's copy, and the chats ───────────────────────────────────── */
+
+// ONLY IN A WINDOW WITH A WORKSPACE: the history is a workspace's, and the
+// start page has none. This window's copy of it — `mirror`, because `history`
+// is the browser's own — follows the stream, and carries this window's
+// reports of what it has open. Made before the chats, because a message is
+// sent in line with those reports.
+const mirror = vault === null ? null : makeHistoryStore({ transport, now: Date.now });
 
 // ONLY IN A WINDOW WITH A WORKSPACE: a chat is a workspace's, run in its
 // folder. This window's copy of the chats and of what agents this machine
 // has, fed by the stream and read again on every open of it — nothing is
-// replayed. Every act the input box makes goes through it.
-const chats = vault === null ? null : makeChatStore({ transport });
+// replayed. Every act the input box makes goes through it, and a MESSAGE
+// goes in line with the window's reports: the server adds the page on screen
+// to it from the last one, which has to have landed first.
+const chats = vault === null ? null : makeChatStore({
+  transport,
+  ...(mirror === null ? {} : { inLine: (call) => mirror.inLine(call) }),
+});
 if (chats !== null) {
   stream.onChat((push) => chats.takeChat(push));
   stream.onAgents((list) => chats.takeAgents(list));
   events.onOpen(() => { void chats.resync(); });
 }
 
-/* ── the history and the switcher ────────────────────────────────────────── */
+/* ── the switcher ────────────────────────────────────────────────────────── */
 
-// ONLY IN A WINDOW WITH A WORKSPACE: the history is a workspace's, and the
-// start page has none. This window's copy of it — `mirror`, because `history`
-// is the browser's own — follows the stream; the
-// switcher watches it and the window's context from above, reports the
-// context on every change, and — the only thing besides the person that ever
-// does — moves the screen for the open chat's agent. Its clock is this
-// window's and its times are the spec's: five minutes, two minutes and five
-// seconds.
-const mirror = vault === null ? null : makeHistoryStore({ transport, now: Date.now });
+// The switcher watches the history's copy and the window's context from
+// above, reports the context on every change, and — the only thing besides
+// the person that ever does — moves the screen for the open chat's agent. Its
+// clock is this window's and its times are the spec's: five minutes, two
+// minutes and five seconds.
 /** THE WINDOW IN FRONT: shown, and the one the person is in. */
 const inFront = () => document.visibilityState === "visible" && document.hasFocus();
 const switcher = mirror === null ? null : makeSwitcher({

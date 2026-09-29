@@ -126,9 +126,11 @@ export function readStop(result: unknown): StopReason | null {
   return (STOP_REASONS as readonly unknown[]).includes(r) ? (r as StopReason) : null;
 }
 
-/** `session/prompt` with one text block — the baseline every agent takes. */
-export function promptParams(sessionId: string, text: string): Obj {
-  return { sessionId, prompt: [{ type: "text", text }] };
+/** `session/prompt` in text blocks, the baseline every agent takes: the
+ *  person's words first, and each block Biom adds after them as one of its
+ *  own, so the words go exactly as they were typed. */
+export function promptParams(sessionId: string, text: string, added: readonly string[] = []): Obj {
+  return { sessionId, prompt: [text, ...added].map((t) => ({ type: "text", text: t })) };
 }
 
 /** ONE `session/update`: the session it is for, and its update — whose

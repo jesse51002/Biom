@@ -157,6 +157,40 @@ test("a push may carry the summary alone, and an answer older than what the stre
   expect(heard).toBe(1);
 });
 
+test("A MESSAGE GOES IN LINE WITH THIS WINDOW'S REPORTS: a send and a first message each wait their turn behind them, so the server reads the page they were sent from", async () => {
+  const { transport, calls } = transportOf({
+    "chat.send": () => ({ chat: summary({ updated: 15 }), queued: null }),
+    "chat.new": () => summary({ id: OTHER, updated: 16 }),
+    "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
+  });
+  /** @type {string[]} */
+  const order = [];
+  /** @type {() => void} */
+  let release = () => {};
+  const reported = new Promise((r) => { release = () => r(undefined); });
+  const store = makeChatStore({
+    transport,
+    inLine: async (call) => {
+      order.push("waits");
+      await reported;
+      order.push("goes");
+      return call();
+    },
+  });
+  store.takeChat({ chat: summary(), updates: [] });
+  const messages = () => calls.filter((c) => c.kind === "chat.send" || c.kind === "chat.new").map((c) => c.kind);
+  const sent = store.send(CHAT, "Invented");
+  const made = store.create({ agent: "claude-acp", text: "Invented first message" });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(messages()).toEqual([]);
+  // When THIS window sent is taken as the person sent it, not when it left.
+  expect(store.lastSent(CHAT)).not.toBe(null);
+  release();
+  await Promise.all([sent, made]);
+  expect(messages()).toEqual(["chat.send", "chat.new"]);
+  expect(order).toEqual(["waits", "waits", "goes", "goes"]);
+});
+
 test("the list is newest first, and a chat's updates reach the store only while it is the one open", () => {
   const { transport } = transportOf({});
   const store = makeChatStore({ transport });

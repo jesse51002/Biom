@@ -433,6 +433,21 @@ test("an address that names no place is kept as the context and not recorded", a
 
 /* ── windows: attach and forget ─────────────────────────────────────────── */
 
+test("A WINDOW'S OWN CONTEXT is answered by its id at once — before the report's lookups land, stream or no stream — and is gone once the window is forgotten", async () => {
+  let release!: () => void;
+  const slow = new Promise<void>((r) => { release = r; });
+  const w = world({ uidOf: async (id) => { await slow; return UIDS[id] ?? null; } });
+  expect(w.history.contextOf(W1)).toBe(null);
+  // Reported with no stream open, and its place still being looked up.
+  const answered = w.history.report(W1, report("home/Specs", { address: address("page", "home/Specs", "instructions"), panel: true, chat: CHAT }), { by: "you" });
+  expect(w.history.contextOf(W1)).toEqual({ window: W1, address: address("page", "home/Specs", "instructions"), panel: true, chat: CHAT, agent: AGENT, at: 1_000_000 });
+  expect(w.history.contextOf(W2)).toBe(null);
+  release();
+  await answered;
+  w.history.forget(W1);
+  expect(w.history.contextOf(W1)).toBe(null);
+});
+
 test("a window's context lives while a stream of its is open, and goes when the last one closes", async () => {
   const w = world();
   // Reported before its stream opened — boot races the two — and answered
