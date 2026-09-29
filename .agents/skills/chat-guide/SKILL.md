@@ -712,9 +712,11 @@ screen, routed and drawn before the rail's first level is read, because nothing
 on it waits for the tree; the rail's **Agent** row, in Dashboard's old slot,
 counts the chats working and returns to the chat last open; **Home** is the page
 tree's own heading; **Edit**, amber on the page bar, opens the panel beside the
-page on a new thread with `Edit <page id>: ` typed in, and the chat it makes
-when sent is that page's; the crumbs name the open chat with its lamp, and the
-strip counts the chats and the Active agents.
+page on a new thread with the input empty and the caret in it
+(`AgentInput.forPage`) — nothing is typed for the person — and the chat it
+makes when sent is that page's, the page going to the agent with that first
+message as Biom's note (§6); the crumbs name the open chat with its lamp, and
+the strip counts the chats and the Active agents.
 
 ## 13. Testing it with an agent
 
@@ -794,7 +796,7 @@ guest/plugins/biom-agent-look/  the default look: look.js (nodes, the ⋯ and to
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
 client/store/chats.js           makeChatStore (a message sent through `inLine`), fold, agentMode, showChat, freshThread, the pickers' rules
 client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.view kept here)
-client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), NOT_TOUCH
+client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), forPage (Edit's), NOT_TOUCH
 client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
 client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
 client/bridge/bridge.js         answerLook, and the look.* case: @agent only, touch-gated
@@ -810,7 +812,7 @@ tests/agent-input.test.js       the agent menu and More agents: two states, one 
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser
 tests/e2e/agent-screen.e2e.ts   the host side on a screen, against the scripted agent
-tests/e2e/chat.e2e.ts           both specs on a screen: a turn, the lights, the switcher on the window's clock
+tests/e2e/chat.e2e.ts           both specs on a screen: a turn, the lights, Edit and the note it hands the agent, the switcher on the window's clock
 tests/e2e/real-agent.e2e.ts     the person's own Claude Code, opt-in: BIOM_REAL_AGENT=1, never in CI
 tests/e2e/harness.ts            withoutAgents: a server's PATH with no agent of the person's on it
 ```

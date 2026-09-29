@@ -38,7 +38,11 @@
 //       up with the chat beside it — drawn in Tool calls, picked from the ⋯
 //       in the panel's head.
 //    8. The / menu: the agent's commands and the workspace's skills, once each.
-//    9. Edit: a new chat beside the page, maximised and minimised back.
+//    9. Edit: a new chat beside the page with the input empty and the caret
+//       in it. Its first message carries the page to the agent, after the
+//       words and as Biom's own block, and the bubble shows the words alone;
+//       the same page again carries nothing, another page does. Maximised
+//       and minimised back.
 //    9b. A page opened from the full Agent screen keeps the chat beside it.
 //   10–16. The switcher: follow (with the pages changed saying Edited for a
 //       new file in a page that was there, 10b), offer, idle, a send handing
@@ -262,6 +266,13 @@ async function call<T = unknown>(kind: string, body: Record<string, unknown> = {
 }
 
 const summaryOf = async (id: string): Promise<ChatSummary | undefined> => (await call<ChatSummary[]>("chat.list")).find((c) => c.id === id);
+/** The last prompt the scripted agent was handed, block by block, as its log
+ *  heard it — empty before the first. */
+const lastPrompt = (): string[] => {
+  const heard = existsSync(fakeLog) ? readFileSync(fakeLog, "utf8").split("\n").filter((l) => l.includes('"method":"session/prompt"')) : [];
+  const last = heard.at(-1);
+  return last === undefined ? [] : (JSON.parse(last) as { params: { prompt: { text: string }[] } }).params.prompt.map((b) => b.text);
+};
 const readChat = (id: string): Promise<ChatRead> => call<ChatRead>("chat.read", { chat: id });
 const promptsOf = async (id: string): Promise<string[]> =>
   (await readChat(id)).updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text);
@@ -934,26 +945,68 @@ walk("8", "/ opens one list of the agent's commands and the workspace's skills, 
 
 /* ── 9 · Edit ────────────────────────────────────────────────────────────── */
 
-walk("9", "Edit on a page opens a new chat beside it with `Edit <path>: ` typed in; the panel maximises to the Agent screen and minimises back beside the page", async () => {
+walk("9", "Edit on a page opens a new chat beside it with the input empty and the caret in it; the page goes to the agent with the first message and never into the bubble, not again for the same page, and again for another; the panel maximises to the Agent screen and minimises back beside the page", async () => {
   if ((await hash()) !== routeOf(A)) await openByTree("Alpha", A);
   await page.locator("span.tools button.tool.edit").click();
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   const input = page.locator("#agentta");
-  await until("the location is typed in", 5000, async () => (await input.inputValue()) === `Edit ${A}: `);
-  expect(await input.evaluate((el) => (el as HTMLTextAreaElement).selectionStart)).toBe(`Edit ${A}: `.length);
+  await until("the input is empty, with the caret in it", 5000, async () =>
+    (await input.inputValue()) === "" && (await input.evaluate((el) => document.activeElement === el)));
   await until("the panel is on a new thread", 10000, async () => {
     const w = await myWindow();
     return w?.panel === true && w.chat === null;
   });
-  await input.pressSequentially("give it an invented subtitle");
+  const typed = "give it an invented subtitle";
+  await input.pressSequentially(typed);
   await input.press("Enter");
   await until("the chat began beside the page", 10000, async () => ((await myWindow())?.chat ?? null) !== null);
   X = (await myWindow())?.chat as string;
   expect(X).not.toBe(turnChat);
   expect(await hash()).toBe(routeOf(A));
   expect((await summaryOf(X))?.page).toEqual({ view: "page", uid: "inventedalpha001", screen: "page" });
-  expect(await promptsOf(X)).toEqual([`Edit ${A}: give it an invented subtitle`]);
+  expect(await promptsOf(X)).toEqual([typed]);
+
+  // THE AGENT WAS HANDED THE PAGE: the words, then Biom's note naming Alpha.
+  await until("the agent was handed the first message", 15000, () => lastPrompt()[0] === typed);
+  const [, note] = lastPrompt();
+  expect(lastPrompt().length).toBe(2);
+  expect(note?.startsWith("<biom-context>")).toBe(true);
+  expect(note?.endsWith("</biom-context>")).toBe(true);
+  expect(note).toContain("“Alpha”");
+  expect(note).toContain(dirOf(A));
+  expect(note).toContain("the page itself");
   await idle(X);
+  // THE PERSON NEVER SEES IT: the bubble's words are the words typed, and
+  // nothing the look drew says the note. The bubble's own text, and not its
+  // Jev face beside it, which may be an emoji.
+  const bubble = () => inLook(async (f) => lastTurn(f).locator(".u").evaluate((el) => el.firstChild?.nodeValue ?? ""), "");
+  await until("the look drew the message", 10000, async () => (await bubble()) !== "");
+  expect(await bubble()).toBe(typed);
+  const drawn = await inLook(async (f) => f.locator(".col").first().innerText(), null as string | null);
+  expect(drawn).toContain(typed);
+  expect(drawn).not.toContain("A note from Biom");
+  expect(drawn).not.toContain("biom-context");
+
+  // The same page again: the words alone.
+  await send("and an invented second line");
+  await until("the agent was handed the second message", 15000, () => lastPrompt()[0] === "and an invented second line");
+  expect(lastPrompt()).toEqual(["and an invented second line"]);
+  await idle(X);
+
+  // Another page, the chat beside it: the note again, naming that page.
+  await openByTree("Beta", B);
+  await until("the context says X is beside Beta", 10000, async () => {
+    const w = await myWindow();
+    return w?.panel === true && w.chat === X && w.address.id === B;
+  });
+  await send("and one about this page");
+  await until("the agent was handed the third message", 15000, () => lastPrompt()[0] === "and one about this page");
+  expect(lastPrompt().length).toBe(2);
+  expect(lastPrompt()[1]).toContain("“Beta”");
+  expect(lastPrompt()[1]).toContain(dirOf(B));
+  await idle(X);
+  expect(await promptsOf(X)).toEqual([typed, "and an invented second line", "and one about this page"]);
+  await openByTree("Alpha", A);
   // Maximised to the Agent screen, with the chat; minimised back beside A.
   await (await lookFrame()).getByRole("button", { name: "Open full size" }).click();
   await until("the Agent screen, with the chat", 10000, async () => (await hash()) === `#/agent/${X}`);

@@ -108,7 +108,8 @@ const REREAD_AFTER = 600;
  * @property {() => void} open The rail's **Agent**: the full screen, with the
  *   chat this window last had open.
  * @property {(page: PageId) => void} edit **Edit**: a new chat beside the page,
- *   its location typed in.
+ *   the input empty with the caret in it. The page goes to the agent with the
+ *   first message, as Biom's note of what is on screen.
  * @property {() => AgentChrome} chrome
  * @property {(fn: () => void) => () => void} onChrome What `chrome` answers moved.
  */
@@ -696,7 +697,7 @@ export function makeAgentView(deps) {
 
     edit(page) {
       ui.set({ panel: true, chat: null });
-      input.prefill("Edit " + page + ": ", page);
+      input.forPage(page);
     },
 
     chrome: chromeNow,

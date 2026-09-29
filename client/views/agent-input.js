@@ -63,8 +63,10 @@ import {
  * @property {() => LookInput} measure Where it sits over the look and how
  *   much of the look it covers — the `LookInput` the look leaves room for.
  * @property {(fn: () => void) => () => void} onMove Its size or place changed.
- * @property {(text: string, page: PageId | null) => void} prefill Put words in
- *   and the caret after them — **Edit**'s — naming the page the chat is for.
+ * @property {(page: PageId) => void} forPage A new chat for a page —
+ *   **Edit**'s: the text area empty with the caret in it, and the page named
+ *   as the one the chat is made for. The page reaches the agent with the first
+ *   message, as Biom's note of what is on screen, never as words in here.
  * @property {() => void} focus
  * @property {() => void} fresh A new thread began: nothing pending for a page.
  *   It moves no caret; the view decides where the caret goes.
@@ -738,16 +740,12 @@ export function makeAgentInput(deps) {
       movers.add(fn);
       return () => { movers.delete(fn); };
     },
-    prefill(words, page) {
-      // A DRAFT ALREADY ON THE START SCREEN IS KEPT, after the page's location:
-      // Edit names the page, and does not throw away what was typed.
-      const draft = ui.get().chat === null ? text.value.replace(/^Edit [^\n]*?: /, "") : "";
-      text.value = words + draft;
+    forPage(page) {
+      text.value = "";
       pendingPage = page;
       autosize();
       paint();
       text.focus({ preventScroll: true });
-      text.setSelectionRange(text.value.length, text.value.length);
     },
     focus() {
       text.focus({ preventScroll: true });

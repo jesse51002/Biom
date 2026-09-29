@@ -20,8 +20,8 @@
 //   5. A long list shows five and More models, grouped as the agent groups it;
 //      a choice picked is the agent's option set.
 //   6. Home from the Agent screen brings its chat along beside the page; Edit
-//      opens a new chat there with its location typed in, and the chat is
-//      started for that page.
+//      opens a new chat there with the input empty and the caret in it, and
+//      the chat is started for that page with the words alone.
 //   7. The panel maximises to the Agent screen and minimises beside the page
 //      with the same box — never reloaded — and the context follows.
 //   8. The window remembers its chat and its panel across a reload, and the
@@ -362,7 +362,7 @@ walk("5. a long list shows five and More models, grouped as the agent groups it,
   await until("the chip says it", 5000, async () => (await page.locator(".agentdock .chip[data-category=model]").innerText()).includes("Reasoner"));
 });
 
-walk("6. Edit opens a new chat beside the page with its location typed in, and the chat is for that page", "agent-6.png", async () => {
+walk("6. Edit opens a new chat beside the page with the input empty and the caret in it, and the chat is for that page", "agent-6.png", async () => {
   await page.locator("div.railhead button.homerow").click();
   await until("the root page drew", BOUNDS.draw, async () => {
     const text = await page.frameLocator("div.plate iframe.artifact").locator("body").innerText().catch(() => "");
@@ -374,8 +374,8 @@ walk("6. Edit opens a new chat beside the page with its location typed in, and t
   await page.locator("button.tool.edit").click();
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   const input = page.locator("#agentta");
-  expect(await input.inputValue()).toBe("Edit home: ");
-  expect(await input.evaluate((el) => (el as HTMLTextAreaElement).selectionStart)).toBe("Edit home: ".length);
+  expect(await input.inputValue()).toBe("");
+  expect(await input.evaluate((el) => document.activeElement === el)).toBe(true);
   await until("the context says the panel is open, with no chat yet", 10000, async () => {
     const w = await myWindow();
     return w?.panel === true && w.chat === null && w.address.view === "page";
@@ -388,7 +388,7 @@ walk("6. Edit opens a new chat beside the page with its location typed in, and t
   const uid = /^uid:\s*(\S+)/m.exec(readFileSync(join(vault, "pages", "home", "content.yaml"), "utf8"))?.[1];
   expect((await summaryOf(edited))?.page).toEqual({ view: "page", uid, screen: "page" });
   const read = await call<ChatRead>("chat.read", { chat: edited });
-  expect(read.updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text)).toEqual(["Edit home: tidy the invented headings"]);
+  expect(read.updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text)).toEqual(["tidy the invented headings"]);
   await until("the turn ended", 30000, async () => (await summaryOf(edited))?.phase === "idle");
   // Once what moves has come to rest: the dock going down, the list opening.
   await page.waitForTimeout(1200);

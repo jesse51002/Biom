@@ -265,7 +265,8 @@ walk("3", "one short turn creates a page file: it is on disk, and the history ha
   await until("the root page", BOUNDS.draw, async () => (await hash()) === "#/page/home");
   await page.locator("span.tools button.tool.edit").click();
   const input = page.locator("#agentta");
-  await until("the location is typed in", 5000, async () => (await input.inputValue()) === "Edit home: ");
+  await until("the input is empty, with the caret in it", 5000, async () =>
+    (await input.inputValue()) === "" && (await input.evaluate((el) => document.activeElement === el)));
   await input.pressSequentially(
     `create the file ${SMOKE_FILE} (relative to the working directory) with exactly these four lines and nothing else: ` +
     `"name: Smoke", "uid: ${SMOKE_UID}", "plugin: biom-doc", "contents: []". Do not read or change any other file, and do not run commands. Reply with one word when it is written.`,

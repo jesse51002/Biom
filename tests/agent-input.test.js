@@ -603,3 +603,30 @@ test("SEND QUEUED shows under the input while the queue is held, says how many, 
   s.input.sync();
   expect(button.hidden).toBe(true);
 });
+
+/* ── Edit ──────────────────────────────────────────────────────────────── */
+
+test("EDIT'S NEW CHAT FOR A PAGE opens with the input empty and the caret in it, and its first message is the words alone, made for that page", async () => {
+  const s = stand([agent()], {
+    route: { view: "page", id: "home/Specs", screen: "page" },
+    answers: {
+      "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
+      "chat.new": (req) => ({ id: "c1nvented-edit-0001", name: req.text, face: null, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "starting", turn: 1, light: "working", stop: null, reason: null, created: 1, updated: 2, queued: 0, queueHeld: false }),
+    },
+  });
+  await settle();
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  // Whatever stood in the text area before, and wherever the caret was.
+  text.value = "a draft from before";
+  doc.activeElement = doc.body;
+  s.input.forPage("home/Specs");
+  expect(text.value).toBe("");
+  expect(doc.activeElement).toBe(text);
+
+  text.value = "tidy the invented headings";
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  const made = s.calls.filter((c) => c.kind === "chat.new");
+  expect(made.length).toBe(1);
+  expect(made[0]).toMatchObject({ text: "tidy the invented headings", page: "home/Specs" });
+});

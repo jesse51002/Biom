@@ -730,7 +730,7 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
     sync() {},
     measure: () => ({ at: /** @type {const} */ (ui.get().chat === null ? "center" : "bottom"), height: 90 }),
     onMove: () => () => {},
-    prefill: (/** @type {string} */ text, /** @type {any} */ page) => said.push(["prefill", text, page]),
+    forPage: (/** @type {any} */ page) => said.push(["forPage", page]),
     focus: () => said.push(["focus"]),
     fresh: () => said.push(["fresh"]),
     say: (/** @type {string} */ words) => said.push(["say", words]),
@@ -1052,12 +1052,12 @@ test("a new thread leaves the list as it was; the panel goes to the screen, besi
   expect(s.ui.get().route.id).toBe("home");
 });
 
-test("Edit opens a new chat beside the page with its location typed in; the rail's Agent goes to the full screen with the chat last open", async () => {
+test("Edit opens a new chat beside the page, the input made ready for that page with nothing typed; the rail's Agent goes to the full screen with the chat last open", async () => {
   const s = await stand({ route: { view: "page", id: "home/Specs", screen: "page" }, chat: CHAT });
   s.view.edit("home/Specs");
   expect(s.ui.get()).toMatchObject({ panel: true, chat: null });
   expect(s.ui.get().route.id).toBe("home/Specs");
-  expect(s.said).toContainEqual(["prefill", "Edit home/Specs: ", "home/Specs"]);
+  expect(s.said).toContainEqual(["forPage", "home/Specs"]);
   s.ui.set({ chat: OTHER });
   s.view.open();
   expect(s.ui.get().route).toEqual({ view: "agent", id: OTHER, screen: "page" });
