@@ -29,14 +29,16 @@
 // queue, so it is Biom's: `send` while a turn is held, starting or running
 // puts the message in the chat's queue — said as a `queued` update, and kept
 // in the chat's log so it survives a reload and a restart — and answers its
-// place. When a turn ends `end_turn`, the next queued message goes out by
-// itself, one a turn, said as `unqueued` and then the next turn's `prompt`.
-// After Stop, a red end, or a restart, the queue is HELD: nothing goes out
-// until the person asks (`sendQueued`), and a message sent to an idle chat
-// meanwhile goes out on its own and leaves the queue held. One queued message
-// is taken out by its id (`unqueue`). Stop is `session/cancel`, and an agent
-// that has not answered it within a grace is ended, because the next message
-// cannot wait on it. The stop reason turns the light: amber while working, green for ten
+// place. When a turn ends `end_turn` — or is stopped, `cancelled` — the next
+// queued message goes out by itself, one a turn, said as `unqueued` and then
+// the next turn's `prompt`: Stop ends the turn and not the queue. After a red
+// end, a closed agent or a restart, the queue is HELD: nothing goes out until
+// the person asks (`sendQueued`), and a message sent to an idle chat meanwhile
+// goes out on its own and leaves the queue held. One queued message is taken
+// out by its id (`unqueue`). Stop is `session/cancel`, and an agent that has
+// not answered it within a grace is ended, because the next message cannot
+// wait on it — so what is queued goes to a fresh process, as any message
+// after an agent has gone does. The stop reason turns the light: amber while working, green for ten
 // minutes after `end_turn`, none after `cancelled`, red for `refusal`,
 // `max_tokens`, `max_turn_requests` and a crash — and red STAYS until the
 // next turn starts, as the Chat spec's mockup has it. The light is computed
@@ -543,8 +545,8 @@ interface Chat {
   /** THE QUEUE: the person's messages sent while a turn ran, in order, each
    *  with the page that was on screen when it was sent. */
   waiting: Waiting[];
-  /** The queue waits for the person — after Stop, a red end or a restart —
-   *  rather than for the turn. */
+  /** The queue waits for the person — after a red end, a closed agent or a
+   *  restart — rather than for the turn. */
   waitingHeld: boolean;
   log: LogWriter;
 }
@@ -1342,15 +1344,12 @@ export function makeChats(deps: ChatsDeps): Chats {
       touch(c);
       signal({ kind: "end", chat: c.id, turn });
       maybeCompact(c);
-      // THE QUEUE: after a finished turn its next message goes out by
-      // itself; after Stop, a red end or a crash it waits for the person.
+      // THE QUEUE: after a finished turn, or one stopped, its next message
+      // goes out by itself; after a red end or a crash it waits for the
+      // person, who should see what went wrong before anything else goes.
       if (c.waiting.length > 0) {
-        if (stop === "end_turn" && !c.waitingHeld && !stopping) sendNext(c);
-        else if (!c.waitingHeld) {
-          c.waitingHeld = true;
-          keepQueue(c);
-          touch(c, false);
-        }
+        if (!RED.has(stop) && !c.waitingHeld && !stopping) sendNext(c);
+        else holdQueue(c);
       }
     });
 
@@ -1364,6 +1363,14 @@ export function makeChats(deps: ChatsDeps): Chats {
   /** The queue as it stands, kept in the chat's log. */
   const keepQueue = (c: Chat): void => {
     c.log.append([{ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld }]);
+  };
+
+  /** What waits, held for the person rather than for the turn. */
+  const holdQueue = (c: Chat): void => {
+    if (c.waiting.length === 0 || c.waitingHeld) return;
+    c.waitingHeld = true;
+    keepQueue(c);
+    touch(c, false);
   };
 
   /** THE NEXT QUEUED MESSAGE GOES OUT: out of the queue, said, and sent as
@@ -2239,7 +2246,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.waitingHeld = false;
       keepQueue(c);
       touch(c);
-      // No turn going: the next goes now. One going: when it ends `end_turn`.
+      // No turn going: the next goes now. One going: when it ends, unless red.
       if (c.phase === "idle") sendNext(c);
       return summary(c);
     },
@@ -2348,6 +2355,10 @@ export function makeChats(deps: ChatsDeps): Chats {
         if (c.phase === "running" && live?.conn && live.sessionId !== null) live.conn.notify("session/cancel", { sessionId: live.sessionId });
         c.held = null;
         c.gen++;
+        // A turn ended by closing its agent is stopped, and still sends
+        // nothing on: the person closed the agent, so what waits waits for
+        // them.
+        holdQueue(c);
         await finishTurn(c, c.turn, "cancelled", null);
       }
       // The process ends in the background; a new start waits for it.

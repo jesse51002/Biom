@@ -275,17 +275,25 @@ process that made it.
   because ACP has none. `chat.send` while a turn is held, starting or running
   puts the message in the queue, said as a `queued` update, kept in the chat's
   log (a `queue` record) and answered as a `ChatSent` with its place; the
-  summary carries `queued` and `queueHeld`. When a turn ends `end_turn` the
-  next queued message goes out by itself, one a turn — `unqueued` with `sent`,
-  then the next turn's `prompt`. After **Stop**, a red end, a crash or a
+  summary carries `queued` and `queueHeld`. When a turn ends `end_turn`, or
+  is stopped — `cancelled` — the next queued message goes out by itself, one
+  a turn — `unqueued` with `sent`, then the next turn's `prompt`: **Stop ends
+  the turn and not the queue** (the sixteenth contracts edit; it held the
+  queue before). After a red end, a crash, a closed agent (`chat.close`) or a
   restart the queue is HELD and nothing goes out until the person sends it
-  (`chat.sendQueued`, **Send queued**); a message sent to the idle chat
-  meanwhile goes out on its own and leaves the queue held, and a queue emptied
-  is held no more. `chat.unqueue` takes one out by `queued`, its id — never
-  `id`, which is the envelope's own. At most `QUEUE_MAX` (fifty) wait; one
-  more is refused `limit` in words. **Stop** is `session/cancel`; an agent that
-  has not answered within fifteen seconds (`cancelGraceMs`, where a test gives
-  another) is ended. Switching agent mid-turn is
+  (`chat.sendQueued`, **Send queued**), because an error should be seen
+  before anything else goes; a message sent to the idle chat meanwhile goes
+  out on its own and leaves the queue held, and a queue emptied is held no
+  more. `chat.unqueue` takes one out by `queued`, its id — never `id`, which
+  is the envelope's own. At most `QUEUE_MAX` (fifty) wait; one more is refused
+  `limit` in words. **Stop** is `session/cancel`; an agent that has not
+  answered within fifteen seconds (`cancelGraceMs`, where a test gives
+  another) is ended, and what waits then goes to a fresh process, as any
+  message after an agent has gone does. A Stop that lands while a queued
+  message is on its way — out of the queue, its agent still starting —
+  withdraws that message before any agent hears it, its turn ends
+  `cancelled`, and the next goes on: nothing is sent twice, and the message
+  stays in the chat as the turn that was stopped. Switching agent mid-turn is
   refused — Stop first — and a switch on a held chat re-targets it and mints
   nothing.
 - **Permission is answered, never shown**: `allow_always`, else `allow_once`.
@@ -646,8 +654,9 @@ every open of the stream, after this window makes a chat, sets a picker or
 switches agent, and whenever the dock comes back to the start screen. **The
 text area stays open while a turn runs**: with words in it the button is Send,
 and sends them — or queues them behind the turn — and with none while a turn
-runs it is **Stop**, as Escape is; **Send queued** shows under it while the
-chat's queue is held. The look draws what waits: a muted bubble a message
+runs it is **Stop**, as Escape is, which ends the turn and lets what waits go
+on; **Send queued** shows under it while the chat's queue is held, after an
+error or a restart. The look draws what waits: a muted bubble a message
 under the running turn, *Queued* (*Queued · held*), each with a × saying
 `look.unqueue`, which the Agent view answers with `chat.unqueue` and nothing
 sent. **A queued message is sent when it goes out**, not when it was queued:

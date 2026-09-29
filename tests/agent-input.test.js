@@ -572,11 +572,11 @@ test("SEND QUEUED shows under the input while the queue is held, says how many, 
   const button = /** @type {El} */ (s.input.el.querySelector("button.sendqueued"));
   // Waiting for the turn is not waiting for the person.
   expect(button.hidden).toBe(true);
-  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 2, queueHeld: true, updated: 20 }), updates: [] });
+  s.chats.takeChat({ chat: aChat({ phase: "idle", light: "error", stop: "refusal", queued: 2, queueHeld: true, updated: 20 }), updates: [] });
   s.input.sync();
   expect(button.hidden).toBe(false);
   expect(button.text).toBe("Send 2 queued");
-  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 1, queueHeld: true, updated: 21 }), updates: [] });
+  s.chats.takeChat({ chat: aChat({ phase: "idle", light: "error", stop: "refusal", queued: 1, queueHeld: true, updated: 21 }), updates: [] });
   s.input.sync();
   expect(button.text).toBe("Send queued");
   button.fire("click");

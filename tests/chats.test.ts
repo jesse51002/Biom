@@ -168,6 +168,25 @@ const replyOf = (updates: ChatUpdate[], turn: number): string =>
 const prompts = (heard: Record<string, unknown>[]): string[] =>
   heard.filter((h) => h.method === "session/prompt").map((h) => ((h.params as { prompt: { text: string }[] }).prompt[0] as { text: string }).text);
 
+/** What the agent was handed, by the person's own words: a new session's
+ *  first message carries the chat so far ahead of them. */
+const promptWords = (heard: Record<string, unknown>[]): string[] =>
+  prompts(heard).map((p) => (p.includes("The person's new message:\n\n") ? p.slice(p.lastIndexOf("The person's new message:\n\n") + "The person's new message:\n\n".length) : p));
+
+/** The chat's own record, turn by turn: each prompt, and how its turn ended. */
+async function turnsOf(chats: Chats, id: string): Promise<[string, string | null][]> {
+  const { updates } = await chats.read(id);
+  const ends = new Map<number, string | null>();
+  for (const u of updates) if (u.kind === "turn" && u.phase === "idle") ends.set(u.turn, u.stop);
+  return updates.filter((u): u is ChatUpdate & { kind: "prompt"; text: string } => u.kind === "prompt").map((u) => [u.text, ends.get(u.turn) ?? null]);
+}
+
+/** Every message that left the queue, in order, and whether it went out. */
+async function outOfQueue(chats: Chats, id: string): Promise<[string, boolean][]> {
+  const { updates } = await chats.read(id);
+  return updates.filter((u): u is ChatUpdate & { kind: "unqueued"; id: string; sent: boolean } => u.kind === "unqueued").map((u) => [u.id, u.sent]);
+}
+
 only("a full turn: the agent starts in the vault, thinks, answers, and the light turns green", async () => {
   const w = world();
   const s0 = await w.chats.create({ agent: "fake", text: "Hello there\nsecond line" });
@@ -244,30 +263,58 @@ only("ONE MESSAGE AT A TIME, AND THE REST WAIT IN ORDER: a message sent while a 
   await settled(w.chats, s.id, 4);
 });
 
-only("THE QUEUE IS HELD after Stop and after a red end: nothing goes out until the person sends it, and a message to the idle chat meanwhile goes on its own", async () => {
-  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }], [{ reply: "refused" }, { stop: "refusal" }]] } } });
+only("STOP ENDS THE TURN AND NOT THE QUEUE: what waits goes out as soon as the turn has ended cancelled, then the rest one a turn, and nothing is held", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  await w.chats.cancel(s.id);
+  const done = await settled(w.chats, s.id, 3);
+  expect([done.stop, done.queued, done.queueHeld]).toEqual(["end_turn", 0, false]);
+  expect(promptWords(w.heard())).toEqual(["first", "queued a", "queued b"]);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["first", "cancelled"], ["queued a", "end_turn"], ["queued b", "end_turn"]]);
+  // Each left the queue once, as sent, in the order it was queued.
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[a.queued?.id, true], [b.queued?.id, true]]);
+});
+
+only("A RED END HOLDS THE QUEUE until the person sends it, and a message to the idle chat meanwhile goes on its own and leaves it held", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 800 }, { reply: "refused" }, { stop: "refusal" }]] } } });
   const s = await w.chats.create({ agent: "fake", text: "first" });
   await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
   const q = await w.chats.send(s.id, "queued after first");
-  await w.chats.cancel(s.id);
-  const stopped = await settled(w.chats, s.id, 1);
-  expect([stopped.stop, stopped.queued, stopped.queueHeld]).toEqual(["cancelled", 1, true]);
+  const red = await settled(w.chats, s.id, 1);
+  expect([red.stop, red.queued, red.queueHeld]).toEqual(["refusal", 1, true]);
   await wait(300);
   expect(prompts(w.heard())).toEqual(["first"]);
   // A message to the idle chat goes out, and the held queue stays held.
   await w.chats.send(s.id, "sent while held");
-  const red = await settled(w.chats, s.id, 2);
-  expect([red.stop, red.queued, red.queueHeld]).toEqual(["refusal", 1, true]);
+  const after = await settled(w.chats, s.id, 2);
+  expect([after.stop, after.queued, after.queueHeld]).toEqual(["end_turn", 1, true]);
   expect(prompts(w.heard())).toEqual(["first", "sent while held"]);
   // Send queued: it goes now, the turn being over.
   const sent = await w.chats.sendQueued(s.id);
   expect([sent.queued, sent.queueHeld]).toEqual([0, false]);
   await settled(w.chats, s.id, 3);
   expect(prompts(w.heard()).at(-1)).toBe("queued after first");
-  const out = (await w.chats.read(s.id)).updates.find((u) => u.kind === "unqueued") as { id: string; sent: boolean };
-  expect(out).toMatchObject({ id: q.queued?.id, sent: true });
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[q.queued?.id, true]]);
   // A queue sent with nothing in it is nothing.
   expect((await w.chats.sendQueued(s.id)).queued).toBe(0);
+});
+
+only("A CLOSED AGENT HOLDS THE QUEUE: a turn ended by closing its agent sends nothing on, and Send queued starts the agent again for it", async () => {
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }]] } } });
+  const s = await w.chats.create({ agent: "fake", text: "first" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  await w.chats.send(s.id, "queued before the close");
+  const closed = await w.chats.close(s.id);
+  expect([closed.phase, closed.stop, closed.queued, closed.queueHeld]).toEqual(["idle", "cancelled", 1, true]);
+  await wait(300);
+  expect(prompts(w.heard())).toEqual(["first"]);
+  await w.chats.sendQueued(s.id);
+  const done = await settled(w.chats, s.id, 2);
+  expect([done.stop, done.queued, done.queueHeld]).toEqual(["end_turn", 0, false]);
+  expect(promptWords(w.heard())).toEqual(["first", "queued before the close"]);
 });
 
 only("a queue sent while a turn still runs goes on at that turn's end; a crash holds it", async () => {
@@ -283,7 +330,7 @@ only("a queue sent while a turn still runs goes on at that turn's end; a crash h
 });
 
 only("ONE MESSAGE IS TAKEN OUT OF THE QUEUE by its id; one nobody queued is not_found, and a queue emptied is held no more", async () => {
-  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { waitCancel: 8000 }]] } } });
+  const w = world({ scenarios: { fake: { turns: [[{ thought: "busy" }, { sleep: 1500 }, { stop: "refusal" }]] } } });
   const s = await w.chats.create({ agent: "fake", text: "first" });
   await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
   const a = await w.chats.send(s.id, "a");
@@ -293,9 +340,8 @@ only("ONE MESSAGE IS TAKEN OUT OF THE QUEUE by its id; one nobody queued is not_
   expect(left.queued).toBe(2);
   expect(((await w.chats.unqueue(s.id, "q1nvented-no-such-one").catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
   expect(((await w.chats.unqueue(s.id, b.queued?.id as string).catch((e: unknown) => e)) as { code?: string }).code).toBe("not_found");
-  const out = (await w.chats.read(s.id)).updates.filter((u) => u.kind === "unqueued") as { id: string; sent: boolean }[];
-  expect(out).toMatchObject([{ id: b.queued?.id, sent: false }]);
-  await w.chats.cancel(s.id);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[b.queued?.id, false]]);
+  // The turn ends red: the rest are held.
   await settled(w.chats, s.id, 1);
   expect(summaryOf(w.chats, s.id).queueHeld).toBe(true);
   await w.chats.unqueue(s.id, a.queued?.id as string);
@@ -336,7 +382,6 @@ only("a queue holds at most its bound, and a message past it is refused in words
   const e = (await w.chats.send(s.id, "one too many").catch((x: unknown) => x)) as { code?: string; message?: string };
   expect(e.code).toBe("limit");
   expect(e.message).toBe(`${QUEUE_MAX} messages already wait in this chat's queue: send or remove some first`);
-  await w.chats.cancel(s.id);
 });
 
 only("Stop is session/cancel, the turn ends cancelled with no light, and the agent heard it", async () => {
@@ -1441,6 +1486,32 @@ only("AN AGENT THAT DOES NOT ANSWER STOP within its grace is ended, the turn end
   const next = await settled(w.chats, s.id, 2);
   expect(next.stop).toBe("end_turn");
   expect(startedPids(w.heard()).length).toBe(2);
+});
+
+only("WHAT WAITS BEHIND AN AGENT THAT IGNORES STOP goes to a fresh process once the grace ends it, and Stop while that message is being sent withdraws it — never sent twice, never lost — and sends the next", async () => {
+  // Every start is slow, so the message the queue sends is caught while its
+  // fresh agent is still starting.
+  const w = world({ scenarios: { fake: { initialize: { delayMs: 700 }, turns: [[{ thought: "busy" }, { sleep: 20_000 }, { reply: "late" }]] } }, cancelGraceMs: 300 });
+  const s = await w.chats.create({ agent: "fake", text: "ignore Stop" });
+  await until("the turn to run", 10_000, () => summaryOf(w.chats, s.id).phase === "running");
+  const [first] = startedPids(w.heard());
+  const a = await w.chats.send(s.id, "queued a");
+  const b = await w.chats.send(s.id, "queued b");
+  await w.chats.cancel(s.id);
+  // The grace runs out: the agent is ended, the turn ends cancelled, and the
+  // next queued message goes to an agent started afresh.
+  await until("a's turn to be starting", 5000, () => summaryOf(w.chats, s.id).turn === 2 && summaryOf(w.chats, s.id).phase === "starting");
+  await until("the agent that ignored Stop to be gone", 5000, () => !alivePid(first as number));
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[a.queued?.id, true]]);
+  // Stop now, while a is on its way to that agent.
+  w.scenarios.fake = {};
+  await w.chats.cancel(s.id);
+  const done = await settled(w.chats, s.id, 3);
+  expect([done.stop, done.queued, done.queueHeld]).toEqual(["end_turn", 0, false]);
+  expect(await turnsOf(w.chats, s.id)).toEqual([["ignore Stop", "cancelled"], ["queued a", "cancelled"], ["queued b", "end_turn"]]);
+  expect(await outOfQueue(w.chats, s.id)).toEqual([[a.queued?.id, true], [b.queued?.id, true]]);
+  // a was withdrawn before any agent heard it; b reached one, once.
+  expect(promptWords(w.heard())).toEqual(["ignore Stop", "queued b"]);
 });
 
 /* ── a chat deleted ───────────────────────────────────────────────────── */

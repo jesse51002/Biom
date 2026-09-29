@@ -63,7 +63,8 @@
 //   20e. A chat deleted from its row's three dots, asked in Biom's own
 //       dialog: Cancel deletes nothing, Delete takes it for good.
 //   20f. The queue: a message sent mid-turn waits under it and goes out when
-//       the turn ends; after Stop it is held until Send queued.
+//       the turn ends; two queued behind a turn and then Stop both go out, in
+//       order, with nothing held and no Send queued.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
 // EVERY PRODUCT BUG THIS WALK FOUND is fixed and asserted as a plain step:
@@ -1531,40 +1532,57 @@ walk("20e", "a chat deleted from its row's three dots, asked in Biom's own dialo
 
 /* ── 20f · the queue ─────────────────────────────────────────────────────── */
 
-walk("20f", "a message sent while a turn runs waits in the queue under it and goes out when the turn ends; one queued and then Stop is held until Send queued sends it", async () => {
+/** The queued messages the look draws under the running turn, as it words them. */
+const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
+/** The latest turn of a chat is over, and it was this one. */
+const turnEnded = async (id: string, turn: number): Promise<boolean> => {
+  const s = await summaryOf(id);
+  return s?.turn === turn && s.phase === "idle";
+};
+
+/** The chat the queue steps walk, made by 20f. */
+let Q = "";
+
+walk("20f", "a message sent while a turn runs waits in the queue under it and goes out when the turn ends; two queued and then Stop both go out, in order, with nothing held and no Send queued", async () => {
   await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
   await until("the agent is Active", 30000, async () => (await agentState())?.state === "active");
   await until("the start screen is ready to send", BOUNDS.draw, async () => page.locator("#agentta").isVisible());
   await send("Queue walk a\n!sleep 3000");
   await until("the message made a chat", 10000, async () => /^#\/agent\/[A-Za-z0-9_-]{8,}$/.test(await hash()));
-  const Q = (await hash()).split("/")[2] as string;
+  Q = (await hash()).split("/")[2] as string;
   await running(Q);
   // B, sent while A runs: Queued, under the running turn.
   await typeAndEnter("Queue walk b\n!sleep 3000");
-  const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
   await until("b shows Queued", 8000, async () => { const b = await bubbles(); return b.length === 1 && /Queued/i.test(b[0] ?? "") && (b[0] ?? "").includes("Queue walk b"); });
   expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000"]);
   await shot("chat-20f-queued.png");
   // A ends: B goes out on its own, and its bubble goes with it.
   await until("b went out when a ended", 20000, async () => (await promptsOf(Q)).length === 2 && (await bubbles()).length === 0);
   await running(Q);
-  // C, queued behind B; then Stop, with nothing typed.
+  // C and D, queued behind B; then Stop, with nothing typed.
   await typeAndEnter("Queue walk c");
   await until("c shows Queued", 8000, async () => (await bubbles()).length === 1);
+  await typeAndEnter("Queue walk d");
+  await until("d shows Queued after c", 8000, async () => { const b = await bubbles(); return b.length === 2 && (b[0] ?? "").includes("Queue walk c") && (b[1] ?? "").includes("Queue walk d"); });
   await until("the button is Stop", 5000, async () => (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Stop");
   await page.locator(".agentdock .send").click();
-  await until("b ended cancelled", 15000, async () => (await summaryOf(Q))?.stop === "cancelled");
-  // C is held, and says so; Send queued shows under the input.
-  await until("c is held", 8000, async () => (await summaryOf(Q))?.queueHeld === true && /held/i.test((await bubbles())[0] ?? ""));
-  await Bun.sleep(500);
-  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000", "Queue walk b\n!sleep 3000"]);
-  await until("Send queued shows", 5000, async () => page.locator(".agentdock .sendqueued").isVisible());
-  await shot("chat-20f-held.png");
-  await page.locator(".agentdock .sendqueued").click();
-  await until("c went out", 15000, async () => (await promptsOf(Q)).at(-1) === "Queue walk c" && (await bubbles()).length === 0);
-  await idle(Q);
-  expect((await summaryOf(Q))?.queued).toBe(0);
+  // STOP ENDS THE TURN AND NOT THE QUEUE: B ends cancelled, and C then D go
+  // out, one a turn, in the order they were queued — nothing held, no Send
+  // queued at any point.
+  const heldEver: boolean[] = [];
+  await until("c and d went out after b, and d's turn ended", 30000, async () => {
+    const s = await summaryOf(Q);
+    heldEver.push(s?.queueHeld === true || (await page.locator(".agentdock .sendqueued").isVisible()));
+    return turnEnded(Q, 4);
+  });
+  expect(heldEver.every((h) => !h)).toBe(true);
+  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000", "Queue walk b\n!sleep 3000", "Queue walk c", "Queue walk d"]);
+  const ends = (await readChat(Q)).updates.filter((u) => u.kind === "turn" && (u as { phase: string }).phase === "idle").map((u) => (u as { stop: string }).stop);
+  expect(ends).toEqual(["end_turn", "cancelled", "end_turn", "end_turn"]);
+  expect([(await summaryOf(Q))?.queued, (await summaryOf(Q))?.queueHeld]).toEqual([0, false]);
+  await until("no bubble is left", 5000, async () => (await bubbles()).length === 0);
   expect(await page.locator(".agentdock .sendqueued").isVisible()).toBe(false);
+  await shot("chat-20f-stopped.png");
 });
 
 walk("21", "nothing threw on stderr, nothing was written outside the sandbox, and no agent process is left once the server stops", async () => {
