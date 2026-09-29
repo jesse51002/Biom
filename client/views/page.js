@@ -18,6 +18,7 @@
 
 /** @import { FrameHost, Page, PageId, UiStore } from "../../contracts/types.ts" */
 
+import { PAGE_BOX } from "../../contracts/wire.js";
 import { weaveRuntime } from "../platform/document.js";
 /** @import { Workspace } from "../store/workspace.js" */
 /** The DOM helper, typed the way every other view in this layer types it:
@@ -36,22 +37,15 @@ import { weaveRuntime } from "../platform/document.js";
  *   settled in `boot.js` before anything is constructed and never moves again.
  */
 
-/** THE PREFIX OF THE NAME THE PAGE'S BOX WEARS, and the one thing about it
- *  that the desktop shell reads. The window holds more boxes than the page's —
- *  the Agent screen's look is one, kept running beside every page once it has
- *  shown — and the shell, reading the drawn page out for Share, sees each only
- *  as a frame. This is how it knows which one is the page. `PAGE_BOX` in
- *  `app/box.js` is the same string, and `tests/app.test.ts` holds the two
- *  equal. */
-export const PAGE_BOX = "biom-page";
-
-/** THE WORD AFTER IT, minted once for each box. A frame's name is its box's
- *  own `window.name`, which the box's code may set to anything, so the prefix
- *  alone is a name the look could claim; the shell reads the whole name off
- *  this element — in the window's document, which no box can read — and a
- *  word no other box can see is a name no other box can say. Twelve random
- *  bytes, as hex: `getRandomValues` is there in every context a page is drawn
- *  in, a secure one or not. @returns {string} */
+/** THE WORD AFTER `PAGE_BOX` IN THE NAME THE PAGE'S BOX WEARS, minted once
+ *  for each box. `PAGE_BOX` is how whatever reads the drawn page out for Share
+ *  tells the page's box from the look's — `contracts/wire.js` says who. A
+ *  frame's name is its box's own `window.name`, which the box's code may set
+ *  to anything, so the prefix alone is a name the look could claim; the
+ *  readers take the whole name off this element — in the window's document,
+ *  which no box can read — and a word no other box can see is a name no other
+ *  box can say. Twelve random bytes, as hex: `getRandomValues` is there in
+ *  every context a page is drawn in, a secure one or not. @returns {string} */
 const minted = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
 
 /**

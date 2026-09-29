@@ -40,7 +40,7 @@ import { ICNS_TYPES, ICO_SIZES, containers, decodePng } from "../tools/icon.ts";
 import { dataHome as shellDataHome } from "../app/data.js";
 // Which box Share reads, beside the shell for the same reason.
 import { NAMES_IN_WINDOW, PAGE_BOX, pageBox } from "../app/box.js";
-import { PAGE_BOX as CLIENT_PAGE_BOX } from "../client/views/page.js";
+import { PAGE_BOX as WIRE_PAGE_BOX } from "../contracts/wire.js";
 import type { EmbeddedMap } from "../server/platform/embedded.ts";
 
 const HERE = join(import.meta.dir, "..");
@@ -427,10 +427,10 @@ test("a box that renames its own window cannot make Share take it for the page",
 });
 
 test("the client names the page's box and the shell reads that name out of the window's own document", async () => {
-  // ONE STATEMENT IN TWO PLACES: `app/` is not served and cannot be imported by
-  // the client, and the shell cannot load a client module. So the name is
-  // spelled beside each, and held equal here.
-  expect(PAGE_BOX).toBe(CLIENT_PAGE_BOX);
+  // ONE STATEMENT IN TWO PLACES: the client and the server take it from
+  // `contracts/wire.js`, and the shell is staged into the bundle alone and
+  // cannot, so it spells it again and is held equal here.
+  expect(PAGE_BOX).toBe(WIRE_PAGE_BOX);
   // What the main process runs to learn the page box's name reads the
   // `<iframe>` elements' own attribute — the window's, not a box's.
   expect(NAMES_IN_WINDOW).toContain(`iframe[name^="${PAGE_BOX}-"]`);

@@ -50,8 +50,8 @@
 // Electron.
 
 /** The prefix of the name the page's box wears. `PAGE_BOX` in
- *  `client/views/page.js` is the same string, and `tests/app.test.ts` holds the
- *  two equal. */
+ *  `contracts/wire.js` is the same string — this file is staged into the bundle
+ *  alone and cannot import it — and `tests/app.test.ts` holds the two equal. */
 const PAGE_BOX = "biom-page";
 
 /** WHAT THE MAIN PROCESS RUNS IN THE WINDOW'S OWN DOCUMENT: the name every

@@ -30,9 +30,9 @@ import { test, expect, beforeEach } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { PAGE_BOX, makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
+import { makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
 import { weaveRuntime } from "../client/platform/document.js";
-import { vaultBase } from "../contracts/wire.js";
+import { PAGE_BOX, vaultBase } from "../contracts/wire.js";
 
 const ROOT = join(import.meta.dir, "..");
 /** WHICH FOLDER THIS TAB IS. Every view that builds a document needs one now:
