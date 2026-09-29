@@ -672,10 +672,13 @@
     }
     if (Array.isArray(data)) {
       if (was.kind !== "list") return;
+      // An item keeps its own variables and a new one has none: the projection
+      // merges each over its section's and the page's, so handing a new item
+      // the page's would put them over the section's.
       was.items = data.map((md, i) => ({
         kind: "markdown",
         md: md,
-        vars: (was.items[i] && was.items[i].vars) || pageVariables,
+        vars: (was.items[i] && was.items[i].vars) || {},
       }));
       return;
     }

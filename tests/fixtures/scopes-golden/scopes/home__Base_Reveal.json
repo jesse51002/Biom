@@ -1,0 +1,159 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Copy `index.html` beside a page's `content.yaml` — `run.html` is the obvious name — and\npaste the section below into that page's `contents` with `data:` changed to match. Or copy\nthis whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.\n\n**The motion is in this file and the timing is not.** `reveal` adds one class the first\ntime the section comes into view and then disconnects its observer; what happens under that\nclass is the section's own `<style>`, which is where a drawing's motion belongs.\n\n**Two things go wrong without it, and both are invisible until somebody notices the page is\ntired.** An observer that never disconnects keeps firing for as long as the page is open and\noutlives the section when it is redrawn. And an animation that starts at load plays the\nwhole choreography below the fold, so a reader who scrolls down arrives after it finished.\n\n**`--motion` is the frame's reduced-motion switch** and it is already on the page — multiply\na duration or a delay by it and a reader who asked for less motion gets none. The one thing\na multiplier cannot do is put the ink back, which is what the `prefers-reduced-motion` block\nat the foot of the file is for: stillness gets the FINISHED figure, not an empty one.\n",
+            "vars": {}
+          },
+          "ctx": {},
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "how-to-use-this",
+          "via": "slot"
+        }
+      ],
+      "name": "how-to-use-this"
+    },
+    {
+      "markup": "f799f86f57b32e027cce1e6e4acb0a89ea1bad454d0d3e95dc784e873414ea3d",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## Where the run has got to\n\nFive stages, drawn from five names. The line grows to the one `reached` names, the marks\nlight one after another as it passes them, and the stage it stops at is the only thing on\nthe drawing wearing the hot colour — a figure where everything is lit has lit nothing.\n",
+            "vars": {
+              "reached": "Potted on",
+              "stageName": [
+                "Sown",
+                "Pricked out",
+                "Potted on",
+                "Hardened off",
+                "Planted out"
+              ]
+            }
+          },
+          "ctx": {
+            "reached": "Potted on",
+            "stageName": [
+              "Sown",
+              "Pricked out",
+              "Potted on",
+              "Hardened off",
+              "Planted out"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "lede",
+          "section": "stages",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "_This figure has no stages yet. Add `stageName` to the section's `variables` — one name per\nmark — and name the one the run has got to in `reached`._\n",
+            "vars": {
+              "reached": "Potted on",
+              "stageName": [
+                "Sown",
+                "Pricked out",
+                "Potted on",
+                "Hardened off",
+                "Planted out"
+              ]
+            }
+          },
+          "ctx": {
+            "reached": "Potted on",
+            "stageName": [
+              "Sown",
+              "Pricked out",
+              "Potted on",
+              "Hardened off",
+              "Planted out"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "fault",
+          "section": "stages",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "A figure's values are `variables` rather than a list slot, because a slot holds markdown and\nreading a figure back out of prose is parsing. Variables are edited on this page's config\nscreen rather than on the page; `base/list/` is the shape for the things a reader really\nshould be able to add to from where they stand. Nothing here is real content.\n",
+            "vars": {
+              "reached": "Potted on",
+              "stageName": [
+                "Sown",
+                "Pricked out",
+                "Potted on",
+                "Hardened off",
+                "Planted out"
+              ]
+            }
+          },
+          "ctx": {
+            "reached": "Potted on",
+            "stageName": [
+              "Sown",
+              "Pricked out",
+              "Potted on",
+              "Hardened off",
+              "Planted out"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "note",
+          "section": "stages",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "reached": "Potted on",
+            "stageName": [
+              "Sown",
+              "Pricked out",
+              "Potted on",
+              "Hardened off",
+              "Planted out"
+            ]
+          },
+          "item": null,
+          "node": "biom-reveal",
+          "part": null,
+          "section": "stages",
+          "via": "node"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "reached": "Potted on",
+            "stageName": [
+              "Sown",
+              "Pricked out",
+              "Potted on",
+              "Hardened off",
+              "Planted out"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "stages",
+          "via": "script"
+        }
+      ],
+      "name": "stages"
+    }
+  ]
+}

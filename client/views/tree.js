@@ -14,6 +14,14 @@
 // level of it is some page's `contents`, which is the same list that page's body
 // draws from, so the rail and the page are two views of one thing.
 //
+// A LEVEL IS LISTED WHEN IT IS OPENED, AND DRAWN ONLY ONCE IT IS HELD. Opening
+// a row is the act that asks for its level (`ws.expand`); drawing reads what
+// the store holds and asks for nothing, because a view that fetched while
+// drawing would fetch again on the repaint its own answer caused. A page row
+// wears its chevron from the listing's own word on it — `Child.children`,
+// whether its folder holds pages — or from a table the rack says sits under
+// it, so a branch is drawn without being fetched.
+//
 // Drag is the only write this view makes, and it resolves to exactly one call —
 // `ws.moveChild`, which MOVES A DIRECTORY and hands back the page's NEW ID,
 // because a page's id is where it sits. Everything inside it is renamed with it,
@@ -36,10 +44,11 @@
 // Expansion is UI state and lives in the UiStore, because it must not survive a
 // reload of workspace data and must survive a redraw.
 
-/** @import { Child, PageId, TableSchema, PageRef, TableRef, UiStore } from "../../contracts/types.ts" */
+/** @import { Child, PageId, TableSchema } from "../../contracts/types.ts" */
 /** @import { Workspace } from "../store/workspace.js" */
+/** @import { Ui } from "../store/ui.js" */
 
-import { ROOT_PAGE, parentOf, rebase } from "../store/workspace.js";
+import { ROOT_PAGE, rebase } from "../store/workspace.js";
 import { popover, popItem, popInput, popSep, popLabel, closePopover } from "../widgets/popover.js";
 
 /** @typedef {(spec: string, props?: any, ...kids: any[]) => HTMLElement} H */
@@ -53,7 +62,9 @@ import { popover, popItem, popInput, popSep, popLabel, closePopover } from "../w
  * @typedef {object} TreeViewDeps
  * @property {H} h
  * @property {Workspace} ws
- * @property {UiStore} ui
+ * @property {Ui} ui WHERE THE PERSON IS. A row pressed is THEIR open; a route
+ *   re-pointed after a rename, a move or a delete is the system's, because
+ *   nobody opened anything — the page they were on changed its id or went.
  */
 
 /**
@@ -70,7 +81,7 @@ export function makeTreeView(deps) {
   let dragging = null;
 
   return function treeView() {
-    const { pages, tables } = ws.get();
+    const { tables } = ws.get();
     const { route, expanded, treeOrder } = ui.get();
     // WHICH WAY THE RAIL READS, and it REVERSES rather than re-sorts.
     //
@@ -84,7 +95,13 @@ export function makeTreeView(deps) {
     const kids = treeOrder === "desc"
       ? (/** @type {PageId} */ id) => ws.children(id).slice().reverse()
       : (/** @type {PageId} */ id) => ws.children(id);
-    const rows = nest(kids, expanded, pages, tables);
+    // A page holds something when its listed level does, or — before it is
+    // listed — when the listing said its folder holds pages, or the rack says
+    // a table sits under it.
+    const holders = new Set(tables.map((t) => t.parent ?? ROOT_PAGE));
+    /** @param {Child} c */
+    const holds = (c) => (ws.held(c.id) ? ws.children(c.id).length > 0 : c.children !== false || holders.has(c.id));
+    const rows = nest(kids, expanded, holds);
 
     if (!rows.length) {
       return h("ul.tree", h("li", h("p.treenote", "Nothing here yet.")));
@@ -151,7 +168,7 @@ export function makeTreeView(deps) {
           // that holds things and watching nothing move is the moment people
           // decide the tree is broken.
           if (isPage && row.kids && !row.open) toggle(child.id);
-          ui.go(isPage ? "page" : "table", child.id);
+          ui.open(isPage ? "page" : "table", child.id);
         },
         ondragstart: (/** @type {DragEvent} */ e) => {
           dragging = { child, parent: row.parent };
@@ -283,7 +300,9 @@ export function makeTreeView(deps) {
           // same way it does after a drag: the page and everything beneath it
           // were renamed, so the route is re-pointed at the same page under
           // its new name.
-          if (moved !== child.id && standing) ui.go("page", rebase(open.id, child.id, moved));
+          // The SCREEN goes with it: a rename on the page's Instructions
+          // leaves the person on the renamed page's Instructions.
+          if (moved !== child.id && standing) ui.go("page", rebase(open.id, child.id, moved), open.screen);
         } else {
           await ws.alterTable(child.id, { ...tableSchema(child.id), name: next });
         }
@@ -295,9 +314,14 @@ export function makeTreeView(deps) {
       const remove = async () => {
         if (isPage) await ws.removePage(child.id);
         else await ws.dropTable(child.id);
-        // Standing on a page that no longer exists is a blank canvas and no
-        // explanation, so leaving is part of deleting.
-        if (ui.get().route.id === child.id) ui.go("page", ROOT_PAGE);
+        // Standing on a page that no longer exists — or on one beneath it,
+        // which went with it — is a blank canvas and no explanation, so
+        // leaving is part of deleting.
+        const at = ui.get().route;
+        const gone = isPage
+          ? at.view === "page" && (at.id === child.id || at.id.startsWith(child.id + "/"))
+          : at.view === "table" && at.id === child.id;
+        if (gone) ui.go("page", ROOT_PAGE);
       };
 
       name.addEventListener("keydown", (/** @type {KeyboardEvent} */ e) => {
@@ -338,19 +362,11 @@ export function makeTreeView(deps) {
     return !inside(id, moving.id);
   }
 
-  /** Is `id` somewhere under `root`? @param {PageId} id @param {PageId} root */
+  /** Is `id` somewhere under `root`? The id is the path, so it is under
+   *  exactly when it starts with it — whatever levels this window has listed.
+   *  @param {PageId} id @param {PageId} root */
   function inside(id, root) {
-    const seen = new Set([root]);
-    const queue = [root];
-    for (const at of queue) {
-      for (const child of ws.children(at)) {
-        if (child.kind !== "page" || seen.has(child.id)) continue;
-        if (child.id === id) return true;
-        seen.add(child.id);
-        queue.push(child.id);
-      }
-    }
-    return false;
+    return id.startsWith(root + "/");
   }
 
   /** @param {PageId} parent */
@@ -374,39 +390,43 @@ export function makeTreeView(deps) {
         // renames it and everything beneath it, and nothing forwards — so a
         // route left on the old one asks for a page that is not there and gets
         // an empty screen. It is re-pointed at the same page under its new name.
-        if (moved !== null && standing) ui.go("page", rebase(open.id, moving.child.id, moved));
+        if (moved !== null && standing) ui.go("page", rebase(open.id, moving.child.id, moved), open.screen);
       })
       .catch((err) => console.error("the rail could not move that", err));
   }
 
-  /** @param {PageId} id */
+  /** A row opened or shut. OPENING IS THE ACT THAT LISTS ITS LEVEL, once:
+   *  the rail draws what is held and asks for nothing while it draws.
+   *  @param {PageId} id */
   function toggle(id) {
     const next = new Set(ui.get().expanded);
-    if (!next.delete(id)) next.add(id);
+    const opening = !next.delete(id);
+    if (opening) next.add(id);
     ui.set({ expanded: next });
+    if (opening) ws.expand(id).catch((err) => console.warn("[biom] the rail could not open that", err));
   }
 }
 
 /* ── pure, and therefore testable ─────────────────────────────────────── */
 
 /**
- * Flatten the workspace into the rows the rail draws, starting from the root
- * page's children and descending into whatever is expanded.
+ * Flatten the levels this window holds into the rows the rail draws, starting
+ * from the root page's children and descending into whatever is expanded.
  *
- * Anything the walk never reached is shown at the root rather than hidden. A
- * page whose parent is missing, or a table no page has claimed, is a thing you
- * must be able to click on in order to file or delete it — and the rail is the
- * only place either is visible at all now that there is no table section. The
- * `seen` set is not paranoia either: children come off disk, and a page that
- * claims its own descendant would otherwise loop here forever.
+ * THERE IS NO ORPHAN RESCUE HERE ANY MORE. A table whose page is gone is
+ * listed under the root by the server, which is the one place that sees every
+ * table; and a window that holds a level at a time cannot tell a page whose
+ * parent is gone from one whose parent it has simply not listed. The `seen`
+ * set is not paranoia: children come off disk, and a page that claims its own
+ * descendant would otherwise loop here forever.
  *
- * @param {(id: PageId) => Child[]} children
+ * @param {(id: PageId) => Child[]} children the held level of a page, or empty
  * @param {ReadonlySet<PageId>} expanded
- * @param {PageRef[]} pages
- * @param {TableRef[]} tables
+ * @param {(child: Child) => boolean} holds whether a page row has anything
+ *   under it, listed or not — which is what gives it a chevron
  * @returns {TreeRow[]}
  */
-export function nest(children, expanded, pages, tables) {
+export function nest(children, expanded, holds) {
   /** @type {TreeRow[]} */
   const rows = [];
   const seen = new Set();
@@ -416,7 +436,7 @@ export function nest(children, expanded, pages, tables) {
     const mark = child.kind + ":" + child.id;
     if (seen.has(mark)) return;
     seen.add(mark);
-    const kids = child.kind === "page" && children(child.id).length > 0;
+    const kids = child.kind === "page" && holds(child);
     const open = kids && expanded.has(child.id);
     rows.push({ child, parent, depth, open, kids });
     if (open) walk(child.id, depth + 1);
@@ -428,28 +448,6 @@ export function nest(children, expanded, pages, tables) {
   };
 
   walk(ROOT_PAGE, 0);
-
-  // The orphan rescue, and it has to know the difference between LOST and
-  // MERELY HIDDEN. Anything the walk did not reach is either parented to a page
-  // that no longer exists — in which case it is unreachable and belongs at the
-  // root where it can be found and moved — or it is sitting inside a collapsed
-  // ancestor, which is not a problem at all. Surfacing the second kind put the
-  // same page at the root whenever its folder was shut, so closing a folder
-  // appeared to move its contents out of it.
-  const known = new Set([ROOT_PAGE, ...pages.map((p) => p.id)]);
-  /** @param {PageId | null} parent */
-  const lost = (parent) => parent === null || !known.has(parent);
-
-  for (const page of pages) {
-    // Derived from the id, because the folder IS the hierarchy: there is no
-    // `parent` field to read and nothing that could disagree with the path.
-    if (page.id === ROOT_PAGE || !lost(parentOf(page.id))) continue;
-    push({ kind: "page", id: page.id, name: page.name }, ROOT_PAGE, 0);
-  }
-  for (const table of tables) {
-    if (!lost(table.parent)) continue;
-    push({ kind: "table", id: table.name, name: table.name, rows: table.rows }, ROOT_PAGE, 0);
-  }
 
   return rows;
 }

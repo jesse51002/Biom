@@ -156,8 +156,11 @@ test("the furniture still seeds, because none of it is content", async () => {
   // A PLAIN .agents/skills/, not .claude/skills/ — the vault has to read the same to
   // Cursor and Codex, and AGENTS.md is what points at it.
   expect(existsSync(join(root, ".claude"))).toBe(false);
-  // And no `CLAUDE.md` beside the guide. A vendor-named copy of the same words
-  // is the same favouritism one file up, and a second copy that drifts.
+  // And the seeder writes no `CLAUDE.md` beside the guide: a vendor-named COPY
+  // of the same words would be a second copy that drifts. What a harness that
+  // reads only its own names gets instead is a LINK to this one, kept on open
+  // by `keepHarness` in `server/workspace/framework.ts` and held by
+  // `tests/framework-harness.test.ts`.
   expect(existsSync(join(root, "CLAUDE.md"))).toBe(false);
   // THE SKILLS ARE THE FRAMEWORK'S, rewritten on every open rather than filled
   // once — `framework.ts` — and the checker travels the same way; skill/ stays
@@ -304,14 +307,11 @@ test("a patch and an html slot survive a full rebuild from the same directory", 
   const part = partAt(read, "mark", "figure");
   expect(part).toMatchObject({ kind: "html", file: "mark.html" });
   expect(part && "html" in part ? part.html : "").toContain("One accent");
-  // The part carries the variables in scope for it, nearest first — the slot's
-  // own over the section's over the doc's.
-  expect(part && "vars" in part ? part.vars : {}).toMatchObject({
-    mood: "quiet",
-    caption: "One accent, and it is never red.",
-  });
-  // The section's own `vars` are the same scope one step out.
-  expect(read.sections.find((s) => s.name === "mark")?.vars).toMatchObject({ mood: "quiet" });
+  // The part carries its own variables, which this slot has none of, and the
+  // section its own; the doc's are `variables`. They are merged, nearest first,
+  // where the part is drawn.
+  expect(part && "vars" in part ? part.vars : null).toEqual({});
+  expect(read.sections.find((s) => s.name === "mark")?.vars).toEqual({ caption: "One accent, and it is never red." });
   // Written where the doc lives, not under pages/.
   expect(readFileSync(join(root, "design", "mark.html"), "utf8")).toContain("data-g-part");
   second.db.close();

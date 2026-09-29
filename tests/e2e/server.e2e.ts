@@ -19,7 +19,7 @@
 //      through the page's own `fetch`, at the page's own origin, which is the
 //      same request the picker's Create button makes.
 //   3. The root page draws itself with the copy it was seeded with, prints the
-//      folder it asked the host for, and the rail has a Dashboard row — which is the third of the owner's bugs: the row was in
+//      folder it asked the host for, and the rail has the Agent row — which is the third of the owner's bugs: the row was in
 //      the source and not in the build.
 //   4. A page made by name through New opens.
 //   5. That page's `content.yaml` is edited FROM OUTSIDE and the page redraws
@@ -43,7 +43,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
 
-import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
+import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, stackTraces, shotsDir, withoutAgents } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
 
 /* ── the run ────────────────────────────────────────────────────────────── */
@@ -121,9 +121,11 @@ beforeAll(async () => {
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
 
-  server = Bun.spawn(["bun", "run", join(HERE, "server", "main.ts")], {
+  // WITH NO AGENT ON ITS PATH: see `withoutAgents`. Bun by its own path,
+  // because that PATH is not the one it was found on.
+  server = Bun.spawn([process.execPath, "run", join(HERE, "server", "main.ts")], {
     cwd: HERE,
-    env: { ...box.env, PORT: String(port) },
+    env: { ...withoutAgents(box.env), PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -208,7 +210,7 @@ walk("a workspace is a parent and a name, and creating one opens it", async () =
   await page.goto(`${base}/?vault=${encodeURIComponent(vault)}#/page/home`, { waitUntil: "domcontentloaded" });
 });
 
-walk("the root page draws its seeded copy, and the rail has a Dashboard row", async () => {
+walk("the root page draws its seeded copy, and the rail has the Agent row and Home", async () => {
   // THE WORDS INSIDE THE BOX, which is the only honest signal that the page is
   // up rather than merely requested: the host cannot read an opaque-origin
   // frame, so nothing outside it knows what it says. The strip's Drawn count is
@@ -227,10 +229,20 @@ walk("the root page draws its seeded copy, and the rail has a Dashboard row", as
   // frame, which is a thing only this layer can prove.
   expect(await page.frameLocator("iframe.artifact").locator("#where").innerText()).toBe(vault);
 
-  // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD. Layer two asserts it
-  // again in the packaged application, which is where it went missing.
-  expect(await page.locator("button.dashboardlink").count()).toBe(1);
-  expect(await page.locator("button.dashboardlink").innerText()).toContain("Dashboard");
+  // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD — the Dashboard's,
+  // and the Agent's since the Chat spec gave it Dashboard's slot; Home is the
+  // tree's own heading. Layer two asserts it again in the packaged
+  // application, which is where it went missing.
+  expect(await page.locator("button.dashboardlink").count()).toBe(0);
+  expect(await page.locator("button.agentlink").count()).toBe(1);
+  expect(await page.locator("button.agentlink").innerText()).toContain("Agent");
+  expect(await page.locator("div.railhead button.homerow").innerText()).toBe("Home");
+
+  // AND NO AGENT TERMINAL. The bar's button and the dock it opened went with
+  // the Chat spec, which leaves a terminal only for signing an agent in — a
+  // pop-up no bar control opens — so neither is on the screen of a workspace.
+  expect(await page.locator("div.rail span.tools").innerText()).not.toContain("Agent Terminal");
+  expect(await page.locator("section.dock, div.work").count()).toBe(0);
 });
 
 walk("every ask carries its module and a prompt that really copies", async () => {
@@ -355,6 +367,24 @@ walk("a directory written under children/ appears in the rail", async () => {
     const rail = await page.locator("nav.rack").innerText().catch(() => "");
     return rail.includes("Pantry");
   });
+
+  // AND THE SERVER GIVES BOTH PAGES THEIR IDENTITY, which is its own write
+  // into each file: Pantry arrived with none, and Kitchen lost its own when
+  // the step above wrote its document whole from outside. The structural
+  // change is when it does it, as one `uid:` line under `name:`. Waited for
+  // here, and the redraw that write brings, because a redraw landing on the
+  // next step's half-written file would read that file — which is not what
+  // the next step is about.
+  await until("the server gave Kitchen and Pantry a uid", BOUNDS.redraw, () =>
+    [madeDoc, join(child, "content.yaml")].every((f) => /^uid: \S+$/m.test(readFileSync(f, "utf8"))));
+  const words = "the agent wrote this from outside the window";
+  let steady = 0;
+  await until("the page stayed drawn for a second after the server's own writes", BOUNDS.redraw, async () => {
+    const body = await page.frameLocator("iframe.artifact").locator("body").innerText().catch(() => "");
+    if (!body.includes(words)) { steady = 0; return false; }
+    if (steady === 0) steady = Date.now();
+    return Date.now() - steady >= 1000;
+  });
 });
 
 walk("a half-written file does not break the page, and the finished save recovers it", async () => {
@@ -380,6 +410,68 @@ walk("the markdown mirror carries the words", async () => {
   const mirror = join(vault, "_markdown", ...made.split("/")) + ".md";
   await until("the mirror was written", BOUNDS.redraw, () =>
     existsSync(mirror) && readFileSync(mirror, "utf8").includes("the save finished and the page came back"));
+});
+
+/* ── every screen has an address, and only the person moves it ───────────
+ *
+ * The *History and View Switcher* spec's addresses and its one rule about the
+ * screen, asked of the assembled program. A page's Instructions and Automations
+ * were held beside the route, so a reload dropped them and Back could not reach
+ * one; they are addresses now. And a page's own code never moves the screen:
+ * the bridge honours a box's `open` only just after the box said the person
+ * touched it — which a unit test can state and only a real browser, with real
+ * trusted events crossing a real opaque-origin frame, can prove. */
+walk("a page's Instructions is an address of its own: a reload lands on it and Back leaves it", async () => {
+  const at = `${base}/?vault=${encodeURIComponent(vault)}#/page/${encodeURIComponent(made)}`;
+  await page.goto(at, { waitUntil: "domcontentloaded" });
+  const tool = page.locator("span.tools button.tool", { hasText: "Instructions" }).first();
+  await until("the page's bar was drawn", BOUNDS.draw, async () => (await tool.count()) > 0);
+  await tool.click();
+  const screen = `#/page/${encodeURIComponent(made)}/instructions`;
+  await until("the route named the screen", BOUNDS.draw, async () => (await page.evaluate(() => location.hash)) === screen);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await until("the reload landed on the Instructions screen", BOUNDS.draw, async () =>
+    (await page.locator("span.tools button.tool[aria-pressed='true']", { hasText: "Instructions" }).count()) > 0);
+  expect(await page.evaluate(() => location.hash)).toBe(screen);
+
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await until("Back left the Instructions screen for the page", BOUNDS.draw, async () =>
+    (await page.evaluate(() => location.hash)) === `#/page/${encodeURIComponent(made)}`);
+  await until("the page's own face is back", BOUNDS.draw, async () =>
+    (await page.locator("span.tools button.tool[aria-pressed='true']").count()) === 0);
+});
+
+walk("a page's own code cannot move the screen, and the person's click on it can", async () => {
+  // A PAGE OF ITS OWN DOCUMENT that asks to open the root the moment it loads,
+  // with nobody touching it, and again when its button is clicked. Invented
+  // for this run.
+  const dir = join(vault, "pages", "home", "children", "Mover");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "content.yaml"), "name: Mover\nplugin: html\n", "utf8");
+  writeFileSync(join(dir, "index.html"), [
+    "<!doctype html><html><body>",
+    '<button id="go" style="font-size:24px">Go home</button><p id="said">waiting</p>',
+    "<script>",
+    "  const say = (t) => { document.getElementById('said').textContent = t; };",
+    "  biom.ready.then(() => biom.open({ kind: 'page', id: 'home' }))",
+    "    .then(() => say('moved by itself'), (e) => say('refused: ' + e.code));",
+    "  document.getElementById('go').addEventListener('click', () => biom.open({ kind: 'page', id: 'home' }));",
+    "</script></body></html>",
+  ].join("\n"), "utf8");
+
+  const mover = `#/page/${encodeURIComponent("home/Mover")}`;
+  await page.goto(`${base}/?vault=${encodeURIComponent(vault)}${mover}`, { waitUntil: "domcontentloaded" });
+  const box = page.frameLocator("iframe.artifact");
+  await until("the page's own open was refused", BOUNDS.draw, async () =>
+    (await box.locator("#said").innerText().catch(() => "")) === "refused: identity");
+  expect(await page.evaluate(() => location.hash)).toBe(mover);
+
+  // THE PERSON'S CLICK: a trusted pointerdown the shim reports as a touch,
+  // then the page's handler asks, and the screen moves as the person's open.
+  await box.locator("#go").click();
+  await until("the click moved the screen", BOUNDS.draw, async () =>
+    (await page.evaluate(() => location.hash)) === "#/page/home");
 });
 
 /* ── the design doc, read against the palette it ships with ───────────────
@@ -481,11 +573,13 @@ walk("a workspace already on disk is opened from the picker and lands on its roo
   // design rather than the bug that looks like it: the server mounts `VAULT` if
   // it is named, else the folder last opened here, else one of its own. Step 1
   // saw the picker because this run's data directory was empty; it is not empty
-  // now, so the same address goes straight to a workspace.
+  // now, so the same address goes straight to a workspace — and a window whose
+  // address names no screen opens on the Agent screen, as the Chat spec's first
+  // line has it.
   await page.goto(`${base}/`, { waitUntil: "domcontentloaded" });
-  await until("the remembered workspace was mounted", BOUNDS.draw, async () => {
+  await until("the remembered workspace was mounted, on the Agent screen", BOUNDS.draw, async () => {
     const hash = await page.evaluate(() => location.hash);
-    return hash.includes("page/");
+    return hash === "#/agent";
   });
   expect(await page.locator("div.ports.vault").count()).toBe(0);
 

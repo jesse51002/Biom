@@ -462,8 +462,8 @@ walk("the production hide list holds on the screens that carry it", async () => 
 
   // THE ROW THAT WAS IN THE SOURCE AND NOT IN THE BUILD, which is where it went
   // missing and therefore where it has to be asserted.
-  await until("the Dashboard row was drawn", BOUNDS.draw, async () =>
-    (await wire.evaluate<number>("document.querySelectorAll('button.dashboardlink').length")) === 1);
+  await until("the Agent row was drawn, in Dashboard's slot", BOUNDS.draw, async () =>
+    (await wire.evaluate<number>("document.querySelectorAll('button.agentlink').length")) === 1);
 
   // AND THE MAP ROW, IN THE BUILD. It was withheld from the built application
   // because a stranger's workspace is one page and maps to one light; the owner
@@ -473,13 +473,15 @@ walk("the production hide list holds on the screens that carry it", async () => 
   expect(foot).toContain("Map");
   expect(foot).toContain("Close workspace");
 
-  // AND THE BAR: Reload, Agent Terminal, and nothing else. The History panel,
-  // the Modify page panel and the Config screen behind a `···` menu are
-  // deleted from every build, not withheld from this one.
+  // AND THE BAR: Reload and the page's actions, and nothing else. The History
+  // panel, the Modify page panel and the Config screen behind a `···` menu are
+  // deleted from every build, not withheld from this one — and so is Agent
+  // Terminal, which went with its dock when the Chat spec left a terminal only
+  // for signing an agent in.
   const tools = await wire.evaluate<string>("document.querySelector('div.rail span.tools').innerText");
   expect(tools).toContain("Reload");
-  expect(tools).toContain("Agent Terminal");
-  for (const gone of ["History", "Modify page", "\u22EF"]) expect([gone, tools.includes(gone)]).toEqual([gone, false]);
+  for (const gone of ["History", "Modify page", "\u22EF", "Agent Terminal"]) expect([gone, tools.includes(gone)]).toEqual([gone, false]);
+  expect(await wire.evaluate<number>("document.querySelectorAll('section.dock, div.work').length")).toBe(0);
 
   // THE STRIP SAYS NOTHING A PERSON WHO NEVER CLONED THIS REPOSITORY CANNOT ACT
   // ON. Declared, drawn and the data grant are a compliance report between the

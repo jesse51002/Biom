@@ -1,0 +1,182 @@
+<!-- design/default.html — the workspace as it ships, drawn small.
+
+     IT READS THE LIVE TOKENS AND NAMES NONE OF THEM. Every colour here is
+     `var(--…)` and every face is a role, so this cell is whatever this vault's
+     `theme.json` currently says the workspace is — change the palette and this
+     specimen changes with it. That is what keeps the band TRUE rather than a
+     picture of a palette: this one is captioned *as it ships*, and a literal
+     typed in here goes on drawing whatever the default was the day it was typed,
+     in every vault, silently. It is also the whole point of it sitting above
+     three bands that carry a palette of their own: one of them is the workspace,
+     three of them are proposals.
+
+     The bars are the same week the three bands below draw, read from the page's
+     own `day` and `out` variables. Nothing about the figure is typed: the bar
+     heights are the numbers over the largest of them, and the one that carries
+     the week is found rather than marked. -->
+<style>
+  :scope {
+    display: block;
+    container-type: inline-size;
+    padding: 0 3rem 3.5rem;
+    border-block-end: 1px solid var(--rule-soft);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 9.5rem minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+
+  .lab {
+    padding-block-start: 0.15rem;
+    font-family: var(--furniture-face);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    letter-spacing: 0.09em;
+    color: var(--ink-3);
+    max-inline-size: none;
+  }
+
+  .lab p { margin-block: 0; }
+  .lab p:first-child { text-transform: uppercase; }
+  .lab em { font-style: normal; color: var(--ink-3); }
+
+  .mini {
+    display: grid;
+    grid-template-columns: 13.5rem 9rem minmax(0, 13rem);
+    gap: 1.75rem;
+    justify-content: start;
+    align-items: start;
+  }
+
+  .mini > * { min-inline-size: 0; max-inline-size: none; }
+
+  .spec h3 {
+    margin-block: 0 0.3rem;
+    font-family: var(--sheet-face);
+    font-size: 0.9375rem;
+    line-height: 1.2;
+  }
+
+  .spec p {
+    margin-block: 0;
+    font-family: var(--sheet-face);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+
+  .cap p {
+    margin-block: 0 0.4rem;
+    font-family: var(--furniture-face);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.3rem;
+    block-size: 2.6rem;
+  }
+
+  .bars i {
+    flex: 1;
+    block-size: calc(var(--at, 0) * 100%);
+    background: var(--cyan);
+    opacity: 0.55;
+  }
+
+  .bars i.hot { opacity: 1; }
+
+  /* A markdown table is as wide as its widest row and cannot wrap. */
+  .open { overflow-x: auto; }
+
+  .open table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-family: var(--furniture-face);
+    font-size: 0.6875rem;
+    color: var(--ink-2);
+  }
+
+  .open th {
+    padding-block: 0 0.4rem;
+    text-align: left;
+    font-weight: 400;
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-block-end: 0;
+  }
+
+  .open td {
+    padding-block: 0.18rem;
+    border-block-end: 1px solid var(--rule-soft);
+  }
+
+  .open td:last-child,
+  .open th:last-child {
+    text-align: right;
+    font-family: var(--gauge-face);
+    color: var(--ink);
+  }
+
+  /* THE PALETTE ITSELF, and it is the one drawing on this page with no words in
+     it at all. Each chip is a role, in the order the tokens are declared in —
+     a fixed cast rather than a list, because what is drawn here is the palette
+     the workspace HAS. */
+  .sw { display: flex; gap: 0.19rem; margin-block-start: 0.55rem; }
+  .sw i { flex: 1; block-size: 0.625rem; background: var(--c); }
+  .sw i:nth-child(1) { --c: var(--stock); }
+  .sw i:nth-child(2) { --c: var(--field); }
+  .sw i:nth-child(3) { --c: var(--rule); }
+  .sw i:nth-child(4) { --c: var(--ink-3); }
+  .sw i:nth-child(5) { --c: var(--ink); }
+  .sw i:nth-child(6) { --c: var(--cyan); }
+  .sw i:nth-child(7) { --c: var(--magenta); }
+  .sw i:nth-child(8) { --c: var(--yellow); }
+
+  @container (width <= 52rem) {
+    :scope { padding-inline: 1.5rem; }
+    .row { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+    .mini { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<div class="row">
+  <div class="lab" data-g-part="label"></div>
+  <div class="mini">
+    <div class="spec" data-g-part="specimen"></div>
+    <div>
+      <div class="cap" data-g-part="week"></div>
+      <div class="bars"></div>
+    </div>
+    <div>
+      <div class="open" data-g-part="open"></div>
+      <div class="sw"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* THE WEEK, READ FROM THE DOCUMENT. `out` is one number per day and the tallest
+     of them carries the week — found here rather than marked in the document,
+     because a mark typed beside a number is wrong the first time a number
+     changes. */
+  var out = (ctx.vars.out || []).map(Number).filter(function (n) { return !isNaN(n); });
+  var bars = section.querySelector(".bars");
+  var top = Math.max.apply(null, out.concat([1]));
+
+  out.forEach(function (n) {
+    var bar = document.createElement("i");
+    bar.style.setProperty("--at", String(n / top));
+    if (n === top) bar.classList.add("hot");
+    bars.appendChild(bar);
+  });
+</script>

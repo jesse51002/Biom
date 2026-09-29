@@ -1,0 +1,41 @@
+---
+id: home/Base_Reveal
+aliases: ["A figure that plays once"]
+parent: home
+source: pages/home/children/Base_Reveal/content.yaml
+generated: true
+---
+
+# A figure that plays once
+
+Copy `index.html` beside a page's `content.yaml` — `run.html` is the obvious name — and
+paste the section below into that page's `contents` with `data:` changed to match. Or copy
+this whole directory into `pages/<parent>/children/<name>/` and it draws as it stands.
+
+**The motion is in this file and the timing is not.** `reveal` adds one class the first
+time the section comes into view and then disconnects its observer; what happens under that
+class is the section's own `<style>`, which is where a drawing's motion belongs.
+
+**Two things go wrong without it, and both are invisible until somebody notices the page is
+tired.** An observer that never disconnects keeps firing for as long as the page is open and
+outlives the section when it is redrawn. And an animation that starts at load plays the
+whole choreography below the fold, so a reader who scrolls down arrives after it finished.
+
+**`--motion` is the frame's reduced-motion switch** and it is already on the page — multiply
+a duration or a delay by it and a reader who asked for less motion gets none. The one thing
+a multiplier cannot do is put the ink back, which is what the `prefers-reduced-motion` block
+at the foot of the file is for: stillness gets the FINISHED figure, not an empty one.
+
+## Where the run has got to
+
+Five stages, drawn from five names. The line grows to the one `reached` names, the marks
+light one after another as it passes them, and the stage it stops at is the only thing on
+the drawing wearing the hot colour — a figure where everything is lit has lit nothing.
+
+A figure's values are `variables` rather than a list slot, because a slot holds markdown and
+reading a figure back out of prose is parsing. Variables are edited on this page's config
+screen rather than on the page; `base/list/` is the shape for the things a reader really
+should be able to add to from where they stand. Nothing here is real content.
+
+_This figure has no stages yet. Add `stageName` to the section's `variables` — one name per
+mark — and name the one the run has got to in `reached`._

@@ -43,6 +43,10 @@
  * in-box split as a security boundary.
  *
  * What it does beyond wrapping postMessage:
+ *   · says when the PERSON touches the page — which way, throttled, and only
+ *     for events the browser says a person made (`touches` below)
+ *   · folds the Agent screen's `look.state` and `look.patch` into one state and
+ *     hands it to `biom.onLook` — posted only to the box on `@agent`
  *   · correlates request ids and rejects on `ok: false` with the closed error
  *   · re-declares the palette, because custom properties do not cross a document
  *     boundary and `var(--ink)` is otherwise undefined in here
@@ -185,6 +189,7 @@
     if (m.kind === "theme") applyTheme(m.theme);
     else if (m.kind === "refresh") void onRefresh(m.change || {});
     else if (m.kind === "place" && typeof m.top === "number") place(m.top);
+    else if (m.kind === "look.state" || m.kind === "look.patch") hearLook(m);
   }
 
   /** Something this page draws from moved underneath it — a section added or
@@ -318,6 +323,127 @@
    * box that measured itself would put the scroller back outside and take every
    * one of those away. `GuestNotice` has no `size` and this file must never
    * post one.                                                                 */
+
+  /* ── the Agent screen's look: `look.state` and `look.patch` ────────────────
+   * THE HOST FEEDS THE CHATS INTO ONE BOX — the Agent screen's, on `@agent` —
+   * and into no other, because `look.*` is posted to that box's own frame and
+   * never broadcast. The box cannot fetch, so everything the look draws arrives
+   * here: `look.state` whole, and `look.patch` for what moved since.
+   *
+   * THIS FOLDS THE PATCHES IN, by the contract's rule, so a look is handed the
+   * state as it now stands and never has to know the rule: a patch's `updates`
+   * append ONLY when its `chat` is the chat held — a patch for the chat that was
+   * open before a `look.state` switched it is stale and its updates are dropped
+   * — and `chats`, `names`, `input`, `beside` and `view` replace what is held. An
+   * update whose `seq` is already held is dropped, so a patch that overlaps the
+   * state it follows cannot say a word twice; a TOOL LINE is whole and is
+   * replaced where it first stood, by its id, and only by a later `seq`, so a
+   * command's output updated five hundred times is one line held and not five
+   * hundred.
+   *
+   * `biom.onLook(fn)` calls `fn(state, patch)`: `patch` is null when the state
+   * was handed whole — a `look.state`, or a late subscriber catching up — and
+   * otherwise the patch that just moved it, its `updates` narrowed to the ones
+   * that were folded in, so a look that draws incrementally draws exactly what
+   * the state gained. It is the one hook, and nothing here draws, sends or
+   * keeps anything else. */
+
+  /** @type {any} the LookState as it now stands, or null before the first */
+  let look = null;
+  /** The highest `seq` held, and where each tool line stands in `look.updates`. */
+  let lookSeq = 0;
+  /** @type {Map<string, number>} */
+  let lookTools = new Map();
+  /** @type {((state: any, patch: any) => void)[]} */
+  const lookListeners = [];
+
+  /** @param {any} u @returns {string | null} a tool update's line id */
+  const toolIdOf = (u) => (u && u.kind === "tool" && u.tool && typeof u.tool.id === "string" ? u.tool.id : null);
+
+  /** A state handed whole: its tool lines are compacted to one each, at the
+   *  place the line first stood and in its latest state, and the index rebuilt.
+   *  @param {any} state */
+  function holdLook(state) {
+    const updates = Array.isArray(state.updates) ? state.updates : [];
+    /** @type {any[]} */
+    const kept = [];
+    lookTools = new Map();
+    lookSeq = 0;
+    for (const u of updates) {
+      if (!u || typeof u !== "object" || typeof u.seq !== "number") continue;
+      if (u.seq > lookSeq) lookSeq = u.seq;
+      const id = toolIdOf(u);
+      const at = id === null ? undefined : lookTools.get(id);
+      if (id !== null && at !== undefined) {
+        if (kept[at].seq < u.seq) kept[at] = u;
+        continue;
+      }
+      if (id !== null) lookTools.set(id, kept.length);
+      kept.push(u);
+    }
+    look = Object.assign({}, state, { updates: kept });
+  }
+
+  /** One update of a patch, folded in; false when it was already held.
+   *  `before` is the highest `seq` held when the patch began: a kept log
+   *  compacts a tool line to its LAST state where it FIRST stood, so a state's
+   *  seqs are not in order, and every update the server emits after it is
+   *  numbered above all of them — so "new" is "above what was held", measured
+   *  once per patch and never as a running maximum.
+   *  @param {any} u @param {number} before @returns {boolean} */
+  function foldLook(u, before) {
+    if (!u || typeof u !== "object" || typeof u.seq !== "number") return false;
+    const id = toolIdOf(u);
+    if (id !== null) {
+      const at = lookTools.get(id);
+      if (at !== undefined) {
+        if (look.updates[at].seq >= u.seq) return false;
+        look.updates[at] = u;
+      } else {
+        lookTools.set(id, look.updates.length);
+        look.updates.push(u);
+      }
+    } else {
+      if (u.seq <= before) return false;
+      look.updates.push(u);
+    }
+    if (u.seq > lookSeq) lookSeq = u.seq;
+    return true;
+  }
+
+  /** @param {any} m a `look.state` or a `look.patch`, as the host posted it */
+  function hearLook(m) {
+    /** @type {any} */
+    let patch = null;
+    if (m.kind === "look.state") {
+      if (!m.state || typeof m.state !== "object") return;
+      holdLook(m.state);
+    } else {
+      // A patch with no state to apply to is a patch for a look that has not
+      // been told what it holds; the next `look.state` says it whole.
+      if (!look) return;
+      patch = { chat: m.chat === undefined ? null : m.chat, updates: /** @type {any[]} */ ([]) };
+      if (Array.isArray(m.updates) && m.chat !== null && m.chat === look.chat) {
+        const before = lookSeq;
+        for (const u of m.updates) if (foldLook(u, before)) patch.updates.push(u);
+      }
+      if (Array.isArray(m.chats)) look.chats = patch.chats = m.chats;
+      if (m.names && typeof m.names === "object") look.names = patch.names = m.names;
+      if (m.input && typeof m.input === "object") look.input = patch.input = m.input;
+      if (m.beside !== undefined) look.beside = patch.beside = m.beside;
+      if (typeof m.view === "string") look.view = patch.view = m.view;
+    }
+    for (const fn of lookListeners.slice()) {
+      try { fn(look, patch); } catch (e) { report(e); }
+    }
+  }
+
+  /** @param {(state: any, patch: any) => void} fn */
+  function onLook(fn) {
+    lookListeners.push(fn);
+    if (look) { try { fn(look, null); } catch (e) { report(e); } }
+    return () => { const i = lookListeners.indexOf(fn); if (i >= 0) lookListeners.splice(i, 1); };
+  }
 
   /* ── teardown ──────────────────────────────────────────────────────────── */
 
@@ -663,6 +789,12 @@
       return () => { const i = refreshListeners.indexOf(fn); if (i >= 0) refreshListeners.splice(i, 1); };
     },
 
+    /** THE AGENT SCREEN'S LOOK hears what it draws here: `fn(state, patch)`,
+     *  the LookState as it now stands and the patch that moved it, or null
+     *  when it was handed whole. Only the box on `@agent` is ever posted one;
+     *  anywhere else this never fires. See "the Agent screen's look" above. */
+    onLook: onLook,
+
     /** @param {(theme: any) => void} fn */
     onTheme(fn) {
       themeListeners.push(fn);
@@ -882,6 +1014,65 @@
     });
   }
 
+  /* THE PERSON TOUCHING THE PAGE — a click, a key, a selection, a scroll —
+     said to the host as `{ kind: "touch", g, what }` and NOTHING ELSE: no
+     place, no key, no text, because a keystroke's identity crossing the wall
+     would be a keylogger. The switcher of the workspace's *History and View
+     Switcher* spec needs it — a screen is the person's once they touch it,
+     and a touch in the last two minutes keeps an agent from taking the screen
+     — and the host can no more see a click in here than a height. The host
+     also honours this box's `open` only just after one, which is why a
+     child row or a followed link is a click first: this listener is on the
+     window in the CAPTURE phase, so it has spoken before the page's own
+     handler runs.
+
+     ONLY THE PERSON'S. Every event is taken only when `isTrusted` — the
+     browser's own word that a person made it, which no page code can
+     forge by dispatching one — and a scroll is the GESTURE that scrolls
+     (`wheel`, `touchmove`), never the `scroll` event: that fires for a
+     scroll this box made itself, putting the reader back after a redraw
+     (`place`) or held level by the page it is drawn inside (`follow`), and
+     for any page code that scrolls. A scrollbar dragged is a `pointerdown`
+     first, and a page scrolled from the keyboard is a key. A selection is
+     taken only while the page has a fresh user activation, because the
+     runtime and a plugin select text too.
+
+     THROTTLED HERE, one of each `what` a second: the first at once, and the
+     latest of the rest when the second is up, so the host always hears
+     within a second of the person's last touch — which is what keeps a
+     click on a link, a moment after another click, inside the window the
+     host allows an `open`. Queued with every other message until the ports
+     arrive, like everything this box says. */
+  const TOUCH_EVERY = 1000;
+  function touches() {
+    /** @type {Record<string, number>} */
+    const last = {};
+    /** @type {Record<string, any>} */
+    const later = {};
+    /** @param {"click" | "key" | "select" | "scroll"} what */
+    const touch = (what) => {
+      if (later[what]) return;
+      const since = Date.now() - (last[what] || 0);
+      const say = () => { later[what] = null; last[what] = Date.now(); post({ kind: "touch", g: PROTOCOL, what: what }); };
+      if (since >= TOUCH_EVERY) say();
+      else later[what] = setTimeout(say, TOUCH_EVERY - since);
+    };
+    /** @param {"click" | "key" | "scroll"} what */
+    const person = (what) => (/** @type {Event} */ ev) => { if (ev.isTrusted) touch(what); };
+    const quietly = { capture: true, passive: true };
+    window.addEventListener("pointerdown", person("click"), quietly);
+    window.addEventListener("keydown", person("key"), quietly);
+    window.addEventListener("wheel", person("scroll"), quietly);
+    window.addEventListener("touchmove", person("scroll"), quietly);
+    document.addEventListener("selectionchange", () => {
+      const act = /** @type {any} */ (navigator).userActivation;
+      if (!act || !act.isActive) return;
+      const sel = document.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      touch("select");
+    });
+  }
+
   function hello() {
     // "*" is required and is safe: a sandboxed frame has no origin to target,
     // and the host checks object identity against the frame it created.
@@ -892,5 +1083,6 @@
   window.addEventListener("unhandledrejection", (e) => report(e.reason));
   window.addEventListener("pagehide", teardown);
 
+  touches();
   hello();
 })();

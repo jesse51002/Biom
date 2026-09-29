@@ -1,0 +1,134 @@
+{
+  "id": "home/Values",
+  "name": "Values",
+  "plugin": "biom-doc",
+  "variables": {},
+  "sections": [
+    {
+      "name": "bare",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "No page scope here, so {{who}} and {{rate}} stay as written.",
+          "vars": {}
+        }
+      },
+      "vars": {},
+      "source": {
+        "name": "bare",
+        "parts": {
+          "body": "No page scope here, so {{who}} and {{rate}} stay as written."
+        }
+      }
+    },
+    {
+      "name": "typed",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "Count {{count}}, ratio {{ratio}}, lit {{lit}}, dim {{dim}}, none [{{none}}], mixed {{mixed}}.",
+          "vars": {
+            "count": 3,
+            "ratio": 0.25,
+            "lit": true,
+            "dim": false,
+            "none": null,
+            "mixed": [
+              "one",
+              2,
+              null,
+              false
+            ]
+          }
+        }
+      },
+      "vars": {
+        "count": 3,
+        "ratio": 0.25,
+        "lit": true,
+        "dim": false,
+        "none": null,
+        "mixed": [
+          "one",
+          2,
+          null,
+          false
+        ]
+      },
+      "source": {
+        "name": "typed",
+        "parts": {
+          "body": "Count {{count}}, ratio {{ratio}}, lit {{lit}}, dim {{dim}}, none [{{none}}], mixed {{mixed}}."
+        },
+        "variables": {
+          "count": 3,
+          "ratio": 0.25,
+          "lit": true,
+          "dim": false,
+          "none": null,
+          "mixed": [
+            "one",
+            2,
+            null,
+            false
+          ]
+        }
+      }
+    },
+    {
+      "name": "partonly",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "Only the part has {{mine}}, and {{count}} is not in its scope.",
+          "vars": {
+            "mine": "its own"
+          }
+        }
+      },
+      "vars": {},
+      "source": {
+        "name": "partonly",
+        "parts": {
+          "body": {
+            "type": "markdown",
+            "data": "Only the part has {{mine}}, and {{count}} is not in its scope.",
+            "variables": {
+              "mine": "its own"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "nothing",
+      "html": "<!-- Invented: an empty list slot, which is a real answer and not a missing one. -->\n<div class=\"empty-list\" data-count=\"{{count}}\"><div data-g-part=\"items\"></div></div>\n",
+      "fallback": false,
+      "parts": {
+        "items": {
+          "kind": "list",
+          "items": []
+        }
+      },
+      "vars": {
+        "count": 0
+      },
+      "source": {
+        "name": "nothing",
+        "data": "list.html",
+        "parts": {
+          "items": []
+        },
+        "variables": {
+          "count": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2258 @@
+{
+  "id": "@design",
+  "name": "Design",
+  "plugin": "biom-doc",
+  "variables": {
+    "day": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri"
+    ],
+    "out": [
+      3,
+      6,
+      2,
+      4,
+      1
+    ],
+    "newsSwatch": [
+      "Stock",
+      "Stock lo",
+      "Rule",
+      "Ink 2",
+      "Ink",
+      "Spot",
+      "Spot 2"
+    ],
+    "paperSwatch": [
+      "Paper",
+      "Shade",
+      "Pencil",
+      "Ink",
+      "Blue",
+      "Ochre"
+    ],
+    "panelSwatch": [
+      "STOCK",
+      "PANEL",
+      "RULE",
+      "INK",
+      "SPOT",
+      "WARN"
+    ]
+  },
+  "sections": [
+    {
+      "name": "title",
+      "html": "<!-- design/masthead.html — the page's own opening.\n\n     It is one slot and it earns a file for one reason: the page under it is a\n     stack of full-bleed bands, so the opening has to sit on the same left margin\n     the bands do. The shipped default section is a centred column at a reading\n     measure, which would set the title apart from everything below it. -->\n<style>\n  :scope {\n    display: block;\n    /* Nothing declares a container for you, and the query at the foot needs one. */\n    container-type: inline-size;\n  }\n\n  .masthead {\n    padding: 3.25rem 3rem 2.5rem;\n    /* The measure the frame puts on every slot is a default, not a ceiling: the\n       heading wants the band's own margin and the prose keeps a measure of its\n       own, below. */\n    max-inline-size: none;\n  }\n\n  .masthead h1 {\n    margin-block: 0 0.7rem;\n  }\n\n  .masthead p {\n    margin-block: 0;\n    max-inline-size: 44rem;\n    font-family: var(--sheet-face);\n    font-size: 1.0625rem;\n    line-height: 1.6;\n    color: var(--ink);\n  }\n\n  @container (width <= 44rem) {\n    .masthead { padding-inline: 1.5rem; }\n  }\n</style>\n\n<div class=\"masthead\" data-g-part=\"body\"></div>\n",
+      "fallback": false,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "# Design\n\nHow this workspace looks is decided here. It ships in Biom's own colours — charcoal, cream and one sunflower — and to change it you tell your agent the feel you want, in your own words. Scroll: _these are three of them._\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "title",
+        "data": "masthead.html",
+        "parts": {
+          "body": "# Design\n\nHow this workspace looks is decided here. It ships in Biom's own colours — charcoal, cream and one sunflower — and to change it you tell your agent the feel you want, in your own words. Scroll: _these are three of them._\n"
+        }
+      }
+    },
+    {
+      "name": "default",
+      "html": "<!-- design/default.html — the workspace as it ships, drawn small.\n\n     IT READS THE LIVE TOKENS AND NAMES NONE OF THEM. Every colour here is\n     `var(--…)` and every face is a role, so this cell is whatever this vault's\n     `theme.json` currently says the workspace is — change the palette and this\n     specimen changes with it. That is what keeps the band TRUE rather than a\n     picture of a palette: this one is captioned *as it ships*, and a literal\n     typed in here goes on drawing whatever the default was the day it was typed,\n     in every vault, silently. It is also the whole point of it sitting above\n     three bands that carry a palette of their own: one of them is the workspace,\n     three of them are proposals.\n\n     The bars are the same week the three bands below draw, read from the page's\n     own `day` and `out` variables. Nothing about the figure is typed: the bar\n     heights are the numbers over the largest of them, and the one that carries\n     the week is found rather than marked. -->\n<style>\n  :scope {\n    display: block;\n    container-type: inline-size;\n    padding: 0 3rem 3.5rem;\n    border-block-end: 1px solid var(--rule-soft);\n  }\n\n  .row {\n    display: grid;\n    grid-template-columns: 9.5rem minmax(0, 1fr);\n    gap: 2rem;\n    align-items: start;\n  }\n\n  .lab {\n    padding-block-start: 0.15rem;\n    font-family: var(--furniture-face);\n    font-size: 0.75rem;\n    line-height: 1.5;\n    letter-spacing: 0.09em;\n    color: var(--ink-3);\n    max-inline-size: none;\n  }\n\n  .lab p { margin-block: 0; }\n  .lab p:first-child { text-transform: uppercase; }\n  .lab em { font-style: normal; color: var(--ink-3); }\n\n  .mini {\n    display: grid;\n    grid-template-columns: 13.5rem 9rem minmax(0, 13rem);\n    gap: 1.75rem;\n    justify-content: start;\n    align-items: start;\n  }\n\n  .mini > * { min-inline-size: 0; max-inline-size: none; }\n\n  .spec h3 {\n    margin-block: 0 0.3rem;\n    font-family: var(--sheet-face);\n    font-size: 0.9375rem;\n    line-height: 1.2;\n  }\n\n  .spec p {\n    margin-block: 0;\n    font-family: var(--sheet-face);\n    font-size: 0.75rem;\n    line-height: 1.5;\n    color: var(--ink-2);\n  }\n\n  .cap p {\n    margin-block: 0 0.4rem;\n    font-family: var(--furniture-face);\n    font-size: 0.625rem;\n    letter-spacing: 0.1em;\n    text-transform: uppercase;\n    color: var(--ink-3);\n  }\n\n  .bars {\n    display: flex;\n    align-items: flex-end;\n    gap: 0.3rem;\n    block-size: 2.6rem;\n  }\n\n  .bars i {\n    flex: 1;\n    block-size: calc(var(--at, 0) * 100%);\n    background: var(--cyan);\n    opacity: 0.55;\n  }\n\n  .bars i.hot { opacity: 1; }\n\n  /* A markdown table is as wide as its widest row and cannot wrap. */\n  .open { overflow-x: auto; }\n\n  .open table {\n    inline-size: 100%;\n    border-collapse: collapse;\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    color: var(--ink-2);\n  }\n\n  .open th {\n    padding-block: 0 0.4rem;\n    text-align: left;\n    font-weight: 400;\n    font-size: 0.625rem;\n    letter-spacing: 0.1em;\n    text-transform: uppercase;\n    color: var(--ink-3);\n    border-block-end: 0;\n  }\n\n  .open td {\n    padding-block: 0.18rem;\n    border-block-end: 1px solid var(--rule-soft);\n  }\n\n  .open td:last-child,\n  .open th:last-child {\n    text-align: right;\n    font-family: var(--gauge-face);\n    color: var(--ink);\n  }\n\n  /* THE PALETTE ITSELF, and it is the one drawing on this page with no words in\n     it at all. Each chip is a role, in the order the tokens are declared in —\n     a fixed cast rather than a list, because what is drawn here is the palette\n     the workspace HAS. */\n  .sw { display: flex; gap: 0.19rem; margin-block-start: 0.55rem; }\n  .sw i { flex: 1; block-size: 0.625rem; background: var(--c); }\n  .sw i:nth-child(1) { --c: var(--stock); }\n  .sw i:nth-child(2) { --c: var(--field); }\n  .sw i:nth-child(3) { --c: var(--rule); }\n  .sw i:nth-child(4) { --c: var(--ink-3); }\n  .sw i:nth-child(5) { --c: var(--ink); }\n  .sw i:nth-child(6) { --c: var(--cyan); }\n  .sw i:nth-child(7) { --c: var(--magenta); }\n  .sw i:nth-child(8) { --c: var(--yellow); }\n\n  @container (width <= 52rem) {\n    :scope { padding-inline: 1.5rem; }\n    .row { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }\n    .mini { grid-template-columns: minmax(0, 1fr); }\n  }\n</style>\n\n<div class=\"row\">\n  <div class=\"lab\" data-g-part=\"label\"></div>\n  <div class=\"mini\">\n    <div class=\"spec\" data-g-part=\"specimen\"></div>\n    <div>\n      <div class=\"cap\" data-g-part=\"week\"></div>\n      <div class=\"bars\"></div>\n    </div>\n    <div>\n      <div class=\"open\" data-g-part=\"open\"></div>\n      <div class=\"sw\"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>\n    </div>\n  </div>\n</div>\n\n<script>\n  /* THE WEEK, READ FROM THE DOCUMENT. `out` is one number per day and the tallest\n     of them carries the week — found here rather than marked in the document,\n     because a mark typed beside a number is wrong the first time a number\n     changes. */\n  var out = (ctx.vars.out || []).map(Number).filter(function (n) { return !isNaN(n); });\n  var bars = section.querySelector(\".bars\");\n  var top = Math.max.apply(null, out.concat([1]));\n\n  out.forEach(function (n) {\n    var bar = document.createElement(\"i\");\n    bar.style.setProperty(\"--at\", String(n / top));\n    if (n === top) bar.classList.add(\"hot\");\n    bars.appendChild(bar);\n  });\n</script>\n",
+      "fallback": false,
+      "parts": {
+        "label": {
+          "kind": "markdown",
+          "md": "The default\n\n_as it ships_\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        },
+        "specimen": {
+          "kind": "markdown",
+          "md": "### Shipments\n\nNine went out on Tuesday. Two are still with the courier.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        },
+        "week": {
+          "kind": "markdown",
+          "md": "This week",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        },
+        "open": {
+          "kind": "markdown",
+          "md": "| Open | |\n|---|---|\n| Courier | 6 |\n| Pickup | 2 |\n| Post | 1 |\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "default",
+        "data": "default.html",
+        "parts": {
+          "label": "The default\n\n_as it ships_\n",
+          "specimen": "### Shipments\n\nNine went out on Tuesday. Two are still with the courier.\n",
+          "week": "This week",
+          "open": "| Open | |\n|---|---|\n| Courier | 6 |\n| Pickup | 2 |\n| Post | 1 |\n"
+        }
+      }
+    },
+    {
+      "name": "news",
+      "html": "<!-- design/news.html — the first of the three worlds: set like a newspaper.\n\n     A WORLD IS A BAND, AND A BAND CARRIES ITS OWN PALETTE. The ten values below\n     are this section's own variables, so they are edited in the page's settings\n     like any other value and nothing in this file spells a colour. They are\n     declared onto the SAME token names the workspace uses — `--ink`, `--rule`,\n     `--spot` — so every rule under here reads exactly as a rule anywhere else\n     in the vault does, and this block is the `theme.json` somebody would be\n     handed rather than a second way of writing CSS.\n\n     The type is the three ROLES this workspace has, combined differently:\n     the sheet face sets the page, the furniture face does every label, and the\n     gauge face is left for the figures. No face is named anywhere.\n\n     THE FIGURE IS THE SAME WEEK the band above and the two below draw, read\n     from the page's `day` and `out` variables. The red column is the tallest\n     one, found rather than typed. -->\n<style>\n  :scope {\n    display: block;\n    container-type: inline-size;\n\n    --stock: {{stock}};\n    --stock-lo: {{stockLo}};\n    --ink: {{ink}};\n    --ink-2: {{ink2}};\n    --ink-3: {{ink3}};\n    --rule: {{rule}};\n    --rule-soft: {{ruleSoft}};\n    --spot: {{spot}};\n    --spot-2: {{spot2}};\n\n    background: var(--stock);\n    color: var(--ink);\n  }\n\n  [data-g-part] { max-inline-size: none; }\n\n  .said {\n    padding: 1.15rem 3rem;\n    border-block-end: 1px solid var(--rule-soft);\n    font-family: var(--furniture-face);\n    font-size: 0.8125rem;\n    color: var(--ink-2);\n  }\n\n  .said p { margin-block: 0; }\n  .said strong { color: var(--ink); font-weight: 400; }\n\n  .said p::before {\n    content: \"\";\n    display: inline-block;\n    inline-size: 0.9rem;\n    block-size: 2px;\n    margin-inline-end: 0.6rem;\n    vertical-align: 0.24em;\n    background: var(--spot);\n  }\n\n  .board { padding: 3.9rem 3rem 3.4rem; }\n\n  .kick {\n    display: flex;\n    justify-content: space-between;\n    gap: 1rem;\n    padding-block-end: 0.4rem;\n    margin-block-end: 0.7rem;\n    border-block-end: 1px solid var(--rule);\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    font-weight: 700;\n    text-transform: uppercase;\n    letter-spacing: 0.16em;\n    color: var(--ink-2);\n  }\n\n  .kick p { margin-block: 0; }\n\n  .head {\n    padding-block-end: 0.5rem;\n    margin-block-end: 0.55rem;\n    border-block-end: 3px solid var(--rule);\n  }\n\n  .headline h2 {\n    margin-block: 0 0.35rem;\n    max-inline-size: 22ch;\n    font-family: var(--sheet-face);\n    font-weight: 700;\n    font-size: 3.6rem;\n    line-height: 0.93;\n    letter-spacing: -0.028em;\n    color: var(--ink);\n  }\n\n  /* The deck is the paragraph under the headline, in the same part: markdown\n     already tells a heading from a paragraph, so cutting a second slot would\n     only have bought a class. */\n  .headline p {\n    margin-block: 0;\n    max-inline-size: 60ch;\n    font-family: var(--furniture-face);\n    font-size: 1.0625rem;\n    line-height: 1.3;\n    color: var(--ink-2);\n  }\n\n  .body {\n    column-count: 3;\n    column-gap: 1.9rem;\n    column-rule: 1px solid var(--rule-soft);\n    font-family: var(--sheet-face);\n    font-size: 0.8125rem;\n    line-height: 1.38;\n    text-align: justify;\n    hyphens: auto;\n  }\n\n  .body > p { margin-block: 0; }\n  .body > p + p { text-indent: 1.1em; }\n\n  /* The drop cap is the OPENING paragraph's, and a direct child so the pull\n     quote's own paragraph never takes one. */\n  .body > p:first-child::first-letter {\n    float: left;\n    font-size: 2.95em;\n    line-height: 0.82;\n    padding: 0.06em 0.1em 0 0;\n    font-weight: 700;\n  }\n\n  .body blockquote {\n    break-inside: avoid;\n    margin: 0.85rem 0;\n    padding-block: 0.5rem;\n    border-block: 1px solid var(--rule);\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 1.0625rem;\n    line-height: 1.22;\n    text-align: left;\n    text-indent: 0;\n  }\n\n  .grid {\n    display: grid;\n    grid-template-columns: 1fr 1fr;\n    gap: 1.9rem;\n    margin-block-start: 1rem;\n    padding-block-start: 0.7rem;\n    border-block-start: 1px solid var(--rule);\n  }\n\n  .lab p,\n  .tab h3 {\n    margin-block: 0 0.5rem;\n    padding-block-end: 0.3rem;\n    border-block-end: 1px solid var(--rule-soft);\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    font-weight: 700;\n    text-transform: uppercase;\n    letter-spacing: 0.16em;\n    color: var(--ink);\n  }\n\n  .chart {\n    display: flex;\n    align-items: flex-end;\n    gap: 1.5rem;\n    block-size: 6.6rem;\n    padding-block-end: 0.35rem;\n    border-block-end: 2px solid var(--rule);\n  }\n\n  .chart .col {\n    flex: 1;\n    display: flex;\n    flex-direction: column;\n    justify-content: flex-end;\n    align-items: center;\n    gap: 0.25rem;\n    block-size: 100%;\n  }\n\n  .chart .val {\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    font-weight: 700;\n    color: var(--ink);\n  }\n\n  .chart .bar {\n    inline-size: 100%;\n    block-size: calc(var(--at, 0) * 100%);\n    border: 1px solid var(--ink);\n    background: repeating-linear-gradient(-45deg, var(--ink) 0 1.5px, transparent 1.5px 4.5px);\n    transform-origin: bottom;\n  }\n\n  .chart .col.hot .bar { background: var(--spot); border-color: var(--spot); }\n  .chart .col.hot .val { color: var(--spot); }\n\n  .days { display: flex; gap: 1.5rem; margin-block-start: 0.3rem; }\n\n  .days span {\n    flex: 1;\n    text-align: center;\n    font-family: var(--furniture-face);\n    font-size: 0.625rem;\n    letter-spacing: 0.1em;\n    text-transform: uppercase;\n    color: var(--ink-2);\n  }\n\n  .cap p {\n    margin-block: 0.55rem 0;\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 0.75rem;\n    line-height: 1.35;\n    color: var(--ink-2);\n  }\n\n  .tab { overflow-x: auto; }\n\n  .tab table {\n    inline-size: 100%;\n    border-collapse: collapse;\n    font-family: var(--sheet-face);\n    font-size: 0.8125rem;\n    color: var(--ink);\n  }\n\n  .tab th {\n    padding-block: 0 0.3rem;\n    text-align: left;\n    border-block-end: 1px solid var(--rule);\n    font-family: var(--furniture-face);\n    font-size: 0.625rem;\n    font-weight: 700;\n    text-transform: uppercase;\n    letter-spacing: 0.14em;\n    color: var(--ink-2);\n  }\n\n  .tab td {\n    padding-block: 0.26rem;\n    border-block-end: 1px solid var(--rule-soft);\n  }\n\n  .tab tr:last-child td { border-block-end: 2px solid var(--rule); }\n\n  .tab td:nth-child(2),\n  .tab td:nth-child(3),\n  .tab th:nth-child(2),\n  .tab th:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }\n\n  .tab td:last-child,\n  .tab th:last-child {\n    text-align: right;\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    text-transform: uppercase;\n    letter-spacing: 0.09em;\n    color: var(--ink-2);\n  }\n\n  .tab td strong { color: var(--spot); }\n\n  /* THE PALETTE, NAMED. The chips are the tokens above in the order they are\n     declared in; the words beside them are the document's, so a world can be\n     renamed without this file being opened. */\n  .sw { display: flex; margin-block-start: 1.3rem; border: 1px solid var(--rule); }\n\n  .sw .chip {\n    position: relative;\n    flex: 1;\n    block-size: 2.1rem;\n    background: var(--c);\n    border-inline-end: 1px solid var(--rule);\n  }\n\n  .sw .chip:last-child { border-inline-end: 0; }\n  .sw .chip:nth-child(1) { --c: var(--stock); }\n  .sw .chip:nth-child(2) { --c: var(--stock-lo); }\n  .sw .chip:nth-child(3) { --c: var(--rule-soft); }\n  .sw .chip:nth-child(4) { --c: var(--ink-2); }\n  .sw .chip:nth-child(5) { --c: var(--ink); }\n  .sw .chip:nth-child(6) { --c: var(--spot); }\n  .sw .chip:nth-child(7) { --c: var(--spot-2); }\n\n  .sw .nm {\n    position: absolute;\n    inset-inline-start: 0;\n    inset-block-start: calc(100% + 0.3rem);\n    font-family: var(--furniture-face);\n    font-size: 0.5625rem;\n    text-transform: uppercase;\n    letter-spacing: 0.11em;\n    color: var(--ink-2);\n  }\n\n  .swwrap { padding-block-end: 1.1rem; }\n\n  @container (width <= 62rem) {\n    .board { padding-inline: 1.5rem; }\n    .said { padding-inline: 1.5rem; }\n    .body { column-count: 1; }\n    .headline h2 { font-size: 2.4rem; }\n    .grid { grid-template-columns: minmax(0, 1fr); }\n  }\n\n  /* THE BAND SETS ITSELF once, when it is reached. Everything that moves is\n     declared in here, so under reduced motion there is no transition to skip\n     and the band is simply already set. */\n  @media (prefers-reduced-motion: no-preference) {\n    .rise {\n      opacity: 0;\n      transform: translateY(0.55rem);\n      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);\n    }\n\n    :scope.set .rise { opacity: 1; transform: none; }\n\n    .headline h2 {\n      opacity: 0;\n      letter-spacing: 0.34em;\n      filter: blur(0.9px);\n      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;\n    }\n\n    :scope.set .headline h2 { opacity: 1; letter-spacing: -0.028em; filter: none; }\n\n    .headline p {\n      opacity: 0;\n      transform: translateY(0.55rem);\n      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) .16s, transform .62s cubic-bezier(.16, 1, .3, 1) .16s;\n    }\n\n    :scope.set .headline p { opacity: 1; transform: none; }\n\n    .chart .bar {\n      transform: scaleY(0);\n      transition: transform .75s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);\n    }\n\n    :scope.set .chart .bar { transform: scaleY(1); }\n  }\n</style>\n\n<div class=\"said\" data-g-part=\"said\"></div>\n<div class=\"board\">\n  <div class=\"kick rise\">\n    <div data-g-part=\"edition\"></div>\n    <div data-g-part=\"desk\"></div>\n  </div>\n\n  <div class=\"head\">\n    <div class=\"headline\" data-g-part=\"headline\"></div>\n  </div>\n\n  <div class=\"body rise\" data-g-part=\"body\"></div>\n\n  <div class=\"grid\">\n    <div>\n      <div class=\"lab rise\" data-g-part=\"chartlabel\"></div>\n      <div class=\"chart\"></div>\n      <div class=\"days\"></div>\n      <div class=\"cap rise\" data-g-part=\"caption\"></div>\n    </div>\n    <div>\n      <div class=\"tab rise\" data-g-part=\"table\"></div>\n      <div class=\"swwrap\"><div class=\"sw rise\"></div></div>\n    </div>\n  </div>\n</div>\n\n<script>\n  /* THE WEEK, drawn as columns. The numbers and the day names are the page's own\n     variables, so the figure changes when the document does and there is no\n     second copy of the week anywhere in this file. */\n  var days = ctx.vars.day || [];\n  var out = (ctx.vars.out || []).map(Number);\n  var top = Math.max.apply(null, out.concat([1]));\n\n  var chart = section.querySelector(\".chart\");\n  var axis = section.querySelector(\".days\");\n\n  out.forEach(function (n, i) {\n    var col = document.createElement(\"div\");\n    col.className = \"col\" + (n === top ? \" hot\" : \"\");\n\n    var val = document.createElement(\"span\");\n    val.className = \"val rise\";\n    val.textContent = String(n);\n    val.style.setProperty(\"--d\", (0.3 + i * 0.06) + \"s\");\n\n    var bar = document.createElement(\"i\");\n    bar.className = \"bar\";\n    bar.style.setProperty(\"--at\", String(n / top));\n    bar.style.setProperty(\"--d\", (0.3 + i * 0.06) + \"s\");\n\n    col.appendChild(val);\n    col.appendChild(bar);\n    chart.appendChild(col);\n\n    var day = document.createElement(\"span\");\n    day.textContent = String(days[i] === undefined ? \"\" : days[i]);\n    axis.appendChild(day);\n  });\n\n  /* The swatch strip: one chip per name, the colour coming from the tokens at\n     the top of this file rather than from a second list. */\n  var strip = section.querySelector(\".sw\");\n  (ctx.vars.newsSwatch || []).forEach(function (name) {\n    var chip = document.createElement(\"i\");\n    chip.className = \"chip\";\n    var nm = document.createElement(\"span\");\n    nm.className = \"nm\";\n    nm.textContent = String(name);\n    chip.appendChild(nm);\n    strip.appendChild(chip);\n  });\n\n  /* ONCE, ON FIRST SIGHT. `root: document` is the box's own scroller: an\n     observer with no root has an opaque origin above it and never applies a\n     margin or reports a root. */\n  var io = new IntersectionObserver(function (rows) {\n    rows.forEach(function (row) {\n      if (!row.isIntersecting) return;\n      section.classList.add(\"set\");\n      io.disconnect();\n    });\n  }, { root: document, threshold: 0.12 });\n\n  io.observe(section);\n  onTeardown(function () { io.disconnect(); });\n</script>\n",
+      "fallback": false,
+      "parts": {
+        "said": {
+          "kind": "markdown",
+          "md": "\"Set it like **a newspaper**.\"",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "edition": {
+          "kind": "markdown",
+          "md": "Despatch — Week Thirty-Seven",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "desk": {
+          "kind": "markdown",
+          "md": "Yard & Courier",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "headline": {
+          "kind": "markdown",
+          "md": "## Nine Out by Tuesday, Two Still With the Courier\n\nThe week's run cleared the yard a day early. What is left is one pallet at the depot and a pickup nobody has come for.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "body": {
+          "kind": "markdown",
+          "md": "Eleven consignments were booked for the week and nine of them were on a van before Tuesday closed, which is a day and a half earlier than the yard has managed since the spring. The gain came from the Tuesday double-run, which took six drops on one sheet instead of two.\n\n> \"A day and a half earlier than the spring, on one sheet instead of two.\"\n\nWhat remains is plainer than it looks. One pallet sits at the depot awaiting a slot on Thursday's trunk, and a single pickup has been ready at the counter since Monday morning with nobody named against it.\n\nFriday was left deliberately light. The yard holds one slot back for whatever the week puts in front of it, and this week it put nothing, so the slot goes unused and the run ends on twenty per cent.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "chartlabel": {
+          "kind": "markdown",
+          "md": "Despatches, by day",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "caption": {
+          "kind": "markdown",
+          "md": "Tuesday carries the week. The red column is the double-run; the others are ordinary days.",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        },
+        "table": {
+          "kind": "markdown",
+          "md": "### Still open\n\n| Route | Out | Left | |\n|---|---|---|---|\n| Courier, morning | 6 | 2 | **Running** |\n| Counter pickup | 2 | 1 | Waiting |\n| Post, second class | 1 | 0 | Cleared |\n| Depot trunk | 0 | 1 | Thursday |\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#E9E4D8",
+            "stockLo": "#E2DCCD",
+            "ink": "#16161A",
+            "ink2": "#44444C",
+            "ink3": "#606068",
+            "rule": "#16161A",
+            "ruleSoft": "#BEB5A1",
+            "spot": "#A81E12",
+            "spot2": "#3A4C6B"
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ],
+        "stock": "#E9E4D8",
+        "stockLo": "#E2DCCD",
+        "ink": "#16161A",
+        "ink2": "#44444C",
+        "ink3": "#606068",
+        "rule": "#16161A",
+        "ruleSoft": "#BEB5A1",
+        "spot": "#A81E12",
+        "spot2": "#3A4C6B"
+      },
+      "source": {
+        "name": "news",
+        "data": "news.html",
+        "parts": {
+          "said": "\"Set it like **a newspaper**.\"",
+          "edition": "Despatch — Week Thirty-Seven",
+          "desk": "Yard & Courier",
+          "headline": "## Nine Out by Tuesday, Two Still With the Courier\n\nThe week's run cleared the yard a day early. What is left is one pallet at the depot and a pickup nobody has come for.\n",
+          "body": "Eleven consignments were booked for the week and nine of them were on a van before Tuesday closed, which is a day and a half earlier than the yard has managed since the spring. The gain came from the Tuesday double-run, which took six drops on one sheet instead of two.\n\n> \"A day and a half earlier than the spring, on one sheet instead of two.\"\n\nWhat remains is plainer than it looks. One pallet sits at the depot awaiting a slot on Thursday's trunk, and a single pickup has been ready at the counter since Monday morning with nobody named against it.\n\nFriday was left deliberately light. The yard holds one slot back for whatever the week puts in front of it, and this week it put nothing, so the slot goes unused and the run ends on twenty per cent.\n",
+          "chartlabel": "Despatches, by day",
+          "caption": "Tuesday carries the week. The red column is the double-run; the others are ordinary days.",
+          "table": "### Still open\n\n| Route | Out | Left | |\n|---|---|---|---|\n| Courier, morning | 6 | 2 | **Running** |\n| Counter pickup | 2 | 1 | Waiting |\n| Post, second class | 1 | 0 | Cleared |\n| Depot trunk | 0 | 1 | Thursday |\n"
+        },
+        "variables": {
+          "stock": "#E9E4D8",
+          "stockLo": "#E2DCCD",
+          "ink": "#16161A",
+          "ink2": "#44444C",
+          "ink3": "#606068",
+          "rule": "#16161A",
+          "ruleSoft": "#BEB5A1",
+          "spot": "#A81E12",
+          "spot2": "#3A4C6B"
+        }
+      }
+    },
+    {
+      "name": "paper",
+      "html": "<!-- design/paper.html — the second world: a field notebook.\n\n     THE SAME TEN VARIABLES, A DIFFERENT TEN VALUES, and the same three type\n     roles combined the other way round: the furniture face reads long and slow\n     here and the sheet face is kept for the asides, which is the opposite of\n     the band above. Nothing in this file names a colour or a family.\n\n     THE FIGURE IS THE SAME WEEK, plotted rather than counted — a traced line\n     and open circles, because a notebook records a shape and a newspaper counts\n     a total. The last point is drawn open: it is the day still open, found as\n     the last of the week rather than marked in the document. -->\n<style>\n  :scope {\n    display: block;\n    container-type: inline-size;\n\n    --stock: {{stock}};\n    --stock-lo: {{stockLo}};\n    --ink: {{ink}};\n    --ink-2: {{ink2}};\n    --ink-3: {{ink3}};\n    --rule: {{rule}};\n    --rule-soft: {{ruleSoft}};\n    --spot: {{spot}};\n    --spot-2: {{spot2}};\n\n    background: var(--stock);\n    color: var(--ink);\n  }\n\n  [data-g-part] { max-inline-size: none; }\n\n  .said {\n    padding: 1.15rem 3rem;\n    border-block-end: 1px solid var(--rule-soft);\n    font-family: var(--furniture-face);\n    font-size: 0.8125rem;\n    color: var(--ink-2);\n  }\n\n  .said p { margin-block: 0; }\n  .said strong { color: var(--ink); font-weight: 400; }\n\n  .said p::before {\n    content: \"\";\n    display: inline-block;\n    inline-size: 0.9rem;\n    block-size: 2px;\n    margin-inline-end: 0.6rem;\n    vertical-align: 0.24em;\n    background: var(--spot);\n  }\n\n  .board {\n    display: grid;\n    grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);\n    gap: 4.5rem;\n    padding: 5.5rem 6rem;\n  }\n\n  .main { min-inline-size: 0; }\n\n  .main h2 {\n    margin-block: 0 1.5rem;\n    max-inline-size: 18ch;\n    font-family: var(--furniture-face);\n    font-weight: 700;\n    font-size: 2.35rem;\n    line-height: 1.16;\n    letter-spacing: -0.018em;\n    color: var(--ink);\n  }\n\n  .hair {\n    block-size: 1px;\n    margin-block-end: 1.5rem;\n    background: var(--rule);\n    transform-origin: left;\n  }\n\n  .prose p {\n    margin-block: 0 1.3rem;\n    max-inline-size: 64ch;\n    font-family: var(--furniture-face);\n    font-size: 1.0625rem;\n    line-height: 1.85;\n    color: var(--ink-2);\n  }\n\n  .prose strong { color: var(--ink); }\n\n  /* The note is a blockquote inside the prose rather than a slot of its own:\n     one passage, one region, and a reader can move a sentence into or out of it. */\n  .prose blockquote {\n    margin: 2.2rem 0 0;\n    padding: 1.3rem 1.6rem;\n    background: var(--stock-lo);\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 1rem;\n    line-height: 1.7;\n    color: var(--ink-2);\n  }\n\n  .prose blockquote p { margin-block: 0; max-inline-size: none; font-family: var(--sheet-face); font-size: 1rem; line-height: 1.7; color: var(--ink-2); }\n\n  .prose blockquote p:first-child {\n    margin-block-end: 0.5rem;\n    font-style: normal;\n    font-family: var(--furniture-face);\n    font-size: 0.6875rem;\n    font-weight: 700;\n    letter-spacing: 0.14em;\n    text-transform: uppercase;\n    color: var(--spot);\n  }\n\n  .side {\n    min-inline-size: 0;\n    display: flex;\n    flex-direction: column;\n    gap: 2.6rem;\n    padding-block-start: 0.5rem;\n  }\n\n  .lab p,\n  .tab h3 {\n    margin-block: 0 1rem;\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 1rem;\n    color: var(--ink-3);\n  }\n\n  .plot {\n    position: relative;\n    block-size: 9.5rem;\n    background:\n      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 100% / 100% 1px no-repeat,\n      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 66% / 100% 1px no-repeat,\n      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 33% / 100% 1px no-repeat,\n      linear-gradient(var(--rule-soft), var(--rule-soft)) 0 0 / 100% 1px no-repeat;\n  }\n\n  .plot svg {\n    position: absolute;\n    inset: 0;\n    inline-size: 100%;\n    block-size: 100%;\n    overflow: visible;\n  }\n\n  .plot .trace {\n    fill: none;\n    stroke: var(--spot);\n    stroke-width: 1.5;\n    stroke-linecap: round;\n    stroke-linejoin: round;\n  }\n\n  .plot .dot { fill: var(--stock); stroke: var(--spot); stroke-width: 1.5; }\n  .plot .dot.open { stroke: var(--spot-2); }\n\n  .days { display: flex; margin-block-start: 0.55rem; }\n\n  .days span {\n    flex: 1;\n    text-align: center;\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 0.8125rem;\n    color: var(--ink-3);\n  }\n\n  .tab { overflow-x: auto; }\n\n  .tab table {\n    inline-size: 100%;\n    border-collapse: collapse;\n    font-family: var(--furniture-face);\n    font-size: 0.9375rem;\n    color: var(--ink-2);\n  }\n\n  .tab th {\n    padding-block: 0 0.7rem;\n    text-align: left;\n    border-block-end: 1px solid var(--rule);\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-weight: 400;\n    font-size: 0.9375rem;\n    color: var(--ink-3);\n  }\n\n  .tab td {\n    padding-block: 0.72rem;\n    border-block-end: 1px solid var(--rule-soft);\n  }\n\n  .tab tr:last-child td { border-block-end: 0; }\n\n  .tab th:nth-child(2) { text-align: right; }\n  .tab td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }\n\n  .tab td:last-child,\n  .tab th:last-child { text-align: right; color: var(--ink-3); }\n\n  .tab td strong { color: var(--spot); }\n\n  .sw { display: flex; gap: 0.85rem; }\n\n  .sw .chip {\n    position: relative;\n    flex: 1;\n    block-size: 3.1rem;\n    border-radius: 3px;\n    background: var(--c);\n  }\n\n  .sw .chip:nth-child(1) { --c: var(--stock); }\n  .sw .chip:nth-child(2) { --c: var(--stock-lo); }\n  .sw .chip:nth-child(3) { --c: var(--rule); }\n  .sw .chip:nth-child(4) { --c: var(--ink); }\n  .sw .chip:nth-child(5) { --c: var(--spot); }\n  .sw .chip:nth-child(6) { --c: var(--spot-2); }\n\n  .sw .nm {\n    position: absolute;\n    inset-inline-start: 0;\n    inset-block-start: calc(100% + 0.5rem);\n    font-family: var(--sheet-face);\n    font-style: italic;\n    font-size: 0.8125rem;\n    color: var(--ink-3);\n  }\n\n  .swwrap { padding-block-end: 1.8rem; }\n\n  @container (width <= 62rem) {\n    .board { grid-template-columns: minmax(0, 1fr); gap: 2.5rem; padding: 3rem 1.5rem; }\n    .said { padding-inline: 1.5rem; }\n    .main h2 { font-size: 1.9rem; }\n  }\n\n  @media (prefers-reduced-motion: no-preference) {\n    .rise {\n      opacity: 0;\n      transform: translateY(0.55rem);\n      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);\n    }\n\n    :scope.set .rise { opacity: 1; transform: none; }\n\n    .main h2 {\n      opacity: 0;\n      letter-spacing: 0.34em;\n      filter: blur(0.9px);\n      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;\n    }\n\n    :scope.set .main h2 { opacity: 1; letter-spacing: -0.018em; filter: none; }\n\n    .hair { transform: scaleX(0); transition: transform .8s cubic-bezier(.16, 1, .3, 1) .12s; }\n    :scope.set .hair { transform: scaleX(1); }\n\n    .plot .trace { stroke-dasharray: 1000; stroke-dashoffset: 1000; transition: stroke-dashoffset 1.15s cubic-bezier(.16, 1, .3, 1) .25s; }\n    :scope.set .plot .trace { stroke-dashoffset: 0; }\n\n    .plot .dot { opacity: 0; transition: opacity .4s ease-out var(--d, 0s); }\n    :scope.set .plot .dot { opacity: 1; }\n  }\n</style>\n\n<div class=\"said\" data-g-part=\"said\"></div>\n<div class=\"board\">\n  <div class=\"main\">\n    <div data-g-part=\"headline\"></div>\n    <div class=\"hair\"></div>\n    <div class=\"prose rise\" data-g-part=\"body\"></div>\n  </div>\n\n  <div class=\"side\">\n    <div>\n      <div class=\"lab rise\" data-g-part=\"plotlabel\"></div>\n      <div class=\"plot\"></div>\n      <div class=\"days\"></div>\n    </div>\n    <div>\n      <div class=\"tab rise\" data-g-part=\"table\"></div>\n    </div>\n    <div class=\"swwrap\"><div class=\"sw rise\"></div></div>\n  </div>\n</div>\n\n<script>\n  /* THE SAME WEEK, TRACED. The plot is drawn in its own coordinates and stretched\n     to the box, so nothing here measures anything. */\n  var days = ctx.vars.day || [];\n  var out = (ctx.vars.out || []).map(Number);\n  var top = Math.max.apply(null, out.concat([1]));\n  var NS = \"http://www.w3.org/2000/svg\";\n  var W = 300;\n  var H = 120;\n\n  var plot = section.querySelector(\".plot\");\n  var axis = section.querySelector(\".days\");\n\n  var at = out.map(function (n, i) {\n    var x = out.length < 2 ? W / 2 : 20 + (i * (W - 40)) / (out.length - 1);\n    return [x, H - 14 - (n / top) * (H - 28)];\n  });\n\n  var line = document.createElementNS(NS, \"svg\");\n  line.setAttribute(\"viewBox\", \"0 0 \" + W + \" \" + H);\n  line.setAttribute(\"preserveAspectRatio\", \"none\");\n  line.setAttribute(\"aria-hidden\", \"true\");\n\n  var trace = document.createElementNS(NS, \"polyline\");\n  trace.setAttribute(\"class\", \"trace\");\n  trace.setAttribute(\"points\", at.map(function (p) { return p[0] + \",\" + p[1]; }).join(\" \"));\n  line.appendChild(trace);\n\n  var marks = document.createElementNS(NS, \"svg\");\n  marks.setAttribute(\"viewBox\", \"0 0 \" + W + \" \" + H);\n  marks.setAttribute(\"aria-hidden\", \"true\");\n\n  at.forEach(function (p, i) {\n    var dot = document.createElementNS(NS, \"circle\");\n    /* The last of the week is the one still open, and it is the LAST rather\n       than a day named in the document. */\n    dot.setAttribute(\"class\", \"dot\" + (i === at.length - 1 ? \" open\" : \"\"));\n    dot.setAttribute(\"cx\", String(p[0]));\n    dot.setAttribute(\"cy\", String(p[1]));\n    dot.setAttribute(\"r\", \"4.5\");\n    dot.style.setProperty(\"--d\", (0.5 + i * 0.08) + \"s\");\n    marks.appendChild(dot);\n\n    var day = document.createElement(\"span\");\n    day.textContent = String(days[i] === undefined ? \"\" : days[i]);\n    axis.appendChild(day);\n  });\n\n  plot.appendChild(line);\n  plot.appendChild(marks);\n\n  var strip = section.querySelector(\".sw\");\n  (ctx.vars.paperSwatch || []).forEach(function (name) {\n    var chip = document.createElement(\"i\");\n    chip.className = \"chip\";\n    var nm = document.createElement(\"span\");\n    nm.className = \"nm\";\n    nm.textContent = String(name);\n    chip.appendChild(nm);\n    strip.appendChild(chip);\n  });\n\n  var io = new IntersectionObserver(function (rows) {\n    rows.forEach(function (row) {\n      if (!row.isIntersecting) return;\n      section.classList.add(\"set\");\n      io.disconnect();\n    });\n  }, { root: document, threshold: 0.12 });\n\n  io.observe(section);\n  onTeardown(function () { io.disconnect(); });\n</script>\n",
+      "fallback": false,
+      "parts": {
+        "said": {
+          "kind": "markdown",
+          "md": "\"Make it feel like **a field notebook**.\"",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA",
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027"
+          }
+        },
+        "headline": {
+          "kind": "markdown",
+          "md": "## What went out this week",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA",
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027"
+          }
+        },
+        "body": {
+          "kind": "markdown",
+          "md": "Nine of the eleven were away before Tuesday closed. That is earlier than usual, and the reason is worth writing down while it is still true: **the Tuesday double-run took six drops on one sheet**, which the yard has not tried since the spring and will probably try again.\n\nTwo are still out. One pallet is waiting on Thursday's trunk at the depot, which is ordinary. The other is a counter pickup that has been ready since Monday with nobody's name against it, which is not.\n\n> Worth checking\n>\n> Friday is light on purpose — one slot held back for whatever turns up. Nothing turned up. If that happens a third week running, the slot is not a reserve, it is a gap.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA",
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027"
+          }
+        },
+        "plotlabel": {
+          "kind": "markdown",
+          "md": "Parcels leaving, Monday to Friday",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA",
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027"
+          }
+        },
+        "table": {
+          "kind": "markdown",
+          "md": "### Still out\n\n| Route | Left | When |\n|---|---|---|\n| Courier, morning | 2 | **Today** |\n| Counter pickup | 1 | Unclaimed |\n| Depot trunk | 1 | Thursday |\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#F5F0E6",
+            "stockLo": "#EFE8DA",
+            "ink": "#332E26",
+            "ink2": "#5E564A",
+            "ink3": "#6F675C",
+            "rule": "#CFC4AE",
+            "ruleSoft": "#E2D9C8",
+            "spot": "#2E5E7E",
+            "spot2": "#8A6027"
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ],
+        "stock": "#F5F0E6",
+        "stockLo": "#EFE8DA",
+        "ink": "#332E26",
+        "ink2": "#5E564A",
+        "ink3": "#6F675C",
+        "rule": "#CFC4AE",
+        "ruleSoft": "#E2D9C8",
+        "spot": "#2E5E7E",
+        "spot2": "#8A6027"
+      },
+      "source": {
+        "name": "paper",
+        "data": "paper.html",
+        "parts": {
+          "said": "\"Make it feel like **a field notebook**.\"",
+          "headline": "## What went out this week",
+          "body": "Nine of the eleven were away before Tuesday closed. That is earlier than usual, and the reason is worth writing down while it is still true: **the Tuesday double-run took six drops on one sheet**, which the yard has not tried since the spring and will probably try again.\n\nTwo are still out. One pallet is waiting on Thursday's trunk at the depot, which is ordinary. The other is a counter pickup that has been ready since Monday with nobody's name against it, which is not.\n\n> Worth checking\n>\n> Friday is light on purpose — one slot held back for whatever turns up. Nothing turned up. If that happens a third week running, the slot is not a reserve, it is a gap.\n",
+          "plotlabel": "Parcels leaving, Monday to Friday",
+          "table": "### Still out\n\n| Route | Left | When |\n|---|---|---|\n| Courier, morning | 2 | **Today** |\n| Counter pickup | 1 | Unclaimed |\n| Depot trunk | 1 | Thursday |\n"
+        },
+        "variables": {
+          "stock": "#F5F0E6",
+          "stockLo": "#EFE8DA",
+          "ink": "#332E26",
+          "ink2": "#5E564A",
+          "ink3": "#6F675C",
+          "rule": "#CFC4AE",
+          "ruleSoft": "#E2D9C8",
+          "spot": "#2E5E7E",
+          "spot2": "#8A6027"
+        }
+      }
+    },
+    {
+      "name": "panel",
+      "html": "<!-- design/panel.html — the third world: an instrument panel.\n\n     THE SAME TEN VARIABLES AGAIN, dark this time, and the gauge face doing every\n     label because a readout is a column of figures that has to line up. The\n     reading face is kept small on purpose: prose is not what this world is for,\n     and that is a density decision rather than a size one.\n\n     THE SAME WEEK ONCE MORE, as meters. The one running warm is the SMALLEST of\n     the week — the day that carried least — found rather than marked, and the\n     scale under them is drawn from the largest. -->\n<style>\n  :scope {\n    display: block;\n    container-type: inline-size;\n\n    --stock: {{stock}};\n    --stock-lo: {{stockLo}};\n    --ink: {{ink}};\n    --ink-2: {{ink2}};\n    --ink-3: {{ink3}};\n    --rule: {{rule}};\n    --rule-soft: {{ruleSoft}};\n    --spot: {{spot}};\n    --spot-2: {{spot2}};\n\n    background: var(--stock);\n    color: var(--ink);\n  }\n\n  [data-g-part] { max-inline-size: none; }\n\n  .said {\n    padding: 1.15rem 3rem;\n    border-block-end: 1px solid var(--rule);\n    font-family: var(--furniture-face);\n    font-size: 0.8125rem;\n    color: var(--ink-2);\n  }\n\n  .said p { margin-block: 0; }\n  .said strong { color: var(--ink); font-weight: 400; }\n\n  .said p::before {\n    content: \"\";\n    display: inline-block;\n    inline-size: 0.9rem;\n    block-size: 2px;\n    margin-inline-end: 0.6rem;\n    vertical-align: 0.24em;\n    background: var(--spot);\n  }\n\n  .board { padding: 4.2rem 3rem 3.6rem; }\n\n  .head {\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 2rem;\n    padding-block-end: 0.75rem;\n    border-block-end: 1px solid var(--rule);\n  }\n\n  .head h2 {\n    margin-block: 0;\n    font-family: var(--furniture-face);\n    font-weight: 700;\n    font-size: 1.9rem;\n    line-height: 1;\n    text-transform: uppercase;\n    letter-spacing: 0.2em;\n    color: var(--ink);\n  }\n\n  .stamp p {\n    margin-block: 0;\n    white-space: nowrap;\n    font-family: var(--gauge-face);\n    font-size: 0.6875rem;\n    letter-spacing: 0.06em;\n    color: var(--ink-3);\n  }\n\n  .stamp strong { color: var(--spot); font-weight: 400; }\n\n  .sub p {\n    margin-block: 0.9rem 0;\n    max-inline-size: 62ch;\n    font-family: var(--furniture-face);\n    font-size: 0.8125rem;\n    line-height: 1.65;\n    color: var(--ink-2);\n  }\n\n  .grid {\n    display: grid;\n    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);\n    margin-block-start: 1.6rem;\n    border: 1px solid var(--rule);\n  }\n\n  .cell { padding: 1.2rem 1.4rem; border-inline-end: 1px solid var(--rule); }\n  .cell:last-child { border-inline-end: 0; }\n\n  .lab p,\n  .tab h3 {\n    margin-block: 0 1rem;\n    font-family: var(--gauge-face);\n    font-size: 0.625rem;\n    letter-spacing: 0.2em;\n    text-transform: uppercase;\n    color: var(--ink-3);\n  }\n\n  .meter {\n    display: grid;\n    grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem;\n    align-items: center;\n    gap: 0.8rem;\n    margin-block-end: 0.62rem;\n  }\n\n  .meter .nm {\n    font-family: var(--gauge-face);\n    font-size: 0.6875rem;\n    letter-spacing: 0.08em;\n    text-transform: uppercase;\n    color: var(--ink-2);\n  }\n\n  .meter .track {\n    position: relative;\n    block-size: 0.62rem;\n    background: var(--rule-soft);\n    border: 1px solid var(--rule);\n  }\n\n  .meter .fill {\n    position: absolute;\n    inset: 1px auto 1px 1px;\n    inline-size: calc(var(--at, 0) * 100%);\n    background: var(--spot);\n    transform-origin: left;\n  }\n\n  .meter.warn .fill { background: var(--spot-2); }\n\n  .meter .num {\n    text-align: right;\n    font-family: var(--gauge-face);\n    font-size: 0.8125rem;\n    font-variant-numeric: tabular-nums;\n    color: var(--ink);\n  }\n\n  .ticks {\n    display: grid;\n    grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem;\n    gap: 0.8rem;\n    margin-block-start: 0.55rem;\n  }\n\n  .ticks .scale {\n    grid-column: 2;\n    display: flex;\n    justify-content: space-between;\n    padding-block-start: 0.25rem;\n    border-block-start: 1px solid var(--rule);\n    font-family: var(--gauge-face);\n    font-size: 0.5625rem;\n    color: var(--ink-3);\n  }\n\n  .alert {\n    /* A grid rather than a flex row: the reading of it is one line with the\n       elapsed time on the end, and a grid says that in the track sizes instead\n       of leaving it to what the words happen to be. */\n    display: grid;\n    grid-template-columns: minmax(0, 1fr) auto;\n    align-items: center;\n    gap: 1rem;\n    margin-block-start: 1.5rem;\n    padding: 0.75rem 1.1rem;\n    border: 1px solid var(--spot-2);\n    background: color-mix(in srgb, var(--spot-2) 8%, transparent);\n    font-family: var(--gauge-face);\n    font-size: 0.75rem;\n    letter-spacing: 0.06em;\n    color: var(--ink);\n  }\n\n  .alert p { margin-block: 0; }\n\n  .alert .hold strong {\n    margin-inline-end: 0.8rem;\n    font-weight: 400;\n    font-size: 0.625rem;\n    letter-spacing: 0.2em;\n    text-transform: uppercase;\n    color: var(--spot-2);\n  }\n\n  .alert .since { color: var(--ink-2); }\n\n  .tab { overflow-x: auto; }\n\n  .tab table {\n    inline-size: 100%;\n    border-collapse: collapse;\n    font-family: var(--gauge-face);\n    font-size: 0.75rem;\n    color: var(--ink-2);\n  }\n\n  .tab th {\n    padding: 0 0.7rem 0.5rem 0;\n    text-align: left;\n    font-weight: 400;\n    font-size: 0.5625rem;\n    letter-spacing: 0.18em;\n    text-transform: uppercase;\n    color: var(--ink-3);\n    border-block-end: 1px solid var(--rule);\n  }\n\n  .tab td {\n    padding: 0.42rem 0.7rem 0.42rem 0;\n    border-block-end: 1px solid var(--rule-soft);\n    border-inline-end: 1px solid var(--rule-soft);\n  }\n\n  .tab td:last-child,\n  .tab th:last-child { border-inline-end: 0; padding-inline-end: 0; text-align: right; }\n\n  .tab td:nth-child(2),\n  .tab td:nth-child(3),\n  .tab th:nth-child(2),\n  .tab th:nth-child(3) { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }\n\n  /* A route that is held says so in the word a person typed, and the mark beside\n     it is read off that word rather than kept in step with it by hand. */\n  .tab td:first-child::before {\n    content: \"\";\n    display: inline-block;\n    inline-size: 0.45rem;\n    block-size: 0.45rem;\n    margin-inline-end: 0.45rem;\n    background: var(--spot);\n  }\n\n  .tab tr.held td:first-child::before { background: var(--spot-2); }\n\n  .sw {\n    display: flex;\n    gap: 1px;\n    margin-block-start: 1.6rem;\n    background: var(--rule);\n    border: 1px solid var(--rule);\n  }\n\n  .sw .chip { position: relative; flex: 1; block-size: 2.4rem; background: var(--c); }\n  .sw .chip:nth-child(1) { --c: var(--stock); }\n  .sw .chip:nth-child(2) { --c: var(--stock-lo); }\n  .sw .chip:nth-child(3) { --c: var(--rule); }\n  .sw .chip:nth-child(4) { --c: var(--ink); }\n  .sw .chip:nth-child(5) { --c: var(--spot); }\n  .sw .chip:nth-child(6) { --c: var(--spot-2); }\n\n  .sw .nm {\n    position: absolute;\n    inset-inline-start: 0;\n    inset-block-start: calc(100% + 0.45rem);\n    font-family: var(--gauge-face);\n    font-size: 0.5625rem;\n    letter-spacing: 0.14em;\n    color: var(--ink-3);\n  }\n\n  .swwrap { padding-block-end: 1.6rem; }\n\n  @container (width <= 62rem) {\n    .board { padding-inline: 1.5rem; }\n    .said { padding-inline: 1.5rem; }\n    .grid { grid-template-columns: minmax(0, 1fr); }\n    .cell { border-inline-end: 0; border-block-end: 1px solid var(--rule); }\n  }\n\n  @media (prefers-reduced-motion: no-preference) {\n    .rise {\n      opacity: 0;\n      transform: translateY(0.55rem);\n      transition: opacity .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s), transform .62s cubic-bezier(.16, 1, .3, 1) var(--d, 0s);\n    }\n\n    :scope.set .rise { opacity: 1; transform: none; }\n\n    .head h2 {\n      opacity: 0;\n      letter-spacing: 0.34em;\n      filter: blur(0.9px);\n      transition: letter-spacing .95s cubic-bezier(.16, 1, .3, 1), filter .7s ease-out, opacity .5s ease-out;\n    }\n\n    :scope.set .head h2 { opacity: 1; letter-spacing: 0.2em; filter: none; }\n\n    .meter .fill { transform: scaleX(0); transition: transform .9s cubic-bezier(.16, 1, .3, 1) var(--d, 0s); }\n    :scope.set .meter .fill { transform: scaleX(1); }\n  }\n</style>\n\n<div class=\"said\" data-g-part=\"said\"></div>\n<div class=\"board\">\n  <div class=\"head\">\n    <div data-g-part=\"headline\"></div>\n    <div class=\"stamp rise\" data-g-part=\"stamp\"></div>\n  </div>\n  <div class=\"sub rise\" data-g-part=\"sub\"></div>\n\n  <div class=\"grid\">\n    <div class=\"cell\">\n      <div class=\"lab rise\" data-g-part=\"meterlabel\"></div>\n      <div class=\"meters\"></div>\n      <div class=\"ticks\"><span class=\"scale\"></span></div>\n      <div class=\"alert rise\">\n        <div class=\"hold\" data-g-part=\"hold\"></div>\n        <div class=\"since\" data-g-part=\"held\"></div>\n      </div>\n    </div>\n\n    <div class=\"cell\">\n      <div class=\"tab rise\" data-g-part=\"status\"></div>\n      <div class=\"swwrap\"><div class=\"sw rise\"></div></div>\n    </div>\n  </div>\n</div>\n\n<script>\n  /* THE SAME WEEK, AS METERS. The day running warm is the smallest of them and\n     the scale under them is drawn from the largest, so both are right whatever\n     the document says. */\n  var days = ctx.vars.day || [];\n  var out = (ctx.vars.out || []).map(Number);\n  var top = Math.max.apply(null, out.concat([1]));\n  var low = Math.min.apply(null, out.concat([top]));\n\n  var meters = section.querySelector(\".meters\");\n\n  out.forEach(function (n, i) {\n    var row = document.createElement(\"div\");\n    row.className = \"meter\" + (n === low ? \" warn\" : \"\");\n\n    var nm = document.createElement(\"span\");\n    nm.className = \"nm rise\";\n    nm.textContent = String(days[i] === undefined ? \"\" : days[i]);\n    nm.style.setProperty(\"--d\", (0.26 + i * 0.06) + \"s\");\n\n    var track = document.createElement(\"span\");\n    track.className = \"track\";\n    var fill = document.createElement(\"i\");\n    fill.className = \"fill\";\n    fill.style.setProperty(\"--at\", String(n / top));\n    fill.style.setProperty(\"--d\", (0.26 + i * 0.06) + \"s\");\n    track.appendChild(fill);\n\n    var num = document.createElement(\"span\");\n    num.className = \"num rise\";\n    num.textContent = String(n);\n    num.style.setProperty(\"--d\", (0.26 + i * 0.06) + \"s\");\n\n    row.appendChild(nm);\n    row.appendChild(track);\n    row.appendChild(num);\n    meters.appendChild(row);\n  });\n\n  /* The scale: five ticks up to the next even number above the tallest meter. */\n  var scale = section.querySelector(\".scale\");\n  var ceiling = Math.ceil(top / 4) * 4;\n  for (var t = 0; t <= 4; t++) {\n    var tick = document.createElement(\"span\");\n    tick.textContent = String((ceiling / 4) * t);\n    scale.appendChild(tick);\n  }\n\n  /* THE STATE IS READ OFF THE WORDS. A row whose state says HOLD wears the amber\n     mark; editing the table is the whole of editing the figure. */\n  var tab = section.querySelector(\".tab\");\n\n  function mark() {\n    Array.prototype.forEach.call(tab.querySelectorAll(\"tbody tr\"), function (row) {\n      var last = row.lastElementChild;\n      var word = last === null ? \"\" : last.textContent.trim().toUpperCase();\n      row.classList.toggle(\"held\", word.indexOf(\"HOLD\") === 0 || word.indexOf(\"THU\") === 0);\n    });\n  }\n\n  var watch = new MutationObserver(mark);\n  watch.observe(tab, { childList: true, subtree: true, characterData: true });\n  onTeardown(function () { watch.disconnect(); });\n  mark();\n\n  var strip = section.querySelector(\".sw\");\n  (ctx.vars.panelSwatch || []).forEach(function (name) {\n    var chip = document.createElement(\"i\");\n    chip.className = \"chip\";\n    var nm = document.createElement(\"span\");\n    nm.className = \"nm\";\n    nm.textContent = String(name);\n    chip.appendChild(nm);\n    strip.appendChild(chip);\n  });\n\n  var io = new IntersectionObserver(function (rows) {\n    rows.forEach(function (row) {\n      if (!row.isIntersecting) return;\n      section.classList.add(\"set\");\n      io.disconnect();\n    });\n  }, { root: document, threshold: 0.12 });\n\n  io.observe(section);\n  onTeardown(function () { io.disconnect(); });\n</script>\n",
+      "fallback": false,
+      "parts": {
+        "said": {
+          "kind": "markdown",
+          "md": "\"Make it **an instrument panel**.\"",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "headline": {
+          "kind": "markdown",
+          "md": "## Despatch",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "stamp": {
+          "kind": "markdown",
+          "md": "WK37 · 11 BOOKED · **9 CLEARED** · 2 OPEN",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "sub": {
+          "kind": "markdown",
+          "md": "Nine cleared the yard by Tuesday. Two remain: one pallet held for the Thursday trunk, one counter pickup unclaimed since Monday.",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "meterlabel": {
+          "kind": "markdown",
+          "md": "Channel load — units per day",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "hold": {
+          "kind": "markdown",
+          "md": "**Hold** Counter pickup unclaimed",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "held": {
+          "kind": "markdown",
+          "md": "4d 02h",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        },
+        "status": {
+          "kind": "markdown",
+          "md": "### Route status\n\n| Route | Out | Left | State |\n|---|---|---|---|\n| COURIER AM | 6 | 2 | RUNNING |\n| COUNTER | 2 | 1 | HOLD |\n| POST 2C | 1 | 0 | CLEAR |\n| DEPOT TRUNK | 0 | 1 | THU 06:00 |\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ],
+            "stock": "#0C0F0E",
+            "stockLo": "#131817",
+            "ink": "#D3DCD7",
+            "ink2": "#8D9A94",
+            "ink3": "#74847E",
+            "rule": "#243029",
+            "ruleSoft": "#1A211E",
+            "spot": "#4FD08A",
+            "spot2": "#E2A33C"
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ],
+        "stock": "#0C0F0E",
+        "stockLo": "#131817",
+        "ink": "#D3DCD7",
+        "ink2": "#8D9A94",
+        "ink3": "#74847E",
+        "rule": "#243029",
+        "ruleSoft": "#1A211E",
+        "spot": "#4FD08A",
+        "spot2": "#E2A33C"
+      },
+      "source": {
+        "name": "panel",
+        "data": "panel.html",
+        "parts": {
+          "said": "\"Make it **an instrument panel**.\"",
+          "headline": "## Despatch",
+          "stamp": "WK37 · 11 BOOKED · **9 CLEARED** · 2 OPEN",
+          "sub": "Nine cleared the yard by Tuesday. Two remain: one pallet held for the Thursday trunk, one counter pickup unclaimed since Monday.",
+          "meterlabel": "Channel load — units per day",
+          "hold": "**Hold** Counter pickup unclaimed",
+          "held": "4d 02h",
+          "status": "### Route status\n\n| Route | Out | Left | State |\n|---|---|---|---|\n| COURIER AM | 6 | 2 | RUNNING |\n| COUNTER | 2 | 1 | HOLD |\n| POST 2C | 1 | 0 | CLEAR |\n| DEPOT TRUNK | 0 | 1 | THU 06:00 |\n"
+        },
+        "variables": {
+          "stock": "#0C0F0E",
+          "stockLo": "#131817",
+          "ink": "#D3DCD7",
+          "ink2": "#8D9A94",
+          "ink3": "#74847E",
+          "rule": "#243029",
+          "ruleSoft": "#1A211E",
+          "spot": "#4FD08A",
+          "spot2": "#E2A33C"
+        }
+      }
+    },
+    {
+      "name": "brand",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "## Brand\n\nA working tool, not a dashboard. Plain over clever, specific over general. It should feel like something kept rather than something bought.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "brand",
+        "parts": {
+          "body": "## Brand\n\nA working tool, not a dashboard. Plain over clever, specific over general. It should feel like something kept rather than something bought.\n"
+        }
+      }
+    },
+    {
+      "name": "voice",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "## Voice\n\n- A control says what it does. _Save quote to jobs_, not _Submit_.\n- Errors name the problem and the fix. No apologies.\n- No subtext under a heading that the heading already said.\n- British spelling. Money to two decimals, right-aligned.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "voice",
+        "parts": {
+          "body": "## Voice\n\n- A control says what it does. _Save quote to jobs_, not _Submit_.\n- Errors name the problem and the fix. No apologies.\n- No subtext under a heading that the heading already said.\n- British spelling. Money to two decimals, right-aligned.\n"
+        }
+      }
+    },
+    {
+      "name": "patterns",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "## Patterns\n\n- **A block, not a new kind of page.** Asked for something interactive, the answer is a block on a doc that already exists. A page that takes the whole sheet has to argue for itself.\n- **There is no folder.** Any page may hold other pages and tables, and a page that draws them is what a folder was. Never build a second kind.\n- **Blocks, not layouts.** A page is a stack of sections that reorder. Anything new is a block.\n- **Data lives in tables.** A page reads and writes them through its settings, never inline.\n- **The render is a layer.** How a doc is drawn is swappable, one piece at a time, and separate from what it says.\n- **No frames.** One border around the app. Blocks and lists are separated by space and rules.\n- **Full canvas.** A page takes whatever the panels leave. Prose keeps a measure; nothing else does.\n- **Always live.** Prose is editable where it sits, with no mode to turn on. The only switch is for the slots inside HTML.\n- **Install before you invent.** Something from the market that nearly works, then adapted, beats a page written from nothing.\n- **Say what changed.** Anything the agent does shows a receipt and an undo.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "patterns",
+        "parts": {
+          "body": "## Patterns\n\n- **A block, not a new kind of page.** Asked for something interactive, the answer is a block on a doc that already exists. A page that takes the whole sheet has to argue for itself.\n- **There is no folder.** Any page may hold other pages and tables, and a page that draws them is what a folder was. Never build a second kind.\n- **Blocks, not layouts.** A page is a stack of sections that reorder. Anything new is a block.\n- **Data lives in tables.** A page reads and writes them through its settings, never inline.\n- **The render is a layer.** How a doc is drawn is swappable, one piece at a time, and separate from what it says.\n- **No frames.** One border around the app. Blocks and lists are separated by space and rules.\n- **Full canvas.** A page takes whatever the panels leave. Prose keeps a measure; nothing else does.\n- **Always live.** Prose is editable where it sits, with no mode to turn on. The only switch is for the slots inside HTML.\n- **Install before you invent.** Something from the market that nearly works, then adapted, beats a page written from nothing.\n- **Say what changed.** Anything the agent does shows a receipt and an undo.\n"
+        }
+      }
+    },
+    {
+      "name": "density",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "## Density\n\nCloser to a spreadsheet than a marketing page. Small type is fine where it is reference; body text is not. A screen that needs scrolling to find one number is wrong.\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "density",
+        "parts": {
+          "body": "## Density\n\nCloser to a spreadsheet than a marketing page. Small type is fine where it is reference; body text is not. A screen that needs scrolling to find one number is wrong.\n"
+        }
+      }
+    },
+    {
+      "name": "note",
+      "html": "<!-- guest/sections/default.html — what a section with no `data:` resolves to.\n\n     ONE CENTRED SLOT NAMED `body`, at a reading measure.\n\n     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing\n     rather than tidy. A default that lived in the runtime would be the one\n     section shape nothing else could reach: it would need no HTML file, no\n     `data:` key and no slot declaration, and every other section would be the\n     exception to it. \"The document\" would be privileged all over again —\n     exactly what the deleted render layer kept collapsing into, where one\n     render owned the whole sheet and prose was one column at one measure\n     because there was nowhere else for it to be.\n\n     As a file it is the same mechanism every other section uses. It is read by\n     the server, sent inline in the `page.read` answer like any section's markup,\n     and drawn by the same code path. It is legible, it can be copied as the\n     starting point for a real section, and it can be replaced. A page that is\n     mostly defaults is an ordinary document. The runtime still marks one\n     `data-g-default` so the editor can tell a default section from an authored\n     one; no checker rule reads it.\n\n     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is\n     what makes a full-bleed section cost nothing: it simply does not carry this\n     file's `max-width`, and there is no sheet-level width for it to fight.\n\n     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the\n     document's own table, which the doc plugin makes out of every markdown\n     table it finds in a paragraph and puts in a section of its own with no\n     file of its own, which is this one — the section widens to the figure\n     frame's width and the grid takes it, scrolling sideways inside its own box\n     only past that. The runtime says what a slot holds on the slot, as\n     `data-g-kind`, so this file can size by it without knowing what any\n     plugin draws; a section with a file of its own says its own width. -->\n\n<!-- No colour is set here, deliberately. Every colour in this product resolves\n     to a token the palette rewrites at runtime, and a section that reached for\n     one would be the section that stopped theming. Type and colour are inherited\n     from what the shim declares on `:root` when the theme arrives. -->\n<style>\n  /* `:scope` is this section's own element. The runtime wraps everything in this\n     file in `@scope (#sec-<name>)`, so these rules cannot reach the section\n     above or the section below however ordinary the selectors look. */\n  :scope {\n    display: block;\n  }\n\n  .measure {\n    /* The workspace's own reading measure when its `markdown.yaml` names one,\n       and 34rem when it does not. The scale OFFERS the value on the page root\n       and imposes it nowhere: this file is the section that wants it, which is\n       what keeps a full-bleed section free of it. */\n    max-width: var(--md-measure, 34rem);\n    margin-inline: auto;\n    padding-block: 1.5rem;\n    padding-inline: 1.25rem;\n  }\n\n  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the\n     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside\n     it lets go of the reading measure the frame holds every slot to. An\n     unlayered rule here beats the frame's layered one by existing, which is\n     the frame's own bargain. */\n  .measure:has(> [data-g-kind=\"grid\"]) { max-width: 64rem; }\n  [data-g-kind=\"grid\"] { max-inline-size: none; }\n</style>\n\n<div class=\"measure\">\n  <div data-g-part=\"body\"></div>\n</div>\n",
+      "fallback": true,
+      "parts": {
+        "body": {
+          "kind": "markdown",
+          "md": "_Ships with the workspace and is an ordinary page — so it can show a pattern rather than describe it. It is a default, not a ruling: edit it, and everything generated here changes with it._\n",
+          "vars": {
+            "day": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "out": [
+              3,
+              6,
+              2,
+              4,
+              1
+            ],
+            "newsSwatch": [
+              "Stock",
+              "Stock lo",
+              "Rule",
+              "Ink 2",
+              "Ink",
+              "Spot",
+              "Spot 2"
+            ],
+            "paperSwatch": [
+              "Paper",
+              "Shade",
+              "Pencil",
+              "Ink",
+              "Blue",
+              "Ochre"
+            ],
+            "panelSwatch": [
+              "STOCK",
+              "PANEL",
+              "RULE",
+              "INK",
+              "SPOT",
+              "WARN"
+            ]
+          }
+        }
+      },
+      "vars": {
+        "day": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "out": [
+          3,
+          6,
+          2,
+          4,
+          1
+        ],
+        "newsSwatch": [
+          "Stock",
+          "Stock lo",
+          "Rule",
+          "Ink 2",
+          "Ink",
+          "Spot",
+          "Spot 2"
+        ],
+        "paperSwatch": [
+          "Paper",
+          "Shade",
+          "Pencil",
+          "Ink",
+          "Blue",
+          "Ochre"
+        ],
+        "panelSwatch": [
+          "STOCK",
+          "PANEL",
+          "RULE",
+          "INK",
+          "SPOT",
+          "WARN"
+        ]
+      },
+      "source": {
+        "name": "note",
+        "parts": {
+          "body": "_Ships with the workspace and is an ordinary page — so it can show a pattern rather than describe it. It is a default, not a ruling: edit it, and everything generated here changes with it._\n"
+        }
+      }
+    }
+  ]
+}

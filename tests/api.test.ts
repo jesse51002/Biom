@@ -43,6 +43,7 @@ import { makeMirror } from "../server/domain/mirror.ts";
 import { makePages, pageDir } from "../server/domain/pages.ts";
 import { makeRuns } from "../server/domain/runs.ts";
 import { makeRunFs } from "../server/platform/rundir.ts";
+import { readOnly } from "../server/main.ts";
 import { makeDb } from "../server/platform/db.ts";
 import type { ProcessRunner, RunRow } from "../contracts/types.ts";
 import { PROTOCOL } from "../contracts/wire.js";
@@ -220,7 +221,9 @@ async function workspace() {
     pages, tables, files, yaml,
     vaultSeed: makeFiles(seedRoot),
   });
-  const mirror = makeMirror(files, pages);
+  // The mirror reads pages through a view that never writes, as the server
+  // builds it: its reads run in the background beside the writes below.
+  const mirror = makeMirror(files, makePages(readOnly(files), yaml, tables.list), makeDocs(readOnly(files), yaml));
   /** What the host does on open: the seeder's fill, then the framework's
    *  skills and checker rewritten whole by `framework.ts`, off the mount path. */
   const furnish = async () => {
@@ -269,7 +272,9 @@ async function workspace() {
     files,
     presets,
     furnish,
-    async drop() { await rm(root, { recursive: true, force: true }); },
+    // The mirror's projections finish before the folder goes, so none of them
+    // speaks into the next test.
+    async drop() { await mirror.queue.idle(); await rm(root, { recursive: true, force: true }); },
   };
 }
 
@@ -331,6 +336,9 @@ test("seedIfEmpty leaves the workspace EMPTY and lays out the furniture", async 
     expect(await readFile(join(w.vault, "AGENTS.md"), "utf8")).toContain(".agents/skills/");
     expect(existsSync(join(w.vault, ".agents", "skills", "biom-pages", "SKILL.md"))).toBe(true);
     // A plain `.agents/skills/`, so the vault reads the same to Cursor and Codex.
+    // The seeder writes no `.claude` and no `CLAUDE.md`: those are LINKS to the
+    // one guide and the one set of skills, kept at the root on open by
+    // `keepHarness` — `tests/framework-harness.test.ts` — never a second copy.
     expect(existsSync(join(w.vault, ".claude"))).toBe(false);
     expect(existsSync(join(w.vault, "CLAUDE.md"))).toBe(false);
     expect(await readFile(join(w.vault, ".agents", "skills", "check.ts"), "utf8")).toContain("the checker");
@@ -487,8 +495,10 @@ test("every ApiRequest kind round-trips", async () => {
     const typed = value(await call({ kind: "page.read", page: made.id })) as Page;
     // RAW, braces and all. Interpolation happens where the part is drawn.
     expect(slot(typed, "title", "body")).toContain("{{rate}}");
-    // And the page's value is what it resolves against, gathered nearest-first.
-    expect(typed.sections.find((s) => s.name === "title")?.vars).toMatchObject({ rate: 62 });
+    // And the page's value is what it resolves against: the page's, sent once,
+    // under the section's own, which this one has none of.
+    expect(typed.variables).toMatchObject({ rate: 62 });
+    expect(typed.sections.find((s) => s.name === "title")?.vars).toEqual({});
 
     // THE ORDER, AND WHAT IS IN IT: adding, reordering and removing in one kind,
     // because `contents` IS the order.
@@ -609,7 +619,9 @@ test("page.rename writes the name, moves the directory, and answers the new id",
     expect(kids.find((c) => c.id === to)?.name).toBe("Field notes");
     expect(kids.some((c) => c.id === notes.id)).toBe(false);
     // The mirror was carried rather than dropped: the new path has a file and
-    // the old one does not.
+    // the old one does not — once the mirror's queue has caught up, which the
+    // rename did not wait for.
+    await w.deps.mirror.queue.idle();
     expect(existsSync(join(w.vault, "_markdown", `${to}.md`))).toBe(true);
     expect(existsSync(join(w.vault, "_markdown", `${notes.id}.md`))).toBe(false);
 
@@ -997,7 +1009,8 @@ test("doc.raw and doc.writeRaw are the way back from a document that will not pa
     // edited the paragraph it sits in.
     const read = value(await call({ kind: "page.read", page: page.id })) as Page;
     expect(slot(read, "intro", "body")).toContain("{{rate}}");
-    expect(read.sections[0]?.parts["body"]).toMatchObject({ vars: { rate: 62 } });
+    expect(read.variables).toMatchObject({ rate: 62 });
+    expect((read.sections[0]?.parts["body"] as { vars?: unknown } | undefined)?.vars).toEqual({});
 
     // Somebody breaks it by hand, which is the state this pair exists for.
     await writeFile(yaml, "name: Rates\n\tcontents: [oh dear\n");
@@ -1264,6 +1277,7 @@ test("a page's variables come back out as its frontmatter, and cannot claim the 
         + "  generated: false\n"
         + "contents:\n  - name: note\n    parts:\n      body: Prompt to app.\n",
     });
+    await w.deps.mirror.queue.idle();
     const md = String(await w.files.read(`_markdown/${page.id}.md`));
 
     // Carried, with a string kept a string: a date left unquoted comes back as a
@@ -1285,16 +1299,19 @@ test("a page's variables come back out as its frontmatter, and cannot claim the 
   } finally { await w.drop(); }
 });
 
-test("a page that is removed takes its projection with it, in the same request", async () => {
+test("a page that is removed takes its projection with it", async () => {
   const w = await workspace();
   try {
     const call = (o: Record<string, unknown>) => handle(req(o), w.deps);
     const home = value(await call({ kind: "page.create", init: { parent: null, name: "Home" } })) as PageRef;
     const kid = value(await call({ kind: "page.create", init: { parent: home.id, name: "Gone" } })) as PageRef;
-    // The create wrote it, so nobody has to open a page for its file to exist.
+    // The create asked for it, so nobody has to open a page for its file to
+    // exist — in the background, a moment after the create answered.
+    await w.deps.mirror.queue.idle();
     expect(await w.files.read(`_markdown/${kid.id}.md`)).not.toBeNull();
 
     expect((await call({ kind: "page.remove", page: kid.id })).ok).toBe(true);
+    await w.deps.mirror.queue.idle();
     expect(await w.files.read(`_markdown/${kid.id}.md`)).toBeNull();
     // And the parent no longer lists it: a page arriving or leaving changes the
     // page above it as much as itself.
@@ -1322,6 +1339,7 @@ test("a moved page takes its mirror, and everything under it, to the new id", as
     await call({ kind: "page.projection", page: board.id, markdown: "- a card nobody else can compute" });
 
     const to = value(await call({ kind: "page.move", page: notes.id, parent: clients.id })) as PageId;
+    await w.deps.mirror.queue.idle();
 
     // The whole subtree came across.
     expect(await w.files.read(`_markdown/${to}.md`)).not.toBeNull();
@@ -1361,6 +1379,7 @@ test("typing in a slot rewrites that page's projection and nothing else", async 
       part: Object.keys(first.parts)[0]!, data: "## Standing charge\n\nIt is 62p a day.",
     });
     expect(written.ok).toBe(true);
+    await w.deps.mirror.queue.idle();
     const md = String(await w.files.read(`_markdown/${page.id}.md`));
     expect(md).toContain("## Standing charge");
     expect(md).toContain("It is 62p a day.");

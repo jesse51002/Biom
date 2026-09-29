@@ -484,11 +484,21 @@ function grid(schema, rows = [], production = false) {
   const body = installDom();
   /** @type {any[]} */
   const alters = [];
+  /** What the grid asked the window's directory and the server, in order. @type {any[]} */
+  const asked = [];
   const ws = {
     get: () => ({ pages: [], tables: [], theme: THEME, page: null, table: null }),
     alterTable: async (/** @type {string} */ _n, /** @type {any} */ next) => { alters.push(next); },
-    updateRow: async () => {}, insertRow: async () => 1, removeRow: async () => {},
+    updateRow: async (/** @type {string} */ _n, /** @type {number} */ id, /** @type {any} */ patch) => { asked.push(["updateRow", id, patch]); },
+    insertRow: async () => 1, removeRow: async () => {},
     importCsv: async () => ({ added: 0 }),
+    // THE WINDOW KNOWS NO PAGE HERE: a name is asked for, and a picker searches.
+    refOf: () => null,
+    want: async (/** @type {any} */ q) => { asked.push(["want", q]); },
+    search: async (/** @type {string} */ q) => {
+      asked.push(["search", q]);
+      return { hits: [{ id: "home/Far/Away", name: "Away (invented)" }], more: false, complete: true };
+    },
   };
   const ui = {
     get: () => ({ route: { view: "table", id: schema.name },
@@ -498,8 +508,31 @@ function grid(schema, rows = [], production = false) {
   const el = makeTableView({ ws, ui, production })({ schema, rows, total: rows.length });
   body.append(el);
   el.isConnected = true;
-  return { el, body, alters };
+  return { el, body, alters, asked };
 }
+
+test("A PAGE COLUMN'S PICKER SEARCHES: the cell's page is asked for by id, and typing is one search after the pause, whose hit is what gets picked", async () => {
+  const g = grid(
+    { name: "jobs", kind: "basic", columns: [col("where", "page")] },
+    [row(1, { where: "home/Somewhere/Else" })]);
+  // The window does not know that page: it is asked for by id, and the cell
+  // reads as its id until the answer lands.
+  expect(g.asked).toContainEqual(["want", { ids: ["home/Somewhere/Else"] }]);
+  const pill = deep(g.el, "pill")[0];
+  expect(pill.textContent).toBe("home/Somewhere/Else");
+
+  pill.fire("click");
+  const field = deep(g.body, "popinput")[0];
+  for (const v of ["a", "aw", "away"]) { field.value = v; field.fire("input"); }
+  expect(g.asked.filter((a) => a[0] === "search")).toEqual([]);
+  await new Promise((r) => setTimeout(r, 170));
+  expect(g.asked.filter((a) => a[0] === "search")).toEqual([["search", "away"]]);
+  const hit = deep(g.body, "popitem").find((b) => b.textContent.includes("Away (invented)"));
+  expect(hit).toBeDefined();
+  hit.fire("click");
+  await null;
+  expect(g.asked.filter((a) => a[0] === "updateRow")).toEqual([["updateRow", 1, { where: "home/Far/Away" }]]);
+});
 
 test("a property change made earlier in the same menu visit survives the rename", () => {
   const g = grid(

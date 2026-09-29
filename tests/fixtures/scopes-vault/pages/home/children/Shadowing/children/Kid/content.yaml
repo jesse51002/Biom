@@ -1,0 +1,9 @@
+name: Kid
+uid: scopesfixkid01
+plugin: biom-doc
+variables:
+  who: the kid page
+contents:
+  - name: body
+    parts:
+      body: The kid page's own scope says {{who}}, and {{rate}} is not in it.

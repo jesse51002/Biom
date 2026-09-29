@@ -30,6 +30,7 @@ import { parse, parseAny, format } from "../server/platform/yaml.ts";
 import { makePages } from "../server/domain/pages.ts";
 import { makeDocs } from "../server/domain/docs.ts";
 import { makeMirror } from "../server/domain/mirror.ts";
+import { readOnly } from "../server/main.ts";
 import { makeDesign } from "../server/domain/design.ts";
 import { makeTables } from "../server/domain/tables.ts";
 import { makePresets, makeTheme } from "../server/workspace/presets.ts";
@@ -41,6 +42,9 @@ import { ROOT_PAGE } from "../contracts/types.ts";
 import type { ApiRequest, ApiResponse, Change, Page, Part, PageId, PageRef } from "../contracts/types.ts";
 
 let root: string;
+/** Every mirror a test stood up, so its folder is not taken away while one is
+ *  still writing into it. */
+const booted: { queue: { idle(): Promise<void> } }[] = [];
 
 /** Stand the whole stack up over a directory. Calling it twice against the same
  *  directory is what "survive a reload" means — nothing is carried over in
@@ -62,12 +66,17 @@ function boot(dir: string) {
   // written against, and a caller with no directory of presets says so by
   // omitting the root rather than pointing at one that is not there.
   const presets = makePresets({ pages, tables, files, yaml });
-  const deps = { pages, design, docs, tables, presets, theme, mirror: makeMirror(files, pages) };
+  const deps = { pages, design, docs, tables, presets, theme, mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
 
   // The transport, in process. The client cannot tell this from fetch, which is
   // the whole point of there being one envelope and one route.
   const transport = { call: (req: ApiRequest): Promise<ApiResponse> => handle(req, deps as never) };
-  return { deps, db, ws: makeWorkspace(transport), transport };
+  // THE DATABASE CLOSES ONCE THE MIRROR HAS CAUGHT UP. Its projections run in
+  // the background and read the tables for a page's children; closed under
+  // them, each says so on the console, into whichever test is running then.
+  const closing = { close: () => void deps.mirror.queue.idle().then(() => db.close(), () => db.close()) };
+  booted.push(deps.mirror);
+  return { deps, db: closing, ws: makeWorkspace(transport), transport };
 }
 
 /** One page id, one document. Written whole, because that is what the format is
@@ -120,7 +129,12 @@ beforeEach(async () => {
   await initVault(root);
 });
 
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(async () => {
+  // THE MIRROR'S QUEUE FIRST: its projections run in the background and write
+  // into this folder, and one still running when it went wrote into nothing.
+  for (const mirror of booted.splice(0)) await mirror.queue.idle();
+  rmSync(root, { recursive: true, force: true });
+});
 
 test("a slot write survives a reload", async () => {
   const first = boot(root);
@@ -157,15 +171,17 @@ test("a slot write lands on ONE scope, and the section it belongs to carries it"
   const intro = read?.sections.find((s) => s.name === "intro");
   const calc = read?.sections.find((s) => s.name === "calc");
 
-  // The page's value is in scope everywhere; the section's is in scope on the
-  // one section. A slot write that landed a scope out would have changed what
+  // The page's value is the page's, sent once; the section's is the one
+  // section's own. A slot write that landed a scope out would have changed what
   // the paragraph one section up resolves against.
-  expect(intro?.vars).toEqual({ rate: 62 });
-  expect(calc?.vars).toEqual({ rate: 62, title: "What a job costs" });
-  // AND THE SAME SCOPE REACHES THE PART, because a part is drawn from its own
-  // `vars` and never reaches up for the section's.
-  expect(partOf(read, "intro")).toMatchObject({ kind: "markdown", vars: { rate: 62 } });
-  expect(partOf(read, "calc", "total")).toMatchObject({ vars: { rate: 62, title: "What a job costs" } });
+  expect(read?.variables).toEqual({ rate: 62 });
+  expect(intro?.vars).toEqual({});
+  expect(calc?.vars).toEqual({ title: "What a job costs" });
+  // AND A PART CARRIES ITS OWN, which neither of these has: the three scopes
+  // are merged where the part is drawn.
+  expect(partOf(read, "intro")).toMatchObject({ kind: "markdown" });
+  expect((partOf(read, "intro") as { vars?: unknown } | undefined)?.vars).toEqual({});
+  expect((partOf(read, "calc", "total") as { vars?: unknown } | undefined)?.vars).toEqual({});
 
   // AND THE TEXT IS RAW, braces and all. Interpolation is the client's job
   // because prose is edited in place and writes back: resolving on the server
@@ -249,8 +265,9 @@ test("a paragraph holding {{rate}} round-trips the braces and never the number",
   const second = boot(root);
   const read = await second.ws.loadPage(page.id);
   expect(mdOf(read, "intro")).toBe("The base rate is {{rate}} an hour, still.\n");
-  // The variable itself is untouched, and still in scope on the section.
-  expect(read?.sections.find((s) => s.name === "intro")?.vars).toEqual({ rate: 62 });
+  // The variable itself is untouched, and still the page's.
+  expect(read?.variables).toEqual({ rate: 62 });
+  expect(read?.sections.find((s) => s.name === "intro")?.vars).toEqual({});
   expect(readFileSync(join(dirOf(root, page.id), "content.yaml"), "utf8")).not.toContain("62 an hour");
   second.db.close();
 });
@@ -316,7 +333,9 @@ test("a child is not lost by a reorder, because its entry is reconciled and not 
   expect(isNaN(Date.parse(part.child.created))).toBe(false);
   expect({ ...part, child: { ...part.child, created: undefined } }).toEqual({
     kind: "child",
-    child: { kind: "page", id: child.id, name: "Ashgrove", created: undefined },
+    // Its identity and whether it holds pages of its own ride along, off its
+    // head and its folder, so a window learns both without asking again.
+    child: { kind: "page", id: child.id, name: "Ashgrove", created: undefined, uid: expect.any(String), children: false },
   });
   second.db.close();
 });
@@ -334,7 +353,8 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   const pages = makePages(files, yaml, () => tables.list());
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
-    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
+    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
+  booted.push(deps.mirror);
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
@@ -356,6 +376,8 @@ test("a prose write puts one request on the wire, and page.read is not the secon
   await ws.setSections(page.id, [{ name: "note" }, { name: "title" }]);
   expect(kinds[0]).toBe("section.order");
   expect(kinds).toContain("page.read");
+  // The mirror reads the tables for a page's children: drained first.
+  await deps.mirror.queue.idle();
   db.close();
 });
 
@@ -500,9 +522,10 @@ test("a variables patch is merged, never re-read, because a re-read restarts eve
   expect(mdOf(before, "title")).toContain("# Rates");
   expect(mdOf(after, "title")).toBe(mdOf(before, "title"));
   // NEAREST FIRST, and the page is the outermost of the three — so a value
-  // written here reaches the section and the part inside it.
-  expect(after?.sections[0]?.vars).toEqual({ heading: "Our rates" });
-  expect(partOf(after, "title")).toMatchObject({ vars: { heading: "Our rates" } });
+  // written here reaches the section and the part inside it where they are
+  // drawn, from the page's own; neither carries a copy of it.
+  expect(after?.sections[0]?.vars).toEqual({});
+  expect((partOf(after, "title") as { vars?: unknown } | undefined)?.vars).toEqual({});
   db.close();
 });
 
@@ -518,7 +541,8 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   const pages = makePages(files, yaml, () => tables.list());
   const deps = { pages, docs: makeDocs(files, yaml), tables, theme: makeTheme(files),
     design: makeDesign(makeFiles(join(root, "design")), yaml),
-    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, pages) };
+    presets: makePresets({ pages, tables, files, yaml }), mirror: makeMirror(files, makePages(readOnly(files), yaml, () => tables.list()), makeDocs(readOnly(files), yaml)) };
+  booted.push(deps.mirror);
   const transport = {
     call: (r: ApiRequest): Promise<ApiResponse> => {
       kinds.push(r.kind);
@@ -542,6 +566,8 @@ test("a variables patch puts one request on the wire, and page.read is not the s
   await writeRaw({ ws, transport }, page.id, doc("Rates", "contents:\n" + prose("title", "# Rates")));
   expect(kinds[0]).toBe("doc.writeRaw");
   expect(kinds).toContain("page.read");
+  // The mirror reads the tables for a page's children: drained first.
+  await deps.mirror.queue.idle();
   db.close();
 });
 
@@ -592,8 +618,9 @@ test("a page that moved is reached by its new id, and its old one is not forward
   const to = moved.ok ? (moved.value as PageId) : "";
   expect(to).toBe(`${clients.id}/Notes`);
 
-  // The store re-reads the tree and finds the new ids, and only those.
-  await ws.loadTree();
+  // The store re-reads the levels on the way down to the moved page and finds
+  // the new ids, and only those — the window lists a level at a time.
+  await ws.loadTree(`${to}/Ashgrove`);
   const ids = ws.get().pages.map((p: PageRef) => p.id);
   expect(ids).toContain(to);
   expect(ids).toContain(`${to}/Ashgrove`);
@@ -604,8 +631,9 @@ test("a page that moved is reached by its new id, and its old one is not forward
   // And the page is intact at the address it moved to, values and all.
   expect((await ws.loadPage(`${to}/Ashgrove`))?.variables["rate"]).toBe(62);
   // The root is where it always was — an id is a path, and only the moved
-  // subtree's paths changed.
-  expect(ids).toContain(ROOT_PAGE);
+  // subtree's paths changed. (It is no level's child, so the window knows it
+  // by reading it.)
+  expect((await ws.loadPage(ROOT_PAGE))?.id).toBe(ROOT_PAGE);
   db.close();
 });
 

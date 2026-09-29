@@ -38,7 +38,7 @@
 
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createServer } from "node:net";
 
 /** The framework root — this file is `tests/e2e/harness.ts`. */
@@ -134,11 +134,34 @@ export function sandbox(label: string): Sandbox {
   };
 }
 
+/** A SERVER'S ENVIRONMENT WITH NO AGENT IN IT: this run's sandbox, a `PATH` of
+ *  bun, `/usr/bin` and `/bin` and nothing of the person's, and `/bin/sh` for the
+ *  login shell the server asks for the agents' environment. A window opens on
+ *  the Agent screen, and its first `agents.list` looks for every agent this
+ *  machine has, on the login shell's `PATH` — so a server started with the
+ *  person's own found their real Claude Code, Codex and OpenCode, fetched
+ *  adapters with npx, probed them, and left processes running after it had
+ *  gone. A walk that wants an agent puts the scripted one first on its own
+ *  `PATH`, ahead of this one or of a PATH like it.
+ *  @param env what `sandbox()` built */
+export function withoutAgents(env: Record<string, string>): Record<string, string> {
+  return { ...env, PATH: [dirname(process.execPath), "/usr/bin", "/bin"].join(":"), SHELL: "/bin/sh" };
+}
+
+/** THE INSTALLED APPLICATION'S OWN CACHE, `<data>/cache` — `app/main.js`
+ *  points its Chromium and fontconfig there (see `app/data.js`). It is written
+ *  by the desktop app the person has open, whenever it likes: a shader cache, a
+ *  font scan, an image loader's cache, while a suite is half way through. It is
+ *  never the server's to write, and a process this suite starts writes its own
+ *  sandbox's, so it is left out of the comparison — or every suite fails
+ *  whenever the person's own window happens to draw something new. */
+const APP_CACHE = "cache";
+
 /** A directory as a comparable string: every path under it with its size. Used
  *  either side of a run against the REAL data directory, so "nothing was written
  *  outside the sandbox" is a measured statement and not a claim. An absent
  *  directory is the empty listing, which is the honest reading — it must still be
- *  absent afterwards. */
+ *  absent afterwards. The installed application's own cache is not read. */
 export function outside(at: string = realDataHome()): string {
   const seen: string[] = [];
   const walk = (dir: string, prefix: string): void => {
@@ -149,6 +172,7 @@ export function outside(at: string = realDataHome()): string {
       return;
     }
     for (const name of entries) {
+      if (prefix === "" && name === APP_CACHE) continue;
       const abs = join(dir, name);
       let st;
       try {

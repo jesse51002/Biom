@@ -120,15 +120,16 @@ test("head: false is written only when it is false, and a grid with data or a ma
 
 /* ── 3. the reader ─────────────────────────────────────────────────────── */
 
-test("a grid resolves to a grid part: raw cells, squared rows, the three scopes gathered", async () => {
+test("a grid resolves to a grid part: raw cells, squared rows, its own variables", async () => {
   const doc = parse(GRID_DOC);
-  const drawn = await drawSection(doc.contents[1]!, { rate: 62 }, async () => null, '<div data-g-part="body"></div>');
+  const drawn = await drawSection(doc.contents[1]!, async () => null, '<div data-g-part="body"></div>');
   expect(drawn.parts["body"]).toEqual({
     kind: "grid",
     head: true,
     rows: [["Piece", "Where"], ["The part, with a comma", "a | pipe"], ["two\nlines", ""]],
-    vars: { rate: 62, unit: "kg" },
+    vars: {},
   });
+  expect(drawn.vars).toEqual({ unit: "kg" });
   // `contentOf` — the door a section arriving over `section.order` comes
   // through — squares rows the same way and settles head the same way.
   expect(contentOf({ type: "grid", rows: [["a"], ["b", "c"]] })).toEqual({ type: "grid", data: "", rows: [["a", ""], ["b", "c"]], head: true });

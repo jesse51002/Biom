@@ -316,8 +316,10 @@ rather than leaving a blank in a paragraph.
 markdown comes back over the wire raw, with its braces still in it. **Prose is
 editable in place and writes back**, so resolving on the server would round-trip
 `62` over the top of `{{rate}}` and destroy the variable the first time somebody
-touched the paragraph it sits in. `Part.vars` is what to resolve against, already
-merged nearest-first by the server.
+touched the paragraph it sits in. `Part.vars` is the part's own `variables:` and
+`DrawnSection.vars` the section's own, and the page's travel once, in
+`Page.variables`, so whoever draws or projects a part merges the three, nearest
+first.
 
 **A variable is a scalar or a list of scalars, and nothing else.** Flatness is
 what makes one key map onto one editable region. Anything nested is refused at the
@@ -342,10 +344,16 @@ Two layers, and keeping them apart is the point.
 directories under `<dir>/children/` that hold a `content.yaml`, plus every table
 whose registry parent is this page — normalised into `Child`. Nothing reads a
 claim about who a parent is, and nothing has to read every page in the vault to
-find out who claims this one. It is available to every page through
-`biom.children()` **whether or not the page draws any of them**, which is
-what makes the built-in drawing replaceable rather than privileged: a replacement
-reads the same data through the same call.
+find out who claims this one. **Nor is a child parsed to be listed**: each is
+named from its document's head — the first few kilobytes, kept in the page index
+in `.biom/pages.db` and believed only while a stat agrees — with its `uid` and
+whether it holds pages of its own, and parsed whole only where the head cannot
+say; the parent's `contents` is parsed once and kept by its stat. The root's
+level also lists every table whose parent page is gone, so a table is always
+somewhere in the tree. It is available to every page through `biom.children()`
+**whether or not the page draws any of them**, which is what makes the built-in
+drawing replaceable rather than privileged: a replacement reads the same data
+through the same call.
 
 **Layer two, the drawing.** On every read, each child is guaranteed a **section**
 whose name is `childKey(child)`, holding one part of type `child` in the slot the
@@ -536,6 +544,16 @@ This is the sharpest maintenance hazard in the format, and it must be named.
 `server/domain/design.ts` reads the same document shape out of `design/`, but it
 is **not** a fifth reader: it goes through `docOf` and `drawSection` deliberately,
 so the design doc cannot drift from a page.
+
+`headOf` in `server/platform/yaml.ts` reads the file on its own, and it is kept
+from being a fifth reader by what it refuses to decide. It takes only the
+column-0 `name:`, `uid:` and `plugin:` lines of a document's first few
+kilobytes — so the page index can list a level without parsing a child — parses
+those lines alone with the codec's own parser, and answers *cannot say* for any
+shape that could read differently whole: a block scalar, an anchor, a quote
+left open, a key given twice, no `name:` at all. There one full parse is the
+answer. `tests/pageindex.test.ts` pins each shape it declines, and **a change
+to how any of those three keys may be written changes it in the same edit.**
 
 ---
 

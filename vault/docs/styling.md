@@ -31,6 +31,7 @@ anything added on the Theme page arrives as a token too.
 | `--rule` `--rule-soft` | the lines |
 | `--cyan` `--magenta` `--yellow` `--cyan-t` `--magenta-t` | the accents, and the `-t` pair that is safe to set TEXT in — lighter than the accent on a dark palette, darker on a light one |
 | `--nonrepro` `--nonrepro-t` | the non-reproducing blue: guides, outlines, the furniture a section draws |
+| `--led` `--led-red` `--led-green` `--dot-off` | the lamps: one amber for whatever is lit, red and green only as a verdict, and a dot that is off |
 | `--sheet-face` `--furniture-face` `--gauge-face` | the three type roles |
 
 **What a new workspace ships with is the product's own brand**: charcoal `#0E0F11` as the ground everywhere, cream `#EDE6D6` for the type, and Sunflower `#FFB020` as the one hot colour, filling `--cyan` for anything filled or focused and `--yellow` for anything warned about. It is a taste rather than a floor — a folder arrives dressed as Biom — and changing it changes every page here, because no page names a colour.

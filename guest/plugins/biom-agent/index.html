@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Agent</title>
+    <!-- guest/plugins/biom-agent/index.html — THE AGENT SCREEN'S DOCUMENT, and
+         it is one node. The server answers `@agent` as a bare plugin page naming
+         this document, as it answers `@map`; the host posts the chats into the
+         box as `look.state` and `look.patch`, which the shim folds and hands to
+         whatever calls `biom.onLook`; and the plugin this document's `look`
+         variable names — the framework's own `biom-agent-look` by default, a
+         workspace's through a rung — is mounted into `#g-agent` and draws
+         everything but the input box, which is the host's and sits over the box.
+
+         ITS SCRIPT IS NOT NAMED HERE. `agent.js` beside this file is in the
+         bundle the host weaves into every box, and does nothing on a page
+         without `#g-agent`; a `data-g-src` naming it as well would run it twice.
+
+         THE FRAME AND NOTHING ELSE: the node fills the box, `--motion` is the
+         switch every animation in the look multiplies by, and a look that
+         could not be mounted says why in words the reader can see. The look
+         carries its own look. -->
+    <style>
+      :root { --motion: 1; }
+      @media (prefers-reduced-motion: reduce) { :root { --motion: 0; } }
+      html, body { margin: 0; block-size: 100%; overflow: hidden; background: var(--stock); }
+      #g-agent { position: fixed; inset: 0; }
+      #g-agent[data-g-failed] { display: grid; place-content: center; padding: 2rem; max-inline-size: 36rem; margin: auto; font: 15px/1.55 var(--sheet-face, system-ui, sans-serif); color: var(--ink-2); text-align: center; }
+    </style>
+  </head>
+  <body><main id="g-agent"></main></body>
+</html>

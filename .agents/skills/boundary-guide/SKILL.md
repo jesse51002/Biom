@@ -20,8 +20,9 @@ description: >-
   "window.__g", "MessagePort", "transfer list", "isHostRequest",
   "isRuntimeRequest", "HostRequest", "RuntimeRequest", "ApiRequest",
   "GuestNotice", "HostEvent", "chokepoint", "the box cannot fetch",
-  "self-reported", "childKey", "adding a wire kind", or any change to the
-  host-to-artifact contract.
+  "self-reported", "childKey", "adding a wire kind", "touch", "open gate",
+  "look.state", "look.patch", "isLocalKind", "local gate", or any change to
+  the host-to-artifact contract.
 ---
 
 # The artifact boundary — one box, two ports, three rings
@@ -102,6 +103,14 @@ markup does **not** load over a `src` — it arrives inline in the `page.read`
 answer, because loading it would be a fetch and a fetch is exactly what the frame
 cannot do.
 
+**The box's first read of its own page is the host's.** The host read that very
+page a moment ago to mount the box, and asking the server again was half of
+every page switch, so the store hands it over once (`handoff` in
+`client/store/workspace.js`), within a few seconds of its read and only while
+nothing has changed the page since — a `section.write` from the box ends it,
+because a slot's text does not go through the store and its copy is behind the
+file from then on. Every other `page.read` goes to the server.
+
 ---
 
 ## 2. One box per page, and it never reports a height
@@ -175,6 +184,32 @@ rail would land where the reader last left it, and it does not. A `position` is
 recorded and never dispatched to the shell, so a scroll never repaints the
 strip; it is still not a height, and `GuestNotice` still has no `size`.
 
+**A touch is the other thing a box says about the person, and it says only
+which way.** `{ kind: "touch", g, what }` — `click`, `key`, `select` or
+`scroll` — on the ordinary port, throttled in the box to one of each a second,
+and only for an event the browser says a person made (`isTrusted`): a scroll
+is the gesture that scrolls and never the `scroll` event, which fires for a
+scroll the box made itself putting the reader back, and a selection counts
+only under a fresh user activation. The switcher of the workspace's *History
+and View Switcher* spec needs it — a screen becomes the person's when they
+touch it, and a touch in the last two minutes keeps an agent from taking the
+screen — and the host can no more see a click inside the box than a height.
+It carries no coordinates, no key and no text: a keystroke's identity crossing
+the wall would be a keylogger. It joined with the eleventh contracts edit.
+
+**And a touch is what a box's `open` is honoured on, because a page's code
+never moves the screen.** `frame.js` hands every `touch` to the bridge keyed by
+the realm's own context — THAT box, not another on the same page — and up to
+the switcher by the page of the box on screen. The bridge answers `open` only
+within `OPEN_AFTER_TOUCH` of a touch from the same realm, waiting `OPEN_GRACE`
+for one still on its way, because a wikilink opens over the runtime's port
+while its click rides the ordinary one and two ports promise no order; an
+`open` made on load or on a timer is refused `identity` and said on the
+console. The shim listens in the capture phase, so the click is said before
+the page's own handler asks to open. **This is a reasonableness property and
+not a wall** — §6 applies: code in the box could forge a touch as it could
+call any data kind. `history-guide` is the switcher's half.
+
 A `hello` from a box that already holds ports **revokes them and takes new
 ones**. That is not politeness: assigning `srcdoc` while the previous realm is
 still loading means the old realm's `hello` can arrive *after* the rebuild, take
@@ -210,7 +245,7 @@ entry narrows with its own guard. A branch there that read `msg.kind` and decide
 would be a second copy of the judgement, and two copies of a judgement are two
 things to get out of step.
 
-**Both ports hear every `HostEvent`.** `edit`, `theme`, `refresh` and `place` go to both.
+**Both ports hear every `HostEvent`.** `edit`, `theme`, `refresh` and `place` go to both, and so do `look.state` and `look.patch` — which are POSTED to the one box on `@agent` and never broadcast.
 A host event is an announcement, not a capability: **the asymmetry is entirely in
 what may be SENT.** Inventing a second asymmetry in what may be HEARD would only
 give one side a stale picture.
@@ -260,6 +295,69 @@ wrapper is `biom.vault()`, and the bridge answers it out of the store the
 workspace's own screens read — so a page and the panel beside it cannot disagree
 about where the workspace is. It was the third contracts edit; `AGENTS.md`
 keeps the record.
+
+**NOTHING A BOX CAN SAY REACHES AN AGENT, and that is the one line of the
+eleventh contracts edit that may never move.** The Agent screen's look — the
+start screen, a chat, the list of chats — is a plugin a workspace can replace,
+drawn in a box on `@agent`, and what it may ask is seven inner-ring kinds:
+`look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
+screen, beside the page or closed, and — the thirteenth edit — `look.delete`, a
+request for Biom's OWN dialog asking whether to delete a chat, and
+`look.unqueue`, a queued message's ×, and — the fifteenth — `look.view`, one
+of the three views picked from the chat's ⋯: ids and words from a closed list,
+STRICTLY guarded so no field rides along — and a page a turn changed through
+`open`. **Each of the eight is honoured only just after a touch from that same
+box**, as every box's `open` is (§3): the `look.*` kinds move what is on screen,
+redraw the look whole, put a question to the person or change the view the
+workspace keeps, so a look on a loop can do none of them — and `look.delete`
+deletes nothing even when honoured: only the person's Delete in the host's
+dialog says `chat.delete`, which no box can say. `look.view` is the one that
+changes something kept, and a box may say it because it sends nothing to an
+agent and deletes nothing; the host keeps it through `settings.set` and posts
+it back, and the look draws nothing ahead of that. The bridge answers the seven only for a box on `@agent`, and only through the answer the
+Agent screen registered (`answerLook`), which refuses every box but the one it
+mounted — it knows that box by the identity of the context it mounted it
+with, which only the frame host holds, so any other box on `@agent` — were
+one ever mounted; the shell refuses a page route naming an `@` id — is refused
+too. The input box is Biom's, in the host, over the box; everything it says
+— `chat.*` and `agents.*` — is outer ring, narrowed at the server by
+`isChatRequest`, and `tests/chat-guards.test.ts` pins that neither inner guard
+admits any of them or any kind that could carry text to an agent, and a bridge
+test fuzzes every inner kind through a spy transport and finds no such call. A
+chat's agent is a program allowed everything on this machine, so a box that
+could put words in front of one could do anything the person can. `run.start`
+is the one inner kind that starts an agent at all — an automation, from files
+in the vault and a form's inputs — and it is not that. Every `chat.*` and
+`agents.*` kind, and `window.report`, is also answered only to this machine's
+own window, in every build: a loopback peer, a loopback Host on this server's
+port, an Origin that is this server's own where one is sent, a
+`Sec-Fetch-Site` of `same-origin` or `none` where one is sent, and the
+capability cookie (`localRefusal` in `server/main.ts`). The two headers are
+there because the cookie alone does not tell this server's pages from a page
+on ANOTHER localhost port — a site ignores the port, so the browser sends that
+page the cookie, `SameSite=Strict` and all — and a browser never lets a page
+forge either. `window.*` and `history.*` are
+outer ring too, under `isHistoryRequest`: a page's own code never reads what
+the window has open.
+
+**The route itself asks two things before any gate.** An Origin of `null` —
+the box's — is refused outright, and the body must be declared
+`application/json` BY ITS TYPE'S ESSENCE, exactly: what comes before the first
+`;`, trimmed and lower-cased, and never a type that merely contains the words.
+Requiring JSON forces a preflight this server never answers, so no page can
+reach the switch with a simple request; `text/plain; x=application/json` is a
+simple request, and a substring check once let it through.
+
+**The window a request came from rides the envelope, and the transport writes
+it.** `Envelope.window` is optional — every caller before it is unchanged —
+and `client/transport/http.js` writes this window's id over whatever a request
+carried, which is the rule `run.start`'s `by` already follows; the bridge
+rebuilds every request it forwards field by field, so a box's own never gets
+that far. It names who typed, for the history, and it is not a capability —
+which is why the server believes it only from this machine's own window:
+`route`'s `own` is the local gate without a kind, and a request that fails it
+has its `window` dropped before it is answered, so a run holding the launch
+token cannot put its writes in the history as the person's.
 
 **The framework grants unrestricted data access.** `table.get`, `row.insert`, `sql`
 and `fetch` all resolve for real, against any table, with no scoping. The inner
@@ -345,7 +443,12 @@ hand-copied name in `biom.js` as unverified until you have compared it
 against `contracts/types.ts` yourself.
 
 The shim also does more than wrap `postMessage`, and each part of that is there
-for a named reason: it **queues calls made before the port arrives** (so an
+for a named reason: it **says when the person touches the page** (§3), which
+way and nothing else; it **folds the Agent screen's `look.state` and
+`look.patch`** by the contract's rule — a patch's updates appended only for the
+chat held, a tool line replaced where it first stood, a `seq` already held
+dropped — and hands the state as it stands to `biom.onLook(fn)`, which only the
+box on `@agent` is ever posted; it **queues calls made before the port arrives** (so an
 artifact whose top-level body calls `biom.data()` works, rather than every
 generated page having to open with `await biom.ready`); it **re-declares the
 palette on `:root`**, because custom properties do not cross a document boundary
@@ -428,6 +531,14 @@ page)` is that relay, written once in the shim.
 
 **One more thing travels over `window` between the box and its nested frame, and it is not data.** The `ports` message a box relays carries `embedded: true`, and a realm told that reports its scroll position to `window.parent` as `{ kind: "scrolled", at }` — a fraction of its run — and takes `{ kind: "scroll", at }` back from it. Neither reaches the host: a top-level box's parent is the host and it is never told it is embedded, so it never says either. The host's own `hello` listener would ignore them anyway, because neither is a `GuestNotice`. **They are not the redraw's pair** (§3): a box of its own says `position` in pixels over the PORT and takes `place` back, and a nested realm says neither — its embedder holds it level in fractions over `window`, and an embedded session is minted afresh on every grant, so there is no mount for it to keep a place on.
 
+**A framework screen is never drawn inside a page.** `page.embed` naming any
+`@` id — `@agent`, `@map`, `@design` — is refused by `isHostRequest` before a
+session is minted: `@` is outside a page segment's grammar so no page is lost,
+and a page that could hold the Agent screen's box would hold the box the host
+feeds the chats. The same edit made the other half a thrown error rather than a
+convention: `look.state` and `look.patch` go through the Agent view's own
+`Frame.post` and nowhere else, and `broadcast` throws on either.
+
 A session **dies with its parent**: `shut` closes a realm's embeds before its
 own ports, so a re-hello, a changed document and `drop` all take the nested
 pages with them. `unembed { embed }` is a `GuestNotice` that closes one sooner,
@@ -494,33 +605,55 @@ locally.
 ## Key files (where the boundary actually lives)
 
 - **The box, and everything DOM-shaped about the boundary:**
-  `client/frame/frame.js` — `makeFrameHost(bridge, assets, faces)` (`for` /
-  `drop` / `broadcast` / `refresh` / `compliance` / `keep`), the `hello` listener and the
+  `client/frame/frame.js` — `makeFrameHost(bridge, assets, faces, hear)` (`for` /
+  `drop` / `broadcast`, which throws on `look.*` / `refresh` / `compliance` /
+  `keep`), the `hello` listener and the
   two-port grant, `fromGuest` (port → bridge entry, answers dropped on a port
-  that moved), `grant` / `closeEmbed` and the `Session` typedef (§9),
+  that moved; a `touch` to `bridge.touched` and `hear.touched`), `grant` /
+  `closeEmbed` and the `Session` typedef with its `top` (§9),
   `weave(shim, html, assets, faces)` (the `<base>`, the box's
   `@font-face` rules, and the shim, in that order), `sameCtx`, `shut`. Layer 11; replacing this file swaps iframe for
   shadow DOM or a webview host without either of the other two changing a line.
 - **The chokepoint, DOM-free:** `client/bridge/bridge.js` —
-  `makeBridge(ws, transport, ui)` returning `PageBridge` (`resolve` for
-  `HostRequest`, `runtime` for `RuntimeRequest`), `route` / `routeRuntime`,
+  `makeBridge(ws, transport, ui, vault, clock)` returning `PageBridge`
+  (`resolve` for `HostRequest`, `runtime` for `RuntimeRequest`, `touched` for
+  the frame host, `answerLook` for the composition root to register the Agent
+  screen's answer), `OPEN_AFTER_TOUCH` / `OPEN_GRACE` and the `open` case that
+  reads them (§3), the `look.*` case — `@agent` only, through the registered
+  answer, touch-gated — and the `LookRequest` / `LookAnswer` typedefs,
+  `route` / `routeRuntime`,
   `guarded` (the per-ring in-flight cap and the failure flattening), `codeOf`,
-  `SAYS`, `proseOf`, `scopeOfSection`, `forward`. Layer 10; never sees an iframe.
+  `SAYS`, `proseOf`, `scopeOfSection`, `forward` — which is how `link.resolve`
+  and `doc.list` reach the server's page index, since the window holds only the
+  pages on its screen — and the `page.read` case that takes the store's
+  `handoff`. Layer 10; never sees an iframe.
 - **The guest half:** `guest/biom.js` — the shim, the bootstrap and
-  the `biom.*` surface. Imports nothing; nothing imports it. Its wire
+  the `biom.*` surface, `touches()` (the `touch` notice) and the look's fold
+  (`hearLook`, `biom.onLook`). Imports nothing; nothing imports it. Its wire
   constants are a deliberate duplicate of `contracts/wire.js` and its field names
   are hand-copies of `contracts/types.ts` — see §7.
 - **The narrowing predicates:** `contracts/guards.js` — `isHostRequest` /
-  `isRuntimeRequest` over `HOST_KINDS` / `RUNTIME_KINDS`, the shared `wellFormed`
-  envelope-and-payload check, `isGuestNotice`, `isVarPatch`, `isRowInput`,
-  `isVarValue`. Layer 0; imports only `wire.js` constants.
+  `isRuntimeRequest` over `HOST_KINDS` / `RUNTIME_KINDS`, the outer ring's
+  `isChatRequest` / `isHistoryRequest` / `isPageRequest` over `CHAT_KINDS` /
+  `HISTORY_KINDS` / `PAGE_KINDS` (the last the twelfth edit's `page.locate` and
+  `page.search`, outer ring and reads),
+  `isLocalKind` over `LOCAL_KINDS` (what only this machine's own window may
+  say), the shared `wellFormed` envelope-and-payload check (the envelope's
+  `window` included), `isGuestNotice`, `isAddress`, `isOpaqueId`, `isAgentKey`,
+  `isVarPatch`, `isRowInput`, `isVarValue`, and the frozen kind lists the
+  no-prompt test reads. Layer 0; imports only `wire.js` constants and
+  `address.js`'s vocabulary.
 - **The unions and the notices:** `contracts/types.ts` — `HostRequest`,
   `RuntimeRequest`, `ApiRequest`, `HostEvent`, `GuestNotice`, `HostError` /
   `HostErrorCode`, `Envelope`, `Protocol`, `BridgeContext`, `Frame`, `FrameHost`,
   and `childKey` (the one true spelling §7 is about).
 - **The outer ring's door, and where a build refuses a kind:**
-  `server/api/routes.ts` — `handle(req, deps)` (the envelope check, then
-  one `case` per kind), `Deps` (including `production`), `CODES` / `codeOf` (a
+  `server/api/routes.ts` — `route(request, deps, gate, own)` (the `null`
+  Origin refused, the Content-Type's essence checked, the local gate before a
+  body is answered, and the `window` dropped from a request that is not this
+  machine's own), `handle(req, deps)` (the envelope check, then one
+  `case` per kind, and a window's write recorded once the answer is ok),
+  `Deps` (including `production`), `CODES` / `codeOf` (a
   lower layer's code is believed only when it is one of ours), `refused` (the
   `unsupported` code and the sentence a build that does not offer a kind answers
   with), `NATIVE_DIALOG` (the twin

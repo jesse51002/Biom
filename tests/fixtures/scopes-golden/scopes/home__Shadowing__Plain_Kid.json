@@ -1,0 +1,24 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "A kid drawn by a copy of the shipped child row.",
+            "vars": {}
+          },
+          "ctx": {},
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "body",
+          "via": "slot"
+        }
+      ],
+      "name": "body"
+    }
+  ]
+}

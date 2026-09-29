@@ -118,7 +118,7 @@ import { ROOT_PAGE } from "../../contracts/types.ts";
 // The one file in `base/` that is not only an example: `pages.create` copies it
 // into every new page. Imported rather than spelled again so the seeder and the
 // reader cannot end up naming two different files.
-import { CHILD_DEFAULT } from "../domain/pages.ts";
+import { CHILD_DEFAULT, PAGE_DOC, pageDir } from "../domain/pages.ts";
 
 export interface PresetDeps {
   pages: Pages;
@@ -204,6 +204,9 @@ const BRAND: Palette = {
     // rather than assumed to be white: the darkest paper here, because both
     // fills are light. A palette with dark accents names its lightest instead.
     onSpot: "#16181B",
+    // The lamps — amber for what is lit, red and green only as a verdict. The
+    // client's copy says why each is the value it is.
+    led: "#FFB020", ledRed: "#FF4A3D", ledGreen: "#5BE37D", dotOff: "#23262B",
   },
   extra: [
     { name: "Warning", value: "#FF7A2F" },
@@ -492,7 +495,13 @@ export function makePresets(deps: PresetDeps): Presets {
       // point an agent at `AGENTS.md`, so the file it names has to be on disk by
       // the time the words are; the other order left a moment in which the first
       // page gave an instruction the folder could not yet follow.
-      await pages.list();
+      //
+      // ONLY WHERE THERE IS NO ROOT. This asked for the whole page list on every
+      // start to make sure of one file — every page parsed, before anything was
+      // served, on a vault of two thousand. The root's document is looked for
+      // directly; where it is not there, asking for the list conjures it, and a
+      // vault with no root is a vault with next to nothing else.
+      if ((await files.read(`${pageDir(ROOT_PAGE)}/${PAGE_DOC}`)) === null) await pages.list();
 
       // AND THE ONE PIECE OF IT THAT IS NOT DECORATION. Every page made from now
       // on copies `base/child/index.html` into itself as `child.html`; without

@@ -188,7 +188,17 @@ export type Part =
    *  part is drawn rather than where it is read, because prose is editable in
    *  place and writes back: resolving on the server would round-trip `62` over
    *  the top of `{{rate}}` and destroy the variable the first time somebody
-   *  touched the paragraph it sits in. `vars` is what to resolve against. */
+   *  touched the paragraph it sits in.
+   *
+   *  `vars` — here, on `html` and on `grid`, and on each of a list's items — is
+   *  THIS PART'S OWN `variables:`, `{}` where it has none. It is not the scope
+   *  the part resolves against: that is `Page.variables` under the section's
+   *  `vars` under this one, merged nearest last by whoever draws or projects
+   *  the part. It carried the three already merged until the fourteenth
+   *  contracts edit, which put a copy of the page's variables into every
+   *  section and every part — 65 MB on the wire for a page of 649 sections
+   *  under 95 KB of them. A reader that uses `vars` alone is wrong wherever
+   *  the page or the section has variables; merge. */
   | { kind: "markdown"; md: string; vars: Variables }
   | { kind: "html"; file: string; html: string; vars: Variables }
   /** A table drawn inline as a grid. Not the same as a `child` pointing at one:
@@ -212,10 +222,10 @@ export type Part =
    *  particular arrangement and the child is not. */
   | { kind: "child"; child: Child; draw?: { file: string; html: string } }
   /** THE DOCUMENT'S OWN TABLE, resolved: the rows padded square, `head` settled,
-   *  and the scopes gathered because a cell is markdown and `{{name}}` in one
-   *  resolves where it is drawn, exactly as a markdown part's does. The cells
-   *  are RAW for the same reason `md` is: a cell opens under the caret and
-   *  writes back. */
+   *  and its own variables carried because a cell is markdown and `{{name}}` in
+   *  one resolves where it is drawn, against the merged scope, exactly as a
+   *  markdown part's does. The cells are RAW for the same reason `md` is: a
+   *  cell opens under the caret and writes back. */
   | { kind: "grid"; rows: string[][]; head: boolean; vars: Variables }
   /** A LIST, resolved. Each item is a `Part` in its own right, drawn in order
    *  into the one slot and edited as its own region — so adding, removing and
@@ -241,17 +251,23 @@ export interface DrawnSection {
   fallback: boolean;
   /** Slot id → what is in it, resolved. Keyed exactly as `Section.parts` was. */
   parts: Record<string, Part>;
+  /** THIS SECTION'S OWN `variables:`, `{}` where it has none — the fourteenth
+   *  contracts edit, which narrowed it from the page's and the section's
+   *  already merged. The section is drawn with `Page.variables` under this,
+   *  merged nearest last, and each part with that under the part's own `vars`;
+   *  the page's values travel once, in `Page.variables`, and never again per
+   *  section. */
   vars: Variables;
   /** THE STORED ENTRY THIS WAS DRAWN FROM, carried so the runtime can DUPLICATE
    *  a section.
    *
    *  Everything else here is resolved and therefore lossy in the one direction
-   *  that matters: `html` is the markup and not the filename that named it,
-   *  `parts` holds loaded content and not the `data:` that pointed at it, and
-   *  `vars` is the three scopes already merged rather than the section's own. A
-   *  copy rebuilt from those would name no file, inline what was a pointer, and
-   *  bake the page's variables into the section — which is three bugs to explain
-   *  rather than one field to send.
+   *  that matters: `html` is the markup and not the filename that named it, and
+   *  `parts` holds loaded content and not the `data:` that pointed at it. A copy
+   *  rebuilt from those would name no file and inline what was a pointer — two
+   *  bugs to explain rather than one field to send. (`vars` was a third, the
+   *  page's variables baked into the section, until the fourteenth contracts
+   *  edit made it the section's own.)
    *
    *  It is the entry as the reader was handed it, so for a child section drawn
    *  by its parent the `data` is the one the parent supplied. Nothing duplicates
@@ -285,6 +301,16 @@ export interface Child {
    *  sorts on it, and a later version may keep the date in the page without
    *  the field or that plugin changing. The tenth contracts edit. */
   created?: string;
+  /** Pages only: THE PAGE'S IDENTITY, off the head of its document, so a
+   *  window that lists a level learns uid and id together for everything on
+   *  screen without asking again. Absent where the page has none yet. The
+   *  twelfth contracts edit. */
+  uid?: string;
+  /** Pages only: WHETHER THIS PAGE HOLDS PAGES OF ITS OWN — its `children/`
+   *  folder holds at least one page — read off the folder listing and never
+   *  off a document, so the tree draws a branch's chevron without fetching the
+   *  branch. The twelfth contracts edit. */
+  children?: boolean;
 }
 
 /** The block id standing for a child, and it has to be derived rather than
@@ -773,6 +799,610 @@ export interface RunRead {
   ended: boolean;
 }
 
+/* ── chats, agents and the history ─────────────────────────────────────── */
+//
+// THE ELEVENTH CONTRACTS EDIT, taken at its own barrier on 2026-09-25 for two
+// of the workspace's specs at once: *Chat* — the Agent screen, a chat with an
+// agent already on this machine over ACP — and *History and View Switcher* —
+// what each window has open, what was opened and changed and by whom, and the
+// switcher that decides from that alone when a change brings its screen up.
+//
+// EVERYTHING BELOW IS BIOM'S OWN SHAPE. The Agent Client Protocol's messages
+// are the server's business and live beside `server/platform/acp.ts`: a chat
+// update relayed to the client is Biom's `ChatUpdate`, not ACP's
+// `session/update`, so an agent changing what it streams changes one module
+// and not every screen.
+
+/** ONE WINDOW, by an id the window mints for itself when it opens and keeps
+ *  for a reload of that window and for nothing longer — never saved, never a
+ *  cookie, never shared by two windows. The history's opens and views belong
+ *  to it, and the person's own writes are stamped with it. */
+export type WindowId = string;
+
+/** ONE CHAT, minted by the server on `chat.new`. */
+export type ChatId = string;
+
+/** ONE RUNNING AGENT. A uuid the server mints when an agent starts in a chat,
+ *  and a NEW one when the person switches agent, because that is a new agent.
+ *  The harness's name — Claude Code, Codex — is what a person reads; this is
+ *  what everything else keys on, so two chats on one harness are never
+ *  mistaken for each other. A run's is its session, when runs join. */
+export type AgentId = string;
+
+/** WHICH AGENT, AS A PROGRAM: the ACP Registry's id where it has one —
+ *  `claude-acp`, `codex-acp` — and a word of Biom's own where it has none,
+ *  `openclaw`. `AGENT_KEY` in `wire.js` is the grammar. */
+export type AgentKey = string;
+
+/** A PAGE'S OWN SCREENS: the page, its `INSTRUCTIONS.md` in one editor, and
+ *  its automations — manifest, files, runs. Every one of them is in every
+ *  build. */
+export type PageScreen = "page" | "instructions" | "automation";
+
+/** EVERY SCREEN THE PERSON CAN BE ON HAS AN ADDRESS, and this is it: the
+ *  workspace's pages and the framework's own screens alike, so a reload or
+ *  Back lands where the person was and **Go back to** returns to Design as
+ *  readily as to a page. What is not a place — a dialog, the inserter, a
+ *  menu — has none, is never a switch and is never in the history.
+ *
+ *  Spelled in the url as `#/<view>/<id>`, with a page's own screen after the
+ *  page — `#/page/<id>/instructions` — and the Agent screen as `#/agent` and
+ *  `#/agent/<chat>`. `parseAddress` and `formatAddress` in
+ *  `contracts/address.js` are the one spelling, used by the shell, the
+ *  switcher and the tests.
+ *
+ *  `screen` is `page` on every view but a page, and on a page with no id,
+ *  which `address()` makes true of every address it builds. Which screens the
+ *  switcher never leaves for an agent is `HELD` beside them — data, not a
+ *  branch anybody has to remember. */
+export interface Address {
+  view: ViewName;
+  /** A page id, a table's name, a chat id, or "" where the view has none. */
+  id: string;
+  screen: PageScreen;
+}
+
+/** AN ADDRESS AS THE HISTORY KEEPS IT: a page named by its `uid`, so a page
+ *  renamed or moved since still resolves and a deleted one is skipped rather
+ *  than mistaken for whatever took its path. Every other view is as its
+ *  address says. An address that names no place — a page with no `uid`, whose
+ *  document will not parse — is not recorded. */
+export type Place =
+  | { view: "page"; uid: string; screen: PageScreen }
+  | { view: Exclude<ViewName, "page">; id: string };
+
+/** WHO MADE A CHANGE, OR MOVED THE SCREEN.
+ *
+ *  `you` is the person, in the window that did it — and a page's own code in
+ *  that window's box, which writes as the window it is drawn in. `agent` is an
+ *  agent Biom started for a chat, by its id, with the chat, the harness it is
+ *  and the turn it was on — the harness is what a person reads, the id is what
+ *  the switcher follows, and the turn is what *what this turn changed* groups
+ *  by. `run` is RESERVED, named by the `session` its page mints: a run writes
+ *  its files directly and is not in the history until the door is built, and
+ *  nothing produces one yet. */
+export type Writer =
+  | { kind: "you"; window: WindowId }
+  | { kind: "agent"; agent: AgentId; chat: ChatId; harness: string; turn: number }
+  | { kind: "run"; session: string };
+
+/** HOW BIOM SAW A WRITE. `fs` is an ACP `fs/write_text_file` Biom carried out
+ *  itself; `tool` a completed edit, delete or move tool call, by the paths in
+ *  its diff and its locations; `shell` a plain shell write read from an
+ *  executed command's line — `sed -i`, `>`, `>>`, `tee`, `mv`, `cp`, `rm`,
+ *  `touch` — and nothing it could not read confidently; `app` a write through
+ *  the app from a window, the person's own or their page's code. A write Biom
+ *  cannot name is not an edit, and neither is what the framework writes for
+ *  itself: `page.projection` (the markdown mirror) and `vault.commit` record
+ *  nothing. */
+export type EditVia = "fs" | "tool" | "shell" | "app";
+
+/** ONE LINE OF THE HISTORY: what was opened, what changed, what was on screen.
+ *
+ *  `seq` counts from 1 per workspace and never repeats while the server is
+ *  up; `at` is the SERVER's clock, for a person reading the history — the
+ *  switcher times everything by its own window's clock and never by this, so
+ *  a test can move a window's time without moving the server's.
+ *
+ *  An `open` is the person opening a place themselves, and only the person
+ *  opens. A `view` is what went on screen and by whom — the person's open, or
+ *  the switcher bringing a page up for an agent, under that agent. Both belong
+ *  to the window they happened in. An `edit` belongs to the workspace,
+ *  whichever window is open: `path` is the file, vault-relative and forward-
+ *  slashed, or null for a write that is no file — a table's schema or its
+ *  rows, which live in `workspace.db` and whose place is the table; `place` is
+ *  the screen that shows it, as the address table maps it, or null where no
+ *  screen does.
+ *
+ *  `snapshot` IS A PLACE KEPT FOR AN ID, null until snapshots exist: the door
+ *  will stamp the snapshot taken before the write, so a change is found and
+ *  undone from its own entry. The history lives in memory, and nothing in it
+ *  is saved or committed. */
+export type HistoryEntry =
+  | { kind: "open"; seq: number; at: number; window: WindowId; place: Place; writer: Writer }
+  | { kind: "view"; seq: number; at: number; window: WindowId; place: Place; writer: Writer }
+  | { kind: "edit"; seq: number; at: number; place: Place | null; path: string | null; writer: Writer; via: EditVia; snapshot: string | null };
+
+/** What `history.read` answers: the entries after `since`, and `head`, the
+ *  last `seq` the server has written — so a reader knows it has caught up even
+ *  when the answer is empty. */
+export interface HistoryRead {
+  entries: HistoryEntry[];
+  head: number;
+}
+
+/** WHAT ONE WINDOW HAS OPEN — the context. The address on screen, whether the
+ *  chat panel is open, which chat is in it and which agent is in the chat.
+ *  It lives in the shell as `UiState`; this is that state as the window
+ *  reports it, and it changes only when the screen does. `at` is when the
+ *  server last heard it, so a window that has gone quiet can be told apart. */
+export interface WindowContext {
+  window: WindowId;
+  address: Address;
+  panel: boolean;
+  chat: ChatId | null;
+  agent: AgentId | null;
+  at: number;
+}
+
+/** A context as a window reports it: the window is the envelope's, the time
+ *  is the server's, and `agent` is derived by the server from `chat` — the
+ *  value a window sends there is ignored, so a window cannot name an agent it
+ *  does not have open. */
+export type WindowReport = Omit<WindowContext, "window" | "at">;
+
+/** WHO MOVED THE SCREEN, said alongside a report that moved it. Only the
+ *  person and the switcher ever move it — no agent, run or page does.
+ *
+ *  `claim` is the screen becoming the person's WITHOUT moving (*History and
+ *  View Switcher*, `yours`): they touched it, or kept it on screen five minutes
+ *  with the window in front. It appends a `view` by the person and no `open`,
+ *  so the history says the screen is theirs from then on.
+ *
+ *  When the switcher follows an edit off the FULL Agent screen, the page comes
+ *  up with the chat in the panel beside it — never a bare page with the chat
+ *  gone — and the report that says so carries `panel: true`. */
+export type Move =
+  | { by: "you" }
+  | { by: "claim" }
+  | { by: "switcher"; agent: AgentId; chat: ChatId };
+
+/** WHY AN AGENT IS INACTIVE. An agent is Active or Inactive and nothing else,
+ *  and an inactive one carries the one thing that makes it active:
+ *  `signin` — it refused a session or a message, and **Sign in** is the button;
+ *  `gateway` — OpenClaw's Gateway does not answer, and **Start Gateway** is;
+ *  `checking` — a probe is in flight; `installing` — an install is; `failed`
+ *  — it would not start, answer `initialize` or open a session, and
+ *  `message` says what happened in a sentence of Biom's own. */
+export type AgentReason = "checking" | "installing" | "signin" | "gateway" | "failed";
+
+/** One of the ways an agent offers to sign in, as `initialize` listed it.
+ *  `terminal` runs in the pop-up terminal; `agent` is `authenticate`, which
+ *  the agent carries out; `env_var` is a key the person sets in their own
+ *  environment, which Biom names and never holds. `vars` are those variables'
+ *  NAMES, for an `env_var` method — never a value — and empty otherwise. */
+export interface AuthMethodInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  type: "agent" | "terminal" | "env_var";
+  vars: string[];
+}
+
+/** ONE AGENT ON THIS MACHINE. `source` is where Biom found it: a command of
+ *  an agent Biom knows on the login shell's `PATH`, or Biom's own folder of
+ *  installed agents. `icon` is the registry's picture, a url, or null.
+ *
+ *  ACTIVE MEANS IT STARTED, ANSWERED `initialize` AND OPENED A SESSION, and
+ *  nothing short of that; whether it is signed in is that session opening and
+ *  never `authenticate`'s answer. The probe session is also what fills the
+ *  start screen before a chat has a session of its own: its config options
+ *  are the pickers under the input, and its commands the agent's half of the
+ *  / menu. The picker names the harness and never its model. */
+export interface AgentInfo {
+  key: AgentKey;
+  name: string;
+  line: string;
+  icon: string | null;
+  source: "path" | "installed";
+  version: string | null;
+  state: "active" | "inactive";
+  reason: AgentReason | null;
+  message: string | null;
+  auth: AuthMethodInfo[];
+  options: ConfigOption[];
+  commands: SlashCommand[];
+}
+
+/** ONE AGENT IN THE ACP REGISTRY. `via` is how the registry runs it; `here`
+ *  is whether this machine already has it; `needs` is the plain sentence when
+ *  it cannot run here — `npx` without Node, `uvx` without uv — or null. */
+export interface RegistryAgent {
+  key: AgentKey;
+  name: string;
+  line: string;
+  version: string;
+  icon: string | null;
+  via: "npx" | "uvx" | "binary";
+  here: boolean;
+  needs: string | null;
+}
+
+/** WHAT `agents.signIn` ANSWERS. An `agent` method has started, and its
+ *  verdict arrives as the probe after it, on the stream. A `terminal` method
+ *  is what the sign-in pop-up runs: the agent's command with the method's
+ *  arguments and the method's own environment, shown to the person as it is,
+ *  and a `ticket` the terminal redeems for exactly that command — so the
+ *  pop-up starts what the server resolved and never a command line the page
+ *  wrote. `env` is the METHOD's, never the login shell's: no key, token or
+ *  secret of the person's is ever in an answer. */
+export type SignIn =
+  | { kind: "agent" }
+  | { kind: "terminal"; ticket: string; command: string; args: string[]; env: Record<string, string> };
+
+/** HOW TO START AN AGENT: the resolved command, its arguments and the
+ *  environment it runs in — the person's login-shell environment plus the
+ *  registry's own variables. SERVER-SIDE ONLY and never on any wire: the
+ *  environment is the person's and holds their keys. What `agents` resolves
+ *  and `chats` spawns, in the vault's root. */
+export interface AgentLaunch {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
+/** A config option's value: a select's value id, or a boolean's state. */
+export type ConfigValue = string | boolean;
+
+/** Which picker an option is. `model`, `mode` and `thought_level` are the
+ *  three under the input; everything else is `other` and is not drawn yet. */
+export type ConfigCategory = "model" | "mode" | "thought_level" | "other";
+
+/** One choice of a select option, with the group the agent put it in — a
+ *  list longer than five shows five and **More models**, grouped the way the
+ *  agent groups them. `group` is the group's DISPLAY name, or null where the
+ *  agent groups nothing; `choices` keep the agent's own order, and every
+ *  group's choices are contiguous in it. */
+export interface ConfigChoice {
+  value: string;
+  name: string;
+  description: string | null;
+  group: string | null;
+}
+
+/** ONE OF THE AGENT'S SESSION CONFIG OPTIONS, the agent's own list: a model is
+ *  a name, a line and a group, because the protocol carries no price, context
+ *  size or provider. An agent that offers modes the older way has them here as
+ *  a `mode` option all the same. */
+export interface ConfigOption {
+  id: string;
+  name: string;
+  category: ConfigCategory;
+  type: "select" | "boolean";
+  value: ConfigValue;
+  choices: ConfigChoice[];
+}
+
+/** WHICH PICKER A KEPT CHOICE IS FOR: the three under the input, and never
+ *  `other`, which is not drawn. */
+export type PickerCategory = Exclude<ConfigCategory, "other">;
+
+/** THE THREE VIEWS OF A CHAT (*Chat*, `screens`), picked from the ⋯ at the
+ *  chat's top right. A LADDER, each adding to the one before and the tools
+ *  last: `plain`, the default, is the words alone — the thinking folded to
+ *  its one line and no tool calls; `thinking` writes the agent's thinking out
+ *  where it came, rather than folded, and still draws no tool calls; `tools`
+ *  adds each run of tool calls as ONE line that opens to them. None of them
+ *  draws a wall of tool calls. `CHAT_VIEWS` in `wire.js` is the list, in that
+ *  order. The thirteenth contracts edit; the fifteenth made it a ladder. */
+export type ChatView = "plain" | "thinking" | "tools";
+
+/** THE CHAT'S CHOICES, AS THE WORKSPACE KEEPS THEM — in `.biom/settings.json`,
+ *  beside the chats and never in git (*Chat*, `picker`: *the choices are
+ *  kept*). `view` is the view last picked. `agent` is the agent last picked —
+ *  a chat made with it or switched to it — or null before any. `agents` is
+ *  each agent's last model, mode and effort, by its key and the picker's
+ *  category, as the value the agent's own list offered.
+ *
+ *  THE SERVER KEEPS THEM WHEN THE CHOICE IS MADE — `chat.new`,
+ *  `chat.switchAgent` and `chat.config` — so they hold whichever window made
+ *  it, and across a restart. A new chat with an agent starts on that agent's
+ *  kept values that its list still offers; one it no longer offers is skipped
+ *  without a word. The thirteenth contracts edit. */
+export interface ChatSettings {
+  view: ChatView;
+  agent: AgentKey | null;
+  agents: Record<AgentKey, Partial<Record<PickerCategory, ConfigValue>>>;
+}
+
+/** ONE LINE OF THE / MENU. `agent` is what the agent listed in
+ *  `available_commands_update` — built-ins, custom commands, prompts and the
+ *  skills it loaded — and goes out as the agent's own; `skill` is a workspace
+ *  skill the agent did not list, and `skill` names its `SKILL.md`. `hint` is
+ *  what may follow the name. */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  hint: string | null;
+  source: "agent" | "skill";
+  skill: string | null;
+}
+
+/** A CHAT'S LIGHT: `working`, amber and pulsing while a turn runs; `done`,
+ *  green for ten minutes after a turn ends on `end_turn`; `error`, red when it
+ *  stopped on anything red, and it STAYS red until the chat's next turn starts
+ *  (the owner's decision of 2026-09-26, as the mockup has it); `none`
+ *  otherwise. The server keeps it and says when it changes, so every window
+ *  shows the same light. There is no waiting: ACP has no state for an agent
+ *  waiting on the person, so neither does the light. */
+export type ChatLight = "working" | "done" | "error" | "none";
+
+/** Where a chat's latest message is. `held`: waiting for an agent to become
+ *  Active. `starting`: the agent is starting and its session opening — the
+ *  dot-matrix loader. `running`: a turn is in flight, and the input's button
+ *  is Stop while nothing is typed. `idle`: nothing is. A message sent in any
+ *  phase but `idle` waits in the chat's queue. */
+export type TurnPhase = "idle" | "held" | "starting" | "running";
+
+/** How a turn ended: ACP's stop reasons, and `crashed` for an agent that died
+ *  in the middle, which ACP cannot say because the agent is gone. `end_turn`
+ *  is green; `cancelled` is Stop and no light; the rest are red and say which. */
+export type TurnEnd = "end_turn" | "cancelled" | "refusal" | "max_tokens" | "max_turn_requests" | "crashed";
+
+/** ONE OF JEV'S FACES: an emoji off the fixed list, and where its animated
+ *  rendering is served from — a path under `/vendor/`, vendored with its
+ *  licence and never fetched while the app runs — or null where the list has
+ *  no animation for it and the emoji is drawn as text. */
+export interface Face {
+  emoji: string;
+  art: string | null;
+}
+
+/** ACP's tool kinds, as the line draws them. */
+export type ToolKind = "read" | "edit" | "delete" | "move" | "search" | "execute" | "think" | "fetch" | "switch_mode" | "other";
+
+/** A tool call's status, pending to completed or failed. */
+export type ToolStatus = "pending" | "in_progress" | "completed" | "failed";
+
+/** One file a tool call changed, as the agent reported it. `old` is null for
+ *  a file that is new. */
+export interface ToolDiff {
+  path: string;
+  old: string | null;
+  new: string;
+}
+
+/** A place a tool call names, as the line shows it: a path — vault-relative
+ *  where it is inside the vault — and the line, where the agent gave one. */
+export interface ToolLocation {
+  path: string;
+  line: number | null;
+}
+
+/** ONE ACTION LINE, WHOLE. ACP sends a tool call and then updates carrying
+ *  only what changed; the server merges them and relays the line's whole
+ *  current state each time, so the look replaces a line by `id` and never
+ *  merges — and the log Biom keeps MAY COMPACT a line's superseded states to
+ *  its last, since each carries the whole. `output` is its text and `diffs`
+ *  its changes, each bounded, and `truncated` says something was cut. None of
+ *  it moves the screen: a completed edit is recorded in the history, and
+ *  moving is the switcher's. */
+export interface ToolLine {
+  id: string;
+  title: string;
+  kind: ToolKind;
+  status: ToolStatus;
+  locations: ToolLocation[];
+  diffs: ToolDiff[];
+  output: string;
+  truncated: boolean;
+}
+
+/** ONE FILE A TURN CHANGED, as the chat says at the turn's end: its path,
+ *  vault-relative; the screen that shows it, or null; what happened to it; and
+ *  lines added and removed where the diff says. Kept in the chat's own log, so
+ *  *the pages the turn changed* reads the same after the history — which lives
+ *  in memory — is gone. */
+export interface ChangedFile {
+  path: string;
+  place: Place | null;
+  op: "created" | "edited" | "deleted" | "moved";
+  added?: number;
+  removed?: number;
+}
+
+/** One entry of an agent's plan, which ACP streams and nothing draws yet. */
+export interface PlanEntry {
+  content: string;
+  priority: "high" | "medium" | "low";
+  status: "pending" | "in_progress" | "completed";
+}
+
+/** ONE CHAT, AS THE LIST AND EVERY SCREEN SHOWS IT. `agent` and `harness` are
+ *  the agent the chat is with now — both null while a first message is held
+ *  with no agent picked, until one is Active; `agentId` the one running for
+ *  it, or null when none is. `page` is the page it was started beside by
+ *  **Edit**, as a place — by `uid`, so a page renamed since still resolves.
+ *  `turn` counts the person's messages. `stop` and `reason` are the last
+ *  turn's end and, where it was red, what happened in words. `face` is the
+ *  emoji Jev picked once for the name. The config options are NOT here: they
+ *  ride the stream's `config` update, sent when they change. Times are the
+ *  server's, in ms.
+ *
+ *  `queued` is how many of the person's messages wait in the chat's queue, and
+ *  `queueHeld` whether the queue waits for the person rather than for the turn
+ *  (the thirteenth edit): a queue goes out by itself, one message a turn, after a
+ *  turn that ends `end_turn`; after Stop, a red end or a restart it is held,
+ *  and goes out only when the person asks (`chat.sendQueued`). */
+export interface ChatSummary {
+  id: ChatId;
+  name: string;
+  face: Face | null;
+  agent: AgentKey | null;
+  harness: string | null;
+  agentId: AgentId | null;
+  page: Place | null;
+  phase: TurnPhase;
+  turn: number;
+  light: ChatLight;
+  stop: TurnEnd | null;
+  reason: string | null;
+  created: number;
+  updated: number;
+  queued: number;
+  queueHeld: boolean;
+}
+
+/** ONE UPDATE IN A CHAT'S STREAM, IN BIOM'S SHAPE — what the look draws and
+ *  what Biom keeps, as it arrived. `seq` counts from 1 per chat; `at` is the
+ *  server's clock; `turn` is the person's message it belongs to, counted from
+ *  1, and 0 before the first.
+ *
+ *  `prompt` is the person's message. `reply` and `thought` are chunks of the
+ *  agent's words and its thinking, appended in order; the thinking is drawn
+ *  folded. `tool` is an action line, whole. `turn` is the turn's phase moving,
+ *  and its end with the stop reason. `face` is Jev's status for this turn's
+ *  message, flipping as it changes and the last one staying; `name` is the
+ *  chat named, with its emoji once Jev has picked one. `agent` is an agent
+ *  starting in the chat — a new id on every switch. `changed` is the files the
+ *  turn changed, said once at its end and kept. `config` is the session's
+ *  config options, sent whenever they change — the pickers read the last one.
+ *  `commands` is the / menu MERGED: the agent's own commands and every
+ *  workspace skill it did not list. `usage` and `plan` are what the agent last
+ *  said of each. `error` is a sentence of Biom's own; an agent's stderr is
+ *  never relayed raw. A `tool` update carries the line whole, so the kept log
+ *  may drop a line's superseded updates for its last.
+ *
+ *  `queued` is a message of the person's put in the chat's queue because a
+ *  turn was running, by an id the server minted; `unqueued` is one leaving it —
+ *  `sent` when it went out as the next turn's `prompt`, which follows it, and
+ *  not when the person removed it. The queue is those two read in order; the
+ *  thirteenth edit. */
+export type ChatUpdate = { seq: number; at: number; turn: number } & (
+  | { kind: "prompt"; text: string }
+  | { kind: "reply"; text: string }
+  | { kind: "thought"; text: string }
+  | { kind: "tool"; tool: ToolLine }
+  | { kind: "turn"; phase: TurnPhase; stop: TurnEnd | null; reason: string | null }
+  | { kind: "face"; face: Face }
+  | { kind: "name"; name: string; face: Face | null }
+  | { kind: "agent"; agentId: AgentId; agent: AgentKey; harness: string }
+  | { kind: "changed"; edits: ChangedFile[] }
+  | { kind: "config"; options: ConfigOption[] }
+  | { kind: "commands"; commands: SlashCommand[] }
+  | { kind: "usage"; used: number; size: number; cost: { amount: number; currency: string } | null }
+  | { kind: "plan"; entries: PlanEntry[] }
+  | { kind: "error"; message: string }
+  | { kind: "queued"; id: string; text: string }
+  | { kind: "unqueued"; id: string; sent: boolean }
+);
+
+/** WHAT `chat.send` ANSWERS: the chat as it now stands, and — where the
+ *  message waits in the chat's queue because a turn was running — its id and
+ *  its place in the queue, 1 being next. Null where it went out, or is held
+ *  for an agent to be ready. The thirteenth edit; before it `chat.send` answered
+ *  the summary alone. */
+export interface ChatSent {
+  chat: ChatSummary;
+  queued: { id: string; place: number } | null;
+}
+
+/** What `chat.read` answers: the chat, and its stream after `since`. */
+export interface ChatRead {
+  chat: ChatSummary;
+  updates: ChatUpdate[];
+}
+
+/** ONE `chat` EVENT ON THE STREAM: the chat as it now stands and what it
+ *  streamed since the last event, batched. The summary is always there, so a
+ *  light changing on a chat nobody has open is an event with no updates.
+ *
+ *  `deleted` says the chat is gone (`chat.delete`, the thirteenth edit): the
+ *  summary is as it last stood, there are no updates, and every window drops
+ *  it from its list — one that had it open goes to the start screen. Absent
+ *  on every other push. */
+export interface ChatPush {
+  chat: ChatSummary;
+  updates: ChatUpdate[];
+  deleted?: boolean;
+}
+
+/** A page as the look names it: where it is now, and what it is called. */
+export interface PageName {
+  id: PageId;
+  name: string;
+}
+
+/** Where Biom's own input box sits over the look's box — centred on the start
+ *  screen, at the foot in a chat — and how tall it is, so a look someone else
+ *  wrote leaves it room. */
+export interface LookInput {
+  at: "center" | "bottom";
+  height: number;
+}
+
+/** EVERYTHING THE AGENT SCREEN'S LOOK DRAWS, handed to it whole as
+ *  `look.state`. `mode` is where it is drawn — the Agent screen, or the panel
+ *  beside a page. `chat` is the open chat or null for the start screen, and
+ *  `updates` its stream so far — the pages a turn changed are its `changed`
+ *  updates. `list` is whether the list of chats is open and `chats` that list.
+ *  `names` is every page the look's places name, by `uid`, as it is now called
+ *  and where it now is: the look cannot resolve a `uid` itself, and a page it
+ *  names it opens through `open`. `beside` is the page the panel sits beside,
+ *  or the one the Agent screen would minimise to. `view` is which of a chat's
+ *  three views the person picked (the thirteenth edit): the look draws the chat
+ *  that way, and a look that draws fewer views draws the nearest it has. A
+ *  look that offers the views says the one picked with `look.view`, and draws
+ *  it when `view` comes back — the fifteenth edit. */
+export interface LookState {
+  mode: "screen" | "panel";
+  chat: ChatId | null;
+  list: boolean;
+  chats: ChatSummary[];
+  updates: ChatUpdate[];
+  names: Record<string, PageName>;
+  input: LookInput;
+  beside: PageName | null;
+  view: ChatView;
+}
+
+/** WHAT CHANGED ON DISK, BY NAME — the `change` event's data since the twelfth
+ *  contracts edit (the workspace's *Loading at scale* spec, 2026-09-28).
+ *  `pages` are the pages whose own files changed: a window redraws its open
+ *  page only when it is one of them. `levels` are the pages whose CHILDREN
+ *  changed — a page arrived, left, moved or was renamed beneath them — and a
+ *  window re-lists only those of its tree's levels it holds. IDS ONLY, NEVER
+ *  CONTENT: every word is still read from the server, so this names which
+ *  reads to repeat and cannot become a second description of the workspace. It
+ *  replaced a bare `1`, which made every window reread the open page and the
+ *  whole tree on every write anywhere — seconds per write on two thousand
+ *  pages. */
+export interface ChangeEvent {
+  pages: PageId[];
+  levels: PageId[];
+  /** TOO MUCH CHANGED TO NAME, OR THE SERVER COULD NOT SAY WHAT: a burst past
+   *  the names' bound (a checkout, a folder of a thousand pages copied in), a
+   *  data text from before this edit. The window rereads its open page and
+   *  every level it holds, which is still bounded by what is on its screen. */
+  all?: boolean;
+}
+
+/** THE NAMED EVENTS ON A WORKSPACE'S ONE STREAM, `GET /v/<vault>/events`, and
+ *  what each carries. `change` names the pages and levels that changed (the
+ *  twelfth edit — it was a bare `1` saying *reread*); `run` is a bare `1` as it
+ *  always was. The eleventh edit added three that carry JSON, because a
+ *  history entry, a chat's words and an agent signing in are not on disk to
+ *  be reread: `history` is the entries just appended; `chat` one chat's
+ *  push; `agents` the whole list of what this machine has, whenever any of
+ *  it changes. The names are `STREAM` in `wire.js`. None of it is a wire
+ *  kind: a box never opens the stream and never learns it exists. */
+export type StreamEvent =
+  | { event: "change"; data: ChangeEvent }
+  | { event: "run"; data: 1 }
+  | { event: "history"; data: HistoryEntry[] }
+  | { event: "chat"; data: ChatPush }
+  | { event: "agents"; data: AgentInfo[] };
+
 /* ── the wire: what an artifact may say ────────────────────────────────── */
 
 /** The protocol major. Its runtime value lives in `wire.js`; an unknown major
@@ -782,6 +1412,27 @@ export type Protocol = 1;
 export interface Envelope {
   id: string;
   g: Protocol;
+  /** WHICH WINDOW ASKED, so the server can stamp the person's writes as theirs.
+   *  The ELEVENTH contracts edit, taken with the chat and the history on
+   *  2026-09-25.
+   *
+   *  IT IS THE TRANSPORT'S TO WRITE AND NOBODY ELSE'S. `client/transport/
+   *  http.js` writes this window's id over whatever a request carried, on every
+   *  call — the rule `run.start`'s `by` already follows: provenance a box could
+   *  claim is overwritten with the truth rather than refused, and the bridge
+   *  rebuilds every request it forwards field by field, so a box's own
+   *  `window` never reaches the transport at all. It is not a capability: it
+   *  names the window whose screen or box made the write. That is not always a
+   *  person typing — a page's own code may write with nobody at the keys — and
+   *  it is still recorded as that window's, `you` by `app`, because the history
+   *  names who a write came from and never guesses what they meant by it.
+   *
+   *  OPTIONAL, which is what keeps every caller that predates it valid: a
+   *  request with none is a write nobody in a window made — a test, a tool —
+   *  and is recorded as nobody's rather than guessed. Answers never carry it.
+   *  The grammar is `OPAQUE_ID` in `wire.js`, and a malformed one is refused
+   *  by every guard, because a type is not a parse. */
+  window?: WindowId;
 }
 
 /** The framework grants unrestricted access, so this union is generous. It stays
@@ -794,6 +1445,9 @@ export type HostRequest = Envelope &
     | { kind: "data.get" }
     | { kind: "data.set"; patch: VarPatch }
     | { kind: "doc.get"; page: PageId }
+    /** EVERY PAGE, for a box that asks for every page — the Map does. Answered
+     *  from the server's index of page heads, never by parsing every page
+     *  (the twelfth edit); no screen of the framework's own asks it. */
     | { kind: "doc.list" }
     /** Layer one, reachable from an artifact: what this page holds. A page that
      *  wants to draw its own children its own way asks for this and draws it,
@@ -923,6 +1577,63 @@ export type HostRequest = Envelope &
      *  enforces by sending none, or `screen` from the workspace's own
      *  overview and Runs screen, which say so. */
     | { kind: "run.kill"; run: string; by?: "page" | "screen" }
+    /** THE AGENT SCREEN'S LOOK MOVING THE SCREEN, and the ELEVENTH edit's four
+     *  inner-ring kinds. The look — the start screen, the chat, the list of
+     *  chats — is a plugin a workspace can replace, drawn in a box on
+     *  `AGENT_PAGE`, so what it may ask for is decided here and nowhere else.
+     *
+     *  IT MAY ASK TO BE SHOWN SOMETHING. IT MAY NEVER SAY ANYTHING TO A
+     *  CHAT'S AGENT. Every one of these names a chat, a list or a place and
+     *  carries no text — the guard is STRICT, and a field it does not name is
+     *  refused: the input box is Biom's, in the host, outside the box, so only
+     *  the person's typing reaches a chat's agent, which is allowed everything.
+     *  `chat.*` and `agents.*` are the outer ring's alone, and a test pins that
+     *  none of them is ever admitted by `isHostRequest` or `isRuntimeRequest`.
+     *  (`run.start` is the one inner kind that starts an agent at all, and it is
+     *  a different thing: an automation, whose command and kickoff are files in
+     *  the vault, started with a form's inputs — never a page's words put in
+     *  front of a chat's agent.)
+     *
+     *  THE PANEL'S HEAD IS THE LOOK'S: its history dropdown, expand and close
+     *  are drawn in the box and said with `look.list` and `look.panel`.
+     *
+     *  THEY ARE REQUESTS AND NOT GUARANTEES, like `open`: the host decides, and
+     *  answers a box that is not the look's with a refusal, because one box is
+     *  one page and the bridge knows which. A page opened from the look goes
+     *  through `open`, which already exists. Each answers null. */
+    /** Open this chat: on the Agent screen, or in the panel where the look is
+     *  drawn in it. */
+    | { kind: "look.open"; chat: ChatId }
+    /** A new thread: the start screen, with nothing typed. */
+    | { kind: "look.new" }
+    /** Show or hide the list of chats — beside the chat on the Agent screen,
+     *  a dropdown in the panel. */
+    | { kind: "look.list"; open: boolean }
+    /** Where the chat goes: `screen`, the panel maximised to the whole Agent
+     *  screen; `beside`, the Agent screen minimised to the panel beside the last
+     *  page the history shows; `closed`, the panel shut. */
+    | { kind: "look.panel"; to: "screen" | "beside" | "closed" }
+    /** ASK FOR A CHAT TO BE DELETED — its row's three dots, then Delete. The
+     *  thirteenth edit. The look deletes nothing: Biom answers with a dialog of
+     *  its own, *Delete this chat? It can't be undone.*, and only the person's
+     *  Delete there says `chat.delete`, which no box can say. So a look that
+     *  asks this unprompted, or on a loop, raises a question and never
+     *  deletes. */
+    | { kind: "look.delete"; chat: ChatId }
+    /** TAKE ONE MESSAGE OUT OF A CHAT'S QUEUE — the × on a *Queued* message,
+     *  by the chat and `queued`, the id the server minted for the message
+     *  (never `id`, which is the envelope's own). The thirteenth edit. It
+     *  removes words the person wrote and sends none: the look never says
+     *  anything to an agent. */
+    | { kind: "look.unqueue"; chat: ChatId; queued: string }
+    /** SHOW THE CHAT ANOTHER WAY — one of the three views, picked from the ⋯
+     *  at the chat's top right. The fifteenth edit. The host keeps it for the
+     *  workspace, as `settings.set` does, and posts it back as `view` in
+     *  `look.patch`; the look draws it when it arrives and never ahead of
+     *  the answer, so the host is the one statement of which view is shown.
+     *  It is the one `look.*` kind that changes something kept, and a box
+     *  may say it because it sends nothing to an agent and deletes nothing. */
+    | { kind: "look.view"; view: ChatView }
   );
 
 /** What `page.embed` answers. `embed` names the session for the notice that
@@ -1011,7 +1722,26 @@ export type HostEvent =
    *  was still settling — never on a loop. It is sent only across a redraw the
    *  shell asked for (`FrameHost.keep`), so a page opened afresh starts at the
    *  top as it always did. */
-  | { kind: "place"; top: number };
+  | { kind: "place"; top: number }
+  /** EVERYTHING THE AGENT SCREEN'S LOOK DRAWS, AT ONCE. Posted to the one box
+   *  on `AGENT_PAGE` and to no other — never broadcast — when that box says
+   *  `ready`, and again whenever what it shows changes shape: another chat
+   *  opened, the list opened or shut, the panel maximised. The look draws
+   *  from this and from the patches after it and asks the host for nothing
+   *  but its `look.*` kinds and `open`; the box cannot fetch, so everything
+   *  it needs arrives here. The eleventh edit. */
+  | { kind: "look.state"; state: LookState }
+  /** WHAT MOVED SINCE, BATCHED. The host coalesces the stream — a reply
+   *  arrives a few characters at a time — into one patch per frame at most.
+   *  `updates` are the open chat's and append to what the look holds, and
+   *  only when `chat` is the chat it holds; `chats` and `names` replace what
+   *  the look holds whole, because a light or a name moving on a chat in the
+   *  background is a new list rather than a diff anybody should apply; `input`
+   *  and `beside` replace theirs when the input box moves or grows and when the
+   *  page the panel sits beside changes; `view` replaces the view when the
+   *  person picks another — from the look's own `look.view` or anywhere
+   *  else the workspace's kept view moves. */
+  | { kind: "look.patch"; chat: ChatId | null; updates?: ChatUpdate[]; chats?: ChatSummary[]; names?: Record<string, PageName>; input?: LookInput; beside?: PageName | null; view?: ChatView };
 
 /** guest → host, unprompted. A null-origin frame's DOM cannot be read by the
  *  host, so everything the host needs to know arrives here.
@@ -1055,7 +1785,25 @@ export type GuestNotice =
    *  viewport and nothing about its content: a height is still never reported,
    *  and the clamp to the new run happens in the box, which is the only side
    *  that can measure it. */
-  | { kind: "position"; g: number; top: number };
+  | { kind: "position"; g: number; top: number }
+  /** THE PERSON TOUCHED THE PAGE: a click, a key, a selection or a scroll,
+   *  and nothing about where or what. The eleventh edit, for the switcher of
+   *  the *History and View Switcher* spec — a screen is the person's once
+   *  they touch it, and a touch in the last two minutes keeps an agent from
+   *  taking the screen — and the host cannot see a touch inside a box any
+   *  more than it can see a height.
+   *
+   *  THROTTLED IN THE BOX, at most one of each `what` a second, because a
+   *  scroll is sixty events a second and the switcher wants only the latest.
+   *  A scroll the box made itself — putting the reader back after a redraw —
+   *  is not the person's and is not reported. It carries no coordinates, no
+   *  key and no text: the switcher needs to know THAT the person was here,
+   *  and a keystroke's identity crossing the wall would be a keylogger. */
+  | { kind: "touch"; g: number; what: TouchKind };
+
+/** What a touch was. Typing into a chat's input is not one of them — that is
+ *  talking to the agent, and it happens in the host, not in a box. */
+export type TouchKind = "click" | "key" | "select" | "scroll";
 
 /* ── the wire: what the SECTION RUNTIME may say ────────────────────────── */
 
@@ -1151,6 +1899,11 @@ export type ApiRequest =
   | RuntimeRequest
   | (Envelope &
       (
+        /** EVERY PAGE. Answered from the server's index of page heads, never
+         *  by parsing every page, and asked by no screen of the framework's
+         *  own since the twelfth edit: the tree lists a level at a time with
+         *  `children`, and anything else is `page.locate` or `page.search`.
+         *  Kept for agents, runs and tools that want the whole list. */
         | { kind: "page.list" }
         /** EVERY PAGE'S CHILDREN IN ONE ANSWER, root included, keyed by page
          *  id — what the workspace UI reads to draw the tree. Layer one for the
@@ -1160,7 +1913,10 @@ export type ApiRequest =
          *  on and nothing wider; the tree is the shell's. The NINTH contracts
          *  edit, and the reason is in the store: one request per page was a
          *  throwaway instrument's cost until a workspace of eighteen hundred
-         *  pages met a browser that refuses that many at once. */
+         *  pages met a browser that refuses that many at once. SINCE THE
+         *  TWELFTH EDIT the tree reads a level at a time instead, and nothing
+         *  of the framework's asks this; it is answered from the index and
+         *  kept for callers outside the window, to go at a later barrier. */
         | { kind: "children.all" }
         | { kind: "page.create"; init: PageInit }
         | { kind: "page.remove"; page: PageId }
@@ -1279,7 +2035,220 @@ export type ApiRequest =
          *  which a development server can do and a compiled one cannot. */
         | { kind: "page.share"; page: PageId; html?: string }
 
-      ));
+      ))
+  /** The agents on this machine and the chats with them, and the history and
+   *  what each window has open — the eleventh edit's outer-ring kinds, each
+   *  union with its own guard below. */
+  | ChatRequest
+  | HistoryRequest
+  /** Pages a window has not loaded, by name — the twelfth edit. */
+  | PageRequest;
+
+/** THE AGENTS AND THE CHATS, and every one of them is OUTER RING. The eleventh
+ *  contracts edit, taken at its own barrier on 2026-09-25 for the workspace's
+ *  *Chat* spec.
+ *
+ *  NOTHING HERE MAY EVER REACH A BOX, and that is the one rule of this union.
+ *  A chat's agent is a program allowed everything on this machine — its tools,
+ *  its shell, the person's login — so whatever can put words in front of one
+ *  can do anything the person can. The input box is Biom's and lives in the
+ *  host; these kinds are what it says, and `isChatRequest` narrows them at the
+ *  server. `isHostRequest` and `isRuntimeRequest` refuse every one, and a test
+ *  holds that for every kind in this union and for any kind whose name starts
+ *  `chat.` or `agents.` that anybody adds later. (`run.start` is the existing
+ *  exception to *no box reaches an agent*, and it is a different thing: a page
+ *  may start an AUTOMATION, whose command and kickoff are files in the vault,
+ *  with inputs typed into a form — it cannot put its own words in front of a
+ *  chat's agent, which is what this union guards.)
+ *
+ *  AND NOTHING HERE ANSWERS ANYBODY BUT THIS MACHINE'S OWN WINDOW, IN EVERY
+ *  BUILD. The launch token guards the API route only in the built application;
+ *  a source run has none, the server listens on every interface, and in a
+ *  source run a box's `fetch` is made by the server itself — from a loopback
+ *  peer, with any Host and Origin the page likes. So every kind in this union,
+ *  and `window.report`, is answered only to a request carrying the capability
+ *  cookie the server minted for a loopback peer (`HttpOnly`, `SameSite=Strict`,
+ *  set on the document it composes) with a loopback Host on its own port:
+ *  `isLocalKind` in `guards.js` names them, `localRefusal` in `server/main.ts`
+ *  is the check, and a refusal is `identity` with a sentence naming no check.
+ *  The proxy drops any cookie a page hands it and every `set-cookie` it is
+ *  answered with, so no page can present it. The live stream, which carries
+ *  these chats, takes the token and the cookie too.
+ *
+ *  NO CALL WAITS ON AN AGENT. Starting one, probing it, installing it and
+ *  signing it in can take a minute; a turn can take an hour. So each of these
+ *  answers with the state as it now stands and the rest arrives on the
+ *  stream — `agents` for what this machine has, `chat` for each chat — which
+ *  is also what every other window watching the same workspace hears. */
+export type ChatRequest = Envelope &
+  (
+    /** WHAT THIS MACHINE HAS: every agent Biom knows that is on the login
+     *  shell's `PATH`, every agent Biom installed, and OpenClaw where its
+     *  command is there — each Active or Inactive and why. Answers at once
+     *  with what is known; a probe still in flight is `checking`, and its
+     *  verdict arrives as an `agents` event. */
+    | { kind: "agents.list" }
+    /** Look again at one agent — after its sign-in pop-up closes, or when the
+     *  person asks. Starts it, `initialize`, `session/new`, and ends it. */
+    | { kind: "agents.probe"; agent: AgentKey }
+    /** THE ACP REGISTRY, read from the network: every agent any ACP client can
+     *  install, with what this machine lacks to run each. */
+    | { kind: "agents.registry" }
+    /** **START GATEWAY**: the one button an inactive OpenClaw carries. Starts
+     *  its Gateway on this machine — never another's — and answers the agent
+     *  as `checking`; the probe after it says whether it is Active. */
+    | { kind: "agents.start"; agent: AgentKey }
+    /** PUT ONE ON THIS MACHINE, into Biom's own folder, at the registry's
+     *  pinned version. Answers the agent as `installing`; the stream says when
+     *  it is done and whether it is Active. */
+    | { kind: "agents.install"; agent: AgentKey }
+    /** SIGN IN WITH ONE OF THE AGENT'S OWN METHODS. An `agent` method is
+     *  `authenticate`, which the agent carries out — usually in the browser —
+     *  and whose verdict is the probe after it, never its own answer. A
+     *  `terminal` method answers what the pop-up terminal runs; see `SignIn`.
+     *  Asked for only when an agent refused a session or a message, because
+     *  `authenticate` on an agent already signed in can sign it out. */
+    | { kind: "agents.signIn"; agent: AgentKey; method: string }
+    /** A NEW CHAT, and optionally its first message and the page it was
+     *  started beside — **Edit** types the page's location into the input and
+     *  names the page here, which the server keeps by its `uid`. `config` is
+     *  what the start screen's pickers were set to, by option id, applied
+     *  before the first message.
+     *
+     *  A FIRST MESSAGE WITH NO AGENT READY IS HELD (*Chat*, `picker`), and
+     *  goes out the moment an agent is Active. `agent` names the one the
+     *  person picked; with none Active and none picked it is left out, the
+     *  chat's `agent` and `harness` are null while it is held, and the first
+     *  agent to become Active takes it. */
+    | { kind: "chat.new"; agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue> }
+    /** Every chat in this workspace, newest first — the history of chats. */
+    | { kind: "chat.list" }
+    /** ONE CHAT AS BIOM KEPT IT: the update stream as it arrived, from `since`
+     *  (a `seq`, exclusive) or from the start. Biom's own copy, beside the
+     *  workspace and never in git, so a chat reads the same whether or not its
+     *  agent can reload it. */
+    | { kind: "chat.read"; chat: ChatId; since?: number }
+    /** THE PERSON'S MESSAGE, answered as a `ChatSent`. One at a time: sent
+     *  while a turn runs, it WAITS IN THE CHAT'S QUEUE (the thirteenth edit; it
+     *  was refused `limit` before), and the answer says its place. ACP has no
+     *  queue, so the queue is Biom's, kept with the chat. A `/name` naming a
+     *  workspace skill the agent did not list goes out with a pointer to its
+     *  `SKILL.md`, added by the server. */
+    | { kind: "chat.send"; chat: ChatId; text: string }
+    /** SEND THE HELD QUEUE — **Send queued**. A queue held after Stop, a red
+     *  end or a restart goes out again: its next message now, if no turn runs,
+     *  and one a turn after that. The thirteenth edit. */
+    | { kind: "chat.sendQueued"; chat: ChatId }
+    /** TAKE ONE MESSAGE OUT OF THE QUEUE, by `queued`, the id the server
+     *  minted for it — never `id`, which is the envelope's own. The thirteenth
+     *  edit. */
+    | { kind: "chat.unqueue"; chat: ChatId; queued: string }
+    /** STOP: `session/cancel`. The turn ends `cancelled`. */
+    | { kind: "chat.cancel"; chat: ChatId }
+    /** SET ONE OF THE AGENT'S SESSION CONFIG OPTIONS — the model, mode and
+     *  effort pickers — by the option's own id, because a category is not
+     *  unique and `other` is a category. Mid-turn it applies from the next
+     *  message, which is all the protocol promises; with no agent running it is
+     *  kept and applied when one starts. */
+    | { kind: "chat.config"; chat: ChatId; option: string; value: ConfigValue }
+    /** ANOTHER AGENT IN THIS CHAT. A new agent is a new id, and its new
+     *  session is handed the chat so far. On a HELD chat nothing has started,
+     *  so it re-targets the held message and mints no id. */
+    | { kind: "chat.switchAgent"; chat: ChatId; agent: AgentKey }
+    /** END THE CHAT'S AGENT PROCESS. The chat and its log stay, and sending
+     *  to it again starts an agent, resuming where the agent can. */
+    | { kind: "chat.close"; chat: ChatId }
+    /** THE / MENU: the agent's own commands — this chat's session's, or the
+     *  probe session's before the chat has one — with every workspace skill
+     *  — `.agents/skills/<name>/SKILL.md` — the agent did not list, added once.
+     *  Neither named is the workspace's skills alone. */
+    | { kind: "chat.commands"; chat?: ChatId; agent?: AgentKey }
+    /** DELETE A CHAT FOR GOOD (*Chat*, `history`), said only after the person
+     *  pressed Delete in Biom's own dialog. Its turn is cancelled if one runs,
+     *  its agent ended as `chat.close` ends it, and Biom's copy of it removed;
+     *  where the agent offers `session/delete`, it is asked to delete its own
+     *  record of the session too, best effort and in the background. The kept
+     *  choices are left alone, and so is the history, which is history. Every
+     *  window hears it as a `chat` push saying `deleted`. The thirteenth edit. */
+    | { kind: "chat.delete"; chat: ChatId }
+    /** THE CHAT'S KEPT CHOICES, as `ChatSettings`. The thirteenth edit. */
+    | { kind: "settings.read" }
+    /** KEEP A CHOICE MADE IN THE HOST — the view, which the host keeps when
+     *  the look says `look.view` — and answer the choices as they now stand.
+     *  The agent, model, mode and effort are kept by the server as
+     *  `chat.new`, `chat.switchAgent` and `chat.config` make them, and are
+     *  not set here. The thirteenth edit. */
+    | { kind: "settings.set"; view?: ChatView }
+  );
+
+/** WHAT EACH WINDOW HAS OPEN, AND WHAT HAPPENED — the eleventh edit's other
+ *  outer-ring kinds, for the workspace's *History and View Switcher* spec.
+ *  Outer ring because a page's own code never reads the context: the chat
+ *  panel, the switcher and everything around them are the framework's, and
+ *  the box is told only its own page. `isHistoryRequest` narrows them.
+ *  `window.report` answers only this machine's own window, as the chat kinds
+ *  do; `window.list` and `history.read` are reads a run may make and stay on
+ *  the launch token. */
+export type HistoryRequest = Envelope &
+  (
+    /** THIS WINDOW'S CONTEXT, reported whenever it changes, with the window
+     *  named by the envelope — which is why a report with no `window` is
+     *  refused. `moved` says the screen moved and who moved it: the person,
+     *  which appends an open and a view; or the switcher following an agent,
+     *  which appends a view under that agent. A report without it — the panel
+     *  shut, another chat in it — changes the context and appends nothing.
+     *  `claim` says the screen became the person's without an open — touched,
+     *  or kept on screen five minutes — and appends a view by the person. The
+     *  context's `agent` is the server's to derive from its `chat`: whatever
+     *  the window sent there is ignored. Answers the entries it appended, so
+     *  the window need not wait for the stream to know them. */
+    | { kind: "window.report"; context: WindowReport; moved?: Move }
+    /** EVERY WINDOW'S CONTEXT on this workspace, so an agent or a run can ask
+     *  what the person has open and which chat is on screen without guessing. */
+    | { kind: "window.list" }
+    /** THE HISTORY FROM `since` (a `seq`, exclusive), or all the server still
+     *  holds. It lives in memory and is gone when the server stops. */
+    | { kind: "history.read"; since?: number }
+  );
+
+/* ── pages a window has not loaded: the twelfth contracts edit ────────────── */
+
+/** PAGES THE WINDOW HAS NOT LOADED — the twelfth contracts edit, taken at its
+ *  own barrier on 2026-09-28 for the workspace's *Loading at scale* spec: a
+ *  workspace of two thousand pages. The window no longer holds every page: it
+ *  lists the tree a level at a time (`children`), and asks for anything else
+ *  it needs BY NAME. Both are answered from the server's persisted index of
+ *  page heads — the first few kilobytes of each document, checked against a
+ *  stat before they are trusted — and never by parsing every page. Outer ring:
+ *  a box asks about its own page and nothing wider. Reads, so they stay on the
+ *  launch token and are not local-gated: a run may ask them. `isPageRequest`
+ *  narrows them. */
+export type PageRequest = Envelope &
+  (
+    /** THESE PAGES, BY ID OR BY IDENTITY: at most `LOCATE_MAX` of each. The
+     *  answer is the refs found, in no promised order; a page that is not
+     *  there is ABSENT, never an error, because a history entry naming a page
+     *  since deleted is ordinary. A `uid` the index has never seen — a folder
+     *  moved in a file manager, say — waits for the background sweep, bounded
+     *  at two seconds, and is then found or absent. What the switcher, the
+     *  look and the history ask when they hold a `uid` the window has not
+     *  listed. */
+    | { kind: "page.locate"; ids?: PageId[]; uids?: string[] }
+    /** PAGES BY NAME, ranked — a name that starts with the query, then one that
+     *  contains it, then an id that does — at most `limit` (at most
+     *  `SEARCH_MAX`). Answers a `PageSearch`. The rail's finder and a table's
+     *  page picker ask it, so no window holds every name to search them. */
+    | { kind: "page.search"; query: string; limit?: number }
+  );
+
+/** What `page.search` answers. `more` says there were hits past the limit.
+ *  `complete` is false until the server's first sweep of the workspace since
+ *  it opened has finished, so a finder can say the answer may grow. */
+export interface PageSearch {
+  hits: PageRef[];
+  more: boolean;
+  complete: boolean;
+}
 
 /** One editable file a page or the vault offers its screens. `seeded` is true
  *  of a file the framework wrote and rewrites — a copy nobody should edit in
@@ -1622,6 +2591,12 @@ export interface Change {
 }
 
 export interface WorkspaceSnapshot {
+  /** THE PAGES THIS WINDOW KNOWS — the levels its tree has listed, the pages it
+   *  has read, and what it has located or searched — and NOT every page in
+   *  the workspace. The twelfth contracts edit changed the meaning and not the
+   *  type: a window of two thousand pages must not hold them all, so a reader
+   *  that wants a page it has not seen asks `page.locate`, and one that wants
+   *  a name asks `page.search`. */
   pages: PageRef[];
   tables: TableRef[];
   theme: Theme;
@@ -1733,8 +2708,15 @@ export interface WorkspaceStore {
 
 /** `map` is the rail's own map of the whole workspace, mounted on `MAP_PAGE`
  *  and drawn by the shipped `mindmap` plugin. It is a screen of the workspace
- *  like `design`, and it is the one addition this union has taken since. */
-export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map" | "runs" | "instructions";
+ *  like `design`.
+ *
+ *  `agent` is the Agent screen — the start screen, a chat, the list of chats —
+ *  and it joined with the eleventh edit. `theme` LEFT with it: there is no
+ *  Theme screen and there is not going to be one, the shell's route vocabulary
+ *  had not held it for a long time, and a member the vocabulary cannot reach
+ *  is a door any caller can open. The runtime list is `VIEW_NAMES` in
+ *  `contracts/address.js`, typed so that the two cannot differ. */
+export type ViewName = "page" | "table" | "vault" | "design" | "map" | "runs" | "instructions" | "agent";
 
 /** THE FIFTH CONTRACTS EDIT, taken at its own barrier on 2026-09-17, was a
  *  removal: `pageView` and `panel` left this state, and `readDocRaw` and
@@ -1743,12 +2725,28 @@ export type ViewName = "page" | "table" | "theme" | "vault" | "design" | "map" |
  *  a method nothing calls is a promise the store need not keep. The `doc.raw`
  *  and `doc.writeRaw` wire kinds stayed — the API is not a screen. */
 export interface UiState {
-  route: { view: ViewName; id: string };
-  /** WHICH SCREEN THE CANVAS HOLDS FOR THE OPEN PAGE — the eighth edit put
-   *  it back, three members wide and in every build: `page` is the box;
-   *  `instructions` is one editor over the page's `INSTRUCTIONS.md`;
-   *  `automation` is the page's automations — manifest, files, runs. */
-  pageView: "page" | "instructions" | "automation";
+  /** WHERE THIS WINDOW IS — an `Address`, and the context's first field.
+   *
+   *  THE PAGE'S OWN SCREEN IS IN IT NOW. `pageView` used to sit beside the
+   *  route — the eighth edit put it back three members wide — so a reload
+   *  dropped a page's Instructions or Automations and Back could not reach
+   *  one. The eleventh edit folded it into the address as `screen`, because
+   *  every screen the person can be on has an address and the switcher routes
+   *  to addresses; one field, where there were two statements of one place. */
+  route: Address;
+  /** THE CHAT PANEL IS OPEN BESIDE THE PAGE. The eleventh edit: the context
+   *  is this store with the chat's fields added, not a second copy of it. */
+  panel: boolean;
+  /** THE CHAT THIS WINDOW HAS OPEN — on the Agent screen or in the panel —
+   *  or null for the start screen. Remembered for as long as the window is,
+   *  so leaving for a page and pressing Agent comes back to it; on the Agent
+   *  screen the address names it too, and `go` keeps the two equal. Which
+   *  agent is in it is the chat's own fact, read off the chat, never kept
+   *  here a second time. */
+  chat: ChatId | null;
+  /** THE LIST OF CHATS IS OPEN: beside the chat on the Agent screen, as a
+   *  dropdown in the panel. New thread opens it. */
+  chatList: boolean;
   inserting: number | null;
   dialog: boolean;
   /** Which page the New dialog will make something inside. Set by the plus on a
@@ -1788,7 +2786,10 @@ export interface UiStore {
   get(): UiState;
   on(fn: () => void): () => void;
   set(patch: Partial<UiState>): void;
-  go(view: ViewName, id: string): void;
+  /** Go somewhere. `screen` is a page's own screen and is ignored for every
+   *  other view; absent, it is the page itself. Going to `agent` sets `chat`
+   *  to the address's id, or null for the start screen. */
+  go(view: ViewName, id: string, screen?: PageScreen): void;
 }
 
 /** client/bridge/bridge.js — resolves one HostRequest and refuses everything

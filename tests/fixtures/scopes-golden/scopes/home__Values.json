@@ -1,0 +1,95 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "No page scope here, so {{who}} and {{rate}} stay as written.",
+            "vars": {}
+          },
+          "ctx": {},
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "bare",
+          "via": "slot"
+        }
+      ],
+      "name": "bare"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Count {{count}}, ratio {{ratio}}, lit {{lit}}, dim {{dim}}, none [{{none}}], mixed {{mixed}}.",
+            "vars": {
+              "count": 3,
+              "dim": false,
+              "lit": true,
+              "mixed": [
+                "one",
+                2,
+                null,
+                false
+              ],
+              "none": null,
+              "ratio": 0.25
+            }
+          },
+          "ctx": {
+            "count": 3,
+            "dim": false,
+            "lit": true,
+            "mixed": [
+              "one",
+              2,
+              null,
+              false
+            ],
+            "none": null,
+            "ratio": 0.25
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "typed",
+          "via": "slot"
+        }
+      ],
+      "name": "typed"
+    },
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Only the part has {{mine}}, and {{count}} is not in its scope.",
+            "vars": {
+              "mine": "its own"
+            }
+          },
+          "ctx": {
+            "mine": "its own"
+          },
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "partonly",
+          "via": "slot"
+        }
+      ],
+      "name": "partonly"
+    },
+    {
+      "markup": "4e534faeb500d9307dd7731eb999e683fad96f4be8b2e647bb61a41ce9a8b351",
+      "mounts": [],
+      "name": "nothing"
+    }
+  ]
+}

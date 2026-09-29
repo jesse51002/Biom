@@ -107,11 +107,22 @@ Scratch written here stays here — only what goes through `vault/` or the API i
 real. The process gets `BIOM_VAULT`, `BIOM_RUN` and `BIOM_API` in its
 environment, the names it asked for, and the floor every process needs (`PATH`,
 `HOME` and their kin) — nothing else of the server's. Rows go to the workspace's
-tables through the API at `BIOM_API`, never by opening `workspace.db`.
+tables through the API at `BIOM_API`, never by opening `workspace.db`. A page
+read's sections and parts carry their own variables; the page's are `variables`
+on the answer, and a value resolves nearest first — the part's, the section's,
+the page's.
 
 **`.biom/` is the framework's folder inside your workspace and it ignores
-itself**: the registry `runs.db` and every run directory are this machine's, and
-never in git.
+itself**: the registry `runs.db`, every run directory, each chat's own record
+of what was said in it (`chats/<id>.jsonl`, one record per line),
+`settings.json` — the chat's choices kept for the next chat: the agent last
+picked, each agent's last model, mode and effort, and the view — `pages.db`,
+the name and identity of every page, kept so a large workspace opens and lists
+without reading every page, and `format`, which says this build has already
+checked the workspace's format, are this machine's, and never in git. A
+`settings.json` that will not read is put aside as `settings.json.bad` and the
+defaults are used; `pages.db` is a cache, thrown away and built again whenever
+it cannot be used, and your pages stay the truth.
 
 ## What a row says
 

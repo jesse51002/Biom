@@ -22,8 +22,8 @@
 // depend on — nothing the server runs is a package. Bun runs this file as
 // written; tsc cannot see the module, so the import is suppressed and every
 // value that comes out of it is annotated by hand below.
-import { mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdir, open, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -105,6 +105,36 @@ function oneAtATime<T>(abs: string, run: () => Promise<T>): Promise<T> {
   tails.set(abs, tail);
   void tail.then(() => {
     if (tails.get(abs) === tail) tails.delete(abs);
+  });
+  return next;
+}
+
+/** ONE COMMIT AT A TIME PER REPOSITORY, whichever `Files` asks. A vault has
+ *  several — its own, the one identities write through, the one a chat's agent
+ *  writes through — and every commit is `git add -A` and then `git commit`,
+ *  each holding `.git/index.lock` while it runs: two at once over one
+ *  repository fail, and the one that loses is a warning and a lost commit.
+ *  Background work commits beside the person's own writes (identities given
+ *  after a sweep, the mirror's pass), so every commit over one root waits for
+ *  the one before it, in the order asked. Keyed by the root's real path, so two
+ *  spellings of one folder are one queue; a commit that fails does not hold up
+ *  the next. */
+const commitTails = new Map<string, Promise<void>>();
+
+/** The siblings `write` and `replace` fill before renaming them onto a path —
+ *  `.<name>.<eight hex>.tmp` — as a pathspec git leaves out of `add`. */
+const HALF_WRITTEN = ":(exclude,glob)**/.*.????????.tmp";
+/** What git says when a file its walk listed is gone before it could be read. */
+const VANISHED = /unable to stat|No such file or directory|unable to index file/i;
+/** How many fresh walks an add gets after one met a vanished file. */
+const ADD_RETRIES = 3;
+function oneCommitAtATime(root: string, run: () => Promise<void>): Promise<void> {
+  const prev = commitTails.get(root) ?? Promise.resolve();
+  const next = prev.then(run);
+  const tail = next.then(() => undefined, () => undefined);
+  commitTails.set(root, tail);
+  void tail.then(() => {
+    if (commitTails.get(root) === tail) commitTails.delete(root);
   });
   return next;
 }
@@ -204,7 +234,53 @@ const MISSING = new Set(["ENOENT", "EISDIR", "ENOTDIR"]);
 const isMissing = (e: unknown): boolean =>
   typeof e === "object" && e !== null && MISSING.has(String((e as { code?: string }).code));
 
+/** Whether a file is at `abs` right now — not a folder, and not nothing. */
+async function isFile(abs: string): Promise<boolean> {
+  try {
+    const found: { isFile(): boolean } = await stat(abs);
+    return found.isFile();
+  } catch (e) {
+    if (isMissing(e)) return false;
+    throw e;
+  }
+}
+
 const byName = (a: FileEntry, b: FileEntry) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/** `Files` ON A DISK, with the one write a store in memory has no need of —
+ *  kept here rather than in the contract, which is `Files` everywhere else. */
+export interface DiskFiles extends Files {
+  /** WRITE OVER A FILE THAT IS THERE, and only then: its folder is never made
+   *  and a file deleted meanwhile is never brought back. Answers whether it
+   *  wrote. For a write decided from a read a moment before — a page's `uid`
+   *  written back — where the page may have been deleted from outside since. */
+  replace(rel: string, text: string): Promise<boolean>;
+  /** WHAT A PATH IS, WITHOUT READING IT — or null where nothing is there. The
+   *  inode, the size and the modification time together are how a cached head
+   *  of a page is trusted or thrown away: an edit moves the size or the time,
+   *  and an atomic write — a sibling renamed over the file — moves the inode.
+   *  It never touches the baseline: knowing a file is there is not a sighting
+   *  of its bytes. The twelfth contracts edit's page index reads it. */
+  stat(rel: string): Promise<FileStat | null>;
+  /** THE FIRST `bytes` OF A FILE, as UTF-8, or null where nothing is there — a
+   *  page's head: its `name:` and `uid:` without the rest of its document. A
+   *  character cut at the end is decoded as a replacement, which is why a
+   *  caller looks for whole lines. It never touches the baseline either: a
+   *  head is not the file, and a sighting of part of one would silence the
+   *  watcher's verdict on the whole. */
+  head(rel: string, bytes: number): Promise<string | null>;
+}
+
+/** What `DiskFiles.stat` answers. Times are milliseconds since the epoch, with
+ *  whatever fraction the platform keeps; `born` is the birth time where the
+ *  filesystem records one and the modification time where it does not. */
+export interface FileStat {
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  bornMs: number;
+  dir: boolean;
+}
 
 /** Text files under `root`, and the git repo they live in.
  *
@@ -212,7 +288,7 @@ const byName = (a: FileEntry, b: FileEntry) => (a.name < b.name ? -1 : a.name > 
  *  writes — see `Seen`. It is optional and defaults to remembering nothing,
  *  because most of the `Files` in this process are rooted outside any vault
  *  and nothing watches them. */
-export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
+export function makeFiles(root: string, seen: Seen = FORGETFUL): DiskFiles {
   const ROOT = resolve(root);
   // The root itself may be reached through a symlink — a home directory on a
   // separate volume, say — so every comparison is made in real-path space.
@@ -295,6 +371,40 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
       });
     },
 
+    async replace(rel: string, text: string): Promise<boolean> {
+      // ON `write`'S QUEUE, so a replace and a write to one path land in the
+      // order they were asked, and whole in the same way: a sibling, renamed.
+      return await oneAtATime(resolve(ROOT, rel), async () => {
+        const abs = await safe(rel);
+        // NO FOLDER IS MADE. A page deleted from outside after its caller read
+        // it was brought back by `write`, whose mkdir made the folder again:
+        // here the sibling cannot be written into a folder that is gone.
+        const tmp = join(dirname(abs), `.${basename(abs)}.${randomBytes(4).toString("hex")}.tmp`);
+        try {
+          await writeFile(tmp, text, "utf8");
+        } catch (e) {
+          if (isMissing(e)) return false;
+          throw e;
+        }
+        try {
+          // AND NO FILE IS BROUGHT BACK: one deleted with its folder left
+          // stays deleted. Nothing an outside `rm` honours can hold the file
+          // between this look and the rename, so this narrows the gap to those
+          // two calls, where it was a read, a parse and a write.
+          if (!(await isFile(abs))) {
+            await rm(tmp, { force: true });
+            return false;
+          }
+          seen.note(abs, text);
+          await rename(tmp, abs);
+          return true;
+        } catch (e) {
+          await rm(tmp, { force: true });
+          throw e;
+        }
+      });
+    },
+
     async remove(rel: string): Promise<void> {
       const abs = await safe(rel);
       // Recursive, because a page is a directory; force, because removing what
@@ -322,6 +432,42 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
         .sort(byName);
     },
 
+    async stat(rel: string): Promise<FileStat | null> {
+      const abs = await safe(rel === "" ? "." : rel, true);
+      try {
+        const found = await stat(abs);
+        return {
+          ino: found.ino,
+          size: found.size,
+          mtimeMs: found.mtimeMs,
+          bornMs: found.birthtimeMs > 0 ? found.birthtimeMs : found.mtimeMs,
+          dir: found.isDirectory(),
+        };
+      } catch (e) {
+        if (isMissing(e)) return null;
+        throw e;
+      }
+    },
+
+    async head(rel: string, bytes: number): Promise<string | null> {
+      const abs = await safe(rel);
+      let handle: Awaited<ReturnType<typeof open>>;
+      try {
+        handle = await open(abs, "r");
+      } catch (e) {
+        if (isMissing(e)) return null;
+        throw e;
+      }
+      try {
+        const want = Math.max(0, Math.floor(bytes));
+        const buf = Buffer.alloc(want);
+        const { bytesRead } = await handle.read(buf, 0, want, 0);
+        return buf.subarray(0, bytesRead).toString("utf8");
+      } finally {
+        await handle.close();
+      }
+    },
+
     async created(rel: string): Promise<string | null> {
       const abs = await safe(rel === "" ? "." : rel, true);
       let found: { birthtimeMs: number; mtimeMs: number };
@@ -343,15 +489,34 @@ export function makeFiles(root: string, seen: Seen = FORGETFUL): Files {
       // `.git` on disk and never `git rev-parse`.
       if (!hasHistory(ROOT)) return;
 
-      const added = await git(["add", "-A"]);
-      if (added.code !== 0) return warn(added.err || "git add failed");
-
-      const done = await git(["commit", "-m", message]);
-      // Exit 1 with nothing staged is the ordinary case — two writes in a row
-      // where the second changed nothing. It is not a failure.
-      if (done.code !== 0 && !/nothing to commit|nothing added/i.test(done.out + done.err)) {
-        warn(done.err || done.out || "git commit failed");
+      let key = ROOT;
+      try {
+        key = realpathSync(ROOT);
+      } catch {
+        /* the root as given; a folder that is not there commits nothing anyway */
       }
+      await oneCommitAtATime(key, async () => {
+        // A FILE THAT WENT WHILE GIT LISTED THE TREE. Every write here is a
+        // sibling renamed onto the path, and `git add -A` stats whatever its walk
+        // met — so a write landing during the walk made the sibling vanish under
+        // it, git refused the whole add, and the commit, the undo point asked
+        // for, was never made. The mirror writes in the background beside every
+        // commit now, so this was a lost commit in a busy minute, not a rarity.
+        // The siblings are left out by name, and a file somebody else's program
+        // removed mid-walk is asked about once more on a fresh walk.
+        let added = await git(["add", "-A", "--", ".", HALF_WRITTEN]);
+        for (let again = 0; added.code !== 0 && again < ADD_RETRIES && VANISHED.test(added.err); again++) {
+          added = await git(["add", "-A", "--", ".", HALF_WRITTEN]);
+        }
+        if (added.code !== 0) return warn(added.err || "git add failed");
+
+        const done = await git(["commit", "-m", message]);
+        // Exit 1 with nothing staged is the ordinary case — two writes in a row
+        // where the second changed nothing. It is not a failure.
+        if (done.code !== 0 && !/nothing to commit|nothing added/i.test(done.out + done.err)) {
+          warn(done.err || done.out || "git commit failed");
+        }
+      });
     },
   };
 }
@@ -422,6 +587,17 @@ function warn(message: string): void {
  *  the rest. A dangling symlink is followed by hand, because writing through
  *  one lands wherever it points. */
 async function real(p: string): Promise<string> {
+  // THE COMMON CASE, ASKED SYNCHRONOUSLY: a path that is there, resolved by
+  // the C library in one call of a few microseconds. The promise form is the
+  // same question sent through the thread pool, and at three or four times
+  // the price it was most of what a sweep of two thousand folders cost — this
+  // check runs on every access. Same answer, same containment test after it;
+  // a path that is not there yet falls through to the walk below.
+  try {
+    return realpathSync.native(p);
+  } catch {
+    // Not there, or a dangling link: resolved by hand below.
+  }
   let cur = p;
   const tail: string[] = [];
   for (let hop = 0; hop < 32; hop++) {

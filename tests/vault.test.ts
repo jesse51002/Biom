@@ -127,9 +127,8 @@ const drawn = (page: Page | null): string[] => (page?.sections ?? []).map((s) =>
 test("a drawn section carries the STORED entry it came from, which is what makes a copy a copy", async () => {
   // Everything else on a `DrawnSection` is resolved, and resolution is lossy in
   // the one direction duplicating needs: `html` is the markup and not the
-  // filename, `parts` is loaded content and not the pointer, `vars` is the three
-  // scopes already merged. A copy rebuilt from those would name no file, inline
-  // what was a pointer, and bake the PAGE's variables into the section.
+  // filename, `parts` is loaded content and not the pointer. A copy rebuilt from
+  // those would name no file and inline what was a pointer.
   const { files, pages } = vault();
   await pages.create({ name: "Rates" });
   await pages.writeFile("home/Rates", "band.html", `<div data-g-part="body"></div>`);
@@ -156,8 +155,10 @@ test("a drawn section carries the STORED entry it came from, which is what makes
     variables: { tone: "loud" },
     parts: { body: "The rate is {{rate}}." },
   });
-  // Which is emphatically not what the resolved view says.
-  expect(band.vars).toEqual({ quarter: "Q3", tone: "loud" });
+  // The resolved view carries the section's own variables too, and the page's
+  // are the page's, sent once.
+  expect(band.vars).toEqual({ tone: "loud" });
+  expect(page!.variables).toEqual({ quarter: "Q3" });
   expect(band.html).toContain("data-g-part");
 
   // So duplicating is sending it back under a new name, and nothing else.
@@ -339,9 +340,11 @@ test("children come off the directory, and a document claiming a parent says not
   // it. Nothing was declared and no page was asked who its parent is — reading
   // one directory is the whole of it. A child carries what it IS and what it is
   // called, and nothing about how it looks.
+  // Each page with its identity, off its head, and whether it holds pages of
+  // its own, off its folder.
   expect(await pages.children("home/Clients")).toEqual([
-    { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove" },
-    { kind: "page", id: "home/Clients/Fenton", name: "Fenton" },
+    { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove", uid: expect.any(String), children: false },
+    { kind: "page", id: "home/Clients/Fenton", name: "Fenton", uid: expect.any(String), children: false },
   ]);
   expect((await pages.children("home")).map((c) => c.id)).toEqual(["home/Archive", "home/Clients"]);
 
@@ -465,15 +468,16 @@ test("a markdown slot carries its prose, raw, with the braces still in it", asyn
     body: {
       kind: "markdown",
       md: "# Rendering rates\nThe base rate is {{rate}}.\n",
-      vars: { rate: 62, currency: "GBP" },
+      vars: {},
     },
   });
 
-  // THE NEAREST ONE WINS: a slot's own value over the section's over the page's,
-  // so a bare name is always the closest one and never a surprise.
-  expect(page!.sections[1]!.parts.body).toMatchObject({ vars: { rate: 71, currency: "GBP" } });
-  // The section's own scope is what its slots start from.
-  expect(page!.sections[1]!.vars).toEqual({ rate: 62, currency: "GBP" });
+  // EACH SCOPE IS SENT ONCE, as its own: a slot's own value, the section's and
+  // the page's, merged nearest first where the part is drawn, so a bare name is
+  // always the closest one and never a surprise.
+  expect((page!.sections[1]!.parts.body as { vars?: unknown }).vars).toEqual({ rate: 71 });
+  // The section has none of its own.
+  expect(page!.sections[1]!.vars).toEqual({});
   // And the page's own are on the page.
   expect(page!.variables).toEqual({ rate: 62, currency: "GBP" });
 
@@ -510,9 +514,11 @@ test("a section is a div with any number of slots, which is the shape the format
   expect(Object.keys(section.parts).sort()).toEqual(["left", "middle", "right"]);
   for (const part of Object.values(section.parts)) {
     expect(part.kind).toBe("markdown");
-    // Every slot in the section starts from the section's scope.
-    expect(part.kind === "markdown" && part.vars).toEqual({ rate: 62 });
+    // Every slot in the section starts from the section's scope, which the
+    // section carries and the slot, having none of its own, does not.
+    expect(part.kind === "markdown" && part.vars).toEqual({});
   }
+  expect(section.vars).toEqual({ rate: 62 });
 });
 
 /* ── PROSE WRITES BACK, and the words are in the document ──────────────── */
@@ -823,13 +829,13 @@ test("a section names the file that draws it, and an html slot names one beside 
     kind: "html",
     file: "figure.html",
     html: "<figure>the plan</figure>",
-    vars: { crew: 2, title: "What a job costs" },
+    vars: {},
   });
   // A named file that is not there is an EMPTY slot rather than a missing one:
   // the entry is in the document, somebody can see it, and a slot that quietly
   // vanished would leave nothing to repair from.
   expect(calc.parts.missing).toEqual({
-    kind: "html", file: "gone.html", html: "", vars: { crew: 2, title: "What a job costs" },
+    kind: "html", file: "gone.html", html: "", vars: {},
   });
 
   // A SECTION naming a file that is not on disk takes the default too, and
@@ -899,7 +905,7 @@ test("there is no folder, and a page that draws its children is what one was", a
   // a second call.
   expect(page!.sections[1]!.parts[DEFAULT_SLOT]).toEqual({
     kind: "child",
-    child: { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove" },
+    child: { kind: "page", id: "home/Clients/Ashgrove", name: "Ashgrove", uid: expect.any(String), children: false },
   });
   // A table sits in the tree beside pages, under the page that uses it.
   expect(page!.sections[2]!.parts[DEFAULT_SLOT]).toEqual({
@@ -1344,7 +1350,7 @@ test("the raw fallback cannot write a document the reader would not read back", 
   expect(parsed.variables).toEqual({ rate: 62 });
   expect(await docs.readRaw("home/Team-notes")).toBe(raw);
   expect((await pages.read("home/Team-notes"))!.sections[0]!.parts.body)
-    .toEqual({ kind: "markdown", md: "# Team notes\nThe base rate is {{rate}}.\n", vars: { rate: 62 } });
+    .toEqual({ kind: "markdown", md: "# Team notes\nThe base rate is {{rate}}.\n", vars: {} });
 });
 
 /* ── variables: the nearest one wins, and a write lands on one scope ────── */
@@ -1378,11 +1384,12 @@ test("a patch lands on the page or on one section, and never on the other", asyn
   // A section that has gone is refused rather than written to the page.
   await expect(docs.merge("home/Rates-note", "vanished", { title: "x" })).rejects.toThrow();
 
-  // The nearest one wins where the part is drawn.
+  // The nearest one wins where the part is drawn, from each scope as it is held.
   const read = await pages.read("home/Rates-note");
-  expect(read!.sections[0]!.parts.body).toMatchObject({ vars: { rate: 71 } });
-  expect(read!.sections[1]!.parts.body).toMatchObject({ vars: { rate: 71, title: "What this costs" } });
-  expect(read!.sections[1]!.vars).toEqual({ rate: 71, title: "What this costs" });
+  expect(read!.variables).toEqual({ rate: 71 });
+  expect((read!.sections[0]!.parts.body as { vars?: unknown }).vars).toEqual({});
+  expect((read!.sections[1]!.parts.body as { vars?: unknown }).vars).toEqual({});
+  expect(read!.sections[1]!.vars).toEqual({ title: "What this costs" });
 
   // A slot losing focus is not an agent write. A commit per keystroke would bury
   // the ones the history exists for.
@@ -1562,8 +1569,9 @@ test("the design doc is a page, read through the same resolver, out of the tree"
   expect(doc.sections[0]!.html).toBe(DEFAULT_SECTION);
   expect(doc.sections[0]!.fallback).toBe(true);
   expect(doc.sections[0]!.parts.body).toEqual({
-    kind: "markdown", md: "# Design\nThe voice is {{voice}}.\n", vars: { voice: "plain" },
+    kind: "markdown", md: "# Design\nThe voice is {{voice}}.\n", vars: {},
   });
+  expect(doc.variables).toEqual({ voice: "plain" });
   // The same file forms a page has, resolved by the same function, so the design
   // doc cannot drift from `pages/`: a section that names its own markup, and an
   // html slot inside it.
@@ -1571,8 +1579,9 @@ test("the design doc is a page, read through the same resolver, out of the tree"
   expect(doc.sections[1]!.fallback).toBe(false);
   expect(doc.sections[1]!.parts.list).toEqual({
     kind: "html", file: "swatch-list.html", html: "<ul id=swatch></ul>",
-    vars: { voice: "plain", title: "The palette" },
+    vars: {},
   });
+  expect(doc.sections[1]!.vars).toEqual({ title: "The palette" });
 
   // IT HAS NO CHILDREN, so a child part resolves to nothing here: this doc is
   // not in the tree, and there is nothing for one to point at.

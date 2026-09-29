@@ -29,18 +29,21 @@
 //     that one's subscribers hear it.
 
 import { test, expect } from "bun:test";
+import { mkdirSync, readdirSync } from "node:fs";
 import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { events, makeHost } from "../server/main.ts";
 import type { Host } from "../server/main.ts";
-import { EXCLUDED, WATCHED_DIRS, WATCHED_FILES, watched } from "../server/platform/watch.ts";
+import { EXCLUDED, RECURSIVE, WATCHED_DIRS, WATCHED_FILES, watchTree, watched } from "../server/platform/watch.ts";
 import { makeSeen } from "../server/platform/files.ts";
 import { pageAt } from "../server/domain/mirror.ts";
+import { makePageIndex } from "../server/domain/pageindex.ts";
+import type { PageIndex } from "../server/domain/pageindex.ts";
 import { handle } from "../server/api/routes.ts";
 import { PROTOCOL } from "../contracts/wire.js";
-import type { ApiRequest, ApiResponse } from "../contracts/types.ts";
+import type { ApiRequest, ApiResponse, ChangeEvent } from "../contracts/types.ts";
 
 const FRAMEWORK = join(import.meta.dir, "..");
 
@@ -321,6 +324,70 @@ test("a burst settles into one event, and a directory created after the watch st
   }
 });
 
+// Linux only: elsewhere the kernel recurses, and the watcher lists nothing.
+test.if(!RECURSIVE)("a folder made the moment its parent has been listed is watched, and what is written into it reports", async () => {
+  // THE GAP BETWEEN LISTING A NEW DIRECTORY AND WATCHING IT. `mkdir -p` of one
+  // page's folder makes `children/`, the watcher lists it and watches it — and
+  // a sibling's folder made on another thread between the two was in neither:
+  // not in the listing, and made before the watch that would have reported
+  // it. It stayed unwatched for the life of the watcher, and the page written
+  // into it never reached its markdown — which is how the two-sibling burst
+  // below failed, on a runner with the threads to land in that gap. Held open
+  // here by making the folder inside the listing itself.
+  const g = await ground();
+  const root = g.at("one");
+  const kids = join(pageDir(root, "home"), "children");
+  await mkdir(pageDir(root, "home"), { recursive: true });
+  const heard: string[] = [];
+  let made = false;
+  const w = watchTree(root, (abs) => void heard.push(abs), (abs) => {
+    const entries = readdirSync(abs, { withFileTypes: true });
+    if (abs === kids && !made) {
+      made = true;
+      mkdirSync(join(kids, "beta"));
+    }
+    return entries;
+  });
+  try {
+    await mkdir(join(kids, "alpha"), { recursive: true });
+    expect(await until(() => made)).toBe(true);
+    expect(await until(() => w.handles().includes(join(kids, "beta")))).toBe(true);
+
+    await writeFile(join(kids, "beta", "content.yaml"), "name: Beta\nplugin: biom-doc\ncontents: []\n", "utf8");
+    expect(await until(() => heard.includes(join(kids, "beta", "content.yaml")))).toBe(true);
+  } finally {
+    w.close();
+    await g.drop();
+  }
+});
+
+// Linux only, for the same reason.
+test.if(!RECURSIVE)("two folders made back to back in a watched directory are both watched, though only the first is reported", async () => {
+  // `fs.watch` CAN FOLD TWO ENTRIES MADE IN ONE DIRECTORY AT ONCE INTO ONE
+  // NOTIFICATION: under Bun 1.3 on Linux the second of two folders made back
+  // to back was not reported at all, every time. A folder nothing reported
+  // was never watched, and a page written into it never reached anybody — so
+  // an entry arriving has its directory read again. Where the platform
+  // reports both, this holds anyway.
+  const g = await ground();
+  const root = g.at("one");
+  const kids = join(pageDir(root, "home"), "children");
+  await mkdir(kids, { recursive: true });
+  const heard: string[] = [];
+  const w = watchTree(root, (abs) => void heard.push(abs));
+  try {
+    mkdirSync(join(kids, "alpha"));
+    mkdirSync(join(kids, "beta"));
+    expect(await until(() => ["alpha", "beta"].every((name) => w.handles().includes(join(kids, name))))).toBe(true);
+
+    await writeFile(join(kids, "beta", "content.yaml"), "name: Beta\nplugin: biom-doc\ncontents: []\n", "utf8");
+    expect(await until(() => heard.includes(join(kids, "beta", "content.yaml")))).toBe(true);
+  } finally {
+    w.close();
+    await g.drop();
+  }
+});
+
 test("two sibling pages created in one burst each get their markdown", async () => {
   const g = await ground();
   const host = await stand(g.at("one"), g.memory);
@@ -348,6 +415,69 @@ test("two sibling pages created in one burst each get their markdown", async () 
       expect(await until(() => Bun.file(join(g.at("one"), "_markdown", "home", `${name}.md`)).size > 0))
         .toBe(true);
     }
+
+    off();
+  } finally {
+    host.close();
+    await g.drop();
+  }
+});
+
+test("a page that lands while its sibling's arrival is settling still arrives, and gets its markdown", async () => {
+  // A SETTLE THAT TAKES A PAGE'S ARRIVAL GIVES AN IDENTITY TO EVERY PAGE THE
+  // INDEX HOLDS WITHOUT ONE — and the index can hold a page whose own
+  // notification is still waiting for the next settle, because its level was
+  // listed in between: by the mirror projecting the parent, or a window
+  // re-listing it. That page's `uid` was written back as the server's own, the
+  // next settle read its document as that write-back and nothing more, and
+  // its arrival — its markdown, its name on the stream — was dropped as
+  // nothing that happened. Held open here inside the index: the first page's
+  // settle waits until the second is on disk and their level has been listed.
+  const g = await ground();
+  const vault = g.at("one");
+  let hold: ((index: PageIndex) => Promise<void>) | null = null;
+  const host = await makeHost({
+    vault,
+    memory: g.memory,
+    presets: join(FRAMEWORK, "presets"),
+    pageIndex: (deps) => {
+      const real = makePageIndex(deps);
+      return {
+        ...real,
+        async invalidate(rels) {
+          const then = hold;
+          if (then !== null && rels.some((rel) => rel.endsWith("beta/content.yaml"))) {
+            hold = null;
+            await then(real);
+          }
+          return await real.invalidate(rels);
+        },
+      };
+    },
+  });
+  try {
+    await host.settled(vault);
+    const changes: ChangeEvent[] = [];
+    const off = await host.watch(vault, (change) => void changes.push(change));
+    const [alpha, beta] = ["alpha", "beta"].map((name) => pageDir(vault, `home/${name}`)) as [string, string];
+    for (const dir of [alpha, beta]) await mkdir(dir, { recursive: true });
+    // Both folders watched before either page is written — on Linux a watch of
+    // their own, elsewhere the root's recursive one.
+    const watching = () => [alpha, beta].every((dir) => (host.watching()[0]?.handles ?? []).includes(dir));
+    expect(await until(() => RECURSIVE || watching())).toBe(true);
+
+    hold = async (real) => {
+      await writeFile(join(alpha, "content.yaml"), "name: Alpha\nplugin: biom-doc\ncontents: []\n", "utf8");
+      await real.level("home");
+    };
+    await writeFile(join(beta, "content.yaml"), "name: Beta\nplugin: biom-doc\ncontents: []\n", "utf8");
+
+    for (const name of ["beta", "alpha"]) {
+      expect(await until(() => Bun.file(join(vault, "_markdown", "home", `${name}.md`)).size > 0)).toBe(true);
+    }
+    expect(await until(() => changes.some((change) => change.pages.includes("home/alpha")))).toBe(true);
+    // And it has its identity all the same.
+    expect(await Bun.file(join(alpha, "content.yaml")).text()).toMatch(/^uid: \S+$/m);
 
     off();
   } finally {

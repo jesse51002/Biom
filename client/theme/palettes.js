@@ -87,6 +87,16 @@ const BRAND = {
     // palette's dark end rather than the white a dark scheme usually reaches
     // for — cream on Sunflower is unreadable.
     onSpot: "#16181B",
+    // THE LAMPS: one amber for whatever is lit, and red and green only as a
+    // verdict — the four the Dot matrix palette carries, which the Agent
+    // screen's look, the grid and the runs board read. A palette without them
+    // sent those readers to their fallbacks, and here that drew a failed chat's
+    // light in `magenta`, which in this palette is a cool BLUE, and a finished
+    // one's in `ink2`, a grey: no verdict at all. `led` is Sunflower, the one
+    // hot colour; `ledRed` a true red, clear of 4.5:1 on every ground here
+    // because the grid sets its refusals in it; `ledGreen` the seeded `Won`;
+    // `dotOff`, an unlit dot, is `ruleSoft`.
+    led: "#FFB020", ledRed: "#FF4A3D", ledGreen: "#5BE37D", dotOff: "#23262B",
   },
   extra: [],
 };

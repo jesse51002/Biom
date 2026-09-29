@@ -1,0 +1,23 @@
+<!-- Invented: a section whose markup, slots, plugin node and script each read a different scope. -->
+<style>
+  .layered { display: grid; gap: 1rem; }
+  .layered output { display: block; font-family: monospace; }
+</style>
+<div class="layered" data-who="{{who}}" data-rate="{{rate}}">
+  <h2 title="{{only}}">Layered: {{who}} at {{rate}} {{unit}}, tags {{tags}}, empty [{{empty}}]</h2>
+  <div data-g-part="lead"></div>
+  <div data-g-part="plain"></div>
+  <div data-g-part="snippet"></div>
+  <div data-g-part="bare"></div>
+  <div data-g-part="cells"></div>
+  <div data-g-part="plaingrid"></div>
+  <div data-g-part="missing">A slot the page has not filled.</div>
+  <span data-g-plugin="recorder" data-g-note="in the section"></span>
+  <output class="script-scope"></output>
+</div>
+<script>
+  var out = section.querySelector("output.script-scope");
+  var held = {};
+  Object.keys(ctx.vars).sort().forEach(function (k) { held[k] = ctx.vars[k]; });
+  if (out) out.setAttribute("data-scope", JSON.stringify(held));
+</script>

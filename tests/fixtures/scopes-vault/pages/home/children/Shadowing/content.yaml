@@ -1,0 +1,85 @@
+name: Shadowing
+uid: scopesfixshadow01
+plugin: biom-doc
+variables:
+  who: the page
+  rate: 62
+  unit: per cent
+  tags:
+    - north
+    - south
+  empty: null
+contents:
+  - name: layered
+    data: shadow.html
+    variables:
+      who: the section
+      rate: 64
+      only: section only
+    parts:
+      lead:
+        type: markdown
+        data: The lead says {{who}} at {{rate}} {{unit}}, with {{only}} and {{tags}}; empty reads [{{empty}}].
+        variables:
+          who: the part
+      plain: Plain prose says {{who}} at {{rate}} {{unit}}.
+      snippet:
+        type: html
+        data: snippet.html
+        variables:
+          who: the html part
+      bare:
+        type: html
+        data: snippet.html
+      cells:
+        type: grid
+        rows:
+          - [Name, Rate, Unit]
+          - ["{{who}}", "{{rate}}", "{{unit}}"]
+          - [fixed, "7", "{{tags}}"]
+        variables:
+          rate: 99
+      plaingrid:
+        type: grid
+        head: false
+        rows:
+          - ["{{who}}", "{{only}}", "{{empty}}"]
+  - name: cards
+    data: cards.html
+    variables:
+      who: the list's section
+    parts:
+      items:
+        - The first item says {{who}} at {{rate}}.
+        - type: markdown
+          data: The second item says {{who}} at {{rate}}.
+          variables:
+            who: the second item
+        - type: grid
+          rows:
+            - [Who, Rate]
+            - ["{{who}}", "{{rate}}"]
+          variables:
+            rate: 5
+        - type: html
+          data: snippet.html
+          variables:
+            who: the html item
+        - type: markdown
+          data: The last item says {{who}} with [{{empty}}] and {{tags}}.
+          variables:
+            empty: filled
+            tags:
+              - east
+  - name: "@page-Kid"
+    variables:
+      who: the kid's row
+    parts:
+      body:
+        type: child
+        data: Kid
+  - name: "@page-Plain_Kid"
+    parts:
+      body:
+        type: child
+        data: Plain_Kid

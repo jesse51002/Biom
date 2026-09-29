@@ -1,0 +1,470 @@
+{
+  "said": [],
+  "sections": [
+    {
+      "markup": "0c9c57e82b7c5d9bb1d0efd24cde6650f570edcad2a6acf399904328106968c7",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "Copy `index.html` beside a page's `content.yaml` — call it `shape.html`, or whatever the\ndrawing is about — and paste the section below into that page's `contents` with `data:`\nchanged to match. Or copy this whole directory into `pages/<parent>/children/<name>/` and it\ndraws as it stands.\n\n**The diagram is the `variables` on the section, not the markup.** `nodes` is every box, in\nthe order they should read across a row; `nodeIcon` is the mark each one wears; `edgeFrom`,\n`edgeTo`, `edgeSays` and `edgeKind` are parallel lists, one entry each per arrow. Add a name\nto `nodes`, add a pair to the edge lists, and the drawing rearranges itself around them —\nnothing in the html file holds a position, and there is nothing to keep in step.\n\n**It is HTML, drawn in place and animated once when it is first seen.** No library is\nfetched and no stylesheet but this page's own decides what it looks like: every border takes\n`--rule`, every label takes `--ink`, so the whole drawing repaints when the palette does. The\nboxes are a grid, each station's mark is CSS rather than a picture, each edge is one element\nwith three borders running down a lane beside them, and the edges draw themselves in behind\n`--motion` — which means a reader who asked for less motion gets the finished diagram and no\nmove at all.\n\n**The reveal walks the loop once.** One station at a time takes the hot colour and gives it\nback, in the order the layout put them in, because what this drawing is about is the loop\ngoing round rather than a state one box is in.\n",
+            "vars": {}
+          },
+          "ctx": {},
+          "item": null,
+          "node": null,
+          "part": "body",
+          "section": "how-to-use-this",
+          "via": "slot"
+        }
+      ],
+      "name": "how-to-use-this"
+    },
+    {
+      "markup": "7be4eb35f6c413ba31e6706c2ef8d2d6df17e85677fd372f1d9a28cf3bfdcd03",
+      "mounts": [
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "## How a page gets made\n\nThere is no build step between asking and seeing.\n",
+            "vars": {
+              "edgeFrom": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ],
+              "edgeKind": [
+                "solid",
+                "solid",
+                "solid",
+                "dashed"
+              ],
+              "edgeSays": [
+                "in a sentence",
+                "one commit per write",
+                "no build step",
+                "and asks again"
+              ],
+              "edgeTo": [
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace",
+                "Somebody asks"
+              ],
+              "nodeIcon": [
+                "ask",
+                "file",
+                "window",
+                "folder"
+              ],
+              "nodes": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ]
+            }
+          },
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "head",
+          "section": "how-it-fits",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "This diagram has no `nodes` yet. Add them to the section's `variables` — one name per box —\nand the drawing appears.\n",
+            "vars": {
+              "edgeFrom": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ],
+              "edgeKind": [
+                "solid",
+                "solid",
+                "solid",
+                "dashed"
+              ],
+              "edgeSays": [
+                "in a sentence",
+                "one commit per write",
+                "no build step",
+                "and asks again"
+              ],
+              "edgeTo": [
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace",
+                "Somebody asks"
+              ],
+              "nodeIcon": [
+                "ask",
+                "file",
+                "window",
+                "folder"
+              ],
+              "nodes": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ]
+            }
+          },
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "fault",
+          "section": "how-it-fits",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The loop closes because **the file is the product**. Nothing is exported, nothing is\npublished, and the page a person is looking at is the same file the agent just wrote.\n\nWhat that costs is a redraw from disk rather than a hot swap, and what it buys is that every\nchange is a readable diff in a git history nobody has to touch.\n",
+            "vars": {
+              "edgeFrom": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ],
+              "edgeKind": [
+                "solid",
+                "solid",
+                "solid",
+                "dashed"
+              ],
+              "edgeSays": [
+                "in a sentence",
+                "one commit per write",
+                "no build step",
+                "and asks again"
+              ],
+              "edgeTo": [
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace",
+                "Somebody asks"
+              ],
+              "nodeIcon": [
+                "ask",
+                "file",
+                "window",
+                "folder"
+              ],
+              "nodes": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ]
+            }
+          },
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "argument",
+          "section": "how-it-fits",
+          "via": "slot"
+        },
+        {
+          "content": {
+            "kind": "markdown",
+            "md": "The workflow drawn here is invented and represents nothing real. Replace it.\n",
+            "vars": {
+              "edgeFrom": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ],
+              "edgeKind": [
+                "solid",
+                "solid",
+                "solid",
+                "dashed"
+              ],
+              "edgeSays": [
+                "in a sentence",
+                "one commit per write",
+                "no build step",
+                "and asks again"
+              ],
+              "edgeTo": [
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace",
+                "Somebody asks"
+              ],
+              "nodeIcon": [
+                "ask",
+                "file",
+                "window",
+                "folder"
+              ],
+              "nodes": [
+                "Somebody asks",
+                "Claude writes the file",
+                "The window redraws",
+                "The page is the workspace"
+              ]
+            }
+          },
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": "note",
+          "section": "how-it-fits",
+          "via": "slot"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": "biom-reveal",
+          "part": null,
+          "section": "how-it-fits",
+          "via": "node"
+        },
+        {
+          "content": null,
+          "ctx": {
+            "edgeFrom": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ],
+            "edgeKind": [
+              "solid",
+              "solid",
+              "solid",
+              "dashed"
+            ],
+            "edgeSays": [
+              "in a sentence",
+              "one commit per write",
+              "no build step",
+              "and asks again"
+            ],
+            "edgeTo": [
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace",
+              "Somebody asks"
+            ],
+            "nodeIcon": [
+              "ask",
+              "file",
+              "window",
+              "folder"
+            ],
+            "nodes": [
+              "Somebody asks",
+              "Claude writes the file",
+              "The window redraws",
+              "The page is the workspace"
+            ]
+          },
+          "item": null,
+          "node": null,
+          "part": null,
+          "section": "how-it-fits",
+          "via": "script"
+        }
+      ],
+      "name": "how-it-fits"
+    }
+  ]
+}

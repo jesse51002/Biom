@@ -1,0 +1,59 @@
+name: Scopes
+uid: scopesfixhome01
+plugin: biom-doc
+variables:
+  who: the page
+  rate: 62
+  crew:
+    - Ana
+    - Bo
+  quarter: null
+  lit: true
+contents:
+  - name: intro
+    parts:
+      body: |
+        # Scopes
+
+        Every page, word and number in this workspace is invented, for the fourteenth contracts edit's equivalence suite.
+
+        The page says {{who}} at {{rate}}, with {{crew}}; the quarter reads [{{quarter}}], lit reads {{lit}}, and {{nobody}} is left as written.
+  - name: near
+    variables:
+      who: the section
+      only: section only
+    parts:
+      body: Nearest here is {{who}}, beside {{only}} and the page's {{rate}}.
+      aside:
+        type: markdown
+        data: The part says {{who}} over {{only}} at {{rate}}; the default section has no aside slot, so this is read and never drawn.
+        variables:
+          who: the part
+          rate: 71
+  - name: "@page-Shadowing"
+    parts:
+      body:
+        type: child
+        data: Shadowing
+  - name: "@page-Values"
+    variables:
+      who: the row's section
+    parts:
+      body:
+        type: child
+        data: Values
+  - name: "@page-Base_Figure"
+    parts:
+      body:
+        type: child
+        data: Base_Figure
+  - name: "@page-Base_Reveal"
+    parts:
+      body:
+        type: child
+        data: Base_Reveal
+  - name: "@page-Base_Diagram"
+    parts:
+      body:
+        type: child
+        data: Base_Diagram

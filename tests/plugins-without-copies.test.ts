@@ -389,7 +389,8 @@ test("on a real open the skills land off the mount path, are committed once nami
     // One commit, naming the framework.
     const { spawnSync } = await import("node:child_process");
     const log = spawnSync("git", ["log", "--format=%s"], { cwd: vault, encoding: "utf8" }).stdout;
-    expect(log).toContain("The framework's guide, docs, skills and checker, as framework ");
+    // The harnesses' links — `CLAUDE.md`, `.claude/skills` — ride the same one.
+    expect(log).toContain("The framework's guide, docs, skills, checker and harness links, as framework ");
     expect(log.split("\n").filter((l) => l.startsWith("The framework's guide")).length).toBe(1);
     // And no commit before it: a fresh vault was committed as seeded on the
     // mount path, so there was nothing for the rewrite to keep first.

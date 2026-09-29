@@ -195,27 +195,72 @@ test: install
 # screen, a rail row that was in the source and not in the build.
 #
 # TWO LAYERS AND ONE COMMAND. `server.e2e.ts` runs `server/main.ts` the way `dev`
-# does and drives it in a headless Chromium; `app.e2e.ts` starts the PACKAGED
-# application and asks the window it opened. The second SKIPS, with a named
-# reason, where there is no bundle or no screen — build one with `make app`, and
-# on Linux it takes a display of its own through `xvfb-run` where there is one.
+# does and drives it in a headless Chromium, and the files beside it walk the
+# rest of that layer — the chats over HTTP with a scripted agent, the Agent
+# screen's look in a real box, its host side on a screen and on a workspace of
+# two thousand pages, a server started against a folder gone wrong;
+# `app.e2e.ts` starts the PACKAGED application and asks the window it opened.
+# The second SKIPS, with a named reason, where there is no bundle or no screen —
+# build one with `make app`, and on Linux it takes a display of its own through
+# `xvfb-run` where there is one.
 #
 # NAMED EXPLICITLY, WITH A `./` IN FRONT, and both halves are load-bearing. The
 # files end in `.e2e.ts` rather than `.test.ts` so `bun test`'s own discovery —
 # `.test.`, `_test_`, `.spec.`, `_spec_` and nothing else — walks straight past
-# this directory and `make test` stays the eleven-second gate it is. And bun
+# this directory and `make test` stays the quick gate it is. And bun
 # reads a BARE path as a filter against that same glob, which matches nothing at
 # all; a path with a `./` in front is a file to run.
 #
 # `browser` rather than `install`, because layer one needs the Chromium as well
 # as the packages, and that target fetches it once per machine.
 #
+# ONE RUNNER PROCESS PER FILE, because every file drives a Playwright of its
+# own and a browser launched after another file in the same runner broke at
+# the boundary. First measured: the chat walk then the Agent screen walk in one
+# `bun test` failed three runs in three ("Target page, context or browser has
+# been closed", a Stop that never ended), which `--isolate` — each file in a
+# fresh global object — fixed. It did not fix the next one, because what breaks
+# is the process and not the modules: the Agent screen walk then the startup
+# walk in one `bun test --isolate` failed eleven runs in eleven, the startup
+# file's first browser losing its pipe within a few dozen milliseconds of its
+# launch and Playwright then waiting without bound for the dead process to
+# close, so the step died of its 90-second timeout; the same two files as two
+# processes passed three in three, and so did the pair with a two-second
+# pause at the boundary. A file that fails does not stop the ones after it,
+# and the target fails if any did.
+#
 #   make e2e                              both layers
 #   make app && make e2e     including the packaged one
+#   make e2e-server                       layer one alone, which is what CI runs
 #   E2E_NO_SANDBOX=1 make e2e             a container with no user namespaces
+E2E_EACH = fail=0; for f in $(1); do bun test "$$f" || fail=1; done; exit $$fail
+
 e2e: browser
 	@echo "  screenshots        →  $(HERE)dist/e2e/"
-	@cd "$(HERE)" && bun test ./tests/e2e/server.e2e.ts ./tests/e2e/startup.e2e.ts ./tests/e2e/app.e2e.ts
+	@cd "$(HERE)" && $(call E2E_EACH,$(E2E_SERVER) $(E2E_APP))
+
+## e2e-server: layer one alone — every end-to-end file but the packaged application's. CI runs this
+#
+# ONE LIST, AND BOTH `e2e` AND CI RUN IT. CI's e2e job used to name its files
+# one step each, and when the chats, the look and the Agent screen joined
+# layer one here they did not join it there: two lists of what proves the
+# program runs are two lists that disagree. A new layer-one file is ONE LINE
+# added to `E2E_SERVER`, with its `./`, and both run it from then on. CI runs
+# `app.e2e.ts` on its own, after it has built the bundle that file walks.
+E2E_SERVER = \
+	./tests/e2e/server.e2e.ts \
+	./tests/e2e/chat-server.e2e.ts \
+	./tests/e2e/chat.e2e.ts \
+	./tests/e2e/agent-look.e2e.ts \
+	./tests/e2e/agent-screen.e2e.ts \
+	./tests/e2e/big-vault.e2e.ts \
+	./tests/e2e/startup.e2e.ts \
+	./tests/e2e/scopes-dom.e2e.ts
+E2E_APP = ./tests/e2e/app.e2e.ts
+
+e2e-server: browser
+	@echo "  screenshots        →  $(HERE)dist/e2e/"
+	@cd "$(HERE)" && $(call E2E_EACH,$(E2E_SERVER))
 
 ## fresh: drop a vault in the per-user data directory so opening it sets it up again
 #
@@ -233,4 +278,4 @@ clean:
 	@rm -rf "$(HERE)node_modules"
 	@echo "cleaned"
 
-.PHONY: help dev up down install browser app uninstall check layers graph manifest manifest-stub types parse test e2e fresh clean
+.PHONY: help dev up down install browser app uninstall check layers graph manifest manifest-stub types parse test e2e e2e-server fresh clean

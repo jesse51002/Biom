@@ -27,7 +27,9 @@ description: >-
   through `biom.plugin.extensions()`, with `biom.plugin.list()` and `get()`
   beside it. THE `doc` DOCUMENT READS `head` AND `foot` AND MOUNTS WHAT EACH
   NAMES through `rt.page.mount`, and the board of children is `biom-holds`, a
-  plugin inside `biom-doc/plugins/`. THE LOADER answers `GET /v/<enc>/plugin/`
+  plugin inside `biom-doc/plugins/`; the Agent screen's `biom-agent` mounts
+  the look its `look` variable names, `biom-agent-look` by default, the same
+  way. THE LOADER answers `GET /v/<enc>/plugin/`
   with every folder at every depth — framework, vault, then every page's — one
   script, each file wrapped and named by its path and root, and a loose
   `plugins/<id>.js` refused naming the folder; the client weaves ONE tag and
@@ -39,7 +41,8 @@ description: >-
   "plugin", "register", "mount", "ctx.use", "ctx.has", "ctx.options",
   "data-g-plugin", "page plugin", "vault plugin", "plugin folder",
   "plugin.yaml", "extensions.yaml", "rung", "biom.plugin", "head", "foot",
-  "biom-holds", "reserved id", "duplicate plugin id", "document.currentScript",
+  "biom-holds", "biom-agent", "biom-agent-look", "look variable",
+  "reserved id", "duplicate plugin id", "document.currentScript",
   "markdown plugin", "mermaid", "classic script", "docs/plugins", "no imports
   in the box", "/plugin/ route", or any change to what can fill a node.
 ---
@@ -283,6 +286,10 @@ no folder under `<word>` — the page's own `plugins/` counted — is the tell.
 `tools/migrate-format-5.ts` rewrites exactly those words and names a
 `ctx.use("<word>")` in code for a person to fix; `tests/migrate-format-5.test.ts`
 runs it as the command it is. R69 in the checker says the same per page.
+**The walk runs once per workspace per build** — `checkVaultFormatOnce` stamps
+`.biom/format` once it has passed — so a format 4 page dropped into a workspace
+already stamped opens saying no plugin of that name is there, and R69 is what
+reports it.
 
 **A part kind is reserved to its file under either name.** `markdown` to
 `plugins/markdown/`, `biom-markdown` to the framework's `biom-markdown/` — `isKind` in the
@@ -481,6 +488,45 @@ plugin draws, so a section that places it with `data-g-plugin="biom-holds"`
 gets the same board. `tests/holds.test.ts` is the board; `tests/doc-document.test.ts`
 is the document, its two nodes and the mounting script.
 
+**The Agent screen is the same arrangement, and its whole look is one
+variable.** `biom-agent`'s document is one node, `#g-agent`, and `agent.js`
+beside it — in the bundle, doing nothing on a page without that node — reads
+`biom.plugin.extensions().look` once the runtime has drawn and mounts the
+plugin it names through `rt.page.mount`: `biom-agent-look` by default, from
+`biom-agent/plugin.yaml`. A look that is empty, a list, not an id, or not
+registered is refused in the node, in words that say where the variable is
+written. A workspace replaces the whole look with `look: <its own>` in
+`plugins/biom-agent/extensions.yaml`; `@agent` has no directory, so there is
+no page rung. The look hears the chats through `biom.onLook`, draws in a
+shadow root of its own, and may carry its own sheet because the document
+asked for it — what it may SAY is `boundary-guide`'s and what it draws is
+`chat-guide`'s. `tests/agent-look.test.js` holds the mount and the look outside
+a browser, and `tests/e2e/agent-look.e2e.ts` inside one.
+
+**A look of a workspace's own must leave the host's regions free, because the
+state says where the input box is and not where a look's furniture goes.**
+Biom's input box is laid over the box on a STAGE that the default look's own
+furniture stays out of, and `LookState` carries no stage geometry, so a
+replacement look keeps the same two regions to itself: on the full screen,
+the left `LOOK_THREADS` (268 px) while the list of chats or a chat shows —
+where the default look draws the list — and in the panel, the top `LOOK_HEAD`
+(46 px), where it draws the panel's head. Both constants are in
+`client/views/agent.js`, and the stage is `.agentover` in `client/css/agent.css`.
+On the stage the input box is at most 720 px wide and centred, and
+`LookState.input` says where it sits: **`bottom`**, in a chat, where `height` is
+the pixels it covers from the box's bottom edge up to the top of the composer,
+so a look keeps its last line above that; **`center`**, on the start screen,
+where `height` is the composer's own height and it sits on the middle of the
+stage, so a look leaves that band free and draws above and below it. A patch
+carries `input` again whenever either moves. **`LookState.view` is the view the
+person picked** — `plain`, `thinking` or `tools` — and a patch carries it when
+it moves; a look that draws fewer views draws the nearest it has, and the
+default one draws a word it does not know as Plain. **The view is picked in the look, and a look
+a workspace writes draws its own view control or none**: the default one
+draws a ⋯ at the chat's top right whose menu says `look.view`, and the host
+keeps the pick and posts it back as `view`, so a look that offers no control
+still draws the view the workspace keeps.
+
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands
 was the whole promise; the cost, named at the time, was that a framework fix
@@ -512,10 +558,11 @@ that was done once and taken out again. **This is a breaking change, and it is
 said as one**: whoever owns the folder moves the scripts into folders and
 deletes the copies they did not mean to keep.
 
-**Neither job is on the mount path.** `afterMount` in `server/main.ts` starts
-the skills rewrite and the mirror once `hold` has the mount, a page draws from
-the rung the instant the vault is open, and each failure is a sentence in the
-log rather than a mount that did not happen. `Host.settled(path)` is the promise
+**Neither job is on the mount path.** `afterMount` in `server/main.ts` runs
+the skills rewrite and the mirror last in `afterMountAll`, the work that follows
+the mount in the background once `hold` has it; a page draws from the rung the
+instant the vault is open, and each failure is a sentence in the log rather
+than a mount that did not happen. `Host.settled(path)` is the promise
 a test waits on.
 
 **THE LOADER ANSWERS THE DIRECTORY ON THE ROUTE IT ALREADY SERVES THE FILES
@@ -527,9 +574,15 @@ builds to reach one file, with nothing appended — is `pluginBundle` in
 > `guest/plugins/`, then the vault's `plugins/`, then every page's own
 > `plugins/` in page-id order — `pageDirs` in `pages.ts` walks positions, not
 > documents — and within a folder its own scripts in name order, then its inner
-> plugins. Each segment is preceded by a comment naming its path and its root
-> and wrapped in a FUNCTION of its own. The client weaves **one** tag for it,
-> and there is no list of plugin ids anywhere in the client.
+> plugins. **Which pages have a `plugins/` is remembered between two bundles**
+> (`pagePluginBases`), checked by the modification time of every folder the walk
+> looked at and walked again only where one moved, because every box asks for
+> the bundle and a page switch on two thousand pages listed every page folder to
+> find the one or two with a plugin; each page's own `plugins/` is still walked
+> every time, so an edit inside one is always in the bundle. Each segment is
+> preceded by a comment naming its path and its root and wrapped in a FUNCTION
+> of its own. The client weaves **one** tag for it, and there is no list of
+> plugin ids anywhere in the client.
 >
 > **A page-level plugin's script loads on every page**, and only that page's
 > rung names it — the cost of one tag that is byte-identical per vault, and
@@ -696,8 +749,14 @@ as long as the box does.
   `rt.page.mount`, the progress slide first while its plugin takes `hidden`
   off the node it was handed; it sorts on `Child.created`, the tenth contracts
   edit, and on the date a name leads with where the host answers none —
-  `tests/automations-runs.test.js`); their scripts are in the bundle and guard
-  on their root node. `mindmap` is also what the rail's
+  `tests/automations-runs.test.js`) and `biom-agent/` (the Agent screen: one
+  node, and `agent.js` mounting what its `look` variable names); their
+  scripts are in the bundle and guard on their root node. `biom-agent-look/`
+  is the look that variable names by default — `look.js` the nodes,
+  `model.js` every decision, `sheet.js` its stylesheet on the box's tokens —
+  and registers like a slot plugin. `biom-agent` is what the Agent screen
+  draws, mounted on `AGENT_PAGE` (`@agent`) and answered as a bare plugin page
+  exactly as the Map is. `mindmap` is also what the rail's
   own Map row draws, mounted on `MAP_PAGE` (`@map`), which `server/domain/pages.ts`
   answers as a bare plugin page with no directory and the shell reads through
   the store like any page, so `client/views/page.js` carries no copy of the

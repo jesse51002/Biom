@@ -1,230 +1,181 @@
 ---
 name: terminal-guide
 description: >-
-  The single source of truth for the AGENT TERMINAL in this repository — the
-  real shell that runs beside the visual workspace so a person can start their
-  own agent CLI (claude, codex, aider, gemini) in the vault's folder and watch
-  its edits land on the page. Covers the PTY service owned by the local Bun
-  server (`server/platform/pty.ts`), the per-workspace session registry and its
-  lifetime rules (`server/workspace/terminals.ts`), the guarded WebSocket route
-  in `server/main.ts` and every check in `terminalRefusal`, the client socket
-  (`client/transport/terminal.js`), the session and dock store
-  (`client/store/terminals.js`), the xterm.js emulator view
-  (`client/views/terminal.js`), and the dock with its tabs, full screen, hide,
-  end and drag-to-any-edge (`client/shell/dock.js`, `client/css/terminal.css`).
-  Load this whenever you touch any of those files, the vendored xterm files, or
-  anything that decides when a shell starts, stops or may be reached. Trigger on
-  "terminal", "PTY", "shell", "xterm", "dock", "agent terminal", "New terminal",
-  "End session", "Hide terminal", "fullscreen terminal", "drag to edge",
-  "session", "replay", "scrollback", "resize", "SIGWINCH", "process tree",
-  "orphan", "capability cookie", "terminalRefusal", "Ctrl+`".
+  The single source of truth for the SIGN-IN TERMINAL in this repository — the
+  one terminal left after the Chat spec replaced the agent terminal: a pop-up
+  that runs ONE command, the one an agent's own terminal sign-in method asked
+  for, in a real PTY, and closes when it exits. Covers the PTY service
+  (`server/platform/pty.ts`), the one-command run and its ticket
+  (`server/workspace/terminals.ts`), the guarded WebSocket route in
+  `server/main.ts` and every check in `terminalRefusal`, the client socket
+  (`client/transport/terminal.js`), and the pop-up with its emulator and key
+  table (`client/views/terminal.js`, `client/css/terminal.css`). Load this
+  whenever you touch any of those files, the vendored xterm files, or anything
+  that decides which command may run, when it stops or who may reach it.
+  Trigger on "terminal", "PTY", "xterm", "sign-in terminal", "sign in pop-up",
+  "terminal-auth", "ticket", "redeem", "openSignInTerminal", "process tree",
+  "orphan", "capability cookie", "terminalRefusal", "paste a code".
 ---
 
-# The agent terminal — one server-owned PTY per session, one dock per window
+# The sign-in terminal — one command, from a ticket, for as long as one socket
 
-A person opens a workspace, opens Agent Terminal, and runs the agent they already use.
-The shell starts in the **vault root**, beside `AGENTS.md` and `.agents/skills/`.
-The page stays mounted and usable beside it; the agent's writes reach the page
-through the file watcher exactly as any other write does. Biom presents the
-terminal and owns the process lifetime. It does not read the session, parse the
-agent's output, type into it, or supply a command of its own.
+A person talks to an agent on the Agent screen, over ACP. Most agents sign in
+through ACP too, but some offer only a sign-in of type `terminal` — a command of
+their own, like Claude Code's `auth login --claudeai`, GitHub Copilot's or
+OpenCode's (the Chat spec's `credentials`, and its *Agent sign-in* research).
+Such a command usually opens a browser and finishes by itself; where the browser
+cannot call back, over SSH or in a container, the terminal is where the code is
+pasted. So Biom keeps exactly what that needs: the PTY service, one route, and an
+emulator in a pop-up. The dock, the Agent Terminal button, the session registry
+and a shell of the person's own are gone (the Chat spec's `removed`), and an
+agent CLI that does not speak ACP has no way in.
 
-It owns the terminal. It does **not** own how an agent's write becomes a redraw —
-that is the watcher (`server/platform/watch.ts`) and `AGENTS.md`'s live-reload
-rules, and **terminal output never triggers a reload**.
+It owns that one run. It does **not** decide whether the agent is signed in —
+that is the agent's session opening, which the server checks again once the
+command has gone — and nothing the command prints ever reaches a page.
 
-## 1. The split, and why it is Zed's
-
-Three responsibilities, three layers, and none reaches sideways:
+## 1. The split
 
 | | where | knows |
 |---|---|---|
-| the process | `server/platform/pty.ts` (1) | a directory, an environment, bytes, a size, an exit, a tree to kill |
-| the session | `server/workspace/terminals.ts` (3) | ids, lifecycle, the output ring, who is connected, the limits |
-| the wire | `server/main.ts` (5) | the upgrade, the checks, one socket ↔ one attachment |
-| the socket | `client/transport/terminal.js` (7) | reconnect, `hello`, frames — and it queues nothing |
-| the state | `client/store/terminals.js` (9) | mirrored sessions (server's) and the dock (this window's) |
-| the emulator | `client/views/terminal.js` (14) | one xterm per session, fit, input, replay |
-| the furniture | `client/shell/dock.js` (15) | tabs, drag, grip, zoom, the notes on screen |
+| the process | `server/platform/pty.ts` (1) | a command, a directory, an environment, bytes, a size, an exit, a tree to kill |
+| the run | `server/workspace/terminals.ts` (3) | the ticket, which command it stands for, the socket's lifetime, the bounds |
+| the wire | `server/main.ts` (5) | the upgrade, the checks, the vault's root and its sign-in state per socket |
+| the socket | `client/transport/terminal.js` (7) | one socket per sign-in, opened once, never reopened |
+| the pop-up | `client/views/terminal.js` (14) | the dialog, one xterm, fit, input, the key table |
 
-`boot.js` constructs the link, the store and the view and hands them to the
-shell; xterm's constructors are injected so no module below the root names the
-library. Zed's source (read at a pinned commit, not run) separates process,
-terminal model and view the same way; nothing of its Rust was reused.
+`boot.js` constructs the pop-up with xterm's constructors and a `connect` over
+this vault's socket, so no module below the root names the library. What opens
+it is the Agent screen, for a `SignIn` of kind `terminal`.
 
-## 2. The PTY
+## 2. A client never names a command
 
-`Bun.spawn(cmd, { terminal: { cols, rows, data } })` — a real TTY, measured on
-macOS with Bun 1.4.2: the given directory, the given size, `stty size` reads a
-resize back, the shell's own exit code. **A missing folder or shell throws
-`PtyError` naming it** and nothing starts anywhere else.
+`agents.signIn{agent, method}` answers a terminal method with a `SignIn` carrying
+a **ticket** beside the command it stands for, which the client may show and
+never sends. The socket's `create` carries that ticket and a size — nothing else
+in the message is read, so a `command`, `args` or `env` there does nothing.
+`Tickets.redeem(ticket)` — `Agents.redeem` of the vault the socket was
+addressed to, so a ticket minted in one workspace never runs in another —
+turns it back into the `AgentLaunch` it stood for **once**: a ticket spent,
+expired or never minted starts nothing. The run also remembers every ticket it has spent, so a replay is
+refused whatever the minter answers, and every refusal is the same sentence, so
+a caller learns nothing about which tickets exist.
 
-- **Login shell** (`$SHELL -l`, else the platform's usual ones) so a
-  dock-launched app gets the PATH a person's own terminal has.
-- **`scrubEnv`** keeps the person's environment — credentials included, because
-  the CLI's login is theirs — and drops every `BIOM_*` marker (`BIOM_SHELL` above
-  all), `VAULT`, `VAULTS`, `PORT`, and the shell's own font cache on Linux.
-- **`end()` takes the tree**: the process table is walked for descendants
-  (an interactive shell puts each job in its own process group, so the group
-  alone misses `sleep 60 &`), then HUP → TERM → KILL with a wait between each.
-  Answers `false` when the shell did not go — a failure, never a close.
-  A process that deliberately left the tree is not claimed.
-- **`kill()`** is the synchronous SIGKILL for the server's `exit` handler.
+`spawnPty` takes the command as an **argument vector**, never a line for a shell:
+an absolute path, a path from the vault's root, or a bare name found on the
+command's own `PATH` (the login environment's, not the server's). Its environment
+is the launch's — the person's login environment plus the method's variables —
+passed through `scrubEnv`, which drops every `BIOM_*` marker, `VAULT`, `VAULTS`,
+`PORT` and the desktop shell's font cache, and adds `TERM`, `COLORTERM` and a
+UTF-8 `LANG` where none was set.
 
-## 3. Sessions and their lifetime
+## 3. The lifetime is the socket's
 
-**Visibility is not lifetime.** Nothing a dock does is a message. Three things
-end a session: `end`, the shell exiting, the server going. A fourth is the
-**orphan rule**: a workspace with live sessions and no connected client for
-`LIMITS.grace` (120 s) ends them — a reload reconnects well inside that, a closed
-browser tab does not, and a hidden shell nobody can see is not allowed. In the
-desktop application closing the window ends the server and every tree with it.
+There is no session to come back to: no ids, no replay, no orphan grace, nothing
+a second window could attach to.
 
-- **A retried create is not a second terminal.** Creates carry a nonce; the
-  server answers a seen nonce with the session it already made. The client
-  resends pending creates with the same nonce after a reconnect.
-- **The limit counts creates in flight.**
-- **Ending a session closes it.** A session this window ended, or a shell that
-  exited with code 0, is dismissed by the store as soon as it is gone. An exit
-  nobody asked for — a failing code or a signal — is kept with its real status
-  and final output until dismissed, because that output is the only account of
-  what went wrong. Nothing respawns. A failed `end` becomes `failed` and cannot
-  be dismissed.
-- **No terminal, no dock.** Once the socket has listed the sessions, a dock
-  with none, none starting and no spawn failure left to read is hidden — when
-  the last tab closes, when a reload finds none, and when the last failure is
-  dismissed (`closeIfEmpty` in the store). Opening it again starts a new shell.
-- **Leaving a workspace with live sessions asks first** (`Close workspace` in the
-  rail's foot) and ends them on yes. Quitting the desktop application does not
-  warn yet — it ends every session; see §8.
+- **The command exiting** says `exited` with its code or signal and closes the
+  socket, 150 ms later so the last output arrives first. A command that exits
+  by itself is not chased: what it deliberately left running — the browser a
+  sign-in opened — is the person's.
+- **The socket closing first** — the pop-up's Close, a reload, the window gone —
+  ends the command's whole tree: the process table is walked for descendants
+  (a job in a process group of its own included), then HUP → TERM → KILL with a
+  wait between each, and if even that did not take, the synchronous kill. A
+  process that deliberately left the tree is not claimed.
+- **A socket that names no ticket** within ten seconds is closed.
+- **The server going** kills every tree still running, synchronously, in the
+  `exit` handler, beside the runs' and the agents'.
+- **However it went**, `Tickets.ended(ticket)` is called, so the server looks at
+  that agent again and says the verdict on the `agents` stream event. The client
+  never decides that a sign-in worked.
 
-## 4. Output, replay and bounds
+## 4. The wire
 
-Output is binary frames — kind, id length, id, bytes — so UTF-8 is never split
-into replacement characters on the way. Each session keeps a **ring** of at most
-`LIMITS.buffer` bytes. A new or reconnected client gets `sessions`, then a replay
-frame per session:
+Spelled in `server/workspace/terminals.ts` and `client/transport/terminal.js`,
+held equal by `tests/terminal-wire.test.ts`, and **not in `contracts/`**, on
+purpose: no box may ever be able to name a terminal kind.
 
-- never overflowed → a replay from byte zero, which is a coherent screen;
-- overflowed → a tail, `truncated: true`, a note on screen, and the PTY is
-  nudged one row and back so a full-screen program redraws.
+| this side says (JSON) | the server says (JSON) |
+|---|---|
+| `create {ticket, cols, rows}` — once, first | `started` |
+| `input {data}` | `exited {exit: {code, signal}}` — the socket closes next |
+| `resize {cols, rows}` | `error {message}` — when nothing started, the socket closes next |
 
-The client **resets the pane before writing a replay** and does not announce
-bells or titles fired during it. **Input is never kept or replayed** — the link
-refuses a send while the socket is down.
-
-A socket with more than `LIMITS.lag` bytes queued is marked behind and sent
-nothing; on drain it gets a `resync` and the ring. The ring is the memory bound.
-**What is not bounded is the producer**: Bun's PTY reader offers no pause, so a
-shell printing forever costs one ring and CPU, not memory.
+Output is raw binary. There is no `end`: closing the socket ends the command.
+Bounds (`LIMITS`): one `input` at most 256 KB, refused whole rather than cut;
+past 4 MB queued on the socket, output is dropped and the window told once — the
+bound on what a command printing forever can cost; sizes are 2–1000.
 
 ## 5. Who may open one — `terminalRefusal`
 
-The API route is open in a source run; the terminal is not, in any build,
-because it is command execution and `Bun.serve` listens on every interface.
-Every check stops something the others do not:
+The route is guarded in every build, because it is command execution and
+`Bun.serve` listens on every interface. Every check stops something the others
+do not:
 
 1. **WebSocket upgrade** — the page proxy is a `fetch`, which cannot upgrade.
 2. **The launch token**, in the built application, as the API route takes it.
 3. **Loopback peer address** — the network is refused before a header is read.
 4. **Host is a loopback name on this port; Origin is that address** — defeats
-   DNS rebinding, a site in another tab, and the box (`Origin: null`).
-5. **The capability cookie** — minted per launch, `HttpOnly; SameSite=Strict`,
-   set only on the composed document and only for a loopback request. The page
-   proxy strips `set-cookie` from what it hands a page.
+   DNS rebinding, a site in another tab, a page on another localhost port, and
+   the box (`Origin: null`). A socket must send an Origin; `ownOrigin` in
+   `server/main.ts` is the one comparison.
+5. **This machine's capability cookie** (`biom-local-<port>`) — minted per launch,
+   `HttpOnly; SameSite=Strict`, set only on the composed document and only for a
+   loopback request. The page proxy strips `set-cookie` on the way back and any
+   `cookie` a page hands it on the way out. The same cookie guards the agent and
+   chat kinds and the live stream, through `localRefusal` — which asks the same
+   Origin where one is sent, and `Sec-Fetch-Site` beside it, because a page on
+   another localhost port is sent this cookie too: a site ignores the port.
 
-The refusal is logged and never told to the socket. **What stays open, said
-plainly:** in a source run another local program can fetch `/`, take the cookie
-and forge headers — a different local user on a shared machine is the gap in
-development, and the launch token closes it in the built application.
+The refusal is logged and never told to the socket. Past the gate, the ticket is
+the second wall: a caller that passed every check still runs only what the
+server minted. **What stays open, said plainly:** in a source run another local
+program can fetch `/`, take the cookie and forge headers — and would still need a
+ticket, which only `agents.signIn` mints.
 
-**No terminal authority is on any page contract.** `contracts/` is untouched; the
-wire is spelled in `server/workspace/terminals.ts` and
-`client/transport/terminal.js` and `tests/terminal-wire.test.ts` holds them equal.
+## 6. The pop-up
 
-## 6. The dock
+`openSignInTerminal({ ticket, title }) → Promise<{ exitCode }>` — `open` on what
+`makeSignInTerminal` returns. It resolves once the pop-up has gone: the exit
+code, or `null` when the command never ran, was ended by Close, or ended on a
+signal.
 
-`.work` holds the bed and the dock as two fixed children for the life of the
-window. **Edge, size, shown and full screen are classes and `--dock-size` on
-`.work`** — a grid template — so a move never reparents the page's frame. Full
-screen lays the dock over the bed's cell and drops the rail and strip rows
-(`.app.tfull`); the title bar of the built application stays.
-
-- **Drag the handle** to show four edge targets and a preview; drop on one to
-  move the dock with all its tabs; the middle, `Esc` or a cancelled pointer
-  change nothing. **Press the handle** for the same four as a menu.
-- **The grip** on the inner edge resizes (pointer or arrow keys); sizes are per
-  edge and clamped so neither side drops below `DOCK_MIN`.
-- **Full screen / Restore** returns the same edge and size; **Hide from full
-  screen** returns to the workspace and reopening returns to the edge.
-- **Every control is an icon**, drawn in CSS in `terminal.css` the way the window
-  controls are, with the `aria-label` as the only name anything depends on: the
-  bar carries no words, because a dock on the LEFT edge has room for about two.
-  The hide chevron points at the edge the dock is on.
-- **Tabs** are a roving `tablist`: arrows, Home/End, F2 renames (double-click
-  too), Delete asks to end. The bar scrolls and keeps the selected tab in view.
-  A tab is a prompt icon plus `tabText(label)` — a default `Terminal 3` draws as
-  `3`, a renamed one draws its name, and the full label is the accessible name
-  and the tooltip either way.
-- **States a tab can honestly show:** Starting, Running, Disconnected, Ending,
-  Exited with its code or signal, Failed to end — plus unread output and bell
-  marks for a tab not in front. None is a guess about what an agent is doing.
-- **Zoom** is the dock's, not a session's: one workspace on one screen is one
-  reading distance. The two `A` buttons, `Ctrl/Cmd` with `=`, `-` or `0` from
-  inside the dock, and `Ctrl/Cmd` with the wheel over the terminal all move it
-  between `FONT_MIN` and `FONT_MAX`; it is remembered with the rest of the dock
-  and sent nowhere. A size change reaches the shell only as the resize the fit
-  computes from it.
-- **Dock layout is per tab** (sessionStorage, per vault): a reload keeps it, a
-  restart does not — longer retention is an open decision.
-- **Help is a dialog in the middle of the screen**, not a popover off the `?`:
-  it holds a Copy line per agent CLI (the command that starts it and the one
-  that installs it) and a first thing to ask it, through `copyButton` in
-  `client/widgets/prompt.js`, so a refused clipboard selects the line instead.
-  It is appended to the body so a narrow dock does not size it, and it stops its
-  own Escape so the shell's does not also close a panel. It is copy only —
-  nothing is typed into a shell. The list is `AGENTS` in `client/shell/dock.js`.
-- **The rail's Agent Terminal button is in every build**, drawn filled in the primary accent (`.tool.prime`)
-  and last among the bar's actions — only the page's `⋯` menu sits after it — so
-  it is in the same place on every page, and it shows how many sessions are still
-  running while the dock is hidden.
+- **The mockup's look**, in the chrome's tokens: the title, *Terminal, for this
+  sign-in only*, a close control, the screen. Above every other layer.
+- **Fitted before it starts**: the emulator is opened and fitted first, so the
+  command starts at the size it is drawn at; a later resize is sent while it
+  runs. Typing is off until `started`.
+- **A clean exit closes it.** A failing exit, a signal, a refused ticket or a
+  lost connection leave the output on screen and one sentence under it, drawn
+  as text, with the caret on Close — that output is the only account of what
+  went wrong.
+- **Close** closes the socket, which ends the command. A click on the scrim does
+  nothing: a stray click must not end a sign-in half done.
+- **Every key pressed inside stays inside**, so the shell's own Escape never
+  fires behind it, and the caret moves into the emulator at once. Escape in the
+  emulator is the program's; once nothing runs, Escape closes the pop-up and
+  Tab stays on Close.
+- **One at a time per window.** A second `open` while one is up is refused.
 
 ## 7. Keys
 
-The emulator owns keys while focused. `Escape` reaches the program — the shell's
-Escape handler ignores events from inside the dock. `Ctrl+C` is always SIGINT;
-copy/paste are Cmd on macOS and `Ctrl+Shift+C/V` elsewhere (paste is handed to
-the browser so bracketed paste survives). **⌘V on macOS depends on the Edit menu
-being VISIBLE** in `app/main.js` — a hidden one registers no accelerator, and the
-desktop application pasted nothing anywhere until it was shown.
+The emulator owns keys while focused. `Ctrl+C` is always SIGINT; copy and paste
+are Cmd on macOS and `Ctrl+Shift+C/V` elsewhere (paste is handed to the browser
+so bracketed paste survives). **⌘V on macOS depends on the Edit menu being
+VISIBLE** in `app/main.js` — a hidden one registers no accelerator. The
+platform's own terminal habits are one pure table, `terminalKey`, tested in
+`tests/terminal-keys.test.js`: on macOS `Option+←/→` a word, `⌘←/→` start and end
+of line, `Option+Delete` the word behind, `⌘Delete` to the start of the line,
+`⌘K` clears, `⌘A` selects all; on Linux and Windows `Ctrl+Shift+A` selects all
+and `Ctrl+Backspace` deletes a word; everywhere `Shift+Enter` sends `ESC Return`,
+and `Ctrl/Cmd` with `=`, `-` or `0` is left to the window. Selecting out of a
+program that has taken the mouse is `Option`-drag on macOS and `Shift`-drag
+elsewhere.
 
-**The platform's own terminal habits are honoured**, as one pure table —
-`terminalKey` in `client/views/terminal.js`, tested in
-`tests/terminal-keys.test.js`. Each rewrite sends bytes a line editor already
-understands; nothing is bound in the shell. On macOS, as Terminal.app and iTerm2:
-`Option+←/→` a word (`ESC b`/`ESC f`), `⌘←/→` start/end of line (`^A`/`^E`),
-`Option+Delete` the word behind (`ESC DEL`), `⌘Delete` to the start of the line
-(`^U`), `⌘K` clears the scrollback, `⌘A` selects all. On Linux and Windows:
-`Ctrl+Shift+A` selects all and `Ctrl+Backspace` deletes a word (`^W`); Ctrl+arrows
-already reach readline. Everywhere, `Shift+Enter` sends `ESC Return`, which the
-agent CLIs read as a new line in the prompt rather than a submit. **Selecting out
-of a program that has taken the mouse** is `Option`-drag on macOS
-(`macOptionClickForcesSelection`, which costs Option-drag's column selection;
-Option-click still moves the cursor) and `Shift`-drag elsewhere, the emulator's
-default. Double-click, triple-click and Shift-click to extend are the emulator's. `Ctrl+\`` toggles the dock from the
-chrome and from the terminal — **not from inside a page's box**, whose key events
-do not leave its frame; the rail's button is the way that always works. Restore
-is a button, so it works while Vim owns the keyboard. The zoom keys are taken
-**only when the event came from inside the dock**, because `Ctrl+-` anywhere else
-is the browser's own zoom and the host does not steal it; the emulator hands
-those keys back rather than sending them to the shell.
+## 8. What is not built
 
-## 8. What is not built, on purpose or not yet
-
-- Quit warning in the desktop application (it ends sessions without asking).
-- Survival of sessions past a server exit; transcript retention; restoring dock
-  layout across restarts.
-- Splits, agent launch presets, vendor-specific status parsing, worktrees.
+- A shell of the person's own, or any command but a sign-in's.
 - Link opening and clipboard reads from terminal output — deliberately absent.
 - Windows: `taskkill /T` is the tree kill and has not been run on Windows.
 - Resource limits are starting numbers, not measurements.
@@ -232,21 +183,19 @@ those keys back rather than sending them to the shell.
 ## Key files
 
 ```
-server/platform/pty.ts            shell discovery, env scrub, spawn, end the tree
-server/workspace/terminals.ts     sessions, ring, limits, orphan rule, the wire (server copy)
-server/main.ts                    terminalRefusal, the cookie, the upgrade, exit handler
-server/api/routes.ts              proxy strips set-cookie
-client/transport/terminal.js      the socket, frames, the wire (client copy)
-client/store/terminals.js         sessions mirror, dock transitions (pure dockAfter)
-client/views/terminal.js          xterm panes, fit, input, replay
-client/shell/dock.js              tabs, drag, grip, notes, page reference
-client/shell/shell.js             .work, rail toggle, Escape guard, Close workspace ask
-client/css/terminal.css           the grid templates and the dock's dress
-client/boot.js                    constructs link, store, view; dock layout in sessionStorage
+server/platform/pty.ts            one command in a PTY, env scrub, end the tree
+server/workspace/terminals.ts     the ticket, the run, its lifetime, the wire (server copy)
+server/main.ts                    terminalRefusal, the cookie, the upgrade, the vault's Tickets, exit handler
+server/api/routes.ts              proxy strips set-cookie and cookie
+client/transport/terminal.js      the one-shot socket, the wire (client copy)
+client/views/terminal.js          the pop-up, xterm, fit, input, terminalKey
+client/css/terminal.css           the pop-up's dress
+client/boot.js                    constructs the pop-up with xterm and the socket
 vendor/xterm.* vendor/addon-fit.* the emulator, verbatim, with our partial .d.ts
-tests/pty.test.ts                 a real shell: TTY, cwd, size, exit, tree kill
-tests/terminals.test.ts           registry rules against a fake spawner
-tests/terminal-wire.test.ts       both wire copies equal; the refusal table
-tests/terminal-route.test.ts      a spawned server: cookie, refusals, a shell in the vault
-tests/terminal-store.test.js      dock transitions, nonce retry, hide sends nothing
+tests/pty.test.ts                 a real command: TTY, cwd, size, exit, tree kill, PATH
+tests/terminals.test.ts           the ticket and the lifetime, fake and real PTY
+tests/terminal-wire.test.ts       both wire copies equal; the socket; the refusal table
+tests/terminal-route.test.ts      a spawned server: cookie, refusals, a made-up ticket runs nothing
+tests/signin-terminal.test.js     the pop-up against a fake emulator and socket
+tests/terminal-keys.test.js       the key table
 ```

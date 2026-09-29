@@ -139,17 +139,21 @@ jobs:
           bun install
           bunx playwright install --with-deps chromium
 
-      # LAYER ONE RUNS ON EVERY PUSH AND NEEDS NOTHING BUILT. It is the server
-      # the way `make dev` runs it, in a headless Chromium, and it is where the
-      # vault flow, the live redraw and the markdown mirror are walked.
+      # LAYER ONE RUNS ON EVERY PUSH AND NEEDS NOTHING BUILT: the server the way
+      # `make dev` runs it, in a headless Chromium — the vault flow, the live
+      # redraw, the markdown mirror; the chats and the agents over HTTP with a
+      # scripted agent; the Agent screen's look in a real box and its host side
+      # on a screen; and the same server against a workspace gone wrong. WHICH
+      # FILES is `E2E_SERVER` in the Makefile, the list `make e2e` runs too, so
+      # a file added there is run here without this step changing.
+      #
+      # No `E2E_NO_SANDBOX` here: Playwright starts Chromium without its
+      # sandbox unless asked for one, so on this layer the knob would add only
+      # `--disable-gpu` — and every file here that launches a browser reads it
+      # the same way, should a runner ever need that. The packaged application
+      # below is Electron, which is where the sandbox matters.
       - name: The server, end to end
-        run: bun test ./tests/e2e/server.e2e.ts
-
-      # AND THE STARTUP HALF OF LAYER ONE: the same server against a workspace
-      # that has gone wrong, once per bad state, because every one of them is
-      # about what the process does on the way up.
-      - name: Starting up, end to end
-        run: bun test ./tests/e2e/startup.e2e.ts
+        run: make e2e-server
 
       # LAYER TWO NEEDS THE THING A PERSON DOWNLOADS, so the bundle is built
       # first. Without this step `app.e2e.ts` skips itself with a named reason

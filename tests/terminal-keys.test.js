@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The agent terminal's keys, as the platform's own terminal answers them.
+// The sign-in terminal's keys, as the platform's own terminal answers them.
 //
 // Every row here is a habit somebody brings from Terminal.app, iTerm2, GNOME
 // Terminal or Windows Terminal, and every rewrite is the bytes a line editor
@@ -61,7 +61,8 @@ test("everywhere: Shift+Enter is a new line in an agent's prompt, and the host k
   for (const mac of [true, false]) {
     expect(terminalKey(k("Enter", { shift: true }), mac)).toEqual({ send: "\x1b\r" });
     expect(terminalKey(k("Enter"), mac)).toBe("pass");
-    expect(terminalKey(k("`", { ctrl: true, code: "Backquote" }), mac)).toBe("host");
+    // Ctrl+` toggled the dock, and the dock is gone: it is the program's now.
+    expect(terminalKey(k("`", { ctrl: true, code: "Backquote" }), mac)).toBe("pass");
     expect(terminalKey(k("=", { ctrl: true }), mac)).toBe("host");
     expect(terminalKey(k("0", { meta: true }), mac)).toBe("host");
   }

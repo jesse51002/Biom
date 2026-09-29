@@ -1,0 +1,337 @@
+<main id="g-page" style="--md-measure: 34rem; --md-h1-size: 2.25rem; --md-h1-weight: 600; --md-h1-leading: 1.08; --md-h1-tracking: -0.015em; --md-h1-above: 0; --md-h1-below: 1rem; --md-h2-size: 1.5rem; --md-h2-weight: 600; --md-h2-leading: 1.15; --md-h2-above: 2.25rem; --md-h2-below: 0.75rem; --md-h3-size: 1.15rem; --md-h3-weight: 600; --md-h3-leading: 1.25; --md-h3-above: 1.75rem; --md-h3-below: 0.5rem; --md-p-size: 1rem; --md-p-leading: 1.6; --md-p-below: 1rem; --md-li-size: 1rem; --md-li-leading: 1.55; --md-blockquote-size: 1.125rem; --md-blockquote-style: italic; --md-blockquote-leading: 1.5; --md-blockquote-above: 1.5rem; --md-blockquote-below: 1.5rem; --md-code-face: var(--gauge-face); --md-code-size: 0.9em; --md-pre-face: var(--gauge-face); --md-pre-size: 0.875rem; --md-pre-leading: 1.5; --md-pre-above: 1.25rem; --md-pre-below: 1.25rem;"><section id="sec-how-to-use-this" data-g-section="how-to-use-this" data-g-default=""><!-- guest/sections/default.html — what a section with no `data:` resolves to.
+
+     ONE CENTRED SLOT NAMED `body`, at a reading measure.
+
+     THIS IS A FILE AND NOT A BRANCH IN THE RUNTIME, and that is load-bearing
+     rather than tidy. A default that lived in the runtime would be the one
+     section shape nothing else could reach: it would need no HTML file, no
+     `data:` key and no slot declaration, and every other section would be the
+     exception to it. "The document" would be privileged all over again —
+     exactly what the deleted render layer kept collapsing into, where one
+     render owned the whole sheet and prose was one column at one measure
+     because there was nowhere else for it to be.
+
+     As a file it is the same mechanism every other section uses. It is read by
+     the server, sent inline in the `page.read` answer like any section's markup,
+     and drawn by the same code path. It is legible, it can be copied as the
+     starting point for a real section, and it can be replaced. A page that is
+     mostly defaults is an ordinary document. The runtime still marks one
+     `data-g-default` so the editor can tell a default section from an authored
+     one; no checker rule reads it.
+
+     THE MEASURE LIVES HERE, ON THE SECTION, RATHER THAN ON THE PAGE. That is
+     what makes a full-bleed section cost nothing: it simply does not carry this
+     file's `max-width`, and there is no sheet-level width for it to fight.
+
+     AND THE MEASURE IS FOR PROSE. When the one slot holds a grid — the
+     document's own table, which the doc plugin makes out of every markdown
+     table it finds in a paragraph and puts in a section of its own with no
+     file of its own, which is this one — the section widens to the figure
+     frame's width and the grid takes it, scrolling sideways inside its own box
+     only past that. The runtime says what a slot holds on the slot, as
+     `data-g-kind`, so this file can size by it without knowing what any
+     plugin draws; a section with a file of its own says its own width. -->
+
+<!-- No colour is set here, deliberately. Every colour in this product resolves
+     to a token the palette rewrites at runtime, and a section that reached for
+     one would be the section that stopped theming. Type and colour are inherited
+     from what the shim declares on `:root` when the theme arrives. -->
+<style>@scope (#sec-how-to-use-this) {
+
+  /* `:scope` is this section's own element. The runtime wraps everything in this
+     file in `@scope (#sec-<name>)`, so these rules cannot reach the section
+     above or the section below however ordinary the selectors look. */
+  :scope {
+    display: block;
+  }
+
+  .measure {
+    /* The workspace's own reading measure when its `markdown.yaml` names one,
+       and 34rem when it does not. The scale OFFERS the value on the page root
+       and imposes it nowhere: this file is the section that wants it, which is
+       what keeps a full-bleed section free of it. */
+    max-width: var(--md-measure, 34rem);
+    margin-inline: auto;
+    padding-block: 1.5rem;
+    padding-inline: 1.25rem;
+  }
+
+  /* A GRID IS NOT PROSE. The measure opens to the figure frame's width — the
+     same 64rem the doc plugin's `.wrap` gives a figure — and the slot inside
+     it lets go of the reading measure the frame holds every slot to. An
+     unlayered rule here beats the frame's layered one by existing, which is
+     the frame's own bargain. */
+  .measure:has(> [data-g-kind="grid"]) { max-width: 64rem; }
+  [data-g-kind="grid"] { max-inline-size: none; }
+
+}
+</style>
+
+<div class="measure">
+  <div data-g-part="body" data-g-kind="markdown" data-g-md=""><p data-g-blk="0">Copy <code>index.html</code> beside a page's <code>content.yaml</code> — <code>run.html</code> is the obvious name — and
+paste the section below into that page's <code>contents</code> with <code>data:</code> changed to match. Or copy
+this whole directory into <code>pages/&lt;parent&gt;/children/&lt;name&gt;/</code> and it draws as it stands.</p>
+<p data-g-blk="1"><strong>The motion is in this file and the timing is not.</strong> <code>reveal</code> adds one class the first
+time the section comes into view and then disconnects its observer; what happens under that
+class is the section's own <code>&lt;style&gt;</code>, which is where a drawing's motion belongs.</p>
+<p data-g-blk="2"><strong>Two things go wrong without it, and both are invisible until somebody notices the page is
+tired.</strong> An observer that never disconnects keeps firing for as long as the page is open and
+outlives the section when it is redrawn. And an animation that starts at load plays the
+whole choreography below the fold, so a reader who scrolls down arrives after it finished.</p>
+<p data-g-blk="3"><strong><code>--motion</code> is the frame's reduced-motion switch</strong> and it is already on the page — multiply
+a duration or a delay by it and a reader who asked for less motion gets none. The one thing
+a multiplier cannot do is put the ink back, which is what the <code>prefers-reduced-motion</code> block
+at the foot of the file is for: stillness gets the FINISHED figure, not an empty one.</p>
+</div>
+</div>
+</section><section id="sec-stages" data-g-section="stages" class="is-seen"><!-- base/reveal/index.html — A FIGURE THAT ARRIVES, ONCE, AND THEN RESTS.
+
+     WHAT IT DRAWS. A run of stages: a line that draws across to where the work
+     has actually got to, a mark per stage lighting one after another as it
+     passes, the stage it reached ringed in the one hot colour, and a count
+     beside it. All of it HTML and CSS on the palette's tokens — no library, no
+     picture, nothing fetched — because that is what a figure is in this format.
+
+     WHERE THE WORDS LIVE. In `content.yaml`. The prose is markdown parts; the
+     FIGURE's own words are the section's `variables` — `stageName`, one entry
+     per mark, and `reached`, which names the one the run has got to. So editing
+     the document edits the drawing, and a sixth stage is a sixth name.
+
+     WHAT TO CHANGE FIRST: `stageName` and `reached`, then the lede beside them.
+     A figure's values are variables rather than a list SLOT, and that is the
+     rule rather than this file's preference: a slot holds markdown, so reading a
+     figure back out of a slot is parsing, and a list slot a reader can DRAG
+     would put mark 3 under stage 2 with nothing on screen to say so. Variables
+     are edited on the page's own config screen, which the note says on the page
+     rather than leaving somebody to find out. `base/list/` is the other half of
+     that answer, for the things a reader really should be able to add to.
+
+     THE OBSERVER IS A PLUGIN AND NOT FIVE LINES IN THIS FILE, and that is the
+     rule rather than a convenience: anything with even a small chance of being
+     wanted on another page is a plugin from the start. Those five lines were
+     written into 89 section files in one workspace, and the two ways they go
+     wrong — an observer that never disconnects, and an animation that starts at
+     load — are both invisible until somebody notices the page is tired.
+
+     `reveal` ADDS A CLASS AND NOTHING ELSE. `is-seen` lands on this section the
+     first time it comes into view, and the observer disconnects. Everything
+     under that class is below, which is where a drawing's motion belongs.
+
+     `--motion` IS THE FRAME'S SWITCH and is already on the page: the document
+     declares it as 1, and 0 under `prefers-reduced-motion`. A duration
+     multiplied by it is nothing when the reader has asked for less — and the
+     `@media` block at the foot is the half a multiplier cannot do, which is
+     putting the ink and the line back so stillness is the FINISHED figure.
+
+     THE STAGGER IS A CUSTOM PROPERTY. The script sets `--i` to a mark's own
+     index — the one thing a script may write onto an element's style — and the
+     stylesheet decides what the delay does with it, so the timing is readable in
+     one place rather than spread through the JavaScript.
+
+     THE FIGURE IS LEGIBLE AT EVERY FRAME. The rail, the names and the count are
+     there before anything moves; what arrives is the line and the marks. A
+     reveal that starts from nothing is a section that is blank while it plays. -->
+<style>@scope (#sec-stages) {
+
+  :scope { display: block; container-type: inline-size; padding-block: 2.5rem; }
+
+  .wrap {
+    display: grid;
+    gap: 1.25rem;
+    max-inline-size: 60rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+    font-family: var(--sheet-face);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  .wrap > * > :first-child { margin-block-start: 0; }
+  .wrap > * > :last-child { margin-block-end: 0; }
+
+  .figure {
+    display: grid;
+    gap: 1.1rem;
+    padding: 1rem 1.15rem 1.15rem;
+    border: 1px solid var(--rule);
+    background: color-mix(in srgb, var(--stock-hi) 65%, transparent);
+  }
+
+  /* THE COUNT, in the gauge role with tabular figures, because a number that
+     shifts as it counts is a number nobody can read twice. */
+  .gauge { display: flex; align-items: baseline; gap: .3rem; font-family: var(--gauge-face); font-variant-numeric: tabular-nums; }
+  .gauge .now { font-size: 1.6rem; line-height: 1; color: var(--cyan-t); }
+  .gauge .of { font-size: 1.05rem; color: var(--ink-3); }
+
+  /* THE TRACK. The rail runs behind the marks at the height of their centres, so
+     the line and the stages on it are one object rather than two rows. */
+  .track { position: relative; }
+  .rail {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: .45rem;
+    block-size: 1px;
+    background: var(--rule);
+  }
+  /* THE LINE THAT DRAWS ACROSS. It is as long as the run has got — a percentage
+     the script computes — and it grows into that length from the left. */
+  .fill {
+    display: block;
+    block-size: 100%;
+    inline-size: var(--at, 0%);
+    background: var(--cyan);
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform calc(760ms * var(--motion, 1)) cubic-bezier(.4, 0, .2, 1);
+  }
+
+  /* A ROW OF MARKS, sharing the track equally. Nothing here names how many. */
+  .marks { position: relative; display: flex; }
+  .stage { flex: 1 1 0; min-inline-size: 0; display: grid; justify-items: center; gap: .5rem; }
+  .dot {
+    inline-size: .9rem;
+    block-size: .9rem;
+    border: 1px solid var(--rule);
+    border-radius: 50%;
+    background: var(--stock);
+    transform: scale(.3);
+    opacity: 0;
+    transition: transform calc(300ms * var(--motion, 1)) cubic-bezier(.16, 1, .3, 1),
+                opacity calc(240ms * var(--motion, 1)) ease;
+    transition-delay: calc((260ms + var(--i, 0) * 150ms) * var(--motion, 1));
+  }
+  /* ONE HOT COLOUR, AND THE STAGE THE RUN IS AT WEARS IT LOUDEST. Everything
+     behind it is filled and everything ahead of it is an outline — a figure
+     where everything is lit has lit nothing. */
+  .stage.is-done .dot { background: var(--cyan); border-color: var(--cyan); }
+  .stage.is-here .dot { box-shadow: 0 0 0 .22rem color-mix(in srgb, var(--cyan) 22%, transparent); }
+  .name { font-size: .72rem; line-height: 1.25; color: var(--ink-3); text-align: center; }
+  .stage.is-here .name { color: var(--ink); }
+
+  /* AND THE CLASS THE `reveal` PLUGIN ADDS. It is already on the section by the
+     time a stage added later is drawn, so a mark that arrives after the reveal
+     has fired arrives finished rather than invisible. */
+  :scope.is-seen .fill { transform: none; }
+  :scope.is-seen .dot { transform: none; opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fill { transform: none; }
+    .dot { transform: none; opacity: 1; }
+  }
+
+  .note { color: var(--ink-3); font-size: .88rem; }
+
+  /* THE FAULT IS A SLOT LIKE EVERY OTHER WORD HERE. A blank rectangle where a
+     drawing was is indistinguishable from a page that is still loading. */
+  .fault { display: none; color: var(--ink-3); font-size: .9rem; }
+  :scope.is-fault .fault { display: block; }
+  :scope.is-fault .figure { display: none; }
+
+  /* NARROW: the names give up first, because a phone has room for the run or
+     for the words under it and not both — and the last thing to go is the name
+     of the stage the run is actually at, which is the one fact the figure is
+     for. It has to come last, because at equal specificity the later rule
+     wins. */
+  @container (width <= 34rem) {
+    .name { font-size: .64rem; }
+  }
+  @container (width <= 26rem) {
+    .stage:not(.is-here) .name { display: none; }
+    .stage.is-here .name { font-size: .72rem; }
+  }
+
+}
+</style>
+
+<div class="wrap">
+  <div data-g-part="lede" data-g-kind="markdown" data-g-md=""><h2 data-g-blk="0">Where the run has got to</h2>
+<p data-g-blk="1">Five stages, drawn from five names. The line grows to the one <code>reached</code> names, the marks
+light one after another as it passes them, and the stage it stops at is the only thing on
+the drawing wearing the hot colour — a figure where everything is lit has lit nothing.</p>
+</div>
+  <div class="figure">
+    <div class="gauge"><span class="now">3</span><span class="of">/ 5</span></div>
+    <div class="track">
+      <div class="rail"><span class="fill" style="--at: 50%;"></span></div>
+      <div class="marks" role="img" aria-label="Sown, Pricked out, Potted on, Hardened off, Planted out"><div class="stage is-done"><span class="dot" style="--i: 0;"></span><span class="name">Sown</span></div><div class="stage is-done"><span class="dot" style="--i: 1;"></span><span class="name">Pricked out</span></div><div class="stage is-done is-here"><span class="dot" style="--i: 2;"></span><span class="name">Potted on</span></div><div class="stage"><span class="dot" style="--i: 3;"></span><span class="name">Hardened off</span></div><div class="stage"><span class="dot" style="--i: 4;"></span><span class="name">Planted out</span></div></div>
+    </div>
+  </div>
+  <div class="fault" data-g-part="fault" data-g-kind="markdown" data-g-md=""><p data-g-blk="0"><em>This figure has no stages yet. Add <code>stageName</code> to the section's <code>variables</code> — one name per
+mark — and name the one the run has got to in <code>reached</code>.</em></p>
+</div>
+  <!-- ONE CLASS, ONCE, ON THIS SECTION. `data-g-on` would narrow it to one
+       element inside the section; with nothing named it is the section itself. -->
+  <span data-g-plugin="biom-reveal"></span>
+  <div class="note" data-g-part="note" data-g-kind="markdown" data-g-md=""><p data-g-blk="0">A figure's values are <code>variables</code> rather than a list slot, because a slot holds markdown and
+reading a figure back out of prose is parsing. Variables are edited on this page's config
+screen rather than on the page; <code>base/list/</code> is the shape for the things a reader really
+should be able to add to from where they stand. Nothing here is real content.</p>
+</div>
+</div>
+
+<script>;(function () {
+var $ = window.__gRuntime.claim(0);
+(function (section, ctx, onTeardown) {
+
+  /* THE DRAWING, AND NOTHING ELSE. Every word in it comes out of `ctx.vars` —
+     the page's variables and the section's, merged with the nearest last. */
+
+  /** A variable that is a list, a lone scalar, or absent — all three arrive here
+   *  and leave as an array of strings. A one-item list is written as a scalar by
+   *  most people writing YAML. */
+  function list(value) {
+    if (Array.isArray(value)) return value.map(function (v) { return String(v).trim(); });
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value).trim()];
+  }
+
+  /** One element, with its class, appended where it belongs. */
+  function add(parent, tag, cls) {
+    const el = document.createElement(tag);
+    if (cls) el.setAttribute("class", cls);
+    parent.appendChild(el);
+    return el;
+  }
+
+  const vars = ctx.vars || {};
+  const names = list(vars.stageName).filter(Boolean);
+  const reached = String(vars.reached === undefined || vars.reached === null ? "" : vars.reached).trim();
+
+  /* THE STAGE REACHED IS NAMED, NOT NUMBERED. An index typed into a second
+     variable is a number that is wrong the moment a stage is added in front of
+     it, and nothing on screen would say so. A name that matches nothing leaves
+     the run at the start, which is the honest drawing of a typo. */
+  const here = names.indexOf(reached);
+
+  if (names.length === 0) {
+    section.classList.add("is-fault");
+  } else {
+    const marks = section.querySelector(".marks");
+    const gauge = section.querySelector(".gauge");
+    const fill = section.querySelector(".fill");
+
+    add(gauge, "span", "now").textContent = String(here + 1);
+    add(gauge, "span", "of").textContent = "/ " + names.length;
+
+    /* HOW FAR THE LINE GOES is the middle of the mark it stops at, because every
+       stage sits at the centre of its own share of the track. */
+    const at = names.length > 1 ? ((here + 0.5) / names.length) * 100 : 100;
+    fill.style.setProperty("--at", Math.max(0, at) + "%");
+
+    /* THE DRAWING SAYS WHAT IT IS to a reader who is not looking at it, in the
+       document's own words. */
+    marks.setAttribute("role", "img");
+    marks.setAttribute("aria-label", names.join(", "));
+
+    names.forEach(function (name, i) {
+      const stage = add(marks, "div", "stage" + (i <= here ? " is-done" : "") + (i === here ? " is-here" : ""));
+      /* THE ONE THING A SCRIPT MAY WRITE ONTO AN ELEMENT'S STYLE IS A CUSTOM
+         PROPERTY. The stylesheet decides what the stagger does with it. */
+      const dot = add(stage, "span", "dot");
+      dot.style.setProperty("--i", String(i));
+      add(stage, "span", "name").textContent = name;
+    });
+  }
+
+})($.section, $.ctx, $.onTeardown);
+})();
+</script></section></main>
