@@ -3,11 +3,11 @@
 // read loosely and bounded, and which of an agent's kept values its own list
 // still offers (*Chat*, `picker`: *the choices are kept*).
 //
-// WHAT IS KEPT is `ChatSettings`: the view last picked, the agent last picked,
-// and each agent's last model, mode and effort by the picker's category — a
-// category and not an option's id, because a category is what the person
-// picked from and an id is the session's own word, which a new version of the
-// agent may spell otherwise. `server/workspace/settings.ts` keeps the file;
+// WHAT IS KEPT is `ChatSettings`: the agent last picked, and each agent's
+// last model, mode and effort by the picker's category — a category and not
+// an option's id, because a category is what the person picked from and an id
+// is the session's own word, which a new version of the agent may spell
+// otherwise. `server/workspace/settings.ts` keeps the file;
 // the chats apply what it holds. Both read it through here, so the shape is
 // said once.
 //
@@ -21,10 +21,12 @@
 // that is not an agent's, a category that is not a picker's, an id past
 // `WIRE_BOUNDS.id` and a value of the wrong type are each left out, never
 // guessed at; a file that is not a settings file at all is the caller's to
-// put aside.
+// put aside. A `view` a file still holds, from before a chat was drawn one
+// way, is one of those and is left out: the file reads, and the next write
+// drops it.
 
-import type { AgentKey, ChatSettings, ChatView, ConfigOption, ConfigValue, PickerCategory } from "../../contracts/types.ts";
-import { AGENT_KEY, CHAT_VIEWS, DEFAULT_VIEW } from "../../contracts/wire.js";
+import type { AgentKey, ChatSettings, ConfigOption, ConfigValue, PickerCategory } from "../../contracts/types.ts";
+import { AGENT_KEY } from "../../contracts/wire.js";
 import { WIRE_BOUNDS } from "../platform/acp-wire.ts";
 
 /** The file's version. A file of another is not read as this one. */
@@ -37,14 +39,13 @@ export const PICKERS: readonly PickerCategory[] = Object.freeze(["model", "mode"
  *  a bound on a file somebody edited, not a number anybody reaches. */
 export const MAX_AGENTS = 128;
 
-/** A workspace that has kept nothing: Plain, no agent, no choices. */
-export const defaults = (): ChatSettings => ({ view: DEFAULT_VIEW, agent: null, agents: {} });
+/** A workspace that has kept nothing: no agent, no choices. */
+export const defaults = (): ChatSettings => ({ agent: null, agents: {} });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const own = (o: Record<string, unknown>, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 
 export const isPicker = (v: unknown): v is PickerCategory => typeof v === "string" && (PICKERS as readonly string[]).includes(v);
-export const isView = (v: unknown): v is ChatView => typeof v === "string" && (CHAT_VIEWS as readonly string[]).includes(v);
 export const isKey = (v: unknown): v is AgentKey => typeof v === "string" && AGENT_KEY.test(v);
 
 /** A value a picker may be kept at: a choice's value within the protocol's
@@ -61,7 +62,6 @@ export function readChoices(raw: unknown): ChatSettings | null {
   if (!isObj(raw) || raw.version !== SETTINGS_VERSION) return null;
   const out = defaults();
   const chat = isObj(raw.chat) ? raw.chat : {};
-  if (isView(chat.view)) out.view = chat.view;
   if (isKey(chat.agent)) out.agent = chat.agent;
   const agents = isObj(chat.agents) ? chat.agents : {};
   let count = 0;
@@ -84,7 +84,7 @@ export function readChoices(raw: unknown): ChatSettings | null {
 /** THE FILE, AS WRITTEN: its version and what is kept, two-space indented so
  *  a person who opens it can read it. */
 export function writeChoices(s: ChatSettings): string {
-  return `${JSON.stringify({ version: SETTINGS_VERSION, chat: { view: s.view, agent: s.agent, agents: s.agents } }, null, 2)}\n`;
+  return `${JSON.stringify({ version: SETTINGS_VERSION, chat: { agent: s.agent, agents: s.agents } }, null, 2)}\n`;
 }
 
 /** THE PICKER OF A CATEGORY: the first of the agent's options in it, the one

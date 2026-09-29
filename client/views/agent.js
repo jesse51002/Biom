@@ -12,12 +12,9 @@
 // and never a scan of sessions by page. It hands the look `names`, the pages
 // its places name, because the look cannot resolve a `uid`; `input`, where
 // Biom's input box sits and how much of the look it covers; and `beside`, the
-// page the panel sits beside or the Agent screen would minimise to; and
-// `view`, which of the chat's three views the person picked, kept in the
-// workspace's settings. It answers the look's `look.*` kinds for that box
-// alone, which it knows by the identity of the context it mounted the box
-// with — `look.view` among them: the view is picked from the look's own ⋯,
-// kept here, and posted back, so the look draws what the host holds.
+// page the panel sits beside or the Agent screen would minimise to. It answers
+// the look's `look.*` kinds for that box alone, which it knows by the identity
+// of the context it mounted the box with.
 //
 // ONE BOX SERVES THE FULL SCREEN AND THE PANEL, AND IT IS NEVER MOVED. Moving
 // an iframe to another parent reloads it — the look would lose its place and
@@ -30,7 +27,7 @@
 // THE PANEL'S HEAD IS THE LOOK'S (its list of chats, expand, close); its
 // width is this view's grip, kept for this browser.
 
-/** @import { Address, BridgeContext, ChatId, ChatSummary, ChatUpdate, ChatView, Frame, FrameHost, HostErrorCode, LookInput, LookState, PageId, PageName, WindowId } from "../../contracts/types.ts" */
+/** @import { Address, BridgeContext, ChatId, ChatSummary, ChatUpdate, Frame, FrameHost, HostErrorCode, LookInput, LookState, PageId, PageName, WindowId } from "../../contracts/types.ts" */
 /** @import { ChatStore } from "../store/chats.js" */
 /** @import { HistoryStore } from "../store/history.js" */
 /** @import { Switcher } from "../store/switcher.js" */
@@ -39,7 +36,7 @@
 /** @import { LookRequest } from "../bridge/bridge.js" */
 /** @import { AgentInput } from "./agent-input.js" */
 
-import { AGENT_PAGE, DEFAULT_VIEW, ERRORS } from "../../contracts/wire.js";
+import { AGENT_PAGE, ERRORS } from "../../contracts/wire.js";
 import { addressOfPlace } from "../../contracts/address.js";
 import { remember, remembered } from "../platform/dom.js";
 import { weaveRuntime } from "../platform/document.js";
@@ -251,12 +248,7 @@ export function makeAgentView(deps) {
   let sentNames = "";
   let sentInput = "";
   let sentBeside = "";
-  /** @type {ChatView} */
-  let sentView = DEFAULT_VIEW;
   let scheduled = false;
-
-  /** The view the person picked, as the store last had it. @returns {ChatView} */
-  const viewNow = () => chats.get().settings?.view ?? DEFAULT_VIEW;
 
   /** The chats as the look draws them, minus what moves on every push of a
    *  streaming chat and draws nothing new — `updated` to the minute — so a
@@ -351,9 +343,8 @@ export function makeAgentView(deps) {
     const names = namesNow();
     const inputNow = input.measure();
     const beside = besideNow();
-    const view = viewNow();
     /** @type {LookState} */
-    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside, view };
+    const state = { mode: want.mode, chat: want.chat, list: want.list, chats: s.chats, updates, names, input: inputNow, beside };
     frame.post({ kind: "look.state", state });
     posted = want;
     queue = [];
@@ -361,7 +352,6 @@ export function makeAgentView(deps) {
     sentNames = JSON.stringify(names);
     sentInput = JSON.stringify(inputNow);
     sentBeside = JSON.stringify(beside);
-    sentView = view;
   }
 
   /** A STATE WHEN THE SHAPE MOVED, a patch for anything else. The shape is
@@ -407,7 +397,7 @@ export function makeAgentView(deps) {
       post();
       return;
     }
-    /** @type {{ kind: "look.patch", chat: ChatId | null, updates?: ChatUpdate[], chats?: ChatSummary[], names?: Record<string, PageName>, input?: LookInput, beside?: PageName | null, view?: ChatView }} */
+    /** @type {{ kind: "look.patch", chat: ChatId | null, updates?: ChatUpdate[], chats?: ChatSummary[], names?: Record<string, PageName>, input?: LookInput, beside?: PageName | null }} */
     const patch = { kind: "look.patch", chat: posted.chat };
     let any = false;
     if (queue.length) { patch.updates = queue; queue = []; any = true; }
@@ -423,8 +413,6 @@ export function makeAgentView(deps) {
     const beside = besideNow();
     const bs = JSON.stringify(beside);
     if (bs !== sentBeside) { patch.beside = beside; sentBeside = bs; any = true; }
-    const view = viewNow();
-    if (view !== sentView) { patch.view = view; sentView = view; any = true; }
     if (any) frame.post(patch);
   }
 
@@ -662,16 +650,6 @@ export function makeAgentView(deps) {
           // A queued message's ×: the person's words taken out, none sent.
           if (chats.summary(req.chat) === null) return { code: ERRORS.NOT_FOUND, message: "there is no such chat" };
           void chats.unqueue(req.chat, req.queued).catch((e) => console.warn("[biom] the queued message could not be taken out", e));
-          return null;
-        }
-        case "look.view": {
-          // THE VIEW PICKED FROM THE LOOK'S ⋯, kept for the workspace. The
-          // store holds it at once and puts it back if the server refuses,
-          // and either way it reaches the look as a patch — the look draws
-          // nothing ahead of that, so what it shows is what is kept here.
-          if (req.view !== viewNow()) {
-            void chats.setView(req.view).catch((e) => input.say("The view did not change: " + (e instanceof Error && e.message ? e.message : "the server did not answer")));
-          }
           return null;
         }
         case "look.panel": {
