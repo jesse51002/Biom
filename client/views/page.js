@@ -36,6 +36,15 @@ import { weaveRuntime } from "../platform/document.js";
  *   settled in `boot.js` before anything is constructed and never moves again.
  */
 
+/** THE NAME THE PAGE'S BOX WEARS, and the one thing about it that the desktop
+ *  shell reads. The window holds more boxes than the page's — the Agent
+ *  screen's look is one, kept running beside every page once it has shown —
+ *  and the shell, reading the drawn page out for Share, sees each only as a
+ *  frame. This is how it knows which one is the page. `PAGE_BOX` in
+ *  `app/box.js` is the same string, and `tests/app.test.ts` holds the two
+ *  equal. */
+export const PAGE_BOX = "biom-page";
+
 /**
  * A page is one box, keyed by the page's own id.
  *
@@ -66,7 +75,12 @@ export function makePageView(deps) {
     // and one whose document is the same keeps the box it is drawn in — which is
     // what lets somebody go on typing through a repaint.
     const input = { id: page.id, name: page.name, plugin: page.plugin, input: page.input };
-    return frameHost.for(page.id, weaveRuntime(page.html, input, vault), { page: page.id }).el;
+    const el = frameHost.for(page.id, weaveRuntime(page.html, input, vault), { page: page.id }).el;
+    // NAMED HERE, BEFORE THE SHELL PUTS IT IN THE WINDOW, because a frame takes
+    // its name when it is made — which is when the element is inserted — and
+    // keeps it through every redraw of the same element after that.
+    el.setAttribute("name", PAGE_BOX);
+    return el;
   };
 }
 

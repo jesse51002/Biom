@@ -48,6 +48,7 @@ const { mkdirSync, readFileSync, rmSync } = require("node:fs");
 const { join } = require("node:path");
 
 const { dataHome } = require("./data.js");
+const { pageBox } = require("./box.js");
 
 /** What `tools/app.ts` named the compiled server, beside this file — inside
  *  `resources/app` in a packaged bundle and in `dist/stage` before one. */
@@ -649,8 +650,8 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle(STATE, () => stateOf());
   ipcMain.handle(LOGO, () => logoUrl());
 
-  /** THE DRAWN PAGE, READ OUT OF THE BOX. Every frame in the window is walked
-   *  and the one that is the page — the only frame the client weaves — is
+  /** THE DRAWN PAGE, READ OUT OF THE BOX. The page's box — which the window's
+   *  frames say only by the name the client gave it, see `app/box.js` — is
    *  asked to serialise itself: scripts out, every canvas turned into the
    *  picture it was showing, every section marked in view so a scene below the
    *  fold plays for a stranger, and the sheet's own ground written in, because
@@ -697,14 +698,14 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.handle(CAPTURE, async () => {
     if (!alive()) return "";
-    // THE BOX IS THE ONE FRAME THAT IS NOT THE WINDOW. The client weaves exactly
-    // one iframe per page, so any frame under the main one is it. The whole
-    // subtree is walked rather than the direct children, so a page drawn one
-    // level down still counts, and the outermost one is taken.
-    const main = win.webContents.mainFrame;
-    const box = main.framesInSubtree.find((f) => f !== main);
+    // THE PAGE'S BOX, BY ITS NAME, and never merely the first box. Once the
+    // Agent screen has shown, the window holds its look in a box of its own
+    // beside every page — made before the page's, on a launch that opens
+    // there. The whole subtree is walked, so the box is found wherever it
+    // sits, and a frame inside the page is never taken for it.
+    const box = pageBox(win.webContents.mainFrame.framesInSubtree);
     if (!box) {
-      console.error("the page could not be captured: the window holds no box");
+      console.error("the page could not be captured: no frame in the window is the page's box");
       return "";
     }
     let paper = "";

@@ -585,6 +585,11 @@ moving an iframe reloads it. `client/views/agent.js` builds ONE element, the
 slot, which the shell puts in the bed beside the canvas once; its three shapes —
 the whole screen on `#/agent`, the panel beside whatever else is on screen while
 `panel` is set, nowhere — are the bed's `data-agent`, and shut it keeps running.
+**So once it has shown, the window holds this box beside every page**, and on a
+launch that opens here it was made before any page's: whatever walks the
+window's frames looking for the page takes the page's box by the name
+`client/views/page.js` gives it, as Share's capture does through `app/box.js`,
+and never the first box it finds — which was this one, and went up as the page.
 The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent` itself, the
 key a page of that id would be mounted under: the shell refuses `#/page/@agent`,
 and a box ever mounted there would be one of its own that is never fed — with

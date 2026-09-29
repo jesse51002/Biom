@@ -38,6 +38,9 @@ import { ICNS_TYPES, ICO_SIZES, containers, decodePng } from "../tools/icon.ts";
 // The shell's own copy of the one rule it shares with the server. Plain CommonJS
 // beside `app/main.js`, which is why it is required rather than imported.
 import { dataHome as shellDataHome } from "../app/data.js";
+// Which box Share reads, beside the shell for the same reason.
+import { PAGE_BOX, pageBox } from "../app/box.js";
+import { PAGE_BOX as CLIENT_PAGE_BOX } from "../client/views/page.js";
 import type { EmbeddedMap } from "../server/platform/embedded.ts";
 
 const HERE = join(import.meta.dir, "..");
@@ -353,12 +356,57 @@ test("the window is frameless on every desktop, and macOS keeps its traffic ligh
   }
 });
 
+/* ── Share's capture, and which box it reads ────────────────────────────── */
+
+/** A frame as the main process sees one: its name and its parent, and — for
+ *  the test's own reading — which box it stands for. */
+interface Framed { name: string; parent: Framed | null; is: string }
+
+test("Share's capture takes the page's box by its name, never the look's, whichever the window made first", () => {
+  // THE WINDOW HOLDS MORE THAN ONE BOX. The Agent screen's look is a box of its
+  // own, built the first time the Agent screen or the chat panel shows and kept
+  // running, hidden, beside every page from then on; every launch opens on the
+  // Agent screen, so the look is made before any page is and the window hands
+  // its frames over in that order. The first frame that was not the window was
+  // the look, and Share uploaded it as the page.
+  const main: Framed = { name: "", parent: null, is: "the window" };
+  const look: Framed = { name: "", parent: main, is: "the Agent screen's look" };
+  const page: Framed = { name: PAGE_BOX, parent: main, is: "the page" };
+  // A page drawn inside the page (`page.embed`) is a frame the BOX made, and so
+  // is anything a page's own code puts in an iframe — which may wear any name
+  // at all, this one included.
+  const embedded: Framed = { name: "", parent: page, is: "a page drawn inside the page" };
+  const namesake: Framed = { name: PAGE_BOX, parent: page, is: "a frame inside the page wearing its name" };
+
+  expect(pageBox([main, look, page, embedded])?.is).toBe("the page");
+  expect(pageBox([main, page, look])?.is).toBe("the page");
+  // THE OUTERMOST, and by its depth rather than by where it falls in the list.
+  expect(pageBox([main, look, namesake, embedded, page])?.is).toBe("the page");
+  // NO PAGE ON SCREEN IS NO CAPTURE, and never the look in its place: the
+  // client sends nothing, and the server says in words that it needed one.
+  expect(pageBox([main, look])).toBe(null);
+  expect(pageBox([main])).toBe(null);
+});
+
+test("the client names the page's box and the shell looks for it under one name, through one rule", async () => {
+  // ONE STATEMENT IN TWO PLACES: `app/` is not served and cannot be imported by
+  // the client, and the shell cannot load a client module. So the name is
+  // spelled beside each, and held equal here.
+  expect(PAGE_BOX).toBe(CLIENT_PAGE_BOX);
+  // And `app/main.js` asks `app/box.js` for the box rather than choosing one
+  // itself, over every frame in the window rather than the direct children.
+  const main = await readFile(join(HERE, "app", "main.js"), "utf8");
+  expect(main).toContain('require("./box.js")');
+  expect(main).toContain("pageBox(win.webContents.mainFrame.framesInSubtree)");
+  expect(main).not.toContain("framesInSubtree.find(");
+});
+
 test("the packaged staging directory carries the preload and the logo", async () => {
   // IT SHIPS OR THE BUILT APPLICATION HAS NO CHOOSER — and the production server
   // refuses the listing it would fall back to, which is a picker that cannot
   // reach a folder. The list is explicit rather than a walk of `app/`, so this
   // holds it against what is on disk.
-  expect(SHELL_FILES).toEqual(["main.js", "preload.js", "data.js", "icon.png", "package.json"]);
+  expect(SHELL_FILES).toEqual(["main.js", "preload.js", "data.js", "box.js", "icon.png", "package.json"]);
   for (const file of SHELL_FILES) {
     expect([file, (await readFile(join(HERE, "app", file), "utf8")).length > 0]).toEqual([file, true]);
   }

@@ -30,7 +30,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
+import { PAGE_BOX, makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
 import { weaveRuntime } from "../client/platform/document.js";
 import { vaultBase } from "../contracts/wire.js";
 
@@ -192,6 +192,24 @@ test("a page is ONE box, keyed by the page's own id", () => {
   // ONE BOX IS ONE PAGE, so the context is one field. There is no block to name.
   expect(frameHost.mounts[0].ctx).toEqual({ page: "quote" });
   expect(el.tagName).toBe("IFRAME");
+});
+
+test("the page's box wears its name before the shell puts it in the window", () => {
+  // WHICH BOX IS THE PAGE is a question only the name answers from outside:
+  // the desktop shell reads the drawn page for Share out of the window's
+  // frames, and the window also holds the Agent screen's look, in a box of its
+  // own, from the first time it shows. A frame takes its name when it is made,
+  // which is when the shell inserts the element — so the name is on it before
+  // `draw` hands it over, and on every page the canvas draws, the design doc
+  // and the map included.
+  const frameHost = fakeFrameHost();
+  const deps = { h, frameHost, ws: {}, ui: {}, vault: VAULT };
+
+  const el = makePageView(deps)(page("quote", []));
+  expect(el.getAttribute("name")).toBe(PAGE_BOX);
+  expect(el.parentElement).toBe(null);
+  expect(makeDesignView(deps)(page("@design", [])).getAttribute("name")).toBe(PAGE_BOX);
+  expect(makeMapView(deps)(page("@map", [])).getAttribute("name")).toBe(PAGE_BOX);
 });
 
 test("THE IFRAME ITSELF, WITH NO WRAPPER, and that is not tidiness", () => {
