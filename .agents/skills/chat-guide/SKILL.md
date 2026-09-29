@@ -129,9 +129,12 @@ word too long is cut, and an id given twice keeps its first.
 has it: a command the known-agents table names (`KNOWN_AGENTS` in
 `agents-known.ts`) on the login shell's `PATH`, one Biom installed into its own
 folder, or — for Claude Code and Codex, whose own CLIs do not speak ACP — the
-CLI plus a pinned adapter run through `npx`, said plainly to be missing Node
-where there is none. **A command is in the table only where its name is the
-agent's own**: finding one means starting it with ACP arguments, and `goose`,
+CLI plus an adapter run through `npx` (the pinned version unless the registry
+lists a newer one). Biom passes the found CLI's absolute path in the adapter's
+own `CLAUDE_CODE_EXECUTABLE` or `CODEX_PATH` setting, so it runs the person's
+installed CLI even when its npm dependencies lack a bundled native binary;
+without Node, Biom says so plainly. **A command is in the table only where its
+name is the agent's own**: finding one means starting it with ACP arguments, and `goose`,
 `grok`, `droid`, `pool`, `nova` and `cortex` are also other programs' words, so
 those agents are found only once Biom installed them. OpenClaw is reached only
 through a Gateway on THIS machine, by a constant address, and **Start Gateway**

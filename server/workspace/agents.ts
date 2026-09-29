@@ -644,7 +644,7 @@ export function makeAgents(deps: AgentsDeps): Agents {
             version: null,
           };
         }
-        return { source: "path", launch: { command: npx, args: ["--yes", adapterSpec(known), ...known.adapter.args], env: { ...env } }, cannot: null, gateway: null, fetching: true, version: null };
+        return { source: "path", launch: { command: npx, args: ["--yes", adapterSpec(known), ...known.adapter.args], env: { ...env, [known.adapter.cliEnv]: cli } }, cannot: null, gateway: null, fetching: true, version: null };
       }
     }
     return null;
