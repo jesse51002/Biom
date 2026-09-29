@@ -48,7 +48,7 @@ const { mkdirSync, readFileSync, rmSync } = require("node:fs");
 const { join } = require("node:path");
 
 const { dataHome } = require("./data.js");
-const { pageBox } = require("./box.js");
+const { NAMES_IN_WINDOW, pageBox } = require("./box.js");
 
 /** What `tools/app.ts` named the compiled server, beside this file — inside
  *  `resources/app` in a packaged bundle and in `dist/stage` before one. */
@@ -650,8 +650,8 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle(STATE, () => stateOf());
   ipcMain.handle(LOGO, () => logoUrl());
 
-  /** THE DRAWN PAGE, READ OUT OF THE BOX. The page's box — which the window's
-   *  frames say only by the name the client gave it, see `app/box.js` — is
+  /** THE DRAWN PAGE, READ OUT OF THE BOX. The page's box — found by the name
+   *  the window's own document gave its `<iframe>`, see `app/box.js` — is
    *  asked to serialise itself: scripts out, every canvas turned into the
    *  picture it was showing, every section marked in view so a scene below the
    *  fold plays for a stranger, and the sheet's own ground written in, because
@@ -698,12 +698,19 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.handle(CAPTURE, async () => {
     if (!alive()) return "";
-    // THE PAGE'S BOX, BY ITS NAME, and never merely the first box. Once the
-    // Agent screen has shown, the window holds its look in a box of its own
-    // beside every page — made before the page's, on a launch that opens
-    // there. The whole subtree is walked, so the box is found wherever it
-    // sits, and a frame inside the page is never taken for it.
-    const box = pageBox(win.webContents.mainFrame.framesInSubtree);
+    // THE PAGE'S BOX, BY THE NAME THE WINDOW'S OWN DOCUMENT GAVE IT, and never
+    // merely the first box or one calling itself that. Once the Agent screen
+    // has shown, the window holds its look in a box of its own beside every
+    // page — made before the page's, on a launch that opens there — and a box
+    // may rename its own window to anything. The name is read here, in the
+    // window's document, which no box can reach; `app/box.js` says the rest.
+    let names = [];
+    try {
+      names = await win.webContents.executeJavaScript(NAMES_IN_WINDOW, true);
+    } catch {
+      // A document that will not answer holds no page box anybody can name.
+    }
+    const box = pageBox(win.webContents.mainFrame.framesInSubtree, names);
     if (!box) {
       console.error("the page could not be captured: no frame in the window is the page's box");
       return "";

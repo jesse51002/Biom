@@ -30,7 +30,8 @@
 //   7. Share's capture is the page on screen — an html page and a document,
 //      with the chat panel shut and open, before and after the Agent screen —
 //      and never the Agent screen's look, which the window keeps running beside
-//      every page once it has been drawn.
+//      every page once it has been drawn: not even where the look renames its
+//      own window after the page's box.
 //   8. Maximise and full screen flip the window's state, and the bar follows.
 //   9. Close quits the server with the window, and leaves no process of it
 //      running — a port that stopped answering is not the same statement.
@@ -58,6 +59,8 @@ import { join } from "node:path";
 
 import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, shotsDir, cdp } from "./harness.ts";
 import type { Sandbox, Cdp } from "./harness.ts";
+// The prefix of the page box's name, as the shell reads it.
+import { PAGE_BOX } from "../../app/box.js";
 
 /* ── what has to be true before there is anything to walk ───────────────── */
 
@@ -214,6 +217,9 @@ let wire: Cdp;
 /** The port and the token off the ready line, which is the whole of what the
  *  shell learns about the server it started. */
 let ready: { port: number; token: string } = { port: 0, token: "" };
+/** The window's own debugging port — which also lists each box as a target of
+ *  its own, because every box runs in a process of its own. */
+let debugging = 0;
 let broke: string | null = null;
 
 const log = (): string => `${said.err}${said.out === "" ? "" : `\nstdout:\n${said.out}`}`;
@@ -273,6 +279,7 @@ beforeAll(async () => {
   box = sandbox("app");
   before = outside();
   const port = await freePort();
+  debugging = port;
   const how = HOW as { argv: string[]; how: string; wm: string | null };
 
   // `--no-sandbox` AND `--disable-gpu` BEHIND A KNOB THAT IS OFF. A container
@@ -581,10 +588,58 @@ walk("Share's capture is the page on screen, and never the Agent screen's look",
   expect(await bed()).toBe("panel");
   await capture("the root page with the chat panel open beside it", "root");
 
+  // A BOX CAN RENAME ITS OWN WINDOW, and the look is a plugin a workspace can
+  // replace: a frame's name is the box's own `window.name`, so the look can
+  // call itself whatever the page's box is called. Said here from inside the
+  // look's box, which is a debugging target of its own. First the bare word,
+  // which is all a look could guess: the capture is still the page.
+  await inTheLook(`window.name = ${JSON.stringify(PAGE_BOX)}`);
+  await capture("the root page, the look calling itself biom-page", "root");
+  // Then the page box's WHOLE name, which the look could only have been told:
+  // two of the window's frames answer to it, and the capture is nothing
+  // rather than either of them — never the look.
+  const given = await wire.evaluate<string>("document.querySelector('div.plate iframe.artifact').getAttribute('name')");
+  await inTheLook(`window.name = ${JSON.stringify(given)}`);
+  const refused = await wire.evaluate<string>("window.biomShell.capturePage()");
+  console.log(`  capture, the root page, the look calling itself by the page box's own name: ${refused.length} characters`);
+  await inTheLook(`window.name = ""`);
+
   // EVERY CAPTURE, JUDGED TOGETHER, so a run that takes the wrong box says
   // in which of them it took it rather than stopping at the first.
   expect(verdicts).toEqual(verdicts.map(({ at, doc }) => ({ at, words: true, doc: doc === null ? null : true, look: false })));
+  expect(refused).toBe("");
 }, null, 300000);
+
+/** RUN `expression` INSIDE THE AGENT SCREEN'S LOOK, which only the window's
+ *  debugging port can do: the box has an opaque origin and runs in a process
+ *  of its own, so it is a target of its own there, and it is known by the
+ *  root the look draws into. Throws where no target is the look, so a step
+ *  that meant to act in it cannot pass without having done so. */
+async function inTheLook(expression: string): Promise<void> {
+  const list = (await (await fetch(`http://127.0.0.1:${debugging}/json/list`)).json()) as { type: string; webSocketDebuggerUrl?: string }[];
+  for (const t of list) {
+    if (t.type !== "iframe" || t.webSocketDebuggerUrl === undefined) continue;
+    const socket = new WebSocket(t.webSocketDebuggerUrl);
+    try {
+      await new Promise<void>((resolve, reject) => { socket.onopen = () => resolve(); socket.onerror = () => reject(new Error("the box's debugging socket refused")); });
+      let n = 0;
+      const run = (source: string): Promise<unknown> => new Promise((resolve) => {
+        const id = ++n;
+        socket.onmessage = (ev: MessageEvent) => {
+          const m = JSON.parse(String(ev.data)) as { id?: number; result?: { result?: { value?: unknown } } };
+          if (m.id === id) resolve(m.result?.result?.value);
+        };
+        socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression: source, returnByValue: true } }));
+      });
+      if ((await run(`document.getElementById("g-agent") !== null`)) !== true) continue;
+      await run(expression);
+      return;
+    } finally {
+      socket.close();
+    }
+  }
+  throw new Error("no box in the window is the Agent screen's look");
+}
 
 walk("maximise and full screen flip the window, and the bar follows it", async () => {
   const state = async (): Promise<{ maximized: boolean; fullScreen: boolean }> =>

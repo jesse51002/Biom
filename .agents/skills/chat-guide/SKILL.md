@@ -588,7 +588,8 @@ the whole screen on `#/agent`, the panel beside whatever else is on screen while
 **So once it has shown, the window holds this box beside every page**, and on a
 launch that opens here it was made before any page's: whatever walks the
 window's frames looking for the page takes the page's box by the name
-`client/views/page.js` gives it, as Share's capture does through `app/box.js`,
+`client/views/page.js` gives it — read out of the window's own document, since
+a box can rename its own window — as Share's capture does through `app/box.js`,
 and never the first box it finds — which was this one, and went up as the page.
 The box is mounted under `LOOK_KEY`, `@agent:screen` — not `@agent` itself, the
 key a page of that id would be mounted under: the shell refuses `#/page/@agent`,

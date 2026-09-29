@@ -73,6 +73,7 @@ function element(tag) {
     /** how many times this node has been put into a parent */
     moved: 0,
     setAttribute: (k, v) => { el.attrs[k] = v; },
+    getAttribute: (k) => (Object.hasOwn(el.attrs, k) ? String(el.attrs[k]) : null),
     removeAttribute: (k) => { delete el.attrs[k]; },
     toggleAttribute: (k, on) => { if (on) el.attrs[k] = ""; else delete el.attrs[k]; },
     addEventListener: (name, fn) => { (el.listeners[name] ||= []).push(fn); },
