@@ -606,20 +606,40 @@ test("SEND QUEUED shows under the input while the queue is held, says how many, 
 
 /* ── Edit ──────────────────────────────────────────────────────────────── */
 
-test("EDIT'S NEW CHAT FOR A PAGE opens with the input empty and the caret in it, and its first message is the words alone, made for that page", async () => {
-  const s = stand([agent()], {
+/** The input box stood up on a page, answering the chat a first message
+ *  makes. */
+function onAPage() {
+  return stand([agent()], {
     route: { view: "page", id: "home/Specs", screen: "page" },
     answers: {
       "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
       "chat.new": (req) => ({ id: "c1nvented-edit-0001", name: req.text, face: null, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "starting", turn: 1, light: "working", stop: null, reason: null, created: 1, updated: 2, queued: 0, queueHeld: false }),
     },
   });
+}
+
+/** Where the caret was last put in an element, as a browser would hold it.
+ *  @param {El} el */
+function caretOf(el) {
+  /** @type {{ at: number[] | null }} */
+  const held = { at: null };
+  /** @type {any} */ (el).setSelectionRange = (/** @type {number} */ a, /** @type {number} */ b) => { held.at = [a, b]; };
+  return held;
+}
+
+/** EDIT, as the Agent view says it: a new thread in the panel, then the
+ *  input made ready for the page. @param {ReturnType<typeof stand>} s */
+function pressEdit(s) {
+  s.ui.set({ panel: true, chat: null });
+  s.input.forPage("home/Specs");
+}
+
+test("EDIT'S NEW CHAT FOR A PAGE, with nothing typed, opens with the input empty and the caret in it, and its first message is the words alone, made for that page", async () => {
+  const s = onAPage();
   await settle();
   const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
-  // Whatever stood in the text area before, and wherever the caret was.
-  text.value = "a draft from before";
   doc.activeElement = doc.body;
-  s.input.forPage("home/Specs");
+  pressEdit(s);
   expect(text.value).toBe("");
   expect(doc.activeElement).toBe(text);
 
@@ -629,4 +649,23 @@ test("EDIT'S NEW CHAT FOR A PAGE opens with the input empty and the caret in it,
   const made = s.calls.filter((c) => c.kind === "chat.new");
   expect(made.length).toBe(1);
   expect(made[0]).toMatchObject({ text: "tidy the invented headings", page: "home/Specs" });
+});
+
+test("A DRAFT TYPED ON THE START SCREEN SURVIVES PRESSING EDIT: kept as it was, the caret after it, and sent as the page's chat", async () => {
+  const s = onAPage();
+  await settle();
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  const caret = caretOf(text);
+  text.value = "an invented draft\nwith a second line";
+  doc.activeElement = doc.body;
+  pressEdit(s);
+  expect(text.value).toBe("an invented draft\nwith a second line");
+  expect(doc.activeElement).toBe(text);
+  expect(caret.at).toEqual([text.value.length, text.value.length]);
+
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  const made = s.calls.filter((c) => c.kind === "chat.new");
+  expect(made.length).toBe(1);
+  expect(made[0]).toMatchObject({ text: "an invented draft\nwith a second line", page: "home/Specs" });
 });

@@ -64,9 +64,11 @@ import {
  *   much of the look it covers — the `LookInput` the look leaves room for.
  * @property {(fn: () => void) => () => void} onMove Its size or place changed.
  * @property {(page: PageId) => void} forPage A new chat for a page —
- *   **Edit**'s: the text area empty with the caret in it, and the page named
- *   as the one the chat is made for. The page reaches the agent with the first
- *   message, as Biom's note of what is on screen, never as words in here.
+ *   **Edit**'s: the page named as the one the chat is made for, and the caret
+ *   put at the end of whatever the person had typed, which is kept — nothing
+ *   is typed for them, so with no draft the text area is empty. The page
+ *   reaches the agent with the first message, as Biom's note of what is on
+ *   screen, never as words in here.
  * @property {() => void} focus
  * @property {() => void} fresh A new thread began: nothing pending for a page.
  *   It moves no caret; the view decides where the caret goes.
@@ -741,11 +743,12 @@ export function makeAgentInput(deps) {
       return () => { movers.delete(fn); };
     },
     forPage(page) {
-      text.value = "";
+      // THE PERSON'S DRAFT IS KEPT: Edit types nothing for them, and throws
+      // nothing they typed away.
       pendingPage = page;
-      autosize();
       paint();
       text.focus({ preventScroll: true });
+      text.setSelectionRange(text.value.length, text.value.length);
     },
     focus() {
       text.focus({ preventScroll: true });

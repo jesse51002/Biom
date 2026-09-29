@@ -712,11 +712,12 @@ screen, routed and drawn before the rail's first level is read, because nothing
 on it waits for the tree; the rail's **Agent** row, in Dashboard's old slot,
 counts the chats working and returns to the chat last open; **Home** is the page
 tree's own heading; **Edit**, amber on the page bar, opens the panel beside the
-page on a new thread with the input empty and the caret in it
-(`AgentInput.forPage`) — nothing is typed for the person — and the chat it
-makes when sent is that page's, the page going to the agent with that first
-message as Biom's note (§6); the crumbs name the open chat with its lamp, and
-the strip counts the chats and the Active agents.
+page on a new thread with the caret at the end of the input
+(`AgentInput.forPage`) — nothing is typed for the person, and a draft they had
+typed on the start screen is kept, so with none the input is empty — and the
+chat it makes when sent is that page's, the page going to the agent with that
+first message as Biom's note (§6); the crumbs name the open chat with its
+lamp, and the strip counts the chats and the Active agents.
 
 ## 13. Testing it with an agent
 

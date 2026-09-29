@@ -111,7 +111,7 @@ import { makeRack } from "./rack.js";
  * @property {() => void} open The rail's **Agent**: the full screen, and the
  *   chat this window last had open.
  * @property {(page: PageId) => void} edit **Edit**: a new chat beside the
- *   page, the input empty with the caret in it.
+ *   page, the caret in the input and nothing typed for the person.
  * @property {() => AgentChrome} chrome The busy count, the open chat and the
  *   counts the chrome shows.
  */
@@ -676,10 +676,11 @@ export function makeShell(deps) {
     }
 
     // EDIT, THE AMBER BUTTON, where Agent Terminal was (*Chat*, `screens`): a
-    // new chat beside the page, the input empty and the caret in it. The page
-    // goes to the agent with the first message, as Biom's note of what is on
-    // screen, and nothing is typed for the person. The one lit control on the
-    // bar, because it is the one that hands the page to an agent.
+    // new chat beside the page, the caret in the input. Nothing is typed for
+    // the person and nothing they typed is thrown away: the page goes to the
+    // agent with the first message, as Biom's note of what is on screen. The
+    // one lit control on the bar, because it is the one that hands the page
+    // to an agent.
     if (page && views.agent) {
       const agent = views.agent;
       const id = page.id;
