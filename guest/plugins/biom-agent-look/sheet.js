@@ -131,14 +131,8 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .iconbtn .ico { width: 15px; height: 15px; }
 .iconbtn:hover { background: var(--field); color: var(--ink); }
 
-/* a menu hung from a button — a row's three dots, the chat's ⋯ — kept inside the look */
+/* a menu hung from a button — a row's three dots — kept inside the look */
 .popmenu { position: absolute; z-index: 70; min-width: 150px; max-width: calc(100% - 12px); background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top right; }
-/* the chat's views: each its name, and the line saying what it adds */
-.viewmenu { width: 250px; }
-.viewmenu .mi { align-items: flex-start; }
-.viewmenu .sub { font: 11.5px/1.4 var(--l-gauge); letter-spacing: .02em; color: var(--l-small); }
-.viewmenu .mark { flex: none; width: 15px; height: 15px; margin: 2px 0 0 auto; }
-.viewmenu .mark .check { margin: 0; }
 
 /* the history as a dropdown, in the panel */
 .menu { position: absolute; z-index: 60; top: calc(var(--l-head) - 2px); left: 6px; width: min(340px, calc(100% - 12px)); max-height: calc(100% - var(--l-head) - 12px); overflow: auto; background: var(--stock-hi); border: 1px solid var(--stock-edge); box-shadow: 0 1px 0 var(--stock-lo); padding: 4px; animation: menuin calc(.18s * var(--l-m)) var(--l-ease); transform-origin: top left; }
@@ -191,16 +185,15 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .jump.on { display: inline-flex; }
 .jump:hover { color: var(--ink); border-color: var(--ink-3); }
 .jump .ico { width: 12px; height: 12px; }
-/* the full screen's top bar: the chat's ⋯, then Minimize, at its right. In a
-   chat it is a bar the height of the panel's head, with its hairline, and the
-   thread starts under it, so nothing scrolled ever runs under its buttons; on
-   the start screen it is only Minimize, over nothing that moves. */
+/* the full screen's top bar: Minimize, at its right. In a chat it is a bar
+   the height of the panel's head, with its hairline, and the thread starts
+   under it, so nothing scrolled ever runs under its button; on the start
+   screen it is only Minimize, over nothing that moves. */
 .chatbar { position: absolute; z-index: 4; top: 0; left: 0; right: 0; height: var(--l-head); display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 10px; pointer-events: none; }
 .chatbar > * { pointer-events: auto; }
 .g-look[data-mode=screen][data-state=live] .chatbar { background: var(--stock); border-bottom: 1px solid var(--stock-edge); }
 .g-look[data-mode=screen][data-state=live] .log { top: var(--l-head); }
 .g-look[data-mode=panel] .chatbar { display: none; }
-.iconbtn.chatmore[aria-expanded=true] { background: var(--field); color: var(--ink); }
 .col { max-width: var(--l-col); margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
 .earlier { align-self: center; font: 11.5px var(--l-gauge); color: var(--ink-2); border: 1px solid var(--stock-edge); padding: 5px 11px; letter-spacing: .02em; }
 .earlier:hover { color: var(--ink); border-color: var(--ink-3); }
@@ -245,14 +238,6 @@ kbd { font: 11px var(--l-gauge); color: var(--ink-3); letter-spacing: .02em; }
 .thought { display: none; margin: -4px 0 2px 1px; padding: 2px 0 2px 14px; border-left: 1px dotted var(--ink-3); font: italic 14px/1.6 var(--l-sheet); color: var(--ink-3); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
 .thinkw[data-open] .thought { display: block; animation: fadein calc(.25s * var(--l-m)); }
 .thought .more { display: block; margin-top: 6px; font: normal 11.5px var(--l-gauge); letter-spacing: .02em; color: var(--l-small); white-space: normal; }
-
-/* the three views, by the root's data-view — a ladder, each adding to the one
-   before: Plain folds the thinking to its line and draws no tool calls,
-   Thinking writes the thinking out, and Tool calls adds each run of tool
-   calls. A view picked moves no node. */
-.g-look:not([data-view=plain]) .thinkw .think { display: none; }
-.g-look:not([data-view=plain]) .thinkw .thought { display: block; margin: 0; padding: 1px 0 1px 13px; border-left: 1px solid var(--rule); font: italic 14.5px/1.62 var(--l-sheet); color: color-mix(in srgb, var(--ink-2) 70%, var(--ink-3)); max-height: none; overflow: visible; animation: none; }
-.g-look:not([data-view=tools]) .acts { display: none; }
 
 /* a run of tool calls: one line that opens to them */
 .acts { display: flex; flex-direction: column; gap: 1px; }

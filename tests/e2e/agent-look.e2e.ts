@@ -18,9 +18,10 @@
 // two lines holding their place as the input goes to the foot and fading as
 // they lift away into a chat every time; a chat mid-turn, a finished one, a
 // red one and the panel draw; a patch appends where it belongs and leaves the
-// rest of the thread's nodes alone, and a stale one is dropped; the chat's ⋯
-// and its View menu, worked from the keyboard, fit on a desktop, at the
-// panel's narrowest and at a phone's width; an agent's words never become
+// rest of the thread's nodes alone, and a stale one is dropped; the chat drawn
+// one way, its thinking folded and each run of tool calls one line, both
+// opening; the full screen's bar, Minimize alone and nothing scrolled under
+// it, on a desktop and at a phone's width; an agent's words never become
 // markup; the look asks for nothing but its own kinds and `open`; reduced
 // motion rests still with faces as text; and a pagehide leaves nothing behind.
 // Pictures of each land in `dist/e2e/`, or in `LOOK_SHOTS` if set.
@@ -543,42 +544,37 @@ test("a turn that ended red says why, a handover is a line in the thread, and a 
   } finally { await ctx.close(); }
 }, 60000);
 
-test("THE THREE VIEWS, as a browser lays them out — a ladder: Plain the words with the thinking folded, Thinking the thinking written out and no tool calls, Tool calls both and one shut line a run — and a failure shows while its run is shut", async () => {
+test("ONE VIEW, as a browser lays it out: the thinking folded to its line and opened to the whole of it, each run of tool calls one shut line that opens, and a failure showing while its run is shut", async () => {
   const { ctx, page, box } = await open();
   try {
     const shown = (sel: string) => `[...root.querySelectorAll(${JSON.stringify(sel)})].map((e) => getComputedStyle(e).display !== "none" && e.getBoundingClientRect().height > 0)`;
     const look = () => inLook<any>(box, `return {
-      view: root.querySelector(".g-look").getAttribute("data-view"),
+      view: root.querySelector(".g-look").hasAttribute("data-view"),
       runs: ${shown(".grp")}, lists: ${shown(".grplist")}, folds: ${shown(".think")}, thoughts: ${shown(".thought")},
-      style: (() => { const t = root.querySelector(".thought"); if (!t) return ""; const c = getComputedStyle(t); return c.fontStyle + "|" + c.borderLeftStyle + "|" + c.borderLeftWidth; })(),
       failed: [...root.querySelectorAll(".grp .gfail")].map((f) => getComputedStyle(f).display !== "none" ? f.textContent : ""),
     };`);
-    await post(page, box, { kind: "look.state", state: chatState("live", { view: "plain" }) });
+    await post(page, box, { kind: "look.state", state: chatState("live") });
     let seen = await look();
-    expect(seen.view).toBe("plain");
-    expect(seen.runs).toEqual([false, false]);
+    expect(seen.view).toBe(false);
+    // Both turns thought and used tools: the thinking is its line, shut, and
+    // each run of tool calls is its line, shut.
     expect(seen.folds).toEqual([true, true]);
     expect(seen.thoughts).toEqual([false, false]);
-    await shot(page, "view-plain");
-    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "thinking" });
-    seen = await look();
-    expect(seen.view).toBe("thinking");
-    expect(seen.runs).toEqual([false, false]);
-    expect(seen.folds).toEqual([false, false]);
-    expect(seen.thoughts).toEqual([true, true]);
-    expect(seen.style).toBe("italic|solid|1px");
-    await shot(page, "view-thinking");
-    await post(page, box, { kind: "look.patch", chat: cid("live"), view: "tools" });
-    seen = await look();
-    expect(seen.view).toBe("tools");
     expect(seen.runs).toEqual([true, true]);
     expect(seen.lists).toEqual([false, false]);
-    expect(seen.folds).toEqual([false, false]);
-    expect(seen.thoughts).toEqual([true, true]);
-    expect(seen.style).toBe("italic|solid|1px");
-    await shot(page, "view-tools");
+    await shot(page, "one-view-folded");
+    // The finished turn's thinking opens to the whole of it, and its run to
+    // its calls; the running turn's are left as they were.
+    await box.locator(".think").first().click();
+    await box.locator(".grp").first().click();
+    seen = await look();
+    expect(seen.thoughts).toEqual([true, false]);
+    expect(seen.lists).toEqual([true, false]);
+    await shot(page, "one-view-opened");
+    await box.locator(".think").first().click();
+    expect((await look()).thoughts).toEqual([false, false]);
     // The red chat's run holds a failed call: marked on the shut line.
-    await post(page, box, { kind: "look.state", state: chatState("red", { view: "tools" }) });
+    await post(page, box, { kind: "look.state", state: chatState("red") });
     seen = await look();
     expect(seen.failed).toEqual(["1 failed"]);
     expect(seen.lists).toEqual([false]);
@@ -591,91 +587,33 @@ test("THE THREE VIEWS, as a browser lays them out — a ladder: Plain the words 
   } finally { await ctx.close(); }
 }, 60000);
 
-test("THE CHAT'S ⋯ AND ITS VIEW MENU, as a browser lays them out: worked from the keyboard, and inside the look on a desktop, at the panel's narrowest and at a phone's width", async () => {
-  for (const at of [
-    { name: "desktop", width: 1180, height: 780, mode: "screen" },
-    { name: "panel-narrowest", width: 320, height: 760, mode: "panel" },
-    { name: "phone", width: 375, height: 812, mode: "screen" },
-  ]) {
+test("THE FULL SCREEN'S BAR, as a browser lays it out: Minimize alone, inside the look, and nothing in the thread running under it — on a desktop and at a phone's width", async () => {
+  for (const at of [{ name: "desktop", width: 1180, height: 780 }, { name: "phone", width: 375, height: 812 }]) {
     const { ctx, page, box } = await open({ width: at.width, height: at.height });
     try {
-      await post(page, box, { kind: "look.state", state: chatState("done", { mode: at.mode, view: "thinking" }) });
-      // Laid out where it comes to rest: the panel's head and the list of
-      // chats slide in when the shape changes.
+      await post(page, box, { kind: "look.state", state: chatState("done") });
       await box.waitForFunction(() => document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".g-look")!.getAnimations().length === 0, null, { timeout: BOUND });
-      // Enter on the ⋯ opens the menu with the caret on its first view; the
-      // arrows move; Escape shuts it and hands the caret back to the ⋯.
-      await box.locator("button.chatmore").focus();
-      await page.keyboard.press("Enter");
-      const menu = box.locator(".viewmenu");
-      await menu.waitFor({ state: "visible", timeout: BOUND });
-      const focused = () => inLook<string>(box, `const a = root.activeElement; return a ? (a.getAttribute("data-view") || a.getAttribute("aria-label") || "") : "";`);
-      expect(await focused()).toBe("plain");
-      await page.keyboard.press("ArrowDown");
-      expect(await focused()).toBe("thinking");
-      await box.evaluate(() => Promise.all(document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".viewmenu")!.getAnimations().map((a) => a.finished)));
       const seen = await inLook<any>(box, `
         const r = (e) => { const b = e.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom) }; };
-        const more = root.querySelector("button.chatmore");
-        const menu = root.querySelector(".viewmenu");
-        const bar = [...more.parentElement.children].filter((e) => getComputedStyle(e).display !== "none").map(r);
-        // The thread scrolled to its top: its first message, and the box it
-        // scrolls in, whose edge is where anything scrolled is cut.
+        const bar = root.querySelector(".chatbar");
+        const shown = [...bar.children].filter((e) => getComputedStyle(e).display !== "none");
         const log = root.querySelector(".log");
         log.scrollTop = 0;
-        return { w: innerWidth, h: innerHeight, bar, more: r(more), menu: r(menu), log: r(log), first: r(root.querySelector(".u")),
-          head: menu.querySelector(".mlabel").textContent, style: getComputedStyle(menu.querySelector(".mlabel")).display,
-          views: [...menu.querySelectorAll("button.mi")].map((b) => [b.dataset.view, b.querySelector(".nm").textContent, b.querySelector(".sub").textContent, b.getAttribute("aria-checked"), getComputedStyle(b.querySelector(".sub")).display !== "none"]) };`);
+        return { w: innerWidth, h: innerHeight, labels: shown.map((e) => e.getAttribute("aria-label")), bar: shown.map(r), log: r(log), first: r(root.querySelector(".u")),
+          more: root.querySelectorAll(".chatmore, .viewmenu").length };`);
       const inside = (b: any) => b.l >= 0 && b.t >= 0 && b.r <= seen.w && b.b <= seen.h;
-      expect([at.name, seen.bar.every(inside), seen.bar.every((b: any, i: number) => i === 0 || seen.bar[i - 1].r <= b.l)]).toEqual([at.name, true, true]);
-      expect([at.name, inside(seen.menu)]).toEqual([at.name, true]);
-      // It hangs under the ⋯, their right edges together wherever the look
-      // has the room, and pulled in from the look's edge where it has not.
-      expect([at.name, seen.menu.t >= seen.more.b]).toEqual([at.name, true]);
-      if (seen.more.r - (seen.menu.r - seen.menu.l) >= 6) expect([at.name, Math.abs(seen.menu.r - seen.more.r) <= 1]).toEqual([at.name, true]);
-      // NOTHING IN THE THREAD RUNS UNDER THE ⋯ OR MINIMIZE: the thread's box
-      // starts under the bar they sit in, so a message scrolled to the top is
-      // cut at its edge, and the first one starts below it.
+      expect([at.name, seen.labels]).toEqual([at.name, ["Minimize beside Boards"]]);
+      expect([at.name, seen.more]).toEqual([at.name, 0]);
+      expect([at.name, seen.bar.every(inside)]).toEqual([at.name, true]);
+      // The thread's box starts under the bar, so a message scrolled to the
+      // top is cut at its edge and never runs under Minimize.
       const clear = (a: any, b: any) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
       expect([at.name, seen.bar.every((b: any) => clear(b, seen.log))]).toEqual([at.name, true]);
       expect([at.name, seen.first.t >= seen.log.t, seen.log.t >= Math.max(...seen.bar.map((b: any) => b.b))]).toEqual([at.name, true, true]);
-      expect(seen.head).toBe("View");
-      expect(seen.style).not.toBe("none");
-      expect(seen.views).toEqual([
-        ["plain", "Plain", "Just the words", "false", true],
-        ["thinking", "Thinking", "Adds the agent's thinking", "true", true],
-        ["tools", "Tool calls", "Adds the tools it used", "false", true],
-      ]);
-      await shot(page, "view-menu-" + at.name);
-      await page.keyboard.press("Escape");
-      await menu.waitFor({ state: "detached", timeout: BOUND });
-      expect(await focused()).toBe("Chat options");
-      // Space opens it too, and a press elsewhere in the look shuts it.
-      await page.keyboard.press(" ");
-      await menu.waitFor({ state: "visible", timeout: BOUND });
-      const logBox = await box.locator(".log").boundingBox();
-      await box.locator(".log").click({ position: { x: 5, y: (logBox?.height ?? 20) - 10 } });
-      await menu.waitFor({ state: "detached", timeout: BOUND });
-      // A pick asks for the view and draws nothing until the host posts it.
-      await box.locator("button.chatmore").click();
-      await box.locator(".viewmenu button.mi[data-view=tools]").click();
-      expect((await calls(page, 1)).filter((c) => c.kind === "look.view")).toEqual([{ kind: "look.view", view: "tools" }]);
-      expect(await inLook<string>(box, `return root.querySelector(".g-look").getAttribute("data-view");`)).toBe("thinking");
-      // A picture of each view with its menu open, on the desktop and in the
-      // panel: a chat mid-turn, which has thinking and tool calls to show.
-      if (at.name === "phone") continue;
-      for (const v of ["plain", "thinking", "tools"]) {
-        await post(page, box, { kind: "look.state", state: chatState("live", { mode: at.mode, view: v }) });
-        await box.locator("button.chatmore").click();
-        await box.locator(".viewmenu").waitFor({ state: "visible", timeout: BOUND });
-        await box.evaluate(() => Promise.all(document.querySelector("#g-agent .g-look-host")!.shadowRoot!.querySelector(".viewmenu")!.getAnimations().map((a) => a.finished)));
-        expect(await inLook<string>(box, `return root.querySelector(".viewmenu button.mi[aria-checked=true]").dataset.view;`)).toBe(v);
-        await shot(page, "view-menu-" + at.name + "-" + v);
-        await page.keyboard.press("Escape");
-      }
+      await shot(page, "bar-" + at.name);
     } finally { await ctx.close(); }
   }
-}, 120000);
+}, 60000);
 
 test("beside a page: the panel's head, the history as a dropdown, and only the look's own kinds asked for", async () => {
   const { ctx, page, box } = await open({ width: 460, height: 760 });
@@ -703,9 +641,9 @@ test("beside a page: the panel's head, the history as a dropdown, and only the l
 test("AN AGENT'S WORDS NEVER BECOME MARKUP: not in a reply, a thought, a tool, a diff, a path, a page's name or a face", async () => {
   const { ctx, page, box } = await open();
   try {
-    // In Tool calls, which draws everything: the thought written out, and
-    // each run and call opened.
-    await post(page, box, { kind: "look.state", state: chatState("evil", { view: "tools" }) });
+    // Everything drawn and opened: the thought, each run and a call.
+    await post(page, box, { kind: "look.state", state: chatState("evil") });
+    if (await box.locator(".think.done").count()) await box.locator(".think.done").first().click();
     await box.locator(".grp").first().click();
     await box.locator(".act").first().click();
     await box.waitForTimeout(400);

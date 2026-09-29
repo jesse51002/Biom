@@ -218,26 +218,6 @@
     return { label: (live ? "Using " : "Used ") + n + (n === 1 ? " tool" : " tools"), current: current, failed: failed, live: live };
   }
 
-  /** THE THREE VIEWS OF A CHAT, in the order the ⋯ lists them — a ladder,
-   *  each adding to the one before and the tools last — and what each is
-   *  called, with the line under its name saying what it adds. They are
-   *  `CHAT_VIEWS` and `VIEW_WORDS` in the framework's `contracts/wire.js`,
-   *  said again here because a classic script imports nothing, and a test
-   *  holds the two equal. */
-  const VIEWS = Object.freeze(["plain", "thinking", "tools"]);
-  const VIEW_WORDS = Object.freeze({
-    plain: Object.freeze({ name: "Plain", line: "Just the words" }),
-    thinking: Object.freeze({ name: "Thinking", line: "Adds the agent's thinking" }),
-    tools: Object.freeze({ name: "Tool calls", line: "Adds the tools it used" }),
-  });
-
-  /** The view this look draws for a word: the word, where it is one of the
-   *  three, and Plain — the default, the words alone — for one it does not
-   *  know. @param {any} v @returns {"plain" | "thinking" | "tools"} */
-  function viewOf(v) {
-    return VIEWS.indexOf(v) >= 0 ? v : "plain";
-  }
-
   /* ── diffs ─────────────────────────────────────────────────────────────── */
 
   /** @param {any} s @returns {string[]} */
@@ -740,7 +720,6 @@
       // that name would be written over by the call's.
       return typeof q.chat === "string" && CHAT_ID.test(q.chat) && typeof q.queued === "string" && CHAT_ID.test(q.queued) ? { kind: kind, params: { chat: q.chat, queued: q.queued } } : null;
     }
-    if (kind === "look.view") return VIEWS.indexOf(q.view) >= 0 ? { kind: kind, params: { view: q.view } } : null;
     if (kind === "open") {
       const t = q.target;
       if (!t || (t.kind !== "page" && t.kind !== "table") || typeof t.id !== "string" || t.id === "" || t.id.charAt(0) === "@") return null;
@@ -879,9 +858,6 @@
     subOf: subOf,
     toolWords: toolWords,
     runWords: runWords,
-    VIEWS: VIEWS,
-    VIEW_WORDS: VIEW_WORDS,
-    viewOf: viewOf,
     lineDiff: lineDiff,
     countsOf: countsOf,
     countWords: countWords,

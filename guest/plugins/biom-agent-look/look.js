@@ -10,19 +10,23 @@
  * (Specs/2026-09-24-Chat/Mockup), ported: `sheet.js` is its look on the box's
  * tokens and `model.js` its every decision; this file is the nodes.
  *
+ * A CHAT IS DRAWN ONE WAY: the words; the thinking folded to one line that
+ * opens to the whole of it; each run of tool calls as one line, *Used 3
+ * tools*, that opens to the calls one by one and each call to its diff or its
+ * output; and the pages the turn changed. Nobody reads a wall of tool calls,
+ * so nothing draws one — and there is no view to pick.
+ *
  * WHAT IT HEARS AND WHAT IT SAYS. It hears the chats through `biom.onLook`,
  * which the shim feeds from the host's `look.state` and `look.patch` with the
  * patches already folded in. It says its `look.*` kinds and one more —
  * `look.open`, `look.new`, `look.list`, `look.panel`, `look.delete` from a
- * row's three dots, `look.unqueue` from a queued message's ×, `look.view` from
- * the chat's ⋯, and `open` for a page a turn changed — every one of them built
- * by `request` in the model from an id or a word on a closed list.
- * `look.delete` deletes nothing: Biom asks the person in a dialog of its own,
- * and only their answer there deletes. `look.view` draws nothing here: the
- * host keeps the view and posts it back, and the look draws it then. IT NEVER
- * SENDS TEXT: the input box is Biom's, in the host, over this box, so only the
- * person's typing ever reaches an agent, and the guards refuse anything else
- * from here anyway.
+ * row's three dots, `look.unqueue` from a queued message's ×, and `open` for
+ * a page a turn changed — every one of them built by `request` in the model
+ * from an id or a word on a closed list. `look.delete` deletes nothing: Biom
+ * asks the person in a dialog of its own, and only their answer there
+ * deletes. IT NEVER SENDS TEXT: the input box is Biom's, in the host, over
+ * this box, so only the person's typing ever reaches an agent, and the guards
+ * refuse anything else from here anyway.
  *
  * AN AGENT'S WORDS ARE UNTRUSTED. A reply, a thought, a tool's title, a diff, a
  * path and a page's name are each only ever a text node or an attribute value
@@ -187,7 +191,6 @@
     const root = h("div", "g-look");
     root.setAttribute("data-mode", "screen");
     root.setAttribute("data-state", "empty");
-    root.setAttribute("data-view", "plain");
     shadow.appendChild(root);
 
     // The history, down the left on the full screen.
@@ -223,15 +226,6 @@
     pclose.appendChild(icon("close"));
     panelhead.appendChild(tswitch); panelhead.appendChild(pnew); panelhead.appendChild(pexpand); panelhead.appendChild(pclose);
 
-    // THE CHAT'S ⋯, at its top right, in a chat only: how the chat is shown.
-    // One button, which `drawChatMore` puts in the panel's head before the
-    // panel's own controls, or in the full screen's bar before Minimize.
-    const chatmore = button("button", "iconbtn chatmore", "Chat options");
-    chatmore.setAttribute("aria-haspopup", "menu");
-    chatmore.setAttribute("aria-expanded", "false");
-    chatmore.appendChild(icon("dots"));
-    chatmore.hidden = true;
-
     // The stage: the ribbon, the start screen's two lines, and the thread.
     const stage = h("div", "stage");
     const fx = h("div", "fx");
@@ -265,8 +259,8 @@
     const minbtn = button("button", "iconbtn minbtn", "Minimize beside the page");
     minbtn.appendChild(icon("shrink"));
     minbtn.hidden = true;
-    // The full screen's top bar: the chat's ⋯, then Minimize, at its right —
-    // in a chat a bar the thread never runs under, as the panel's head is.
+    // The full screen's top bar: Minimize, at its right — in a chat a bar the
+    // thread never runs under, as the panel's head is.
     const chatbar = h("div", "chatbar");
     chatbar.appendChild(minbtn);
     stage.appendChild(fx); stage.appendChild(heroTop); stage.appendChild(heroBot); stage.appendChild(log);
@@ -372,7 +366,6 @@
     listen(minbtn, "click", () => ask("look.panel", { to: "beside" }));
     listen(tswitch, "click", () => setList(!listOpen));
     listen(histlink, "click", () => setList(!listOpen));
-    listen(chatmore, "click", () => toggleViewMenu());
     listen(doc, "keydown", (/** @type {any} */ e) => {
       if (e.defaultPrevented) return;
       if (e.key === "Escape" && listOpen && mode === "panel") { setList(false); e.preventDefault(); return; }
@@ -393,9 +386,9 @@
     listen(win, "blur", () => closePopup(false));
     listen(win, "resize", () => closePopup(false));
 
-    /* ── a menu hung from a button: a row's three dots, and the chat's ⋯ ── */
+    /* ── a menu hung from a button: a row's three dots ───────────────────── */
 
-    /** @type {{ key: string, el: any, anchor: any, items: any[] } | null} the one menu open, what it is for and the button that opened it */
+    /** @type {{ key: string, el: any, anchor: any } | null} the one menu open, what it is for and the button that opened it */
     let popup = null;
 
     /** @param {boolean} back put the caret back on the button that opened it */
@@ -445,7 +438,7 @@
       root.appendChild(el);
       hang(el, anchor);
       anchor.setAttribute("aria-expanded", "true");
-      popup = { key: key, el: el, anchor: anchor, items: items };
+      popup = { key: key, el: el, anchor: anchor };
       if (items[0] && typeof items[0].focus === "function") items[0].focus();
     }
 
@@ -502,66 +495,6 @@
         b.setAttribute("aria-expanded", "true");
       }
       return b;
-    }
-
-    /** THE CHAT'S ⋯ MENU, headed View: the three views in the order of their
-     *  ladder, each its name and the line saying what it adds, the one shown
-     *  checked. A pick ASKS: the host keeps the view for the workspace and
-     *  posts it back, and the look draws it then — never ahead of the answer,
-     *  so the host stays the one statement of which view is shown. */
-    function toggleViewMenu() {
-      togglePopup("view", chatmore, "viewmenu", (/** @type {any} */ el) => {
-        el.setAttribute("aria-label", "View");
-        const head = h("div", "mlabel", "View");
-        head.setAttribute("aria-hidden", "true");
-        el.appendChild(head);
-        return M.VIEWS.map((/** @type {string} */ v) => {
-          const words = M.VIEW_WORDS[v];
-          const it = h("button", "mi");
-          it.type = "button";
-          it.setAttribute("role", "menuitemradio");
-          it.setAttribute("data-view", v);
-          const txt = h("span", "txt");
-          txt.appendChild(h("span", "nm", words.name));
-          txt.appendChild(h("span", "sub", words.line));
-          it.appendChild(txt);
-          it.appendChild(h("span", "mark"));
-          it.addEventListener("click", () => {
-            closePopup(true);
-            if (v !== root.getAttribute("data-view")) ask("look.view", { view: v });
-          });
-          el.appendChild(it);
-          return it;
-        });
-      });
-      markViews();
-    }
-
-    /** The view shown, checked in the ⋯'s menu while it is open — and again
-     *  when the view moves under it, from another window. */
-    function markViews() {
-      if (popup === null || popup.key !== "view") return;
-      const shown = root.getAttribute("data-view");
-      for (const it of popup.items) {
-        const on = it.getAttribute("data-view") === shown;
-        it.setAttribute("aria-checked", String(on));
-        const mark = it.lastChild;
-        mark.replaceChildren();
-        if (on) mark.appendChild(icon("check", "check"));
-      }
-    }
-
-    /** THE ⋯ GOES WHERE THE CHAT'S TOP RIGHT IS, and only in a chat: in the
-     *  panel's head before its own controls, on the full screen in its bar
-     *  before Minimize. A menu open on it shuts when it moves or goes. */
-    function drawChatMore() {
-      const inChat = !!S && S.chat !== null;
-      const bar = mode === "panel" ? panelhead : chatbar;
-      const before = mode === "panel" ? pexpand : minbtn;
-      const moved = chatmore.parentNode !== bar || chatmore.nextSibling !== before;
-      if (moved) bar.insertBefore(chatmore, before);
-      chatmore.hidden = !inChat;
-      if ((moved || !inChat) && popup !== null && popup.anchor === chatmore) closePopup(false);
     }
 
     /* ── the list of chats ──────────────────────────────────────────────── */
@@ -708,21 +641,6 @@
     function layout() {
       root.setAttribute("data-mode", mode);
       root.toggleAttribute("data-threads", mode === "screen" && !!S && (S.chat !== null || listOpen));
-    }
-
-    /** THE VIEW THE PERSON PICKED, on the root: the sheet shows each block by
-     *  it — the thinking written out in Thinking and Tool calls, a run of tool
-     *  calls drawn in Tool calls alone — so a view picked moves no node and
-     *  draws nothing again, and a reader at the end of the chat is kept there.
-     *  @param {any} v */
-    function setView(v) {
-      const want = M.viewOf(v);
-      if (root.getAttribute("data-view") === want) return;
-      root.setAttribute("data-view", want);
-      markViews();
-      // Only a chat has an end to keep the reader at: the start screen, which
-      // a kept view reaches on the first state, asks for no frame.
-      if (pinned && S && S.chat !== null) { pin(); frame(pin); }
     }
 
     /** Biom's input box sits over this box; the look leaves it `height` —
@@ -1107,12 +1025,11 @@
       return bv;
     }
 
-    /** A BLOCK OF THINKING, drawn both ways at once: the one line it folds
-     *  to — *Thinking*, then *Thought for Ns*, which opens it — and the words
-     *  themselves. Which shows is the root's `data-view` in the sheet, so a
-     *  view picked moves no node: folded in Plain (the words there only while
-     *  the line is opened), written out in Thinking and Tool calls. The
-     *  words are a text node, appended as they stream and bounded.
+    /** A BLOCK OF THINKING, FOLDED to one line — *Thinking* while it
+     *  streams, then *Thought for Ns* — which opens to the whole of it and
+     *  shuts again. The words are a text node under the line, appended as
+     *  they stream and bounded, and shown only while the line is open (the
+     *  sheet, by the block's `data-open`).
      *  @param {any} b a thinking block @param {any} t its turn */
     function thinkView(b, t) {
       const el = h("div", "bw thinkw");
@@ -1202,9 +1119,7 @@
      *  never folded out of sight. Opened, each call is its own line, which
      *  opens to its diff or its output as before. Both are buttons, both keep
      *  whether they are open while the turn streams — a call joining an open
-     *  run leaves it open, one joining a shut run leaves it shut — and the
-     *  whole run is shown in Tool calls alone (the sheet, by the root's
-     *  `data-view`), so a view picked moves no node.
+     *  run leaves it open, one joining a shut run leaves it shut.
      *  @param {any} b a block of tool lines @param {any} t its turn */
     function actsView(b, t) {
       const el = h("div", "acts");
@@ -1693,18 +1608,16 @@
         mode = state.mode === "panel" ? "panel" : "screen";
         listOpen = !!state.list;
         setInput(state.input);
-        setView(state.view);
         if (state.chat !== heldChat) openChat();
         else {
           foldNew(state.updates);
           refreshLive();
           if (T) for (const v of views.values()) { const t = T.turn(v.n); if (t) paintChanges(v, t); }
         }
-        drawList(); drawHead(); drawMenu(); drawMin(); drawChatMore(); layout(); startScreen();
+        drawList(); drawHead(); drawMenu(); drawMin(); layout(); startScreen();
         settled = true;
       } else {
         if (patch.input) setInput(patch.input);
-        if (patch.view !== undefined) setView(patch.view);
         if (Array.isArray(patch.updates) && patch.updates.length && patch.chat === heldChat) foldNew(patch.updates);
         if (patch.chats) { drawList(); drawHead(); drawMenu(); drawStart(); refreshLive(); drawQueue(); }
         if (patch.names && T) for (const v of views.values()) { const t = T.turn(v.n); if (t && t.changed) paintChanges(v, t); }

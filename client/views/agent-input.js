@@ -18,9 +18,8 @@
 // nothing is, because a chat takes one message at a time; **Go to *page***
 // above it when the switcher offers the page the open chat wrote; the / menu
 // of the agent's commands and the workspace's skills; and one line under it
-// saying the turn is working, or what went wrong. How the chat is SHOWN is
-// not here: its view is picked from the look's own ⋯, because a chip beside
-// the agent's pickers read as a setting of the agent's.
+// saying the turn is working, or what went wrong. Nothing here decides how
+// the chat is SHOWN: the look draws it one way.
 //
 // A FIRST MESSAGE WITH NO AGENT READY is sent all the same, and held by the
 // server: More agents opens saying it is waiting, and the server sends it the

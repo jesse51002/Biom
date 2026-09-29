@@ -299,22 +299,19 @@ keeps the record.
 **NOTHING A BOX CAN SAY REACHES AN AGENT, and that is the one line of the
 eleventh contracts edit that may never move.** The Agent screen's look — the
 start screen, a chat, the list of chats — is a plugin a workspace can replace,
-drawn in a box on `@agent`, and what it may ask is seven inner-ring kinds:
+drawn in a box on `@agent`, and what it may ask is six inner-ring kinds:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed, and — the thirteenth edit — `look.delete`, a
 request for Biom's OWN dialog asking whether to delete a chat, and
-`look.unqueue`, a queued message's ×, and — the fifteenth — `look.view`, one
-of the three views picked from the chat's ⋯: ids and words from a closed list,
+`look.unqueue`, a queued message's ×: ids and words from a closed list,
 STRICTLY guarded so no field rides along — and a page a turn changed through
-`open`. **Each of the eight is honoured only just after a touch from that same
+`open`. **Each of the seven is honoured only just after a touch from that same
 box**, as every box's `open` is (§3): the `look.*` kinds move what is on screen,
-redraw the look whole, put a question to the person or change the view the
-workspace keeps, so a look on a loop can do none of them — and `look.delete`
-deletes nothing even when honoured: only the person's Delete in the host's
-dialog says `chat.delete`, which no box can say. `look.view` is the one that
-changes something kept, and a box may say it because it sends nothing to an
-agent and deletes nothing; the host keeps it through `settings.set` and posts
-it back, and the look draws nothing ahead of that. The bridge answers the seven only for a box on `@agent`, and only through the answer the
+redraw the look whole or put a question to the person, so a look on a loop can
+do none of them — and `look.delete` deletes nothing even when honoured: only
+the person's Delete in the host's dialog says `chat.delete`, which no box can
+say. (The fifteenth edit's `look.view`, a view picked from the chat's ⋯, went
+in the sixteenth with the views: a chat is drawn one way.) The bridge answers the `look.*` kinds only for a box on `@agent`, and only through the answer the
 Agent screen registered (`answerLook`), which refuses every box but the one it
 mounted — it knows that box by the identity of the context it mounted it
 with, which only the frame host holds, so any other box on `@agent` — were

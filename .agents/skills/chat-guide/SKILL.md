@@ -30,8 +30,7 @@ description: >-
   "face", "held message", "Stop", "light", "kept log", "jsonl", "reap",
   "idle agent", "AgentId", "onEdit", "changed", "look", "look.state",
   "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS",
-  "settings.json", "kept choices", "view", "Plain", "Thinking", "Used N tools",
-  "⋯", "Chat options", "View menu", "look.view",
+  "settings.json", "kept choices", "one view", "thinking folded", "Used N tools",
   "queue", "queued", "Send queued", "delete a chat", "session/delete",
   "biom-context", "page on screen", "the note", "withoutNotes".
 ---
@@ -67,7 +66,7 @@ It owns the conversation. It does **not** own:
 | the pure halves | `server/domain/agents-*.ts`, `edits.ts`, `shellwrites.ts`, `jev.ts`, `choices.ts` (2) | the known agents, their sign-in methods, the registry, a downloaded archive, what is an edit, Jev, the kept choices' shape and what an agent still offers |
 | the agents | `server/workspace/agents.ts` (3) | what this machine has: finding, probing, installing, signing in, tickets |
 | the chats | `server/workspace/chats.ts` (3) | one agent process per chat, its turns, its light, its files, its kept log |
-| the kept choices | `server/workspace/settings.ts` (3) | `.biom/settings.json`: the view, the agent last picked, each agent's last model, mode and effort |
+| the kept choices | `server/workspace/settings.ts` (3) | `.biom/settings.json`: the agent last picked, each agent's last model, mode and effort |
 | the route | `server/api/routes.ts` (4) | each `agents.*` and `chat.*` kind, narrowed by `isChatRequest`, one module call each |
 | the root | `server/main.ts` (5) | per server: the login environment, Jev, every connection, the idle timer; per folder: the agents, the chats, Jev's schedule; the gate, the stream, the exit |
 | the look | `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/` | the Agent screen as drawn in its box |
@@ -348,11 +347,12 @@ process that made it.
   chat, on each picker the agent's list STILL offers them on — a model the
   agent has dropped is skipped without a word (`offeredChoices` in
   `choices.ts`). They are laid on at once against the probe's list, so the
-  pickers show them before anything starts. The view is the one choice a
-  window keeps itself, through `settings.set`, when the look says
-  `look.view`. A file that will not read is said once in the log, put aside
-  as `settings.json.bad`, and the defaults are used: Plain, no agent,
-  nothing kept.
+  pickers show them before anything starts. No window sets a choice: each
+  is kept by the server as the chat makes it, and `settings.read` is the one
+  settings kind. A file that will not read is said once in the log, put
+  aside as `settings.json.bad`, and the defaults are used: no agent, nothing
+  kept. A file that still names a `view`, kept when a chat had three, reads
+  as it is and without it, and the next write drops it.
 - **Each chat keeps its own choices too** (`choices`, a record in its kept
   log): what the person picked in it, what it started on, and what the agent
   switched itself to while it ran (a `config_option_update` or
@@ -551,39 +551,33 @@ only ever as text; it draws incrementally, the latest forty turns with more on
 a press, a diff, an output and a block of thinking bounded where they are
 drawn.
 
-**A chat has three views, a ladder, and none of them draws a wall of tool
-calls** (`LookState.view`, `ChatView`, in the order of `CHAT_VIEWS`): each adds
-to the one before and the tools come last, because Biom is a second brain
-before it is a place to build software. **Plain**, the default, is the words,
-the thinking folded to its one line and no tool calls at all; **Thinking**
-writes the thinking out where it came, muted italic with a thin rule down its
-left, and still draws no tool calls; **Tool calls** writes the thinking out
-too and adds each RUN of tool calls — every call with no thinking and no reply
-between them, the transcript's `acts` block — as ONE line, *Used 3 tools ›*
-(*Used 1 tool*), which opens to the calls one by one, each opening to its diff
-or its output as before. A workspace that has kept no view opens on Plain, and
-a view it kept stays as it was. While the turn runs, its current run reads
-*Using 3 tools* with the call under way after it, muted, and a run holding a
-failed call carries its red mark and *1 failed* on the shut line, so in Tool
-calls a failure is never folded out of sight. The run line and each call line are buttons, reached by Tab and worked
-by Enter and Space, and each keeps whether it is open while the turn streams:
-a call joining an open run leaves it open, one joining a shut run leaves it
-shut. **A view picked moves no node**: every block is drawn both ways at once
-and the default look's sheet shows each by the root's `data-view`, so the
-reader at the end of the chat stays there and nothing is drawn again
-(`runWords` and `viewOf` in `model.js`).
+**A chat is drawn one way, and nothing draws a wall of tool calls**: the
+words; the thinking FOLDED to one line — *Thinking* while it streams, then
+*Thought for 4s* — which opens to the whole of it, bounded as an output is,
+and shuts again; each RUN of tool calls — every call with no thinking and no
+reply between them, the transcript's `acts` block — as ONE line, *Used 3
+tools ›* (*Used 1 tool*), which opens to the calls one by one, each opening to
+its diff or its output; and the pages the turn changed. There is no view to
+pick: the owner chose one simple view (the sixteenth contracts edit took out
+the three the thirteenth and fifteenth had made, and the ⋯ that picked them).
+While the turn runs, its current run reads *Using 3 tools* with the call under
+way after it, muted, and a run holding a failed call carries its red mark and
+*1 failed* on the shut line, so a failure is never folded out of sight. The
+thinking's line, the run line and each call line are buttons, reached by Tab
+and worked by Enter and Space, and each keeps whether it is open while the
+turn streams: a call joining an open run leaves it open, one joining a shut
+run leaves it shut (`runWords` in `model.js`).
 
-**What the look may say is eight things, and none of them is text**:
+**What the look may say is seven things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed, `look.delete` from a row's three dots —
-which asks for Biom's own dialog and deletes nothing — `look.unqueue` from a
-queued message's ×, and `look.view` from the chat's ⋯ — each strictly
-guarded, ids and words from a closed list — and `open` for a page a turn
-changed. **Every one is honoured only just after a touch from that same
-box**, as any box's `open` is: the `look.*` kinds move what is on screen,
-redraw the look whole, put a question to the person or change the view kept
-for the workspace, so a look on a loop can do none of them. The bridge refuses
-the seven `identity` unless the
+which asks for Biom's own dialog and deletes nothing — and `look.unqueue` from
+a queued message's × — each strictly guarded, ids and words from a closed
+list — and `open` for a page a turn changed. **Every one is honoured only just
+after a touch from that same box**, as any box's `open` is: the `look.*` kinds
+move what is on screen, redraw the look whole or put a question to the
+person, so a look on a loop can do none of them. The bridge refuses the
+`look.*` kinds `identity` unless the
 asking box is on `@agent` and the Agent screen has registered its answer
 (`answerLook`), and the answer refuses every box but the one it mounted, by the
 identity of that box's context. A page opened from the look comes up with the
@@ -665,28 +659,6 @@ the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same
 and held by the server; More agents opens over it, saying so, when it was this
 window that sent it a moment ago.
-
-**How the chat is shown is picked from the look's own ⋯, never the input
-box**, because a control among the agent's pickers reads as a setting of the
-agent's. The default look draws a ⋯ — *Chat options* — at the chat's top
-right, in a chat only: in the panel's head before expand and close, and on
-the full screen in a bar the height of the panel's head before Minimize,
-which the thread starts under so nothing scrolled runs beneath either. It
-opens a menu headed **View**: the
-three views in the order of their ladder, each its name and the line saying
-what it adds (`VIEW_WORDS` in `wire.js`, which `model.js` says again, held
-equal by a test), the one shown checked and `aria-checked`. It is the same
-menu as a row's three dots — one `togglePopup` in `look.js`: Enter or Space
-opens it with the caret on its first item, the arrows move, Escape shuts it
-and gives the caret back to the button, and a press elsewhere, the box losing
-focus or changing size shuts it. **A pick says `look.view` and draws
-nothing**: the Agent view answers it with `chats.setView`, which keeps it for
-the workspace through `settings.set`, and the look draws the view when it
-comes back as `view` in a `look.patch` — so the host is the one statement of
-which view is shown, and a refusal puts the view back in the look and says
-*The view did not change* on the line under the input (`AgentInput.say`).
-**A look a workspace writes draws its own view control or none**; the host
-posts it `view` either way.
 
 **Deleting a chat is asked in Biom's own dialog, never the look's.** Every
 chat's row, in the history and in the panel's list, carries three dots — a
@@ -793,10 +765,10 @@ server/api/routes.ts            chatAnswer, CHAT_SENTENCES, pageOnScreen, the ga
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring and onScreen, events(),
                                 localRefusal, the exit handler, endAgentsWithin
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
-guest/plugins/biom-agent-look/  the default look: look.js (nodes, the ⋯ and togglePopup), model.js (decisions, runWords, VIEWS, VIEW_WORDS, viewOf), sheet.js (the views)
+guest/plugins/biom-agent-look/  the default look: look.js (nodes, the row menu's togglePopup), model.js (decisions, runWords, request), sheet.js (the one way a chat is drawn)
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
 client/store/chats.js           makeChatStore (a message sent through `inLine`), fold, agentMode, showChat, freshThread, the pickers' rules
-client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.view kept here)
+client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer
 client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), forPage (Edit's), NOT_TOUCH
 client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
 client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
@@ -808,7 +780,7 @@ tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
 tests/settings.test.ts          the kept choices: the shape, the bounds, the file, a broken one put aside
-tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the view against a double
+tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the Agent view against a double
 tests/agent-input.test.js       the agent menu and More agents: two states, one button, Check again
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser
