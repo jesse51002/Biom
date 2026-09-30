@@ -1,7 +1,7 @@
 {
   "name": "biom-framework",
   "version": "0.1.0",
-  "description": "Visual Workspace for AI Automations",
+  "description": "A living workspace for humans and agents",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",

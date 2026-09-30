@@ -1,6 +1,6 @@
 # Biom
 
-Visual Workspace for AI Automations: point an agent at a folder, and what you ask for appears as real pages, drawn.
+A living workspace for humans and agents: point an agent at a folder, and what you ask for appears as real pages, drawn.
 
 **[biom.dev](https://biom.dev)** · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
 
