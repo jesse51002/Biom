@@ -46,6 +46,8 @@ export interface Adapter {
    *  read since, listing another, is what runs instead. */
   version: string;
   args: string[];
+  /** The adapter's setting for the agent CLI it should run, not a bundled copy. */
+  cliEnv: "CLAUDE_CODE_EXECUTABLE" | "CODEX_PATH";
 }
 
 /** OpenClaw's Gateway, which has to answer on this machine. */
@@ -86,10 +88,10 @@ const agent = (key: string, name: string, line: string, local: LocalCommand[], e
 /** THE TABLE, in the order the picker lists what it finds. */
 export const KNOWN_AGENTS: readonly KnownAgent[] = [
   agent("claude-acp", "Claude Code", "Anthropic's coding agent, through its ACP adapter", [cmd("claude-agent-acp")], {
-    adapter: { cli: "claude", package: "@agentclientprotocol/claude-agent-acp", version: "0.81.2", args: [] },
+    adapter: { cli: "claude", package: "@agentclientprotocol/claude-agent-acp", version: "0.81.2", args: [], cliEnv: "CLAUDE_CODE_EXECUTABLE" },
   }),
   agent("codex-acp", "Codex", "OpenAI's coding agent, through its ACP adapter", [cmd("codex-acp")], {
-    adapter: { cli: "codex", package: "@agentclientprotocol/codex-acp", version: "1.13.1", args: [] },
+    adapter: { cli: "codex", package: "@agentclientprotocol/codex-acp", version: "1.13.1", args: [], cliEnv: "CODEX_PATH" },
   }),
   agent("openclaw", "OpenClaw", "Your own agent, through its Gateway on this machine", [cmd("openclaw", ["acp", "--url", OPENCLAW_GATEWAY_URL])], {
     gateway: { host: "127.0.0.1", port: OPENCLAW_PORT, start: ["gateway", "--port", String(OPENCLAW_PORT)] },

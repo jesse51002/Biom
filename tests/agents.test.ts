@@ -319,6 +319,16 @@ test("Claude Code is its CLI plus an adapter npx runs, pinned — or its adapter
   expect(a.state).toBe("active");
   expect(withNode.calls[0]?.launch.command).toBe("/invented/bin/npx");
   expect(withNode.calls[0]?.launch.args).toEqual(["--yes", "@agentclientprotocol/claude-agent-acp@0.81.2"]);
+  expect(withNode.calls[0]?.launch.env.CLAUDE_CODE_EXECUTABLE).toBe("/invented/bin/claude");
+  expect((await withNode.agents.launch("claude-acp"))?.env.CLAUDE_CODE_EXECUTABLE).toBe("/invented/bin/claude");
+
+  const codex = machine({ bins: { codex: "/invented/bin/codex", npx: "/invented/bin/npx" } });
+  codex.agents.list();
+  await codex.agents.settled();
+  expect(byKey(codex.agents.list(), "codex-acp")?.state).toBe("active");
+  expect(codex.calls[0]?.launch.args).toEqual(["--yes", "@agentclientprotocol/codex-acp@1.13.1"]);
+  expect(codex.calls[0]?.launch.env.CODEX_PATH).toBe("/invented/bin/codex");
+  expect((await codex.agents.launch("codex-acp"))?.env.CODEX_PATH).toBe("/invented/bin/codex");
 
   const noNode = machine({ bins: { claude: "/invented/bin/claude" } });
   noNode.agents.list();
