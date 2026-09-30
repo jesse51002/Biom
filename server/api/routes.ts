@@ -1078,8 +1078,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.delete":
       case "chat.sendQueued":
       case "chat.unqueue":
+      case "chat.sendNow":
       case "settings.read":
-      case "settings.set":
         return await chatAnswer(id, req, deps);
 
       /* ── what each window has open, and the history ─────────────────── */
@@ -1135,12 +1135,11 @@ const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
 async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   if (!isChatRequest(req)) return err(id, "bad_request", CHAT_SENTENCES.bad_request as string);
   // THE KEPT CHOICES need neither the agents nor the chats: what the next
-  // chat starts on is read and the view set with no agent anywhere.
-  if (req.kind === "settings.read" || req.kind === "settings.set") {
+  // chat starts on is read with no agent anywhere.
+  if (req.kind === "settings.read") {
     const settings = deps.settings;
     if (settings === undefined) return refused(id, "the chat's kept choices");
-    if (req.kind === "settings.read") return ok(id, settings.read());
-    return ok(id, await settings.set(req.view === undefined ? {} : { view: req.view }));
+    return ok(id, settings.read());
   }
   const agents = deps.agents;
   const chats = deps.chats;
@@ -1188,6 +1187,11 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
         return ok(id, await chats.sendQueued(req.chat));
       case "chat.unqueue":
         return ok(id, await chats.unqueue(req.chat, req.queued));
+      case "chat.sendNow":
+        // Stops the turn running and sends that queued message the moment it
+        // has ended; its words, and the page it was sent from, are the ones
+        // it was queued with.
+        return ok(id, await chats.sendNow(req.chat, req.queued));
       case "chat.cancel":
         return ok(id, await chats.cancel(req.chat));
       case "chat.config":

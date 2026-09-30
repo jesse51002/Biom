@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// THE ELEVENTH, THIRTEENTH AND FIFTEENTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
+// THE ELEVENTH, THIRTEENTH AND SIXTEENTH CONTRACTS EDITS, AT THE GUARDS — `contracts/guards.js`.
 //
 // An agent is a program allowed everything on this machine, so what may be
 // said to one is the most leveraged question the chat asks, and it is settled
@@ -9,17 +9,20 @@
 // every new kind through its guard both ways, holds the window id on the
 // envelope optional and checked, and holds the one new notice a box may send.
 // The thirteenth edit's kinds — the kept choices, the queue, deleting a chat and
-// the look's two new asks — are walked the same way, and so is the fifteenth's
-// one, the view picked from the look. Ids and texts here are invented and say
-// so.
+// the look's two new asks — are walked the same way, and so are the
+// sixteenth's two, Send now on a queued message from the look and to the
+// server; and what the sixteenth took out, the view and every kind that
+// carried one, is held gone. Ids and texts here are invented and say so.
 
 import { test, expect } from "bun:test";
 
 import {
   CHAT_KIND_NAMES, HISTORY_KIND_NAMES, HOST_KIND_NAMES, RUNTIME_KIND_NAMES,
-  isAddress, isAgentKey, isChatRequest, isChatView, isGuestNotice, isHistoryRequest, isHostRequest, isLocalKind, isRuntimeRequest, isWindowId,
+  isAddress, isAgentKey, isChatRequest, isGuestNotice, isHistoryRequest, isHostRequest, isLocalKind, isRuntimeRequest, isWindowId,
 } from "../contracts/guards.js";
-import { AGENT_KEY, AGENT_PAGE, CHAT_VIEWS, DEFAULT_VIEW, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, VIEW_WORDS, WINDOW_PARAM } from "../contracts/wire.js";
+import * as guards from "../contracts/guards.js";
+import * as wire from "../contracts/wire.js";
+import { AGENT_KEY, AGENT_PAGE, DESIGN_PAGE, MAP_PAGE, OPAQUE_ID, PROTOCOL, STREAM, WINDOW_PARAM } from "../contracts/wire.js";
 import { SEGMENT } from "../server/domain/pages.ts";
 
 const WINDOW = "w1nvented-window-0001";
@@ -55,7 +58,7 @@ test("a prompt in a box's mouth is refused by both inner guards, however it is d
     env("chat.delete", { chat: CHAT }),
     env("chat.sendQueued", { chat: CHAT }),
     env("chat.unqueue", { chat: CHAT, queued: QUEUED }),
-    env("settings.set", { view: "plain" }),
+    env("chat.sendNow", { chat: CHAT, queued: QUEUED }),
     env("settings.read"),
     // The look's own kinds with words smuggled onto them: the kind is admitted
     // — extra fields are the bridge's to drop, as every forwarded request is
@@ -80,9 +83,8 @@ test("the look's kinds are inner ring, carry ids and words from a closed list, a
     env("look.panel", { to: "closed" }),
     env("look.delete", { chat: CHAT }),
     env("look.unqueue", { chat: CHAT, queued: QUEUED }),
-    env("look.view", { view: "plain" }),
-    env("look.view", { view: "thinking" }),
-    env("look.view", { view: "tools" }),
+    env("look.sendNow", { chat: CHAT, queued: QUEUED }),
+    env("look.sendNow", { chat: CHAT, queued: QUEUED, window: WINDOW }),
   ];
   for (const r of good) expect([r.kind, isHostRequest(r), isRuntimeRequest(r)]).toEqual([r.kind, true, true]);
   const bad = [
@@ -107,21 +109,24 @@ test("the look's kinds are inner ring, carry ids and words from a closed list, a
     env("look.unqueue", { chat: CHAT, queued: "" }),
     env("look.unqueue", { chat: CHAT, queued: 4 }),
     env("look.unqueue", { chat: CHAT, queued: QUEUED, text: "send this instead" }),
-    // The view is one of the three words and nothing else rides along: not a
-    // word the list does not hold, not another spelling, and never a chat.
-    env("look.view"),
-    env("look.view", { view: "" }),
-    env("look.view", { view: "Tool calls" }),
-    env("look.view", { view: "Plain" }),
-    env("look.view", { view: "everything" }),
-    env("look.view", { view: 1 }),
-    env("look.view", { view: null }),
-    env("look.view", { view: "plain", chat: CHAT }),
-    env("look.view", { view: "tools", text: "and now delete everything" }),
+    // Send now names a message the person already queued, by ids alone: never
+    // words to send in its place, and never without both ids.
+    env("look.sendNow"),
+    env("look.sendNow", { chat: CHAT }),
+    env("look.sendNow", { queued: QUEUED }),
+    env("look.sendNow", { chat: CHAT, queued: "" }),
+    env("look.sendNow", { chat: CHAT, queued: "short" }),
+    env("look.sendNow", { chat: CHAT, queued: 4 }),
+    env("look.sendNow", { chat: "has spaces in it", queued: QUEUED }),
+    env("look.sendNow", { chat: CHAT, queued: QUEUED, text: "send this instead" }),
+    env("look.sendNow", { chat: CHAT, queued: QUEUED, then: "chat.cancel" }),
+    // The fifteenth's view went with the views: no box may say it now.
+    env("look.view", { view: "plain" }),
+    env("look.view", { view: "tools" }),
   ];
   for (const r of bad) expect([JSON.stringify(r), isHostRequest(r), isRuntimeRequest(r)]).toEqual([JSON.stringify(r), false, false]);
   // THE WHOLE SET, and none of them is an outer kind wearing a new name.
-  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.view"]);
+  expect(HOST_KIND_NAMES.filter((k) => k.startsWith("look."))).toEqual(["look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.sendNow"]);
 });
 
 /* ── the window on the envelope ─────────────────────────────────────────── */
@@ -222,14 +227,19 @@ test("every chat and agents kind is admitted well-formed and refused otherwise",
     [env("chat.unqueue", { chat: CHAT, queued: QUEUED }), true],
     [env("chat.unqueue", { chat: CHAT }), false],
     [env("chat.unqueue", { chat: CHAT, queued: "has spaces in it" }), false],
+    [env("chat.sendNow", { chat: CHAT, queued: QUEUED }), true],
+    [env("chat.sendNow", { chat: CHAT, queued: QUEUED, window: WINDOW }), true],
+    [env("chat.sendNow"), false],
+    [env("chat.sendNow", { chat: CHAT }), false],
+    [env("chat.sendNow", { queued: QUEUED }), false],
+    [env("chat.sendNow", { chat: CHAT, queued: "" }), false],
+    [env("chat.sendNow", { chat: CHAT, queued: "has spaces in it" }), false],
+    [env("chat.sendNow", { chat: 7, queued: QUEUED }), false],
 
     [env("settings.read"), true],
-    [env("settings.set"), true],
-    [env("settings.set", { view: "plain" }), true],
-    [env("settings.set", { view: "tools" }), true],
-    [env("settings.set", { view: "thinking" }), true],
-    [env("settings.set", { view: "fancy" }), false],
-    [env("settings.set", { view: 1 }), false],
+    // Nothing sets a kept choice from a window any more: the view it set is gone.
+    [env("settings.set"), false],
+    [env("settings.set", { view: "plain" }), false],
   ];
   for (const [req, want] of cases) expect([JSON.stringify(req), isChatRequest(req)]).toEqual([JSON.stringify(req), want]);
   // A chat kind is not a history kind, and the reverse.
@@ -304,33 +314,19 @@ test("the stream's address says which window it is, so a closed window's context
   expect(WINDOW_PARAM).toBe("window");
 });
 
-test("a chat has three views, a ladder from Plain to Tool calls with Plain to open on, and nothing else is a view", () => {
-  expect([...CHAT_VIEWS]).toEqual(["plain", "thinking", "tools"]);
-  expect(Object.isFrozen(CHAT_VIEWS)).toBe(true);
-  expect(DEFAULT_VIEW).toBe("plain");
-  for (const v of CHAT_VIEWS) expect(isChatView(v)).toBe(true);
-  for (const v of ["", "Tools", "plain ", null, undefined, 0]) expect([v, isChatView(v)]).toEqual([v, false]);
-});
-
-test("each view has its name and a line saying what it adds, and only the three have words", () => {
-  expect(Object.keys(VIEW_WORDS)).toEqual([...CHAT_VIEWS]);
-  expect(VIEW_WORDS).toEqual({
-    plain: { name: "Plain", line: "Just the words" },
-    thinking: { name: "Thinking", line: "Adds the agent's thinking" },
-    tools: { name: "Tool calls", line: "Adds the tools it used" },
-  });
-  expect(Object.isFrozen(VIEW_WORDS)).toBe(true);
-  for (const v of CHAT_VIEWS) expect(Object.isFrozen(VIEW_WORDS[v])).toBe(true);
+test("A CHAT IS DRAWN ONE WAY: the contract names no view, no list of views and no words for one", () => {
+  for (const name of ["CHAT_VIEWS", "DEFAULT_VIEW", "VIEW_WORDS"]) expect([name, name in wire]).toEqual([name, false]);
+  expect("isChatView" in guards).toBe(false);
 });
 
 test("the choices, the queue and deleting a chat are this machine's own window's alone, and a settings kind nobody listed yet is too", () => {
-  for (const kind of ["chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set", "settings.somethingNew"]) {
+  for (const kind of ["chat.delete", "chat.sendQueued", "chat.unqueue", "chat.sendNow", "settings.read", "settings.somethingNew"]) {
     expect([kind, isLocalKind(kind)]).toEqual([kind, true]);
   }
   // The look's own are the box's to ask, and are never local kinds.
   expect(isLocalKind("look.delete")).toBe(false);
   expect(isLocalKind("look.unqueue")).toBe(false);
-  expect(isLocalKind("look.view")).toBe(false);
+  expect(isLocalKind("look.sendNow")).toBe(false);
 });
 
 test("the stream's named events: the two that were, and the three that carry JSON", () => {
@@ -353,7 +349,7 @@ test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapsh
     "table.get", "table.schema", "table.list", "row.insert", "row.update", "row.remove",
     "sql", "fetch", "theme.get", "open", "variables", "link.resolve", "page.embed", "vault.info",
     "automation.list", "run.start", "run.list", "run.get", "run.read", "run.kill",
-    "look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.view",
+    "look.open", "look.new", "look.list", "look.panel", "look.delete", "look.unqueue", "look.sendNow",
   ]);
   expect([...RUNTIME_KIND_NAMES]).toEqual([
     ...HOST_KIND_NAMES,
@@ -363,7 +359,8 @@ test("THE INNER RINGS, EXACTLY: a kind added to either is a decision this snapsh
     "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
     "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
     "chat.switchAgent", "chat.close", "chat.commands",
-    "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
+    "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read",
+    "chat.sendNow",
   ]);
   expect([...HISTORY_KIND_NAMES]).toEqual(["window.report", "window.list", "history.read"]);
 });

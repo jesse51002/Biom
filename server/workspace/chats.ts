@@ -29,14 +29,19 @@
 // queue, so it is Biom's: `send` while a turn is held, starting or running
 // puts the message in the chat's queue — said as a `queued` update, and kept
 // in the chat's log so it survives a reload and a restart — and answers its
-// place. When a turn ends `end_turn`, the next queued message goes out by
-// itself, one a turn, said as `unqueued` and then the next turn's `prompt`.
-// After Stop, a red end, or a restart, the queue is HELD: nothing goes out
-// until the person asks (`sendQueued`), and a message sent to an idle chat
-// meanwhile goes out on its own and leaves the queue held. One queued message
-// is taken out by its id (`unqueue`). Stop is `session/cancel`, and an agent
-// that has not answered it within a grace is ended, because the next message
-// cannot wait on it. The stop reason turns the light: amber while working, green for ten
+// place. When a turn ends `end_turn` — or is stopped, `cancelled` — the next
+// queued message goes out by itself, one a turn, said as `unqueued` and then
+// the next turn's `prompt`: Stop ends the turn and not the queue. After a red
+// end, a closed agent or a restart, the queue is HELD: nothing goes out until
+// the person asks (`sendQueued`), and a message sent to an idle chat meanwhile
+// goes out on its own and leaves the queue held. One queued message is taken
+// out by its id (`unqueue`), and one is sent NOW by its id (`sendNow`): the
+// turn running is stopped as Stop stops it, and that message goes out the
+// moment the turn has ended, ahead of the rest, which go on after it one a
+// turn — held or not. Stop is `session/cancel`, and an agent that has not
+// answered it within a grace is ended, because the next message cannot wait
+// on it — so what is queued goes to a fresh process, as any message after an
+// agent has gone does. The stop reason turns the light: amber while working, green for ten
 // minutes after `end_turn`, none after `cancelled`, red for `refusal`,
 // `max_tokens`, `max_turn_requests` and a crash — and red STAYS until the
 // next turn starts, as the Chat spec's mockup has it. The light is computed
@@ -324,6 +329,13 @@ export interface Chats {
   sendQueued(chat: ChatId): Promise<ChatSummary>;
   /** Take one message out of the queue, by its id. */
   unqueue(chat: ChatId, id: string): Promise<ChatSummary>;
+  /** SEND ONE QUEUED MESSAGE NOW, by its id: the turn running stopped as
+   *  `cancel` stops it, and this message out the moment it has ended, ahead
+   *  of the rest; with no turn running, out at once. The rest go on after it.
+   *  A message no longer waiting is `not_found`, and stops nothing. */
+  sendNow(chat: ChatId, id: string): Promise<ChatSummary>;
+  /** STOP: `session/cancel`, and the turn ends `cancelled`. What waits goes
+   *  on as it does after `end_turn`. */
   cancel(chat: ChatId): Promise<ChatSummary>;
   config(chat: ChatId, option: string, value: ConfigValue): Promise<ChatSummary>;
   switchAgent(chat: ChatId, agent: AgentKey): Promise<ChatSummary>;
@@ -543,9 +555,13 @@ interface Chat {
   /** THE QUEUE: the person's messages sent while a turn ran, in order, each
    *  with the page that was on screen when it was sent. */
   waiting: Waiting[];
-  /** The queue waits for the person — after Stop, a red end or a restart —
-   *  rather than for the turn. */
+  /** The queue waits for the person — after a red end, a closed agent or a
+   *  restart — rather than for the turn. */
   waitingHeld: boolean;
+  /** THE QUEUED MESSAGE SEND NOW PICKED, by its id: the next to go out,
+   *  wherever it waits. In memory only, so a restart forgets it and the
+   *  queue is held as it was queued — the order every window draws it in. */
+  next: string | null;
   log: LogWriter;
 }
 
@@ -718,7 +734,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     pendingConfig: new Map(), choices: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
-    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false,
+    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false, next: null,
     log: makeLog(join(logDir, `${id}.jsonl`), torn, say),
   });
 
@@ -1342,15 +1358,12 @@ export function makeChats(deps: ChatsDeps): Chats {
       touch(c);
       signal({ kind: "end", chat: c.id, turn });
       maybeCompact(c);
-      // THE QUEUE: after a finished turn its next message goes out by
-      // itself; after Stop, a red end or a crash it waits for the person.
+      // THE QUEUE: after a finished turn, or one stopped, its next message
+      // goes out by itself; after a red end or a crash it waits for the
+      // person, who should see what went wrong before anything else goes.
       if (c.waiting.length > 0) {
-        if (stop === "end_turn" && !c.waitingHeld && !stopping) sendNext(c);
-        else if (!c.waitingHeld) {
-          c.waitingHeld = true;
-          keepQueue(c);
-          touch(c, false);
-        }
+        if (!RED.has(stop) && !c.waitingHeld && !stopping) sendNext(c);
+        else holdQueue(c);
       }
     });
 
@@ -1366,10 +1379,50 @@ export function makeChats(deps: ChatsDeps): Chats {
     c.log.append([{ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld }]);
   };
 
+  /** STOP THE TURN — Stop's, and Send now's. A message not yet handed to the
+   *  agent is withdrawn, and a start under way for it ended with it; a turn
+   *  the agent is running is sent `session/cancel`, once however often this
+   *  is asked, and an agent that has not answered within the grace is ended,
+   *  because the next message cannot wait on it. */
+  const stopTurn = async (c: Chat): Promise<void> => {
+    const turn = c.turn;
+    if (c.phase !== "idle" && c.held) {
+      const live = c.live;
+      c.held = null;
+      c.gen++;
+      if (c.phase === "starting" && live) void endLive(c, live);
+      await finishTurn(c, turn, "cancelled", null);
+    } else if (c.phase === "running" && !c.cancelling) {
+      c.cancelling = true;
+      const live = c.live;
+      if (!live || live.gone || !live.conn || live.sessionId === null) await finishTurn(c, turn, "cancelled", null);
+      else {
+        live.conn.notify("session/cancel", { sessionId: live.sessionId });
+        live.cancelTimer = setTimeout(() => {
+          live.cancelTimer = null;
+          if (c.turn !== turn || c.phase !== "running") return;
+          void endLive(c, live);
+          void finishTurn(c, turn, "cancelled", null);
+        }, cancelGrace);
+      }
+    }
+  };
+
+  /** What waits, held for the person rather than for the turn. */
+  const holdQueue = (c: Chat): void => {
+    if (c.waiting.length === 0 || c.waitingHeld) return;
+    c.waitingHeld = true;
+    keepQueue(c);
+    touch(c, false);
+  };
+
   /** THE NEXT QUEUED MESSAGE GOES OUT: out of the queue, said, and sent as
-   *  the next turn's prompt, exactly as if the person had sent it now. */
+   *  the next turn's prompt, exactly as if the person had sent it now — the
+   *  one Send now picked where it still waits, else the oldest. */
   const sendNext = (c: Chat): void => {
-    const next = c.waiting.shift();
+    const picked = c.next === null ? -1 : c.waiting.findIndex((q) => q.id === c.next);
+    c.next = null;
+    const [next] = c.waiting.splice(Math.max(0, picked), 1);
     if (!next) return;
     if (c.waiting.length === 0) c.waitingHeld = false;
     keepQueue(c);
@@ -2239,7 +2292,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.waitingHeld = false;
       keepQueue(c);
       touch(c);
-      // No turn going: the next goes now. One going: when it ends `end_turn`.
+      // No turn going: the next goes now. One going: when it ends, unless red.
       if (c.phase === "idle") sendNext(c);
       return summary(c);
     },
@@ -2249,6 +2302,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       const at = c.waiting.findIndex((q) => q.id === qid);
       if (at < 0) throw bad("not_found", "no such message waits in this chat's queue");
       c.waiting.splice(at, 1);
+      if (c.next === qid) c.next = null;
       if (c.waiting.length === 0) c.waitingHeld = false;
       keepQueue(c);
       emit(c, { kind: "unqueued", id: qid, sent: false });
@@ -2256,32 +2310,30 @@ export function makeChats(deps: ChatsDeps): Chats {
       return summary(c);
     },
 
+    async sendNow(id, qid) {
+      const c = await must(id);
+      if (stopping) throw bad("unsupported", "Biom is stopping");
+      // Gone from the queue — sent already, or taken out — it is nobody's to
+      // send, and the turn running now is not the one it was pressed against.
+      if (!c.waiting.some((q) => q.id === qid)) throw bad("not_found", "no such message waits in this chat's queue");
+      // It goes next, and the queue goes on after it, held or not: the person
+      // asked for it by hand.
+      c.next = qid;
+      if (c.waitingHeld) {
+        c.waitingHeld = false;
+        keepQueue(c);
+      }
+      touch(c);
+      // No turn going: it goes now. One going — or ending on its own — it
+      // goes the moment that turn has ended, however it ends but red.
+      if (c.phase === "idle") sendNext(c);
+      else await stopTurn(c);
+      return summary(c);
+    },
+
     async cancel(id) {
       const c = await must(id);
-      const turn = c.turn;
-      if (c.phase !== "idle" && c.held) {
-        // Not yet handed to the agent: withdrawn, and a start under way for it
-        // is ended with it.
-        const live = c.live;
-        c.held = null;
-        c.gen++;
-        if (c.phase === "starting" && live) void endLive(c, live);
-        await finishTurn(c, turn, "cancelled", null);
-      } else if (c.phase === "running" && !c.cancelling) {
-        c.cancelling = true;
-        const live = c.live;
-        if (!live || live.gone || !live.conn || live.sessionId === null) await finishTurn(c, turn, "cancelled", null);
-        else {
-          live.conn.notify("session/cancel", { sessionId: live.sessionId });
-          live.cancelTimer = setTimeout(() => {
-            live.cancelTimer = null;
-            if (c.turn !== turn || c.phase !== "running") return;
-            // It did not answer Stop, and the next message cannot wait on it.
-            void endLive(c, live);
-            void finishTurn(c, turn, "cancelled", null);
-          }, cancelGrace);
-        }
-      }
+      await stopTurn(c);
       return summary(c);
     },
 
@@ -2348,6 +2400,10 @@ export function makeChats(deps: ChatsDeps): Chats {
         if (c.phase === "running" && live?.conn && live.sessionId !== null) live.conn.notify("session/cancel", { sessionId: live.sessionId });
         c.held = null;
         c.gen++;
+        // A turn ended by closing its agent is stopped, and still sends
+        // nothing on: the person closed the agent, so what waits waits for
+        // them.
+        holdQueue(c);
         await finishTurn(c, c.turn, "cancelled", null);
       }
       // The process ends in the background; a new start waits for it.

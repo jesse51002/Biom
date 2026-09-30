@@ -30,9 +30,9 @@ description: >-
   "face", "held message", "Stop", "light", "kept log", "jsonl", "reap",
   "idle agent", "AgentId", "onEdit", "changed", "look", "look.state",
   "look.patch", "biom.onLook", "@agent", "Start Gateway", "AUTH_EVERY_PROCESS",
-  "settings.json", "kept choices", "view", "Plain", "Thinking", "Used N tools",
-  "⋯", "Chat options", "View menu", "look.view",
-  "queue", "queued", "Send queued", "delete a chat", "session/delete",
+  "settings.json", "kept choices", "one view", "thinking folded", "Used N tools",
+  "queue", "queued", "Send queued", "Send now", "look.sendNow", "chat.sendNow",
+  "delete a chat", "session/delete",
   "biom-context", "page on screen", "the note", "withoutNotes".
 ---
 
@@ -67,7 +67,7 @@ It owns the conversation. It does **not** own:
 | the pure halves | `server/domain/agents-*.ts`, `edits.ts`, `shellwrites.ts`, `jev.ts`, `choices.ts` (2) | the known agents, their sign-in methods, the registry, a downloaded archive, what is an edit, Jev, the kept choices' shape and what an agent still offers |
 | the agents | `server/workspace/agents.ts` (3) | what this machine has: finding, probing, installing, signing in, tickets |
 | the chats | `server/workspace/chats.ts` (3) | one agent process per chat, its turns, its light, its files, its kept log |
-| the kept choices | `server/workspace/settings.ts` (3) | `.biom/settings.json`: the view, the agent last picked, each agent's last model, mode and effort |
+| the kept choices | `server/workspace/settings.ts` (3) | `.biom/settings.json`: the agent last picked, each agent's last model, mode and effort |
 | the route | `server/api/routes.ts` (4) | each `agents.*` and `chat.*` kind, narrowed by `isChatRequest`, one module call each |
 | the root | `server/main.ts` (5) | per server: the login environment, Jev, every connection, the idle timer; per folder: the agents, the chats, Jev's schedule; the gate, the stream, the exit |
 | the look | `guest/plugins/biom-agent/`, `guest/plugins/biom-agent-look/` | the Agent screen as drawn in its box |
@@ -276,19 +276,42 @@ process that made it.
   because ACP has none. `chat.send` while a turn is held, starting or running
   puts the message in the queue, said as a `queued` update, kept in the chat's
   log (a `queue` record) and answered as a `ChatSent` with its place; the
-  summary carries `queued` and `queueHeld`. When a turn ends `end_turn` the
-  next queued message goes out by itself, one a turn — `unqueued` with `sent`,
-  then the next turn's `prompt`. After **Stop**, a red end, a crash or a
+  summary carries `queued` and `queueHeld`. When a turn ends `end_turn`, or
+  is stopped — `cancelled` — the next queued message goes out by itself, one
+  a turn — `unqueued` with `sent`, then the next turn's `prompt`: **Stop ends
+  the turn and not the queue** (the sixteenth contracts edit; it held the
+  queue before). After a red end, a crash, a closed agent (`chat.close`) or a
   restart the queue is HELD and nothing goes out until the person sends it
-  (`chat.sendQueued`, **Send queued**); a message sent to the idle chat
-  meanwhile goes out on its own and leaves the queue held, and a queue emptied
-  is held no more. `chat.unqueue` takes one out by `queued`, its id — never
-  `id`, which is the envelope's own. At most `QUEUE_MAX` (fifty) wait; one
-  more is refused `limit` in words. **Stop** is `session/cancel`; an agent that
-  has not answered within fifteen seconds (`cancelGraceMs`, where a test gives
-  another) is ended. Switching agent mid-turn is
+  (`chat.sendQueued`, **Send queued**), because an error should be seen
+  before anything else goes; a message sent to the idle chat meanwhile goes
+  out on its own and leaves the queue held, and a queue emptied is held no
+  more. `chat.unqueue` takes one out by `queued`, its id — never `id`, which
+  is the envelope's own. At most `QUEUE_MAX` (fifty) wait; one more is refused
+  `limit` in words. **Stop** is `session/cancel`; an agent that has not
+  answered within fifteen seconds (`cancelGraceMs`, where a test gives
+  another) is ended, and what waits then goes to a fresh process, as any
+  message after an agent has gone does. A Stop that lands while a queued
+  message is on its way — out of the queue, its agent still starting —
+  withdraws that message before any agent hears it, its turn ends
+  `cancelled`, and the next goes on: nothing is sent twice, and the message
+  stays in the chat as the turn that was stopped. Switching agent mid-turn is
   refused — Stop first — and a switch on a held chat re-targets it and mints
   nothing.
+- **Send now** (`chat.sendNow`, by `queued`) sends one queued message ahead
+  of the rest: the turn running is stopped exactly as Stop stops it — the
+  same cancel, the same grace, one `session/cancel` however often it is
+  pressed — and that message goes out the moment the turn has ended; with no
+  turn running, a queue held after a red end or a restart included, it goes
+  at once. The rest go on after it, one a turn, held or not: the person asked
+  by hand. Which message goes next is the chat's `next`, IN MEMORY: the queue
+  itself is never reordered, so it stays in the order every window draws it,
+  and a restart forgets the pick and holds the queue as it was queued. A turn
+  already ending on its own when Send now arrives ends as it was ending, and
+  the pick still goes next; a turn that ends red holds the queue with the
+  pick kept for Send queued. A message no longer waiting — sent already, or
+  taken out — is `not_found` and stops nothing, so a second press after the
+  message went never stops the turn it started. The message goes with the
+  words and the page on screen it was queued with.
 - **Permission is answered, never shown**: `allow_always`, else `allow_once`.
 - **The light is the server's**: amber while working, green for ten minutes
   after `end_turn` (`GREEN_MS`), none after `cancelled`, red after a refusal,
@@ -348,11 +371,12 @@ process that made it.
   chat, on each picker the agent's list STILL offers them on — a model the
   agent has dropped is skipped without a word (`offeredChoices` in
   `choices.ts`). They are laid on at once against the probe's list, so the
-  pickers show them before anything starts. The view is the one choice a
-  window keeps itself, through `settings.set`, when the look says
-  `look.view`. A file that will not read is said once in the log, put aside
-  as `settings.json.bad`, and the defaults are used: Plain, no agent,
-  nothing kept.
+  pickers show them before anything starts. No window sets a choice: each
+  is kept by the server as the chat makes it, and `settings.read` is the one
+  settings kind. A file that will not read is said once in the log, put
+  aside as `settings.json.bad`, and the defaults are used: no agent, nothing
+  kept. A file that still names a `view`, kept when a chat had three, reads
+  as it is and without it, and the next write drops it.
 - **Each chat keeps its own choices too** (`choices`, a record in its kept
   log): what the person picked in it, what it started on, and what the agent
   switched itself to while it ran (a `config_option_update` or
@@ -551,39 +575,36 @@ only ever as text; it draws incrementally, the latest forty turns with more on
 a press, a diff, an output and a block of thinking bounded where they are
 drawn.
 
-**A chat has three views, a ladder, and none of them draws a wall of tool
-calls** (`LookState.view`, `ChatView`, in the order of `CHAT_VIEWS`): each adds
-to the one before and the tools come last, because Biom is a second brain
-before it is a place to build software. **Plain**, the default, is the words,
-the thinking folded to its one line and no tool calls at all; **Thinking**
-writes the thinking out where it came, muted italic with a thin rule down its
-left, and still draws no tool calls; **Tool calls** writes the thinking out
-too and adds each RUN of tool calls — every call with no thinking and no reply
-between them, the transcript's `acts` block — as ONE line, *Used 3 tools ›*
-(*Used 1 tool*), which opens to the calls one by one, each opening to its diff
-or its output as before. A workspace that has kept no view opens on Plain, and
-a view it kept stays as it was. While the turn runs, its current run reads
-*Using 3 tools* with the call under way after it, muted, and a run holding a
-failed call carries its red mark and *1 failed* on the shut line, so in Tool
-calls a failure is never folded out of sight. The run line and each call line are buttons, reached by Tab and worked
-by Enter and Space, and each keeps whether it is open while the turn streams:
-a call joining an open run leaves it open, one joining a shut run leaves it
-shut. **A view picked moves no node**: every block is drawn both ways at once
-and the default look's sheet shows each by the root's `data-view`, so the
-reader at the end of the chat stays there and nothing is drawn again
-(`runWords` and `viewOf` in `model.js`).
+**A chat is drawn one way, and nothing draws a wall of tool calls**: the
+words; the thinking FOLDED to one line — *Thinking* while it streams, then
+*Thought for 4s* — which opens to the whole of it, bounded as an output is,
+and shuts again; each RUN of tool calls — every call with no thinking and no
+reply between them, the transcript's `acts` block — as ONE line, *Used 3
+tools ›* (*Used 1 tool*), which opens to the calls one by one, each opening to
+its diff or its output; and the pages the turn changed. There is no view to
+pick: the owner chose one simple view (the sixteenth contracts edit took out
+the three the thirteenth and fifteenth had made, and the ⋯ that picked them).
+While the turn runs, its current run reads *Using 3 tools* with the call under
+way after it, muted, and a run holding a failed call carries its red mark and
+*1 failed* on the shut line, so a failure is never folded out of sight. The
+thinking's line, the run line and each call line are buttons, reached by Tab
+and worked by Enter and Space, and each keeps whether it is open while the
+turn streams: a call joining an open run leaves it open, one joining a shut
+run leaves it shut (`runWords` in `model.js`).
 
 **What the look may say is eight things, and none of them is text**:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed, `look.delete` from a row's three dots —
 which asks for Biom's own dialog and deletes nothing — `look.unqueue` from a
-queued message's ×, and `look.view` from the chat's ⋯ — each strictly
+queued message's ×, and `look.sendNow` from its Send now — each strictly
 guarded, ids and words from a closed list — and `open` for a page a turn
-changed. **Every one is honoured only just after a touch from that same
-box**, as any box's `open` is: the `look.*` kinds move what is on screen,
-redraw the look whole, put a question to the person or change the view kept
-for the workspace, so a look on a loop can do none of them. The bridge refuses
-the seven `identity` unless the
+changed. **Every one is honoured only just after a touch from that same box**,
+as any box's `open` is: the `look.*` kinds move what is on screen, redraw the
+look whole, put a question to the person or stop a turn to send what the
+person queued, so a look on a loop can do none of them. `look.sendNow` names a
+message by ids and carries none of its words: what goes out is the person's
+own, typed in Biom's input box. The bridge refuses the
+`look.*` kinds `identity` unless the
 asking box is on `@agent` and the Agent screen has registered its answer
 (`answerLook`), and the answer refuses every box but the one it mounted, by the
 identity of that box's context. A page opened from the look comes up with the
@@ -652,41 +673,25 @@ every open of the stream, after this window makes a chat, sets a picker or
 switches agent, and whenever the dock comes back to the start screen. **The
 text area stays open while a turn runs**: with words in it the button is Send,
 and sends them — or queues them behind the turn — and with none while a turn
-runs it is **Stop**, as Escape is; **Send queued** shows under it while the
-chat's queue is held. The look draws what waits: a muted bubble a message
-under the running turn, *Queued* (*Queued · held*), each with a × saying
-`look.unqueue`, which the Agent view answers with `chat.unqueue` and nothing
-sent. **A queued message is sent when it goes out**, not when it was queued:
-the store's `lastSent` moves when the stream's `unqueued` says this window's
-message left the queue for its turn, so queueing never hands the screen over
-early. **Go to *page*** is drawn
+runs it is **Stop**, as Escape is, which ends the turn and lets what waits go
+on; **Send queued** shows under it while the chat's queue is held, after an
+error or a restart. The look draws what waits: a muted bubble a message
+under the running turn, *Queued* (*Queued · held*), each with **Send now**
+saying `look.sendNow` and a × saying `look.unqueue`, which the Agent view
+answers with `chat.sendNow` and `chat.unqueue`. Send now draws nothing ahead
+of the answer — the message moves when the stream says it went — and a
+refusal because it had gone already says nothing, while any other says
+*Not sent now* on the line under the input (`AgentInput.say`). **A queued
+message is sent when it goes out**, not when it was queued: the store's
+`lastSent` moves when the stream's `unqueued` says this window's message left
+the queue for its turn, so queueing never hands the screen over early — and a
+message this window pressed Send now on is this window's, whichever window
+queued it. **Go to *page*** is drawn
 above it from the switcher's offer; the / menu lists the agent's commands and
 the workspace's skills. **The whole dock carries `NOT_TOUCH`**: typing to an
 agent is not a touch. A first message with no agent ready is sent all the same
 and held by the server; More agents opens over it, saying so, when it was this
 window that sent it a moment ago.
-
-**How the chat is shown is picked from the look's own ⋯, never the input
-box**, because a control among the agent's pickers reads as a setting of the
-agent's. The default look draws a ⋯ — *Chat options* — at the chat's top
-right, in a chat only: in the panel's head before expand and close, and on
-the full screen in a bar the height of the panel's head before Minimize,
-which the thread starts under so nothing scrolled runs beneath either. It
-opens a menu headed **View**: the
-three views in the order of their ladder, each its name and the line saying
-what it adds (`VIEW_WORDS` in `wire.js`, which `model.js` says again, held
-equal by a test), the one shown checked and `aria-checked`. It is the same
-menu as a row's three dots — one `togglePopup` in `look.js`: Enter or Space
-opens it with the caret on its first item, the arrows move, Escape shuts it
-and gives the caret back to the button, and a press elsewhere, the box losing
-focus or changing size shuts it. **A pick says `look.view` and draws
-nothing**: the Agent view answers it with `chats.setView`, which keeps it for
-the workspace through `settings.set`, and the look draws the view when it
-comes back as `view` in a `look.patch` — so the host is the one statement of
-which view is shown, and a refusal puts the view back in the look and says
-*The view did not change* on the line under the input (`AgentInput.say`).
-**A look a workspace writes draws its own view control or none**; the host
-posts it `view` either way.
 
 **Deleting a chat is asked in Biom's own dialog, never the look's.** Every
 chat's row, in the history and in the panel's list, carries three dots — a
@@ -793,10 +798,10 @@ server/api/routes.ts            chatAnswer, CHAT_SENTENCES, pageOnScreen, the ga
 server/main.ts                  LOGIN, jev, connections, the reaper, build()'s wiring and onScreen, events(),
                                 localRefusal, the exit handler, endAgentsWithin
 guest/plugins/biom-agent/       the Agent screen's document and mount; plugin.yaml's `look`
-guest/plugins/biom-agent-look/  the default look: look.js (nodes, the ⋯ and togglePopup), model.js (decisions, runWords, VIEWS, VIEW_WORDS, viewOf), sheet.js (the views)
+guest/plugins/biom-agent-look/  the default look: look.js (nodes, the row menu's togglePopup), model.js (decisions, runWords, request), sheet.js (the one way a chat is drawn)
 guest/biom.js                   the look.state / look.patch fold and biom.onLook
-client/store/chats.js           makeChatStore (a message sent through `inLine`), fold, agentMode, showChat, freshThread, the pickers' rules
-client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.view kept here)
+client/store/chats.js           makeChatStore (a message sent through `inLine`; sendNow), fold, agentMode, showChat, freshThread, the pickers' rules
+client/views/agent.js           makeAgentView: the one slot, LOOK_KEY, LOOK_THREADS, LOOK_HEAD, PATCH_MAX, answer (look.sendNow sent on here)
 client/views/agent-input.js     makeAgentInput: the dock, measure(), Send and Stop, Go to page, say(), forPage (Edit's), NOT_TOUCH
 client/views/agent-dialogs.js   makeAgentDialogs: More agents, More models, sign-in, confirm (Biom's own question)
 client/css/agent.css            the slot's three shapes, the dock, the pop-ups, the lamps
@@ -808,7 +813,7 @@ tests/chats.test.ts  edits.test.ts  shellwrites.test.ts  jev.test.ts  jev-faces.
 tests/loginenv.test.ts  chat-guards.test.ts  chat-route.test.ts  chat-host.test.ts
 tests/local-gate.test.ts  stream-feeds.test.ts  reserved-screens.test.ts  agent-look.test.js
 tests/settings.test.ts          the kept choices: the shape, the bounds, the file, a broken one put aside
-tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the view against a double
+tests/agent-host.test.js        the store, the pickers' rules, the bridge's answer, the Agent view against a double
 tests/agent-input.test.js       the agent menu and More agents: two states, one button, Check again
 tests/e2e/chat-server.e2e.ts    the chats, agents and history over HTTP and the stream, assembled
 tests/e2e/agent-look.e2e.ts     the look in a real box in a real browser

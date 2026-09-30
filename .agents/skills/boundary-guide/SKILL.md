@@ -303,18 +303,21 @@ drawn in a box on `@agent`, and what it may ask is seven inner-ring kinds:
 `look.open` a chat, `look.new`, `look.list` open or shut, `look.panel` to the
 screen, beside the page or closed, and — the thirteenth edit — `look.delete`, a
 request for Biom's OWN dialog asking whether to delete a chat, and
-`look.unqueue`, a queued message's ×, and — the fifteenth — `look.view`, one
-of the three views picked from the chat's ⋯: ids and words from a closed list,
-STRICTLY guarded so no field rides along — and a page a turn changed through
-`open`. **Each of the eight is honoured only just after a touch from that same
-box**, as every box's `open` is (§3): the `look.*` kinds move what is on screen,
-redraw the look whole, put a question to the person or change the view the
-workspace keeps, so a look on a loop can do none of them — and `look.delete`
-deletes nothing even when honoured: only the person's Delete in the host's
-dialog says `chat.delete`, which no box can say. `look.view` is the one that
-changes something kept, and a box may say it because it sends nothing to an
-agent and deletes nothing; the host keeps it through `settings.set` and posts
-it back, and the look draws nothing ahead of that. The bridge answers the seven only for a box on `@agent`, and only through the answer the
+`look.unqueue`, a queued message's ×, and — the sixteenth — `look.sendNow`, its
+Send now: ids and words from a closed list, STRICTLY guarded so no field rides
+along — and a page a turn changed through `open`. **Each of the eight is
+honoured only just after a touch from that same box**, as every box's `open` is
+(§3): the `look.*` kinds move what is on screen, redraw the look whole, put a
+question to the person or stop a turn to send what the person queued, so a
+look on a loop can do none of them — and `look.delete` deletes nothing even
+when honoured: only the person's Delete in the host's dialog says
+`chat.delete`, which no box can say. **`look.sendNow` still puts no words in
+front of an agent**: it names a message by the chat's id and the message's, and
+what goes out is the person's own, typed in Biom's input box and already
+waiting; what it gives a look is WHEN, with the turn before it stopped, and the
+touch gate is what keeps that the person's. (The fifteenth edit's `look.view`,
+a view picked from the chat's ⋯, went in the sixteenth with the views: a chat
+is drawn one way.) The bridge answers the `look.*` kinds only for a box on `@agent`, and only through the answer the
 Agent screen registered (`answerLook`), which refuses every box but the one it
 mounted — it knows that box by the identity of the context it mounted it
 with, which only the frame host holds, so any other box on `@agent` — were

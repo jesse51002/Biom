@@ -334,7 +334,7 @@
    * state as it now stands and never has to know the rule: a patch's `updates`
    * append ONLY when its `chat` is the chat held — a patch for the chat that was
    * open before a `look.state` switched it is stale and its updates are dropped
-   * — and `chats`, `names`, `input`, `beside` and `view` replace what is held. An
+   * — and `chats`, `names`, `input` and `beside` replace what is held. An
    * update whose `seq` is already held is dropped, so a patch that overlaps the
    * state it follows cannot say a word twice; a TOOL LINE is whole and is
    * replaced where it first stood, by its id, and only by a later `seq`, so a
@@ -431,7 +431,6 @@
       if (m.names && typeof m.names === "object") look.names = patch.names = m.names;
       if (m.input && typeof m.input === "object") look.input = patch.input = m.input;
       if (m.beside !== undefined) look.beside = patch.beside = m.beside;
-      if (typeof m.view === "string") look.view = patch.view = m.view;
     }
     for (const fn of lookListeners.slice()) {
       try { fn(look, patch); } catch (e) { report(e); }

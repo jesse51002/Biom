@@ -21,7 +21,6 @@ import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import MarkdownIt from "../vendor/markdown-it.mjs";
 import { lookState, chatState, cid, NAMES } from "./agent-look-fixtures.js";
-import { CHAT_VIEWS, VIEW_WORDS } from "../contracts/wire.js";
 
 const glob = /** @type {any} */ (globalThis);
 const read = (/** @type {string} */ rel) => readFileSync(new URL("../" + rel, import.meta.url), "utf8");
@@ -122,7 +121,7 @@ test("an update already held is dropped, and a tool line is replaced where it st
   expect(held.updates.map((/** @type {any} */ x) => x.seq)).toEqual([2, 3]);
 });
 
-test("chats, names, input, beside and the view replace what is held", () => {
+test("chats, names, input and beside replace what is held, and a view is no part of what the look is handed", () => {
   const s = shim();
   /** @type {any} */
   let held = null;
@@ -130,17 +129,13 @@ test("chats, names, input, beside and the view replace what is held", () => {
   let patched = null;
   s.biom.onLook((/** @type {any} */ state, /** @type {any} */ patch) => { held = state; patched = patch; });
   s.hear({ kind: "look.state", state: lookState({}) });
-  expect(held.view).toBe("tools");
   s.hear({ kind: "look.patch", chat: null, chats: [], names: { a: { id: "home", name: "home" } }, input: { at: "bottom", height: 90 }, beside: null, view: "thinking" });
   expect(held.chats).toEqual([]);
   expect(held.names).toEqual({ a: { id: "home", name: "home" } });
   expect(held.input).toEqual({ at: "bottom", height: 90 });
   expect(held.beside).toBe(null);
-  expect(held.view).toBe("thinking");
-  expect(patched.view).toBe("thinking");
-  // A patch that names no view leaves the one held.
-  s.hear({ kind: "look.patch", chat: null, chats: [] });
-  expect(held.view).toBe("thinking");
+  // A host from before the views went may still say one: it is folded nowhere.
+  expect(held.view).toBeUndefined();
   expect(patched.view).toBeUndefined();
 });
 
@@ -304,9 +299,9 @@ test("A RUN OF TOOL CALLS IS ONE LINE: how many, one or many, while it runs with
   expect(M.runWords(/** @type {any} */ (null), false).label).toBe("Used 0 tools");
 });
 
-test("a chat has three views, and a view the look does not know is Plain, the default", () => {
-  expect(["plain", "thinking", "tools"].map(M.viewOf)).toEqual(["plain", "thinking", "tools"]);
-  for (const v of [undefined, null, "", "Tools", "constructor", 3]) expect([v, M.viewOf(v)]).toEqual([v, "plain"]);
+test("THE MODEL KNOWS NO VIEW: no list of views, no words for one, and none it could ask for", () => {
+  for (const name of ["VIEWS", "VIEW_WORDS", "viewOf"]) expect([name, name in M]).toEqual([name, false]);
+  expect(M.request("look.view", { view: "tools" })).toBe(null);
 });
 
 test("the list is grouped as the mockup groups it, newest first, and each row says what the chat is doing and with what", () => {
@@ -343,18 +338,7 @@ test("THE LOOK SAYS ONLY ITS OWN WORDS: its look kinds and open, each rebuilt fr
   expect(M.request("look.panel", { to: "beside" })).toEqual({ kind: "look.panel", params: { to: "beside" } });
   expect(M.request("open", { target: { kind: "page", id: "home/Boards", name: "x", text: "y" } })).toEqual({ kind: "open", params: { target: { kind: "page", id: "home/Boards" } } });
   expect(M.request("open", { target: { kind: "page", id: "@agent" } })).toBe(null);
-  for (const kind of ["chat.send", "chat.new", "agents.install", "fetch", "run.start", "sql", "data.set", "page.embed", "settings.set"]) expect(M.request(kind, { text: "x", chat: cid("live"), view: "plain" })).toBe(null);
-});
-
-test("the look asks for a view only by one of the three words, and never with anything riding along", () => {
-  for (const view of CHAT_VIEWS) expect(M.request("look.view", { view, chat: cid("live"), text: "sneak" })).toEqual({ kind: "look.view", params: { view } });
-  for (const view of ["", "Plain", "Tool calls", "everything", "constructor", null, 3, undefined]) expect([view, M.request("look.view", { view })]).toEqual([view, null]);
-});
-
-test("THE LOOK'S VIEWS AND THEIR WORDS ARE THE CONTRACT'S: the same three in the same order, each called the same and saying the same", () => {
-  expect([...M.VIEWS]).toEqual([...CHAT_VIEWS]);
-  expect(JSON.parse(JSON.stringify(M.VIEW_WORDS))).toEqual(JSON.parse(JSON.stringify(VIEW_WORDS)));
-  expect(Object.keys(M.VIEW_WORDS)).toEqual([...CHAT_VIEWS]);
+  for (const kind of ["chat.send", "chat.new", "chat.cancel", "chat.sendNow", "agents.install", "fetch", "run.start", "sql", "data.set", "page.embed", "settings.set", "look.view"]) expect(M.request(kind, { text: "x", chat: cid("live"), queued: "q1nvented-queued-01", view: "plain" })).toBe(null);
 });
 
 test("a changed file opens as the page its place names, as a table, or not at all", () => {
@@ -736,27 +720,23 @@ const runs = (root) => byClass(root, "grp").map((g) => ({
   calls: byClass(one(g.parentNode, "grplist"), "act").length,
 }));
 
-test("EACH RUN OF TOOL CALLS IS ONE SHUT LINE in every view: Used N tools, Using N tools with the call under way while it runs, and a failure marked while it is shut", () => {
-  for (const view of ["plain", "thinking", "tools"]) {
-    const w = mounted();
-    w.hear({ kind: "look.state", state: chatState("live", { view }) });
-    const look = one(w.root(), "g-look");
-    expect(look.getAttribute("data-view")).toBe(view);
-    const turns = byClass(w.root(), "turnw");
-    expect(runs(turns[0])).toEqual([{ label: "Used 3 tools", current: "", failed: "", open: false, shown: false, calls: 3 }]);
-    expect(runs(turns[1])).toEqual([{ label: "Using 1 tool", current: "Reading pages/home/children/Specs/content.yaml", failed: "", open: false, shown: false, calls: 1 }]);
-    // Each is a button with its own words said, shut until pressed.
-    const grp = one(turns[0], "grp");
-    expect(grp.localName).toBe("button");
-    expect(grp.getAttribute("type")).toBe("button");
-    expect(grp.getAttribute("aria-label")).toBe("Used 3 tools");
-    w.teardown();
-    const r = mounted();
-    r.hear({ kind: "look.state", state: chatState("red", { view }) });
-    expect(runs(r.root())).toEqual([{ label: "Used 2 tools", current: "", failed: "1 failed", open: false, shown: false, calls: 2 }]);
-    expect(byClass(one(r.root(), "gfail"), "led")[0].className).toBe("led red");
-    r.teardown();
-  }
+test("EACH RUN OF TOOL CALLS IS ONE SHUT LINE: Used N tools, Using N tools with the call under way while it runs, and a failure marked while it is shut", () => {
+  const w = mounted();
+  w.hear({ kind: "look.state", state: chatState("live") });
+  const turns = byClass(w.root(), "turnw");
+  expect(runs(turns[0])).toEqual([{ label: "Used 3 tools", current: "", failed: "", open: false, shown: false, calls: 3 }]);
+  expect(runs(turns[1])).toEqual([{ label: "Using 1 tool", current: "Reading pages/home/children/Specs/content.yaml", failed: "", open: false, shown: false, calls: 1 }]);
+  // Each is a button with its own words said, shut until pressed.
+  const grp = one(turns[0], "grp");
+  expect(grp.localName).toBe("button");
+  expect(grp.getAttribute("type")).toBe("button");
+  expect(grp.getAttribute("aria-label")).toBe("Used 3 tools");
+  w.teardown();
+  const r = mounted();
+  r.hear({ kind: "look.state", state: chatState("red") });
+  expect(runs(r.root())).toEqual([{ label: "Used 2 tools", current: "", failed: "1 failed", open: false, shown: false, calls: 2 }]);
+  expect(byClass(one(r.root(), "gfail"), "led")[0].className).toBe("led red");
+  r.teardown();
 });
 
 test("a run line opens to its calls and each call to its diff, and both stay as they were while the turn streams: a call joining an open run leaves it open, one joining a shut run leaves it shut", () => {
@@ -793,60 +773,53 @@ test("a run line opens to its calls and each call to its diff, and both stay as 
   w.teardown();
 });
 
-test("thinking is drawn both ways at once and the view picks which: folded to its line in Plain, opened by a press, and written out in Thinking and Tool calls", () => {
+test("A CHAT IS DRAWN ONE WAY: the thinking folded to its line, which opens to the whole of it and shuts again, each run of tool calls on its line, and no ⋯ and no view anywhere", () => {
   const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("done", { view: "plain", updates: [
+  w.hear({ kind: "look.state", state: chatState("done", { updates: [
     ...chatState("done").updates.slice(0, 3),
     { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: "Read the run first, then say what wants the person's eye." },
     ...chatState("done").updates.slice(3),
   ] }) });
   const root = w.root();
+  const look = one(root, "g-look");
+  expect(look.hasAttribute("data-view")).toBe(false);
+  // THE THINKING: one line, a button, shut — the words there under it, and
+  // shown by the sheet only while it is open.
   const think = one(root, "think");
   const thinkw = think.parentNode;
-  const thought = one(root, "thought");
-  expect(thought.textContent).toBe("Read the run first, then say what wants the person's eye.");
-  // Folded: the words are there and the sheet shows them only when opened.
+  expect(think.localName).toBe("button");
+  expect(think.getAttribute("aria-expanded")).toBe("false");
+  expect(one(root, "thought").textContent).toBe("Read the run first, then say what wants the person's eye.");
   expect(thinkw.hasAttribute("data-open")).toBe(false);
   think.fire("click");
   expect(thinkw.hasAttribute("data-open")).toBe(true);
   expect(think.getAttribute("aria-expanded")).toBe("true");
   think.fire("click");
   expect(thinkw.hasAttribute("data-open")).toBe(false);
-  // The sheet says what each view shows, by the root's attribute — a
-  // ladder: the thinking written out in every view but Plain, and the runs
-  // of tool calls in Tool calls alone.
+  // THE RUN OF TOOL CALLS: its one line, and the calls under it when opened.
+  expect(runs(root)).toEqual([{ label: "Used 1 tool", current: "", failed: "", open: false, shown: false, calls: 1 }]);
+  one(root, "grp").fire("click");
+  expect(runs(root)[0]).toMatchObject({ open: true, shown: true });
+  // No ⋯ and no menu of views.
+  expect(byClass(root, "chatmore").length + byClass(root, "viewmenu").length).toBe(0);
+  expect(everything(root).filter((e) => e.getAttribute("aria-label") === "Chat options")).toEqual([]);
+  // THE SHEET SAYS IT ONE WAY: the words of a thought only while it is open,
+  // the runs always, and nothing keyed on a view.
   const sheet = glob.__gAgentLookSheet;
+  expect(sheet).toMatch(/\n\.thought \{ display: none;/);
   expect(sheet).toContain(".thinkw[data-open] .thought { display: block;");
-  expect(sheet).toContain(".g-look:not([data-view=plain]) .thinkw .think { display: none; }");
-  expect(sheet).toMatch(/\.g-look:not\(\[data-view=plain\]\) \.thinkw \.thought \{ display: block;[^}]*border-left: 1px solid var\(--rule\);[^}]*font: italic/);
-  expect(sheet).toContain(".g-look:not([data-view=tools]) .acts { display: none; }");
-  expect(sheet).not.toMatch(/data-view=(plain|thinking|tools)\][^{]*\.acts \{ display: block/);
+  expect(sheet).toMatch(/\n\.acts \{ display: flex;/);
+  expect(sheet).not.toContain("data-view");
+  expect(sheet).not.toContain("viewmenu");
+  expect(sheet).not.toContain("chatmore");
   w.teardown();
 });
 
-test("A VIEW PICKED MOVES NO NODE: the root's view changes and every turn, run and thought drawn stays where it was, with the reader kept at the end", () => {
-  const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("live") });
-  const root = w.root();
-  const before = everything(root);
-  const log = one(root, "log");
-  for (const view of ["thinking", "plain", "tools", "nonsense"]) {
-    log.scrollHeight = 5000 + before.length;
-    log.scrollTop = 0;
-    w.hear({ kind: "look.patch", chat: cid("live"), view });
-    expect(one(root, "g-look").getAttribute("data-view")).toBe(view === "nonsense" ? "plain" : view);
-    expect(everything(root)).toEqual(before);
-    // The reader was at the end, so the end is where they are left.
-    expect(log.scrollTop).toBe(log.scrollHeight);
-  }
-  w.teardown();
-});
-
-test("thinking written out is bounded as an output is, and says how much more there was", () => {
+test("thinking opened is bounded as an output is, and says how much more there was", () => {
   const w = mounted();
   const long = "x".repeat(20000) + "y".repeat(345);
   const state = chatState("done");
-  w.hear({ kind: "look.state", state: { ...state, view: "thinking", updates: [...state.updates.slice(0, 3), { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: long }, ...state.updates.slice(3)] } });
+  w.hear({ kind: "look.state", state: { ...state, updates: [...state.updates.slice(0, 3), { seq: 30, at: Date.now() - 200000, turn: 1, kind: "thought", text: long }, ...state.updates.slice(3)] } });
   const thought = one(w.root(), "thought");
   expect(thought.childNodes[0].textContent).toBe("x".repeat(20000));
   expect(one(thought, "more").textContent).toBe("345 more characters not shown");
@@ -1069,130 +1042,41 @@ test("A CHAT'S THREE DOTS: a button beside every row, in the history and in the 
   w.teardown();
 });
 
-test("THE CHAT'S ⋯ is drawn only in a chat, at its top right: in the full screen's bar before Minimize, in the panel's head before its own controls", () => {
+test("THE FULL SCREEN'S BAR HOLDS MINIMIZE ALONE and the panel's head its own controls, in a chat and on the start screen alike", () => {
   const w = mounted();
-  w.hear({ kind: "look.state", state: lookState({}) });
-  const more = one(w.root(), "chatmore");
-  expect(more.localName).toBe("button");
-  expect(more.getAttribute("aria-label")).toBe("Chat options");
-  expect(more.getAttribute("aria-haspopup")).toBe("menu");
-  expect(more.getAttribute("aria-expanded")).toBe("false");
-  // The start screen has no chat to show one way or another.
-  expect(more.hidden).toBe(true);
+  const bar = () => one(w.root(), "chatbar").childNodes.map((/** @type {any} */ n) => n.getAttribute("class"));
+  const head = () => one(w.root(), "panelhead").childNodes.map((/** @type {any} */ n) => n.getAttribute("aria-label") || n.getAttribute("class"));
+  for (const state of [lookState({}), chatState("live"), chatState("done", { mode: "panel" }), lookState({ mode: "panel" })]) {
+    w.hear({ kind: "look.state", state });
+    expect(bar()).toEqual(["iconbtn minbtn"]);
+    expect(head()).toEqual(["tswitch", "New thread", "Open full size", "Close the chat"]);
+  }
+  w.teardown();
+});
+
+test("A ROW'S MENU IS WORKED FROM THE KEYBOARD: the caret on its Delete, the arrows keep it there, Escape gives it back to the dots, and one menu is open at a time", () => {
+  const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
-  expect(more.hidden).toBe(false);
-  const bar = one(w.root(), "chatbar");
-  expect(more.parentNode).toBe(bar);
-  expect(bar.childNodes.map((/** @type {any} */ n) => n.getAttribute("class"))).toEqual(["iconbtn chatmore", "iconbtn minbtn"]);
-  w.hear({ kind: "look.state", state: chatState("done", { mode: "panel" }) });
-  expect(more.hidden).toBe(false);
-  const head = one(w.root(), "panelhead");
-  expect(more.parentNode).toBe(head);
-  expect(head.childNodes.map((/** @type {any} */ n) => n.getAttribute("aria-label") || n.getAttribute("class"))).toEqual(["tswitch", "New thread", "Chat options", "Open full size", "Close the chat"]);
-  w.hear({ kind: "look.state", state: lookState({ mode: "panel" }) });
-  expect(more.hidden).toBe(true);
-  w.teardown();
-});
-
-test("THE ⋯ OPENS A MENU HEADED VIEW: the three views in the ladder's order, each its name and the line saying what it adds, the one shown checked", () => {
-  const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("live", { view: "thinking" }) });
-  const more = one(w.root(), "chatmore");
-  more.fire("click");
-  expect(more.getAttribute("aria-expanded")).toBe("true");
-  const menuEl = one(w.root(), "viewmenu");
-  expect(menuEl.classList.contains("popmenu")).toBe(true);
-  expect(menuEl.getAttribute("role")).toBe("menu");
-  expect(menuEl.getAttribute("aria-label")).toBe("View");
-  expect(one(menuEl, "mlabel").textContent).toBe("View");
-  const items = byClass(menuEl, "mi");
-  expect(items.map((i) => [i.localName, i.getAttribute("role"), i.getAttribute("data-view")])).toEqual(CHAT_VIEWS.map((v) => ["button", "menuitemradio", v]));
-  expect(items.map((i) => [one(i, "nm").textContent, one(i, "sub").textContent])).toEqual([
-    ["Plain", "Just the words"],
-    ["Thinking", "Adds the agent's thinking"],
-    ["Tool calls", "Adds the tools it used"],
-  ]);
-  expect(items.map((i) => i.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
-  expect(items.map((i) => byClass(i, "check").length)).toEqual([0, 1, 0]);
-  // Opening it picked nothing and asked for nothing.
-  expect(w.calls).toEqual([]);
-  // The ⋯ pressed again shuts it.
-  more.fire("click");
-  expect(byClass(w.root(), "viewmenu").length).toBe(0);
-  expect(more.getAttribute("aria-expanded")).toBe("false");
-  w.teardown();
-});
-
-test("THE VIEW MENU IS WORKED FROM THE KEYBOARD as a row's three dots are: the caret on its first view, the arrows round the three, Escape back to the ⋯", () => {
-  const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("live", { view: "plain" }) });
-  const more = one(w.root(), "chatmore");
-  more.fire("click");
-  const menuEl = one(w.root(), "viewmenu");
-  const items = byClass(menuEl, "mi");
-  expect(w.focus.el).toBe(items[0]);
-  const key = (/** @type {string} */ k) => menuEl.fire("keydown", { key: k, target: w.focus.el });
-  key("ArrowDown");
-  expect(w.focus.el).toBe(items[1]);
-  key("ArrowDown");
-  key("ArrowDown");
-  expect(w.focus.el).toBe(items[0]);
-  key("ArrowUp");
-  expect(w.focus.el).toBe(items[2]);
-  key("Escape");
-  expect(byClass(w.root(), "viewmenu").length).toBe(0);
-  expect(w.focus.el).toBe(more);
-  expect(more.getAttribute("aria-expanded")).toBe("false");
-  expect(w.calls).toEqual([]);
-  // A row's menu is the same menu: it takes the caret, and Escape gives it
-  // back to its dots.
-  const dots = byClass(w.root(), "tmore")[1];
+  const [, dots, other] = byClass(w.root(), "tmore");
   dots.fire("click");
   const rowMenu = one(w.root(), "rowmenu");
   expect(rowMenu.classList.contains("popmenu")).toBe(true);
-  expect(w.focus.el).toBe(one(rowMenu, "del"));
+  const del = one(rowMenu, "del");
+  expect(w.focus.el).toBe(del);
+  rowMenu.fire("keydown", { key: "ArrowDown", target: w.focus.el });
+  expect(w.focus.el).toBe(del);
+  rowMenu.fire("keydown", { key: "ArrowUp", target: w.focus.el });
+  expect(w.focus.el).toBe(del);
   rowMenu.fire("keydown", { key: "Escape", target: w.focus.el });
-  expect(w.focus.el).toBe(dots);
-  // One menu at a time: the ⋯ opened over a row's menu shuts it.
-  dots.fire("click");
-  more.fire("click");
   expect(byClass(w.root(), "rowmenu").length).toBe(0);
-  expect(byClass(w.root(), "viewmenu").length).toBe(1);
-  w.teardown();
-});
-
-test("A VIEW PICKED ASKS THE HOST AND DRAWS NOTHING AHEAD OF IT: the look shows the view the host posts back, and the view already shown asks for nothing", async () => {
-  const w = mounted();
-  w.hear({ kind: "look.state", state: chatState("live", { view: "plain" }) });
-  const look = one(w.root(), "g-look");
-  const more = one(w.root(), "chatmore");
-  more.fire("click");
-  const pickView = (/** @type {string} */ v) => /** @type {any} */ (byClass(one(w.root(), "viewmenu"), "mi").find((i) => i.getAttribute("data-view") === v)).fire("click");
-  pickView("tools");
-  await Promise.resolve();
-  expect(w.calls).toEqual([{ kind: "look.view", view: "tools" }]);
-  expect(byClass(w.root(), "viewmenu").length).toBe(0);
-  expect(w.focus.el).toBe(more);
-  // Not drawn until the host says so.
-  expect(look.getAttribute("data-view")).toBe("plain");
-  w.hear({ kind: "look.patch", chat: cid("live"), view: "tools" });
-  expect(look.getAttribute("data-view")).toBe("tools");
-  // The view shown, picked again, asks nothing.
-  more.fire("click");
-  pickView("tools");
-  await Promise.resolve();
-  expect(w.calls.length).toBe(1);
-  // A view that moves while the menu is open — another window's pick — moves
-  // its check with it.
-  more.fire("click");
-  w.hear({ kind: "look.patch", chat: cid("live"), view: "thinking" });
-  const items = byClass(one(w.root(), "viewmenu"), "mi");
-  expect(items.map((i) => i.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
-  expect(items.map((i) => byClass(i, "check").length)).toEqual([0, 1, 0]);
-  // Back on the start screen the ⋯ goes, and its menu with it.
-  w.hear({ kind: "look.state", state: lookState({}) });
-  expect(byClass(w.root(), "viewmenu").length).toBe(0);
-  expect(more.hidden).toBe(true);
+  expect(w.focus.el).toBe(dots);
+  expect(dots.getAttribute("aria-expanded")).toBe("false");
+  // Another row's dots over an open menu: that one shuts, this one opens.
+  dots.fire("click");
+  other.fire("click");
+  expect(byClass(w.root(), "rowmenu").length).toBe(1);
+  expect([dots.getAttribute("aria-expanded"), other.getAttribute("aria-expanded")]).toEqual(["false", "true"]);
+  expect(w.calls).toEqual([]);
   w.teardown();
 });
 
@@ -1204,7 +1088,7 @@ test("the look asks to delete a chat only by an id of the grammar, and never wit
   expect(M.request("chat.delete", { chat: cid("done") })).toBe(null);
 });
 
-test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble a message saying Queued, each with a × that asks by ids alone; held, it says so", async () => {
+test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble a message saying Queued, each with Send now and a × that ask by ids alone; held, it says so", async () => {
   const w = mounted();
   w.hear({ kind: "look.state", state: chatState("live") });
   const root = w.root();
@@ -1221,8 +1105,24 @@ test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble 
   expect(items()).toEqual([["Queued", "Then draw it again, smaller."], ["Queued", "And <b>not</b> in red."]]);
   // The person's words are words: no element came of them.
   expect(everything(one(byClass(root, "qitem")[1], "qtext")).length).toBe(0);
+  // SEND NOW, beside the ×: a button of its own, which asks the host to stop
+  // the turn and send that message next — by the chat and its id, no words.
+  const second = byClass(root, "qitem")[1];
+  const sendNow = one(second, "qnow");
+  expect(sendNow.localName).toBe("button");
+  expect(sendNow.getAttribute("type")).toBe("button");
+  expect(sendNow.getAttribute("aria-label")).toBe("Send now");
+  expect(sendNow.textContent).toBe("Send now");
+  expect(sendNow.nextSibling).toBe(one(second, "qx"));
+  sendNow.fire("click");
+  await Promise.resolve();
+  expect(w.calls).toEqual([{ kind: "look.sendNow", chat: cid("live"), queued: "q1nvented-queued-02" }]);
+  // Pressed, it draws nothing ahead of the host: the message moves when the
+  // stream says it went.
+  expect(items()).toEqual([["Queued", "Then draw it again, smaller."], ["Queued", "And <b>not</b> in red."]]);
+  w.calls.length = 0;
   // The × asks the host to take one out, by the chat and its id, and sends no words.
-  const x = one(byClass(root, "qitem")[1], "qx");
+  const x = one(second, "qx");
   expect(x.localName).toBe("button");
   expect(x.getAttribute("aria-label")).toBe("Remove from the queue");
   x.fire("click");
@@ -1254,11 +1154,14 @@ test("WHAT WAITS IN THE QUEUE is drawn under the running turn, one muted bubble 
   w.teardown();
 });
 
-test("the look asks to take a queued message out only by the chat's id and the message's", () => {
-  expect(M.request("look.unqueue", { chat: cid("live"), queued: "q1nvented-queued-01", text: "x" })).toEqual({ kind: "look.unqueue", params: { chat: cid("live"), queued: "q1nvented-queued-01" } });
-  expect(M.request("look.unqueue", { chat: cid("live") })).toBe(null);
-  expect(M.request("look.unqueue", { chat: cid("live"), id: "q1nvented-queued-01" })).toBe(null);
-  expect(M.request("look.unqueue", { chat: cid("live"), queued: "has spaces in it" })).toBe(null);
+test("the look asks to take a queued message out, or to send it now, only by the chat's id and the message's", () => {
+  for (const kind of ["look.unqueue", "look.sendNow"]) {
+    expect(M.request(kind, { chat: cid("live"), queued: "q1nvented-queued-01", text: "x" })).toEqual({ kind, params: { chat: cid("live"), queued: "q1nvented-queued-01" } });
+    expect(M.request(kind, { chat: cid("live") })).toBe(null);
+    expect(M.request(kind, { chat: cid("live"), id: "q1nvented-queued-01" })).toBe(null);
+    expect(M.request(kind, { chat: cid("live"), queued: "has spaces in it" })).toBe(null);
+    expect(M.request(kind, { chat: "short", queued: "q1nvented-queued-01" })).toBe(null);
+  }
 });
 
 test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of its kinds with ids and closed words only", () => {
@@ -1278,22 +1181,16 @@ test("THE LOOK NEVER SENDS TEXT: every control pressed, every request is one of 
   w.hear({ kind: "look.state", state: chatState("live") });
   w.hear({ kind: "look.patch", chat: cid("live"), updates: [{ seq: 40, at: Date.now(), turn: 2, kind: "queued", id: "q1nvented-queued-01", text: "Invented words the person queued" }] });
   press();
-  // Every view in the ⋯'s menu, as the controls it opens.
-  for (const v of CHAT_VIEWS) {
-    if (!byClass(w.root(), "viewmenu").length) one(w.root(), "chatmore").fire("click");
-    for (const e of byClass(one(w.root(), "viewmenu"), "mi")) if (e.getAttribute("data-view") === v) e.fire("click");
-  }
   expect(w.calls.length).toBeGreaterThan(8);
-  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], "look.unqueue": ["chat", "queued"], "look.view": ["view"], open: ["target"] };
+  const allowed = { "look.open": ["chat"], "look.new": [], "look.list": ["open"], "look.panel": ["to"], "look.delete": ["chat"], "look.unqueue": ["chat", "queued"], "look.sendNow": ["chat", "queued"], open: ["target"] };
   for (const c of w.calls) {
     const { kind, ...rest } = c;
     expect(Object.keys(allowed)).toContain(kind);
     expect(Object.keys(rest).every((k) => /** @type {any} */ (allowed)[kind].includes(k))).toBe(true);
-    if (kind === "look.open" || kind === "look.delete" || kind === "look.unqueue") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
-    if (kind === "look.unqueue") expect(rest.queued).toBe("q1nvented-queued-01");
+    if (kind === "look.open" || kind === "look.delete" || kind === "look.unqueue" || kind === "look.sendNow") expect(rest.chat).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    if (kind === "look.unqueue" || kind === "look.sendNow") expect(rest.queued).toBe("q1nvented-queued-01");
     if (kind === "look.panel") expect(["screen", "beside", "closed"]).toContain(rest.to);
     if (kind === "look.list") expect(typeof rest.open).toBe("boolean");
-    if (kind === "look.view") expect(CHAT_VIEWS).toContain(rest.view);
     if (kind === "open") expect(Object.keys(rest.target).sort()).toEqual(["id", "kind"]);
   }
   const kinds = new Set(w.calls.map((c) => c.kind));

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Layer 3 — THE WORKSPACE'S SETTINGS FILE: `.biom/settings.json`, where the
 // chat's choices are kept (*Chat*, `picker`: *the choices are kept* — the
-// agent last picked, each agent's last model, mode and effort, and the view).
+// agent last picked, and each agent's last model, mode and effort).
 //
 // BESIDE THE CHATS AND NEVER IN GIT. `.biom/` is the framework's folder inside
 // a workspace and ignores itself — `.biom/.gitignore` says `*`, written by the
@@ -16,20 +16,20 @@
 // were made, each the whole of what is kept at that moment, so the last one
 // on disk is the last choice.
 //
-// READ ONCE, when the workspace mounts. A missing file is the defaults — Tool
-// calls, no agent, nothing kept — and nothing is written until a choice is
-// made. A file that is not a settings file — torn, hand-broken, another
+// READ ONCE, when the workspace mounts. A missing file is the defaults — no
+// agent, nothing kept — and nothing is written until a choice is made. A file that is not a settings file — torn, hand-broken, another
 // version — is said once in the log, PUT ASIDE as `settings.json.bad` rather
 // than overwritten, and the defaults are used; a field inside a good file
 // that is out of bounds is left out (`server/domain/choices.ts`).
 //
 // WHAT THE CHATS KEEP comes through `picked` and `chose`, which the
 // composition root hands the chats, and what a new chat starts on is `saved`.
-// The view is the one choice a window makes here itself, through
-// `settings.set`.
+// Every choice is made by the server as it makes the chat, so no window sets
+// one here: the view a window used to keep went when a chat was drawn one
+// way, and a file still naming one reads without it.
 
-import type { AgentKey, ChatSettings, ChatView, ConfigValue, Files, PickerCategory } from "../../contracts/types.ts";
-import { MAX_AGENTS, defaults, isKey, isKeptValue, isPicker, isView, readChoices, writeChoices } from "../domain/choices.ts";
+import type { AgentKey, ChatSettings, ConfigValue, Files, PickerCategory } from "../../contracts/types.ts";
+import { MAX_AGENTS, defaults, isKey, isKeptValue, isPicker, readChoices, writeChoices } from "../domain/choices.ts";
 
 /** The file, under `.biom/`. */
 export const SETTINGS_FILE = "settings.json";
@@ -48,8 +48,6 @@ export interface Settings {
   readonly loaded: Promise<void>;
   /** What is kept now, as a copy. */
   read(): ChatSettings;
-  /** Keep the view, and answer what is kept once it is on disk. */
-  set(patch: { view?: ChatView }): Promise<ChatSettings>;
   /** A chat was made with this agent, or switched to it. */
   picked(agent: AgentKey): void;
   /** One of this agent's pickers was set. */
@@ -61,7 +59,6 @@ export interface Settings {
 }
 
 const copy = (s: ChatSettings): ChatSettings => ({
-  view: s.view,
   agent: s.agent,
   agents: Object.fromEntries(Object.entries(s.agents).map(([k, v]) => [k, { ...v }])),
 });
@@ -128,15 +125,6 @@ export function makeSettings(deps: SettingsDeps): Settings {
     loaded,
 
     read: () => copy(kept),
-
-    async set(patch) {
-      await change(() => {
-        if (patch.view === undefined || !isView(patch.view) || patch.view === kept.view) return false;
-        kept = { ...kept, view: patch.view };
-        return true;
-      });
-      return copy(kept);
-    },
 
     picked(agent) {
       void change(() => {

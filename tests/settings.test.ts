@@ -3,7 +3,8 @@
 // kept value an agent's list still offers, and `server/workspace/settings.ts`,
 // the file: `.biom/settings.json`, read once, written whole through the
 // framework's atomic write, a broken one put aside rather than written over,
-// and every field bounded. Every agent, model and value here is invented.
+// every field bounded, and a view kept before a chat was drawn one way read
+// past without a word. Every agent, model and value here is invented.
 
 import { test, expect } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
@@ -33,21 +34,16 @@ const toggle = (id: string, category: ConfigOption["category"]): ConfigOption =>
 
 /* ── the shape ──────────────────────────────────────────────────────────── */
 
-test("a workspace that has kept nothing opens on Plain, with no agent and no choices", () => {
-  expect(defaults()).toEqual({ view: "plain", agent: null, agents: {} });
+test("a workspace that has kept nothing has no agent and no choices", () => {
+  expect(defaults()).toEqual({ agent: null, agents: {} });
 });
 
-test("a view a workspace kept before Plain was the default is kept as it was", () => {
-  for (const view of ["tools", "thinking", "plain"] as const) {
-    expect(readChoices(JSON.parse(writeChoices({ view, agent: null, agents: {} })))?.view).toBe(view);
-  }
-});
-
-test("the file reads back what it wrote, and is two-space JSON a person can open", () => {
-  const s = { view: "thinking" as const, agent: "claude-acp", agents: { "claude-acp": { model: "invented-opus", mode: "plan" }, "codex-acp": { thought_level: "high" } } };
+test("the file reads back what it wrote, and is two-space JSON a person can open that names no view", () => {
+  const s = { agent: "claude-acp", agents: { "claude-acp": { model: "invented-opus", mode: "plan" }, "codex-acp": { thought_level: "high" } } };
   const text = writeChoices(s);
   expect(text.endsWith("\n")).toBe(true);
   expect(text).toContain('\n  "version": 1,');
+  expect(JSON.parse(text)).toEqual({ version: 1, chat: s });
   expect(readChoices(JSON.parse(text))).toEqual(s);
 });
 
@@ -67,7 +63,7 @@ test("a field out of bounds is left out, and a file that is not a settings file 
       },
     },
   });
-  expect(read).toEqual({ view: "plain", agent: null, agents: { "codex-acp": { mode: "auto", thought_level: true }, constructor: { model: "invented" } } });
+  expect(read).toEqual({ agent: null, agents: { "codex-acp": { mode: "auto", thought_level: true }, constructor: { model: "invented" } } });
   for (const bad of [null, [], "text", 7, { version: 2, chat: {} }, { chat: { view: "plain" } }]) expect([bad, readChoices(bad)]).toEqual([bad, null]);
   // No more agents than the bound, however many the file lists.
   const many: Record<string, unknown> = {};
@@ -108,18 +104,17 @@ test("no file is the defaults, and nothing is written until a choice is made", a
   expect(existsSync(join(f.dir, SETTINGS_FILE))).toBe(false);
 });
 
-test("the view, the agent and each agent's pickers are kept, and a second start reads them back", async () => {
+test("the agent and each agent's pickers are kept, and a second start reads them back", async () => {
   const f = folder();
   const s = f.make();
   await s.loaded;
-  expect(await s.set({ view: "plain" })).toMatchObject({ view: "plain" });
   s.picked("claude-acp");
   s.chose("claude-acp", "model", "invented-opus");
   s.chose("claude-acp", "mode", "plan");
   s.chose("codex-acp", "thought_level", true);
   s.chose("claude-acp", "model", "invented-sonnet");
   await s.flushed();
-  const want = { view: "plain", agent: "claude-acp", agents: { "claude-acp": { model: "invented-sonnet", mode: "plan" }, "codex-acp": { thought_level: true } } };
+  const want = { agent: "claude-acp", agents: { "claude-acp": { model: "invented-sonnet", mode: "plan" }, "codex-acp": { thought_level: true } } };
   expect(s.read()).toEqual(want);
   expect(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8"))).toEqual({ version: 1, chat: want });
 
@@ -141,14 +136,12 @@ test("a choice out of bounds is not kept, and neither is one past the last agent
   s.chose("claude-acp", "model", "m".repeat(WIRE_BOUNDS.id + 1));
   s.chose("claude-acp", "model", "");
   s.chose("claude-acp", "other" as never, "x");
-  await s.set({ view: "fancy" as never });
   for (let i = 0; i < MAX_AGENTS; i++) s.chose(`agent-${i}`, "mode", "auto");
   s.chose("one-too-many", "mode", "auto");
   s.chose("agent-0", "model", "still-kept");
   await s.flushed();
   const read = s.read();
   expect(read.agent).toBe(null);
-  expect(read.view).toBe("plain");
   expect(read.agents["claude-acp"]).toBeUndefined();
   expect(read.agents["one-too-many"]).toBeUndefined();
   expect(Object.keys(read.agents).length).toBe(MAX_AGENTS);
@@ -164,19 +157,17 @@ test("EVERY WRITE IS WHOLE: it goes through the atomic write, lands in the order
   // Many choices at once, none awaited: the last one made is the one on disk.
   for (let i = 0; i < 25; i++) s.chose("claude-acp", "model", `invented-${i}`);
   s.picked("codex-acp");
-  await s.set({ view: "thinking" });
   await s.flushed();
   expect(writes.every((w) => w === SETTINGS_FILE)).toBe(true);
   expect(writes.length).toBeGreaterThan(0);
   expect(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8"))).toEqual({
-    version: 1, chat: { view: "thinking", agent: "codex-acp", agents: { "claude-acp": { model: "invented-24" } } },
+    version: 1, chat: { agent: "codex-acp", agents: { "claude-acp": { model: "invented-24" } } },
   });
   expect(readdirSync(f.dir).filter((n) => n.endsWith(".tmp"))).toEqual([]);
   // A choice that changes nothing writes nothing.
   const before = writes.length;
   s.picked("codex-acp");
   s.chose("claude-acp", "model", "invented-24");
-  await s.set({ view: "thinking" });
   await s.flushed();
   expect(writes.length).toBe(before);
 });
@@ -193,8 +184,9 @@ test("A BROKEN FILE IS PUT ASIDE, not written over: said once, moved to settings
   expect(readFileSync(join(f.dir, SETTINGS_ASIDE), "utf8")).toBe(broken);
   expect(existsSync(join(f.dir, SETTINGS_FILE))).toBe(false);
   // The next choice writes a good file, and the one put aside stays.
-  await s.set({ view: "thinking" });
-  expect(readChoices(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8")))?.view).toBe("thinking");
+  s.picked("codex-acp");
+  await s.flushed();
+  expect(readChoices(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8")))?.agent).toBe("codex-acp");
   expect(readFileSync(join(f.dir, SETTINGS_ASIDE), "utf8")).toBe(broken);
   // A file of another version is not this build's to write over either.
   const g = folder();
@@ -207,10 +199,32 @@ test("A BROKEN FILE IS PUT ASIDE, not written over: said once, moved to settings
 
 test("a choice made before the file is read lands after it, so the read never undoes it", async () => {
   const f = folder();
-  writeFileSync(join(f.dir, SETTINGS_FILE), writeChoices({ view: "plain", agent: "codex-acp", agents: { "codex-acp": { mode: "auto" } } }));
+  writeFileSync(join(f.dir, SETTINGS_FILE), writeChoices({ agent: "codex-acp", agents: { "codex-acp": { mode: "auto" } } }));
   const s = f.make();
   s.chose("codex-acp", "model", "invented-fast");
   await s.loaded;
   await s.flushed();
-  expect(s.read()).toEqual({ view: "plain", agent: "codex-acp", agents: { "codex-acp": { mode: "auto", model: "invented-fast" } } });
+  expect(s.read()).toEqual({ agent: "codex-acp", agents: { "codex-acp": { mode: "auto", model: "invented-fast" } } });
+});
+
+test("A FILE THAT STILL KEEPS A VIEW, from before a chat was drawn one way, loads as it is and without it: nothing said, nothing put aside, and the next write drops it", async () => {
+  const f = folder();
+  const old = { version: 1, chat: { view: "tools", agent: "codex-acp", agents: { "codex-acp": { mode: "auto" } } } };
+  writeFileSync(join(f.dir, SETTINGS_FILE), JSON.stringify(old, null, 2));
+  const s = f.make();
+  await s.loaded;
+  expect(s.read()).toEqual({ agent: "codex-acp", agents: { "codex-acp": { mode: "auto" } } });
+  expect(s.saved("codex-acp")).toEqual({ mode: "auto" });
+  expect(f.said).toEqual([]);
+  expect(existsSync(join(f.dir, SETTINGS_ASIDE))).toBe(false);
+  // Read and never rewritten on its own: the file is as it was until a choice.
+  await s.flushed();
+  expect(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8"))).toEqual(old);
+  s.chose("codex-acp", "model", "invented-fast");
+  await s.flushed();
+  expect(JSON.parse(readFileSync(join(f.dir, SETTINGS_FILE), "utf8"))).toEqual({ version: 1, chat: { agent: "codex-acp", agents: { "codex-acp": { mode: "auto", model: "invented-fast" } } } });
+  // Every view the three used to be, and one that never was, alike.
+  for (const view of ["plain", "thinking", "tools", "fancy", 7, null]) {
+    expect([view, readChoices({ version: 1, chat: { view, agent: null, agents: {} } })]).toEqual([view, { agent: null, agents: {} }]);
+  }
 });

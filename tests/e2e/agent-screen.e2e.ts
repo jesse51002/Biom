@@ -16,7 +16,7 @@
 //      handed to the look through its own box.
 //   4. Send is Stop while a turn runs and nothing is typed, and Enter queues
 //      what is; the rail counts the chat working, and Stop ends the turn
-//      cancelled with the queue held.
+//      cancelled and sends what waits.
 //   5. A long list shows five and More models, grouped as the agent groups it;
 //      a choice picked is the agent's option set.
 //   6. Home from the Agent screen brings its chat along beside the page; Edit
@@ -312,7 +312,7 @@ walk("3. a first message is the words typed and nothing else, and the chat is ha
   await page.screenshot({ path: join(SHOTS, "agent-chat.png") });
 });
 
-walk("4. Send is Stop while a turn runs and nothing is typed, Enter queues what is, the rail counts it working, and Stop ends it cancelled with the queue held", "agent-4.png", async () => {
+walk("4. Send is Stop while a turn runs and nothing is typed, Enter queues what is, the rail counts it working, and Stop ends it cancelled and sends what waits", "agent-4.png", async () => {
   const input = page.locator("#agentta");
   await input.fill("Wait a while\n!sleep 4000");
   await input.press("Enter");
@@ -327,18 +327,22 @@ walk("4. Send is Stop while a turn runs and nothing is typed, Enter queues what 
   expect(await input.inputValue()).toBe("");
   expect(await page.locator(".agentdock .send").getAttribute("aria-label")).toBe("Stop");
   await page.locator(".agentdock .send").click();
-  await until("the turn ended cancelled", 20000, async () => (await summaryOf(chat))?.stop === "cancelled");
+  // STOP ENDS THE TURN, NOT THE QUEUE: the turn ends cancelled and what
+  // waited goes out as the next turn, with nothing held and no Send queued.
+  await until("the queued message went out and its turn ended", 30000, async () => {
+    const s = await summaryOf(chat);
+    return s?.turn === 3 && s.phase === "idle" && s.stop === "end_turn";
+  });
   await until("Stop became Send", 10000, async () => (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Send");
   expect(await page.locator("button.agentlink .busy").count()).toBe(0);
-  // Stopped, the queue waits for the person, and says so under the input.
-  expect((await summaryOf(chat))?.queueHeld).toBe(true);
-  await until("Send queued shows", 5000, async () => page.locator(".agentdock .sendqueued").isVisible());
+  const now = await summaryOf(chat);
+  expect([now?.queued, now?.queueHeld]).toEqual([0, false]);
+  expect(await page.locator(".agentdock .sendqueued").isVisible()).toBe(false);
   const read = await call<ChatRead>("chat.read", { chat });
-  expect(read.updates.filter((u) => u.kind === "prompt").length).toBe(2);
-  // Taken out again, so the steps after this one see the chat they expect.
-  const waiting = read.updates.find((u) => u.kind === "queued") as { id: string } | undefined;
-  await call("chat.unqueue", { chat, queued: waiting?.id });
-  await until("Send queued goes", 5000, async () => !(await page.locator(".agentdock .sendqueued").isVisible()));
+  const prompts = read.updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text);
+  expect(prompts.slice(1)).toEqual(["Wait a while\n!sleep 4000", "A second invented message"]);
+  const ends = read.updates.filter((u) => u.kind === "turn" && (u as { phase: string }).phase === "idle").map((u) => (u as { stop: string }).stop);
+  expect(ends.slice(1)).toEqual(["cancelled", "end_turn"]);
   await input.fill("");
 });
 
