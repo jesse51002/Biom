@@ -26,6 +26,8 @@
 // as text. The theme needs nothing — the shim wrote the palette as an inline
 // style on the root element, and that attribute serialises with the rest.
 
+import { PAGE_BOX } from "../../contracts/wire.js";
+
 export interface CaptureAt {
   /** The server's own origin, `http://localhost:4400`. */
   origin: string;
@@ -44,6 +46,26 @@ const SETTLE_MS = 1_500;
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 const internal = (message: string): Error => Object.assign(new Error(message), { code: "internal" });
+
+/**
+ * THE PAGE'S BOX IN THE CAPTURE'S TAB, found through the tab's own document.
+ *
+ * A window holds more than one box: the Agent screen's look is a box of its
+ * own, kept beside every page once it has shown and made before the page's on
+ * a launch that opens on the Agent screen. The tab this module opens goes
+ * straight to the page, so no look is built in it today — and the frame read
+ * must not rest on that. Nor on a frame's name, which is its box's own
+ * `window.name` and anything the box says it is. So the page's `<iframe>` is
+ * found in the tab's own document, which no box can reach, by the name the
+ * page view gives it — `PAGE_BOX`, a dash and a word minted for that box — and
+ * the driver hands over the frame that element holds. One such element is the
+ * page's box; none, or more than one, is no box at all.
+ */
+export async function pageFrame(tab: import("playwright").Page): Promise<import("playwright").Frame | null> {
+  const boxes = await tab.$$(`iframe[name^="${PAGE_BOX}-"]`);
+  const only = boxes.length === 1 ? boxes[0] : undefined;
+  return only === undefined ? null : await only.contentFrame();
+}
 
 /**
  * Draw `page` and answer its document as text.
@@ -96,10 +118,9 @@ export async function capturePage(at: CaptureAt, page: string): Promise<string> 
     }
     if (!drawn) throw internal("the page did not draw in time");
 
-    // THE BOX IS THE MAIN FRAME'S OWN CHILD, asked for as such. `frames()` is a
-    // flat list of every frame in the tab, a nested `page.embed` included, so
-    // the first non-main entry is the box only by luck of creation order.
-    const frame = tab.mainFrame().childFrames()[0];
+    // THE PAGE'S BOX, and never merely the first box in the tab: see
+    // `pageFrame`.
+    const frame = await pageFrame(tab);
     if (!frame) throw internal("the page drew but there is no box to read");
 
     // Seen once, end to end, then back to the top so the capture starts

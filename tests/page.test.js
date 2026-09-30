@@ -32,7 +32,7 @@ import { join } from "node:path";
 
 import { makePageView, makeDesignView, makeMapView } from "../client/views/page.js";
 import { weaveRuntime } from "../client/platform/document.js";
-import { vaultBase } from "../contracts/wire.js";
+import { PAGE_BOX, vaultBase } from "../contracts/wire.js";
 
 const ROOT = join(import.meta.dir, "..");
 /** WHICH FOLDER THIS TAB IS. Every view that builds a document needs one now:
@@ -192,6 +192,39 @@ test("a page is ONE box, keyed by the page's own id", () => {
   // ONE BOX IS ONE PAGE, so the context is one field. There is no block to name.
   expect(frameHost.mounts[0].ctx).toEqual({ page: "quote" });
   expect(el.tagName).toBe("IFRAME");
+});
+
+test("the page's box wears a name of its own before the shell puts it in the window, and keeps it", () => {
+  // WHICH BOX IS THE PAGE is a question only the name answers from outside:
+  // the desktop shell reads the drawn page for Share out of the window's
+  // frames, and the window also holds the Agent screen's look, in a box of its
+  // own, from the first time it shows. A frame takes its name when it is made,
+  // which is when the shell inserts the element — so the name is on it before
+  // `draw` hands it over, and on every page the canvas draws, the design doc
+  // and the map included.
+  //
+  // AND THE NAME IS NOT ONE ANOTHER BOX COULD SAY. A box may set its own
+  // window's name to anything, so the prefix alone is a name the look could
+  // claim; the word after it is minted for this one element, and only the
+  // window's own document — which no box can read — holds it.
+  const frameHost = fakeFrameHost();
+  const deps = { h, frameHost, ws: {}, ui: {}, vault: VAULT };
+  const draw = makePageView(deps);
+  const shape = new RegExp(`^${PAGE_BOX}-[0-9a-f]{24}$`);
+
+  const quote = draw(page("quote", []));
+  const named = quote.getAttribute("name");
+  expect(named).toMatch(shape);
+  expect(quote.parentElement).toBe(null);
+  // THE SAME ELEMENT KEEPS ITS NAME across a redraw, which is the frame
+  // keeping the one it was born with.
+  expect(draw(page("quote", [sect("a", { body: prose("# Quote") })])).getAttribute("name")).toBe(named);
+  // Another page's box is another element, and another word.
+  const board = draw(page("board", [])).getAttribute("name");
+  expect(board).toMatch(shape);
+  expect(board).not.toBe(named);
+  expect(makeDesignView(deps)(page("@design", [])).getAttribute("name")).toMatch(shape);
+  expect(makeMapView(deps)(page("@map", [])).getAttribute("name")).toMatch(shape);
 });
 
 test("THE IFRAME ITSELF, WITH NO WRAPPER, and that is not tidiness", () => {

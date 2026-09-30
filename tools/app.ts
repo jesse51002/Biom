@@ -148,8 +148,10 @@ export { APP_NAME };
  *  beside itself. `data.js` is the one rule the shell shares with the server —
  *  where this machine keeps its Biom data — and a bundle without it is a shell
  *  that cannot start at all, because `main.js` requires it before it does
- *  anything else. A test holds this list against what is on disk. */
-export const SHELL_FILES = ["main.js", "preload.js", "data.js", "icon.png", "package.json"];
+ *  anything else. `box.js` is which frame in the window is the page, for Share,
+ *  and `main.js` requires it the same way. A test holds this list against what
+ *  is on disk. */
+export const SHELL_FILES = ["main.js", "preload.js", "data.js", "box.js", "icon.png", "package.json"];
 
 /** THE ONE PICTURE, AND THE TWO CONTAINERS GENERATED FROM IT. `app/icon.png` is
  *  the logo at 512 and is the only icon committed; macOS wants an `.icns` and

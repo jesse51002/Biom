@@ -18,6 +18,7 @@
 
 /** @import { FrameHost, Page, PageId, UiStore } from "../../contracts/types.ts" */
 
+import { PAGE_BOX } from "../../contracts/wire.js";
 import { weaveRuntime } from "../platform/document.js";
 /** @import { Workspace } from "../store/workspace.js" */
 /** The DOM helper, typed the way every other view in this layer types it:
@@ -35,6 +36,17 @@ import { weaveRuntime } from "../platform/document.js";
  *   files in it, so the document a box loads cannot be built without it. It is
  *   settled in `boot.js` before anything is constructed and never moves again.
  */
+
+/** THE WORD AFTER `PAGE_BOX` IN THE NAME THE PAGE'S BOX WEARS, minted once
+ *  for each box. `PAGE_BOX` is how whatever reads the drawn page out for Share
+ *  tells the page's box from the look's — `contracts/wire.js` says who. A
+ *  frame's name is its box's own `window.name`, which the box's code may set
+ *  to anything, so the prefix alone is a name the look could claim; the
+ *  readers take the whole name off this element — in the window's document,
+ *  which no box can read — and a word no other box can see is a name no other
+ *  box can say. Twelve random bytes, as hex: `getRandomValues` is there in
+ *  every context a page is drawn in, a secure one or not. @returns {string} */
+const minted = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
 
 /**
  * A page is one box, keyed by the page's own id.
@@ -66,7 +78,13 @@ export function makePageView(deps) {
     // and one whose document is the same keeps the box it is drawn in — which is
     // what lets somebody go on typing through a repaint.
     const input = { id: page.id, name: page.name, plugin: page.plugin, input: page.input };
-    return frameHost.for(page.id, weaveRuntime(page.html, input, vault), { page: page.id }).el;
+    const el = frameHost.for(page.id, weaveRuntime(page.html, input, vault), { page: page.id }).el;
+    // NAMED HERE, BEFORE THE SHELL PUTS IT IN THE WINDOW, because a frame takes
+    // its name when it is made — which is when the element is inserted — and
+    // ONCE, because the same element keeps its frame, and its frame the name,
+    // through every redraw after that.
+    if (!el.getAttribute("name")) el.setAttribute("name", `${PAGE_BOX}-${minted()}`);
+    return el;
   };
 }
 

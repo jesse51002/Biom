@@ -283,6 +283,20 @@ export const MAP_PAGE = "@map";
  *  typing ever reaches an agent. */
 export const AGENT_PAGE = "@agent";
 
+/** THE PREFIX OF THE NAME THE PAGE'S BOX WEARS, and a contracts edit of one
+ *  constant, taken for Share. A window holds more boxes than the page's — the
+ *  Agent screen's look is one, kept beside every page once it has shown — and
+ *  the two things that read the drawn page out of a window see each box only
+ *  as a frame: the desktop shell (`app/box.js`, which cannot import this file
+ *  and spells it again, held equal by a test) and the server's own capture
+ *  (`server/platform/capture.ts`). The page view names the page's `<iframe>`
+ *  this, a dash, and a word minted for that element (`client/views/page.js`),
+ *  and both readers find it by that name IN THE WINDOW'S OWN DOCUMENT, never
+ *  by the name a frame answers to: that is its box's own `window.name`, which
+ *  the box may set to anything. It never reaches a box — `guest/biom.js` has
+ *  no copy of it, and no box has a use for one. */
+export const PAGE_BOX = "biom-page";
+
 /** AN ID FOLDED FOR COMPARISON, and the only place case is ever ignored.
  *
  *  A page id keeps the case it was given — `Companies/Airtable` is what somebody

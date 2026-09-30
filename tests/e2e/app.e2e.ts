@@ -27,22 +27,27 @@
 //   5. `/api/call` without the token is refused, and the production server
 //      refuses the three kinds it is meant to.
 //   6. The production hide list holds on the screens that carry it.
-//   7. Maximise and full screen flip the window's state, and the bar follows.
-//   8. Close quits the server with the window, and leaves no process of it
+//   7. Share's capture is the page on screen — an html page and a document,
+//      with the chat panel shut and open, before and after the Agent screen —
+//      and never the Agent screen's look, which the window keeps running beside
+//      every page once it has been drawn: not even where the look renames its
+//      own window after the page's box.
+//   8. Maximise and full screen flip the window's state, and the bar follows.
+//   9. Close quits the server with the window, and leaves no process of it
 //      running — a port that stopped answering is not the same statement.
-//   9. Across all of it: nothing written into the person's own data directory.
+//  10. Across all of it: nothing written into the person's own data directory.
 //
 // WHERE IT NEEDS A SCREEN AND THERE IS NONE, IT SAYS SO AND STOPS. `xvfb-run` is
 // used when it is there, `DISPLAY` when it is not, and a machine with neither
 // gets a named skip rather than a failure — a headless container that cannot
 // open a window has not found a bug in the application.
 //
-// AND A SCREEN IS NOT A DESKTOP. Step 7 is the only one that needs somebody to
+// AND A SCREEN IS NOT A DESKTOP. Step 8 is the only one that needs somebody to
 // ACT on the window rather than answer a question about it: maximise and full
 // screen are hints a WINDOW MANAGER honours, and a bare `Xvfb` has none — the
 // request is made, nobody answers, the state never changes. So every launch goes
 // through `tools/screen.sh`, which starts openbox (or fluxbox, or icewm) on the
-// display first, and where none is installed step 7 alone is skipped by name.
+// display first, and where none is installed step 8 alone is skipped by name.
 // That is what made this suite green on a desktop and red on a runner.
 //
 // IT IS NOT BUILT HERE. `make app` is minutes and is the CI job's
@@ -54,6 +59,8 @@ import { join } from "node:path";
 
 import { HERE, SHOTS, BOUNDS, sandbox, outside, freePort, until, step, shotsDir, cdp } from "./harness.ts";
 import type { Sandbox, Cdp } from "./harness.ts";
+// The prefix of the page box's name, as the shell reads it.
+import { PAGE_BOX } from "../../app/box.js";
 
 /* ── what has to be true before there is anything to walk ───────────────── */
 
@@ -210,6 +217,9 @@ let wire: Cdp;
 /** The port and the token off the ready line, which is the whole of what the
  *  shell learns about the server it started. */
 let ready: { port: number; token: string } = { port: 0, token: "" };
+/** The window's own debugging port — which also lists each box as a target of
+ *  its own, because every box runs in a process of its own. */
+let debugging = 0;
 let broke: string | null = null;
 
 const log = (): string => `${said.err}${said.out === "" ? "" : `\nstdout:\n${said.out}`}`;
@@ -269,6 +279,7 @@ beforeAll(async () => {
   box = sandbox("app");
   before = outside();
   const port = await freePort();
+  debugging = port;
   const how = HOW as { argv: string[]; how: string; wm: string | null };
 
   // `--no-sandbox` AND `--disable-gpu` BEHIND A KNOB THAT IS OFF. A container
@@ -489,6 +500,146 @@ walk("the production hide list holds on the screens that carry it", async () => 
   const strip = await wire.evaluate<string>("document.querySelector('span.status').innerText");
   for (const gone of ["Sections", "Drawn", "Data"]) expect([gone, strip.includes(gone)]).toEqual([gone, false]);
 });
+
+walk("Share's capture is the page on screen, and never the Agent screen's look", async () => {
+  // THE WINDOW HOLDS TWO BOXES ONCE THE AGENT SCREEN HAS SHOWN: the page's, and
+  // the look's, which is built the first time the Agent screen or the chat
+  // panel shows and kept running, hidden, from then on. Every launch opens on
+  // the Agent screen, so on every launch but this walk's the look is in the
+  // window before any page is — and a capture that took the first box it found
+  // took the look, and uploaded the Agent screen, with whatever of the person's
+  // chats it had drawn, as the page.
+  //
+  // ASKED OF THE BRIDGE AND NOT THROUGH THE SHARE BUTTON: `capturePage()` is
+  // what the button hands the server, and pressing Share puts a page in a
+  // bucket, which no walk of this suite does.
+  const vault = decodeURIComponent((await wire.evaluate<string>("location.search")).replace(/^\?.*vault=/, "").replace(/&.*$/, ""));
+  const route = `/v/${encodeURIComponent(vault)}/api/call?token=${ready.token}`;
+
+  // A DOCUMENT, made the way New makes one, beside the root page — which is an
+  // html page drawing itself, with no `#g-page` in it at all.
+  const made = JSON.parse(await wire.evaluate<string>(
+    `fetch(${JSON.stringify(route)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify({ id: "e2e-share", g: 1, kind: "page.create", init: { name: "Shared words", parent: "home" } }))} }).then(r => r.text())`,
+  )) as { ok: boolean; value?: { id: string }; error?: { message?: string } };
+  expect([made.ok, made.error?.message ?? ""]).toEqual([true, ""]);
+  const doc = String(made.value?.id);
+  const pages = {
+    root: { id: "home", words: "Point your agent at this folder" },
+    doc: { id: doc, words: "Shared words" },
+  };
+
+  const LOOK = `iframe.artifact[title="The Agent screen"]`;
+  const bed = async (): Promise<string> => await wire.evaluate<string>("document.querySelector('div.bed').getAttribute('data-agent')");
+  const onPlate = async (id: string): Promise<boolean> =>
+    await wire.evaluate<boolean>(`document.querySelector('div.plate iframe.artifact')?.title === ${JSON.stringify(id)}`);
+  const to = async (hash: string): Promise<void> => { await wire.evaluate(`location.hash = ${JSON.stringify(hash)}`); };
+  const toPage = async (which: keyof typeof pages): Promise<void> => {
+    await to(`#/page/${encodeURIComponent(pages[which].id)}`);
+    await until(`${pages[which].id} was on the canvas`, BOUNDS.draw, () => onPlate(pages[which].id));
+  };
+
+  /** WHAT ONE CAPTURE WAS, IN THE THREE FACTS THIS STEP IS ABOUT: the page's
+   *  own words, a document's root where the page is a document, and the look's
+   *  root. Asked until the words are there, because nothing in a production
+   *  window says a box has drawn — and kept when they never are, so a capture
+   *  of the wrong box is a verdict and not a timeout. */
+  const verdicts: { at: string; words: boolean; doc: boolean | null; look: boolean }[] = [];
+  const capture = async (at: string, which: keyof typeof pages): Promise<void> => {
+    const { words } = pages[which];
+    let html = "";
+    await until(`a capture holding "${words}"`, BOUNDS.draw, async () => {
+      html = await wire.evaluate<string>("window.biomShell.capturePage()");
+      return html.includes(words);
+    }).catch(() => {});
+    const seen = {
+      at,
+      words: html.includes(words),
+      // Only a document has one; the root page draws itself.
+      doc: which === "doc" ? html.includes('id="g-page"') : null,
+      look: html.includes('id="g-agent"'),
+    };
+    console.log(`  capture, ${at}: ${html.length} characters, the page's words ${seen.words ? "in" : "NOT in"} it, the look's root ${seen.look ? "IN" : "not in"} it`);
+    verdicts.push(seen);
+  };
+
+  // No look yet: the walk opened the workspace on a page.
+  expect(await bed()).toBe("none");
+  expect(await wire.evaluate<number>(`document.querySelectorAll(${JSON.stringify(LOOK)}).length`)).toBe(0);
+  await capture("the root page, the panel shut, no look in the window", "root");
+  await toPage("doc");
+  await capture("a document, the panel shut, no look in the window", "doc");
+
+  // THE AGENT SCREEN, which is where every launch opens: the look is drawn,
+  // and stays in the window for good.
+  await to("#/agent");
+  await until("the Agent screen showed its look", BOUNDS.draw, async () =>
+    (await bed()) === "screen" && (await wire.evaluate<number>(`document.querySelectorAll(${JSON.stringify(LOOK)}).length`)) === 1);
+
+  await toPage("doc");
+  expect(await bed()).toBe("none");
+  await capture("the document after the Agent screen, the panel shut, the look hidden", "doc");
+
+  // EDIT puts the panel beside the page, and the look in it.
+  await wire.evaluate("document.querySelector('div.rail span.tools button.tool.edit').click()");
+  await until("the chat panel opened beside the page", BOUNDS.draw, async () => (await bed()) === "panel");
+  await capture("the document with the chat panel open beside it", "doc");
+
+  await toPage("root");
+  expect(await bed()).toBe("panel");
+  await capture("the root page with the chat panel open beside it", "root");
+
+  // A BOX CAN RENAME ITS OWN WINDOW, and the look is a plugin a workspace can
+  // replace: a frame's name is the box's own `window.name`, so the look can
+  // call itself whatever the page's box is called. Said here from inside the
+  // look's box, which is a debugging target of its own. First the bare word,
+  // which is all a look could guess: the capture is still the page.
+  await inTheLook(`window.name = ${JSON.stringify(PAGE_BOX)}`);
+  await capture("the root page, the look calling itself biom-page", "root");
+  // Then the page box's WHOLE name, which the look could only have been told:
+  // two of the window's frames answer to it, and the capture is nothing
+  // rather than either of them — never the look.
+  const given = await wire.evaluate<string>("document.querySelector('div.plate iframe.artifact').getAttribute('name')");
+  await inTheLook(`window.name = ${JSON.stringify(given)}`);
+  const refused = await wire.evaluate<string>("window.biomShell.capturePage()");
+  console.log(`  capture, the root page, the look calling itself by the page box's own name: ${refused.length} characters`);
+  await inTheLook(`window.name = ""`);
+
+  // EVERY CAPTURE, JUDGED TOGETHER, so a run that takes the wrong box says
+  // in which of them it took it rather than stopping at the first.
+  expect(verdicts).toEqual(verdicts.map(({ at, doc }) => ({ at, words: true, doc: doc === null ? null : true, look: false })));
+  expect(refused).toBe("");
+}, null, 300000);
+
+/** RUN `expression` INSIDE THE AGENT SCREEN'S LOOK, which only the window's
+ *  debugging port can do: the box has an opaque origin and runs in a process
+ *  of its own, so it is a target of its own there, and it is known by the
+ *  root the look draws into. Throws where no target is the look, so a step
+ *  that meant to act in it cannot pass without having done so. */
+async function inTheLook(expression: string): Promise<void> {
+  const list = (await (await fetch(`http://127.0.0.1:${debugging}/json/list`)).json()) as { type: string; webSocketDebuggerUrl?: string }[];
+  for (const t of list) {
+    if (t.type !== "iframe" || t.webSocketDebuggerUrl === undefined) continue;
+    const socket = new WebSocket(t.webSocketDebuggerUrl);
+    try {
+      await new Promise<void>((resolve, reject) => { socket.onopen = () => resolve(); socket.onerror = () => reject(new Error("the box's debugging socket refused")); });
+      let n = 0;
+      const run = (source: string): Promise<unknown> => new Promise((resolve) => {
+        const id = ++n;
+        socket.onmessage = (ev: MessageEvent) => {
+          const m = JSON.parse(String(ev.data)) as { id?: number; result?: { result?: { value?: unknown } } };
+          if (m.id === id) resolve(m.result?.result?.value);
+        };
+        socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression: source, returnByValue: true } }));
+      });
+      if ((await run(`document.getElementById("g-agent") !== null`)) !== true) continue;
+      await run(expression);
+      return;
+    } finally {
+      socket.close();
+    }
+  }
+  throw new Error("no box in the window is the Agent screen's look");
+}
 
 walk("maximise and full screen flip the window, and the bar follows it", async () => {
   const state = async (): Promise<{ maximized: boolean; fullScreen: boolean }> =>

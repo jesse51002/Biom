@@ -38,6 +38,9 @@ import { ICNS_TYPES, ICO_SIZES, containers, decodePng } from "../tools/icon.ts";
 // The shell's own copy of the one rule it shares with the server. Plain CommonJS
 // beside `app/main.js`, which is why it is required rather than imported.
 import { dataHome as shellDataHome } from "../app/data.js";
+// Which box Share reads, beside the shell for the same reason.
+import { NAMES_IN_WINDOW, PAGE_BOX, pageBox } from "../app/box.js";
+import { PAGE_BOX as WIRE_PAGE_BOX } from "../contracts/wire.js";
 import type { EmbeddedMap } from "../server/platform/embedded.ts";
 
 const HERE = join(import.meta.dir, "..");
@@ -353,12 +356,101 @@ test("the window is frameless on every desktop, and macOS keeps its traffic ligh
   }
 });
 
+/* ── Share's capture, and which box it reads ────────────────────────────── */
+
+/** A frame as the main process sees one: its name and its parent, and — for
+ *  the test's own reading — which box it stands for. */
+interface Framed { name: string; parent: Framed | null; is: string }
+
+test("Share's capture takes the page's box by the name the window's own document gave it, never the look's, whichever the window made first", () => {
+  // THE WINDOW HOLDS MORE THAN ONE BOX. The Agent screen's look is a box of its
+  // own, built the first time the Agent screen or the chat panel shows and kept
+  // running, hidden, beside every page from then on; every launch opens on the
+  // Agent screen, so the look is made before any page is and the window hands
+  // its frames over in that order. The first frame that was not the window was
+  // the look, and Share uploaded it as the page.
+  const given = `${PAGE_BOX}-5f0c2a9e41b7d3386ac2e917`;
+  const inWindow = [given];
+  const main: Framed = { name: "", parent: null, is: "the window" };
+  const look: Framed = { name: "", parent: main, is: "the Agent screen's look" };
+  const page: Framed = { name: given, parent: main, is: "the page" };
+  // A page drawn inside the page (`page.embed`) is a frame the BOX made, and so
+  // is anything a page's own code puts in an iframe — which may wear any name
+  // at all, the page's own included.
+  const embedded: Framed = { name: "", parent: page, is: "a page drawn inside the page" };
+  const namesake: Framed = { name: given, parent: page, is: "a frame inside the page wearing its name" };
+
+  expect(pageBox([main, look, page, embedded], inWindow)?.is).toBe("the page");
+  expect(pageBox([main, page, look], inWindow)?.is).toBe("the page");
+  // THE WINDOW'S OWN FRAME, and never one a box made: the window's document
+  // named an `<iframe>` of its own, so the page's box is one of the window's
+  // children, and a frame inside the page wearing the page's name is not it.
+  expect(pageBox([main, look, namesake, embedded, page], inWindow)?.is).toBe("the page");
+  // NO PAGE ON SCREEN IS NO CAPTURE, and never the look in its place: the
+  // client sends nothing, and the server says in words that it needed one.
+  expect(pageBox([main, look], [])).toBe(null);
+  expect(pageBox([main], [])).toBe(null);
+});
+
+test("a box that renames its own window cannot make Share take it for the page", () => {
+  // A FRAME'S NAME IS ITS BOX'S OWN `window.name`, which the box's code may set
+  // to anything — measured in the built application, where the look's box
+  // naming itself `biom-page` was the box the capture took. The look is a
+  // plugin a workspace can replace. So the name is checked against the one the
+  // window's OWN document gave the page's `<iframe>`, which no box can read or
+  // touch, and whatever still cannot be told apart is no capture at all.
+  const given = `${PAGE_BOX}-5f0c2a9e41b7d3386ac2e917`;
+  const main: Framed = { name: "", parent: null, is: "the window" };
+  const page: Framed = { name: given, parent: main, is: "the page" };
+
+  // The look, made first, calling itself the bare word: not the page's name.
+  const claims: Framed = { name: PAGE_BOX, parent: main, is: "the look, calling itself biom-page" };
+  expect(pageBox([main, claims, page], [given])?.is).toBe("the page");
+  // The look calling itself by the page's own name, which it could only have
+  // been told: two of the window's own frames answer to it, and neither is
+  // taken.
+  const told: Framed = { name: given, parent: main, is: "the look, calling itself by the page's name" };
+  expect(pageBox([main, told, page], [given])).toBe(null);
+  // The page's own code renamed its window while the look calls itself the
+  // bare word: nothing answers to the name the window's document holds, and
+  // nothing is taken — the look least of all.
+  const renamed: Framed = { name: "mine", parent: main, is: "the page, renamed by its own code" };
+  expect(pageBox([main, claims, renamed], [given])).toBe(null);
+  // Nor a frame INSIDE the look told the page's name, however alone it is:
+  // the window's document holds no `<iframe>` for a frame a box made.
+  const within: Framed = { name: given, parent: claims, is: "a frame inside the look, calling itself by the page's name" };
+  expect(pageBox([main, claims, within, renamed], [given])).toBe(null);
+  // THE WINDOW'S DOCUMENT HOLDING NO PAGE BOX, OR TWO, is no capture.
+  expect(pageBox([main, claims, page], [])).toBe(null);
+  expect(pageBox([main, claims, page], [given, `${PAGE_BOX}-other`])).toBe(null);
+  expect(pageBox([main, claims, page], null)).toBe(null);
+});
+
+test("the client names the page's box and the shell reads that name out of the window's own document", async () => {
+  // ONE STATEMENT IN TWO PLACES: the client and the server take it from
+  // `contracts/wire.js`, and the shell is staged into the bundle alone and
+  // cannot, so it spells it again and is held equal here.
+  expect(PAGE_BOX).toBe(WIRE_PAGE_BOX);
+  // What the main process runs to learn the page box's name reads the
+  // `<iframe>` elements' own attribute — the window's, not a box's.
+  expect(NAMES_IN_WINDOW).toContain(`iframe[name^="${PAGE_BOX}-"]`);
+  expect(NAMES_IN_WINDOW).toContain('getAttribute("name")');
+  // And `app/main.js` runs it in the window's own document — on `webContents`,
+  // never on a frame — and asks `app/box.js` for the box, over every frame in
+  // the window, rather than choosing one itself.
+  const main = await readFile(join(HERE, "app", "main.js"), "utf8");
+  expect(main).toContain('require("./box.js")');
+  expect(main).toContain("win.webContents.executeJavaScript(NAMES_IN_WINDOW, true)");
+  expect(main).toContain("pageBox(win.webContents.mainFrame.framesInSubtree, names)");
+  expect(main).not.toContain("framesInSubtree.find(");
+});
+
 test("the packaged staging directory carries the preload and the logo", async () => {
   // IT SHIPS OR THE BUILT APPLICATION HAS NO CHOOSER — and the production server
   // refuses the listing it would fall back to, which is a picker that cannot
   // reach a folder. The list is explicit rather than a walk of `app/`, so this
   // holds it against what is on disk.
-  expect(SHELL_FILES).toEqual(["main.js", "preload.js", "data.js", "icon.png", "package.json"]);
+  expect(SHELL_FILES).toEqual(["main.js", "preload.js", "data.js", "box.js", "icon.png", "package.json"]);
   for (const file of SHELL_FILES) {
     expect([file, (await readFile(join(HERE, "app", file), "utf8")).length > 0]).toEqual([file, true]);
   }
