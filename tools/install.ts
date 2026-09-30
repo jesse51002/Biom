@@ -147,7 +147,7 @@ export function desktopEntry(exec: string): string {
     "[Desktop Entry]",
     "Type=Application",
     `Name=${APP_NAME}`,
-    "Comment=A workspace whose pages are folders",
+    "Comment=A living workspace for humans and agents",
     `Exec=${quoted}`,
     `Icon=${ICON_NAME}`,
     "Terminal=false",
