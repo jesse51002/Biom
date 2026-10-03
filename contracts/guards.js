@@ -9,10 +9,10 @@
 // here would be larger than the thing it validated and would imply the rest of
 // the codebase is checked, which it is not.
 
-/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue, ChatView } from "./types.ts" */
+/** @import { VarScalar, VarValue, VarPatch, RowInput, HostRequest, RuntimeRequest, GuestNotice, ChatRequest, HistoryRequest, Address, WindowReport, Move, ConfigValue } from "./types.ts" */
 /** @import { PageRequest } from "./types.ts" */
 
-import { AGENT_KEY, CHAT_VIEWS, OPAQUE_ID, PROTOCOL } from "./wire.js";
+import { AGENT_KEY, OPAQUE_ID, PROTOCOL } from "./wire.js";
 import { LOCATE_MAX, SEARCH_MAX, SEARCH_QUERY_MAX } from "./wire.js";
 import { PAGE_SCREENS, VIEW_NAMES } from "./address.js";
 
@@ -125,11 +125,12 @@ const HOST_KINDS = new Set([
   // nor sends anything by itself: the dialog is the host's and the words were
   // the person's.
   "look.delete", "look.unqueue",
-  // THE FIFTEENTH EDIT'S ONE: the view picked from the chat's ⋯, one of the
-  // three words `CHAT_VIEWS` holds. The one look kind that changes something
-  // kept, and it may be said from a box because it sends nothing to an agent
-  // and deletes nothing.
-  "look.view",
+  // THE SIXTEENTH EDIT'S ONE: Send now on a queued message, named by ids as
+  // the × names it. It carries no words — what goes out is the person's own
+  // message, already waiting — and it stops the running turn first, which is
+  // why it is touch-gated like the rest. (The fifteenth's `look.view` went in
+  // the sixteenth, with the views.)
+  "look.sendNow",
 ]);
 
 /** THE MIDDLE RING. Everything a HostRequest may be, plus what the SECTION
@@ -163,8 +164,11 @@ const CHAT_KINDS = new Set([
   "agents.list", "agents.probe", "agents.start", "agents.registry", "agents.install", "agents.signIn",
   "chat.new", "chat.list", "chat.read", "chat.send", "chat.cancel", "chat.config",
   "chat.switchAgent", "chat.close", "chat.commands",
-  // The thirteenth edit: deleting a chat, its queue, and the kept choices.
-  "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read", "settings.set",
+  // The thirteenth edit: deleting a chat, its queue, and the kept choices —
+  // read only, since the sixteenth took out `settings.set` with the view.
+  "chat.delete", "chat.sendQueued", "chat.unqueue", "settings.read",
+  // The sixteenth: one queued message sent now, the turn before it stopped.
+  "chat.sendNow",
 ]);
 
 /** WHAT EACH WINDOW HAS OPEN, AND THE HISTORY — outer ring, the same edit. */
@@ -292,16 +296,6 @@ export const isWindowId = isOpaqueId;
  * @returns {v is string}
  */
 export const isAgentKey = (v) => typeof v === "string" && AGENT_KEY.test(v);
-
-/** @type {ReadonlySet<unknown>} */
-const VIEWS = new Set(CHAT_VIEWS);
-
-/**
- * One of a chat's three views.
- * @param {unknown} v
- * @returns {v is ChatView}
- */
-export const isChatView = (v) => VIEWS.has(v);
 
 /**
  * An address as a window reports it: a view the vocabulary holds, an id, and
@@ -481,9 +475,8 @@ function wellFormed(v, allowed) {
     case "look.delete":
       return only(v, ["chat"]) && isOpaqueId(v.chat);
     case "look.unqueue":
+    case "look.sendNow":
       return only(v, ["chat", "queued"]) && isOpaqueId(v.chat) && isOpaqueId(v.queued);
-    case "look.view":
-      return only(v, ["view"]) && isChatView(v.view);
 
     /* ── the agents and the chats (outer ring) ─────────────────────────── */
     case "agents.probe":
@@ -510,9 +503,8 @@ function wellFormed(v, allowed) {
     case "chat.sendQueued":
       return isOpaqueId(v.chat);
     case "chat.unqueue":
+    case "chat.sendNow":
       return isOpaqueId(v.chat) && isOpaqueId(v.queued);
-    case "settings.set":
-      return v.view === undefined || isChatView(v.view);
     case "chat.config":
       return isOpaqueId(v.chat) && typeof v.option === "string" && v.option !== "" && isConfigValue(v.value);
     case "chat.switchAgent":

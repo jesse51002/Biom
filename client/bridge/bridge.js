@@ -61,7 +61,7 @@ import { AGENT_PAGE, DESIGN_PAGE, ERRORS, MAX_INFLIGHT, PROTOCOL, fail, nextId }
 import { ROOT_PAGE } from "../store/workspace.js";
 
 /** ONE OF THE LOOK'S OWN REQUESTS, as the Agent screen answers it.
- *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" | "look.view" }>} LookRequest */
+ *  @typedef {Extract<HostRequest, { kind: "look.open" | "look.new" | "look.list" | "look.panel" | "look.delete" | "look.unqueue" | "look.sendNow" }>} LookRequest */
 
 /** WHO ANSWERS THE LOOK: the Agent screen's host side, registered by the
  *  composition root through `answerLook`, handed each look request with the
@@ -485,15 +485,17 @@ export function makeBridge(ws, transport, ui, vault = "", clock = {}) {
       // The thirteenth edit's two ask the same way: `look.delete` for Biom's own
       // dialog, which alone may delete, and `look.unqueue` for a queued
       // message's ×, which takes the person's words out and sends none. So
-      // does the fifteenth's `look.view`, the view picked from the chat's ⋯,
-      // which the host keeps and posts back: a look on a loop cannot flip it.
+      // does the sixteenth's `look.sendNow`, a queued message's Send now: it
+      // carries no words, and what it sends sooner is the person's own
+      // message, already waiting — but it stops the running turn to do it,
+      // so a look on a loop can no more say it than the rest.
       case "look.open":
       case "look.new":
       case "look.list":
       case "look.panel":
       case "look.delete":
       case "look.unqueue":
-      case "look.view": {
+      case "look.sendNow": {
         if (ctx.page !== AGENT_PAGE || lookAnswer === null) {
           return no(req.id, ERRORS.IDENTITY, "only the Agent screen's own look may ask that");
         }

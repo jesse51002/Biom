@@ -6,7 +6,7 @@
 // file's values are duplicated there deliberately and must be kept in step.
 // It is the one duplication in the framework and it is why this file is tiny.
 
-/** @import { ChatView, HostError, HostErrorCode } from "./types.ts" */
+/** @import { HostError, HostErrorCode } from "./types.ts" */
 
 /** The protocol major, on every frame. An unknown major is dropped silently
  *  rather than answered, and at most two majors are ever live at once. */
@@ -129,29 +129,6 @@ export const OPAQUE_ID = /^[A-Za-z0-9_-]{8,64}$/;
  *  `github-copilot-cli` — and Biom's own for an agent the registry does not
  *  list, `openclaw`. Lowercase, because the registry's are. */
 export const AGENT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-
-/** THE THREE VIEWS OF A CHAT — `ChatView` in `types.ts` — in the order the
- *  menu lists them, which is a ladder: each adds to the one before, and the
- *  tools come last. The thirteenth contracts edit; the fifteenth put them in
- *  this order.
- *  @type {readonly ["plain", "thinking", "tools"]} */
-export const CHAT_VIEWS = Object.freeze(/** @type {const} */ (["plain", "thinking", "tools"]));
-/** The view a workspace that has kept none starts on: Plain, because Biom is
- *  a second brain before it is a place to build software, and most people
- *  never need to see the tools. A view already kept stays as it was.
- *  @type {"plain"} */
-export const DEFAULT_VIEW = "plain";
-/** WHAT EACH VIEW IS CALLED, and the one line under its name saying what it
- *  adds to the view before it — so nobody reads the pick as a setting of the
- *  agent's. The framework's own words: the default look says them again in
- *  its `model.js`, held equal to these by a test, and a look a workspace
- *  writes draws its own or none. The fifteenth contracts edit.
- *  @type {Readonly<Record<ChatView, Readonly<{ name: string, line: string }>>>} */
-export const VIEW_WORDS = Object.freeze({
-  plain: Object.freeze({ name: "Plain", line: "Just the words" }),
-  thinking: Object.freeze({ name: "Thinking", line: "Adds the agent's thinking" }),
-  tools: Object.freeze({ name: "Tool calls", line: "Adds the tools it used" }),
-});
 
 /* ── which vault a request is for ───────────────────────────────────────── */
 

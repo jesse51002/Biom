@@ -8,16 +8,19 @@
 // DRIVEN BY A SCENARIO, as JSON, from `FAKE_ACP_SCENARIO` (the JSON itself, or
 // a path to it) or `--scenario <json|path>`. With none it is a plain agent that
 // signs nobody out, opens any session and answers every message with a thought
-// and an echo — which is what an end-to-end run wants of it. A message may
-// also steer it: a line `!write <path> <text>` writes a file through
-// `fs/write_text_file`, `!sh <command>` reports an `execute` tool call that ran
-// it, `!edit <path> <from>=><to>` rewrites a file itself and reports it as an
-// `edit` tool call carrying the diff (a `\n` in `<to>` is a new line),
-// `!sleep <ms>` waits, and `!crash` exits in the middle of the turn.
+// and an echo of the person's words — the prompt's FIRST block; any block
+// after it is Biom's own, and is in the log — which is what an end-to-end run
+// wants of it. A message may also steer it: a line `!write <path> <text>`
+// writes a file through `fs/write_text_file`, `!sh <command>` reports an
+// `execute` tool call that ran it, `!edit <path> <from>=><to>` rewrites a file
+// itself and reports it as an `edit` tool call carrying the diff (a `\n` in
+// `<to>` is a new line), `!sleep <ms>` waits, and `!crash` exits in the middle
+// of the turn.
 //
 // WHAT IT HEARD is appended, one JSON message per line, to the scenario's `log`
 // where it names one — which is how a test asserts the permission it was
-// answered with, the prompt it was handed, or that it was asked to cancel.
+// answered with, the prompt it was handed block by block, or that it was
+// asked to cancel.
 //
 // INSTALLED ON A PATH by `installFakeAgent`, as an executable under a command
 // name an agent Biom knows is found by — `claude-agent-acp` by default, the
@@ -385,9 +388,10 @@ function run(scenario: Scenario): void {
         }
         prompts++;
         cancelled = false;
+        // The person's words are the first block; what follows is Biom's.
         const blocks = Array.isArray(params.prompt) ? (params.prompt as Json[]) : [];
-        const text = blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("");
-        await turn(id, sessionId, text);
+        const first = blocks[0];
+        await turn(id, sessionId, first !== undefined && typeof first.text === "string" ? first.text : "");
         return;
       }
       case "session/cancel":

@@ -27,7 +27,7 @@ const HERE = { address: { view: "page", id: "home", screen: "page" }, panel: tru
 type Call = [string, ...unknown[]];
 
 /** Fakes that record every call and answer something recognisable. */
-function world(over: { throwWith?: unknown } = {}) {
+function world(over: { throwWith?: unknown; onScreen?: Deps["onScreen"] } = {}) {
   const calls: Call[] = [];
   const answer = (name: string, value: unknown) => (...args: unknown[]) => {
     calls.push([name, ...args]);
@@ -51,6 +51,7 @@ function world(over: { throwWith?: unknown } = {}) {
     send: later("chat.send", { chat: { id: CHAT, phase: "running" }, queued: { id: "q1nvented-queued-01", place: 1 } }),
     sendQueued: later("chat.sendQueued", { id: CHAT }),
     unqueue: later("chat.unqueue", { id: CHAT }),
+    sendNow: later("chat.sendNow", { id: CHAT }),
     cancel: later("chat.cancel", { id: CHAT }),
     config: later("chat.config", { id: CHAT }),
     switchAgent: later("chat.switchAgent", { id: CHAT }),
@@ -59,8 +60,7 @@ function world(over: { throwWith?: unknown } = {}) {
     delete: later("chat.delete", undefined),
   };
   const settings = {
-    read: answer("settings.read", { view: "tools", agent: null, agents: {} }),
-    set: later("settings.set", { view: "plain", agent: null, agents: {} }),
+    read: answer("settings.read", { agent: null, agents: {} }),
   };
   const history = {
     report: later("history.report", [{ kind: "view", seq: 1 }]),
@@ -68,7 +68,7 @@ function world(over: { throwWith?: unknown } = {}) {
     read: answer("history.read", { entries: [], head: 7 }),
     edit: later("history.edit", null),
   };
-  const deps = { agents, chats, history, settings } as unknown as Deps;
+  const deps = { agents, chats, history, settings, ...(over.onScreen ? { onScreen: over.onScreen } : {}) } as unknown as Deps;
   let n = 0;
   const call = (o: Record<string, unknown>): Promise<ApiResponse> => handle({ id: `r${++n}`, g: PROTOCOL, ...o } as ApiRequest, deps);
   return { calls, call, deps };
@@ -95,7 +95,7 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.list" }, ["chat.list"]],
     [{ kind: "chat.read", chat: CHAT, since: 4 }, ["chat.read", CHAT, 4]],
     [{ kind: "chat.read", chat: CHAT }, ["chat.read", CHAT, undefined]],
-    [{ kind: "chat.send", chat: CHAT, text: "go on" }, ["chat.send", CHAT, "go on"]],
+    [{ kind: "chat.send", chat: CHAT, text: "go on" }, ["chat.send", CHAT, "go on", null]],
     [{ kind: "chat.cancel", chat: CHAT }, ["chat.cancel", CHAT]],
     [{ kind: "chat.config", chat: CHAT, option: "model", value: "fast" }, ["chat.config", CHAT, "model", "fast"]],
     [{ kind: "chat.config", chat: CHAT, option: "thinking", value: true }, ["chat.config", CHAT, "thinking", true]],
@@ -107,9 +107,9 @@ test("EVERY AGENT AND CHAT KIND reaches exactly its one call, with the fields th
     [{ kind: "chat.delete", chat: CHAT, confirmed: true }, ["chat.delete", CHAT]],
     [{ kind: "chat.sendQueued", chat: CHAT }, ["chat.sendQueued", CHAT]],
     [{ kind: "chat.unqueue", chat: CHAT, queued: "q1nvented-queued-01", text: "smuggled" }, ["chat.unqueue", CHAT, "q1nvented-queued-01"]],
+    // The words are the queued message's own: none ride along on Send now.
+    [{ kind: "chat.sendNow", chat: CHAT, queued: "q1nvented-queued-01", text: "smuggled" }, ["chat.sendNow", CHAT, "q1nvented-queued-01"]],
     [{ kind: "settings.read" }, ["settings.read"]],
-    [{ kind: "settings.set", view: "plain", agent: "smuggled-agent" }, ["settings.set", { view: "plain" }]],
-    [{ kind: "settings.set" }, ["settings.set", {}]],
   ];
   const seen = new Set<string>();
   for (const [req, want] of cases) {
@@ -140,17 +140,28 @@ test("A MALFORMED AGENT OR CHAT REQUEST IS REFUSED before any module hears of it
     { kind: "chat.switchAgent", chat: CHAT },
     { kind: "chat.cancel" },
     { kind: "chat.commands", chat: 7 },
-    { kind: "settings.set", view: "fancy" },
     { kind: "chat.delete" },
     { kind: "chat.delete", chat: "short" },
     { kind: "chat.sendQueued" },
     { kind: "chat.unqueue", chat: CHAT },
     { kind: "chat.unqueue", chat: CHAT, queued: "has spaces in it" },
+    { kind: "chat.sendNow", chat: CHAT },
+    { kind: "chat.sendNow", queued: "q1nvented-queued-01" },
+    { kind: "chat.sendNow", chat: CHAT, queued: "short" },
   ];
   for (const req of bad) {
     const w = world();
     const r = await w.call(req);
     expect([req, code(r)]).toEqual([req, "bad_request"]);
+    expect([req, w.calls]).toEqual([req, []]);
+  }
+});
+
+test("NOTHING IS SET FROM A WINDOW: `settings.set`, which kept the view, is no kind the route answers, and no module hears of it", async () => {
+  for (const req of [{ kind: "settings.set", view: "plain" }, { kind: "settings.set" }]) {
+    const w = world();
+    const r = await w.call(req);
+    expect([req, code(r)]).toEqual([req, "unknown_kind"]);
     expect([req, w.calls]).toEqual([req, []]);
   }
 });
@@ -184,6 +195,27 @@ test("a module's own refusal is said in its own sentence; anything else is `inte
   expect(JSON.stringify(said)).not.toContain("TOKEN");
 });
 
+test("A MESSAGE CARRIES THE PAGE ON SCREEN IN THE WINDOW THAT SENT IT, asked by the envelope's window; one that cannot be said goes without it", async () => {
+  const SEEN = { page: "home/Specs", name: "Invented Specs", folder: "pages/home/children/Specs", screen: "page" as const };
+  const asked: unknown[] = [];
+  const w = world({ onScreen: async (window) => { asked.push(window); return SEEN; } });
+  expect(value(await w.call({ kind: "chat.send", chat: CHAT, text: "go on", window: WINDOW }))).toBeTruthy();
+  expect(value(await w.call({ kind: "chat.new", agent: AGENT, text: "hello", page: "home", window: WINDOW }))).toBeTruthy();
+  // A chat made with no message has nothing to carry it: nobody is asked.
+  expect(value(await w.call({ kind: "chat.new", agent: AGENT, window: WINDOW }))).toBeTruthy();
+  expect(asked).toEqual([WINDOW, WINDOW]);
+  expect(w.calls).toEqual([
+    ["chat.send", CHAT, "go on", SEEN],
+    ["chat.create", { agent: AGENT, text: "hello", page: "home", onScreen: SEEN }],
+    ["chat.create", { agent: AGENT }],
+  ]);
+
+  // No window named, or a lookup that fails: the message still goes, bare.
+  const failing = world({ onScreen: async () => { throw new Error("the index is gone"); } });
+  expect(value(await failing.call({ kind: "chat.send", chat: CHAT, text: "go on", window: WINDOW }))).toBeTruthy();
+  expect(failing.calls).toEqual([["chat.send", CHAT, "go on", null]]);
+});
+
 test("A BUILD WITH NO AGENTS answers every agent and chat kind `unsupported`, and the history reads answer empty", async () => {
   const deps = {} as unknown as Deps;
   let n = 0;
@@ -191,7 +223,6 @@ test("A BUILD WITH NO AGENTS answers every agent and chat kind `unsupported`, an
   expect(code(await call({ kind: "agents.list" }))).toBe("unsupported");
   expect(code(await call({ kind: "chat.new", text: "hi" }))).toBe("unsupported");
   expect(code(await call({ kind: "settings.read" }))).toBe("unsupported");
-  expect(code(await call({ kind: "settings.set", view: "plain" }))).toBe("unsupported");
   expect(value(await call({ kind: "window.list" }))).toEqual([]);
   expect(value(await call({ kind: "history.read" }))).toEqual({ entries: [], head: 0 });
   expect(code(await call({ kind: "window.report", window: WINDOW, context: HERE }))).toBe("unsupported");

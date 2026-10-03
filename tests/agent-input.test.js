@@ -407,7 +407,7 @@ test("the height the look leaves the input covers Go to page above it: it grows 
   expect(told).toBe(before + 2);
 });
 
-/* ── the kept choices and the view ─────────────────────────────────────── */
+/* ── the kept choices ───────────────────────────────────────────────────── */
 
 const CHAT_ID = "c1nvented-chat-0001";
 /** @param {Record<string, unknown>} [over] */
@@ -417,30 +417,12 @@ const option = (id, category, values) => ({ id, name: id, category, type: "selec
 /** Let every answer in flight land. */
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
-test("THE INPUT BOX SHOWS NO VIEW: in a chat its bar is the agent, its pickers and Send, and nothing in it names a view or sets one", async () => {
-  const s = stand(AGENTS, { answers: { "settings.read": () => ({ view: "thinking", agent: null, agents: {} }) } });
-  await settle();
-  s.chats.takeChat({ chat: aChat(), updates: [] });
-  s.ui.set({ chat: CHAT_ID });
-  s.input.sync();
-  expect(s.input.el.querySelector("button.viewchip")).toBe(null);
-  expect(s.input.el.querySelectorAll("[data-view]")).toEqual([]);
-  const cbar = /** @type {El} */ (s.input.el.querySelector(".cbar"));
-  expect(cbar.children.map((c) => c.className)).toEqual(["chip agentchip", "sep", "chip", "chip", "chip", "send"]);
-  const words = s.input.el.text;
-  for (const name of ["Plain", "Thinking", "Tool calls"]) expect([name, words.includes(name)]).toEqual([name, false]);
-  // Nothing here keeps a view: every chip's menu opened, and not one of them asks.
-  for (const chip of /** @type {El[]} */ (s.input.el.querySelectorAll("button.chip")).filter((c) => !c.hidden)) chip.fire("click");
-  await settle();
-  expect(s.calls.filter((c) => c.kind === "settings.set")).toEqual([]);
-});
-
 test("THE START SCREEN STARTS WHERE THE PERSON LEFT OFF: the kept agent while it is on this machine, and its kept values its list still offers", async () => {
   const opts = [option("model", "model", ["fast", "deep"]), option("mode", "mode", ["ask", "code"])];
   const list = [agent({ options: opts }), agent({ key: "gemini", name: "Gemini CLI", options: opts })];
   const s = stand(list, {
     answers: {
-      "settings.read": () => ({ view: "tools", agent: "gemini", agents: { gemini: { model: "deep", mode: "retired" }, "codex-acp": { mode: "code" } } }),
+      "settings.read": () => ({ agent: "gemini", agents: { gemini: { model: "deep", mode: "retired" }, "codex-acp": { mode: "code" } } }),
     },
   });
   // Before the kept choices are read, the first Active agent, on its own values.
@@ -464,12 +446,12 @@ test("THE START SCREEN STARTS WHERE THE PERSON LEFT OFF: the kept agent while it
 });
 
 test("a kept agent no longer on this machine is passed over, and a pick in this window wins over the kept one", async () => {
-  const s = stand(AGENTS, { answers: { "settings.read": () => ({ view: "tools", agent: "gone-agent", agents: {} }) } });
+  const s = stand(AGENTS, { answers: { "settings.read": () => ({ agent: "gone-agent", agents: {} }) } });
   await settle();
   s.input.sync();
   const name = () => /** @type {El} */ (s.chip.querySelector(".nm")).textContent;
   expect(name()).toBe("Codex");
-  const t = stand([agent(), agent({ key: "gemini", name: "Gemini CLI" })], { answers: { "settings.read": () => ({ view: "tools", agent: "gemini", agents: {} }) } });
+  const t = stand([agent(), agent({ key: "gemini", name: "Gemini CLI" })], { answers: { "settings.read": () => ({ agent: "gemini", agents: {} }) } });
   await settle();
   t.input.sync();
   expect(/** @type {El} */ (t.chip.querySelector(".nm")).textContent).toBe("Gemini CLI");
@@ -590,11 +572,11 @@ test("SEND QUEUED shows under the input while the queue is held, says how many, 
   const button = /** @type {El} */ (s.input.el.querySelector("button.sendqueued"));
   // Waiting for the turn is not waiting for the person.
   expect(button.hidden).toBe(true);
-  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 2, queueHeld: true, updated: 20 }), updates: [] });
+  s.chats.takeChat({ chat: aChat({ phase: "idle", light: "error", stop: "refusal", queued: 2, queueHeld: true, updated: 20 }), updates: [] });
   s.input.sync();
   expect(button.hidden).toBe(false);
   expect(button.text).toBe("Send 2 queued");
-  s.chats.takeChat({ chat: aChat({ phase: "idle", stop: "cancelled", queued: 1, queueHeld: true, updated: 21 }), updates: [] });
+  s.chats.takeChat({ chat: aChat({ phase: "idle", light: "error", stop: "refusal", queued: 1, queueHeld: true, updated: 21 }), updates: [] });
   s.input.sync();
   expect(button.text).toBe("Send queued");
   button.fire("click");
@@ -602,4 +584,70 @@ test("SEND QUEUED shows under the input while the queue is held, says how many, 
   expect(s.calls.filter((c) => c.kind === "chat.sendQueued").map((c) => c.chat)).toEqual([CHAT_ID]);
   s.input.sync();
   expect(button.hidden).toBe(true);
+});
+
+/* ── Edit ──────────────────────────────────────────────────────────────── */
+
+/** The input box stood up on a page, answering the chat a first message
+ *  makes. */
+function onAPage() {
+  return stand([agent()], {
+    route: { view: "page", id: "home/Specs", screen: "page" },
+    answers: {
+      "settings.read": () => ({ agent: null, agents: {} }),
+      "chat.new": (req) => ({ id: "c1nvented-edit-0001", name: req.text, face: null, agent: "codex-acp", harness: "Codex", agentId: null, page: null, phase: "starting", turn: 1, light: "working", stop: null, reason: null, created: 1, updated: 2, queued: 0, queueHeld: false }),
+    },
+  });
+}
+
+/** Where the caret was last put in an element, as a browser would hold it.
+ *  @param {El} el */
+function caretOf(el) {
+  /** @type {{ at: number[] | null }} */
+  const held = { at: null };
+  /** @type {any} */ (el).setSelectionRange = (/** @type {number} */ a, /** @type {number} */ b) => { held.at = [a, b]; };
+  return held;
+}
+
+/** EDIT, as the Agent view says it: a new thread in the panel, then the
+ *  input made ready for the page. @param {ReturnType<typeof stand>} s */
+function pressEdit(s) {
+  s.ui.set({ panel: true, chat: null });
+  s.input.forPage("home/Specs");
+}
+
+test("EDIT'S NEW CHAT FOR A PAGE, with nothing typed, opens with the input empty and the caret in it, and its first message is the words alone, made for that page", async () => {
+  const s = onAPage();
+  await settle();
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  doc.activeElement = doc.body;
+  pressEdit(s);
+  expect(text.value).toBe("");
+  expect(doc.activeElement).toBe(text);
+
+  text.value = "tidy the invented headings";
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  const made = s.calls.filter((c) => c.kind === "chat.new");
+  expect(made.length).toBe(1);
+  expect(made[0]).toMatchObject({ text: "tidy the invented headings", page: "home/Specs" });
+});
+
+test("A DRAFT TYPED ON THE START SCREEN SURVIVES PRESSING EDIT: kept as it was, the caret after it, and sent as the page's chat", async () => {
+  const s = onAPage();
+  await settle();
+  const text = /** @type {El} */ (s.input.el.querySelector("textarea"));
+  const caret = caretOf(text);
+  text.value = "an invented draft\nwith a second line";
+  doc.activeElement = doc.body;
+  pressEdit(s);
+  expect(text.value).toBe("an invented draft\nwith a second line");
+  expect(doc.activeElement).toBe(text);
+  expect(caret.at).toEqual([text.value.length, text.value.length]);
+
+  text.fire("keydown", { key: "Enter", shiftKey: false, isComposing: false });
+  await settle();
+  const made = s.calls.filter((c) => c.kind === "chat.new");
+  expect(made.length).toBe(1);
+  expect(made[0]).toMatchObject({ text: "an invented draft\nwith a second line", page: "home/Specs" });
 });

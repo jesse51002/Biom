@@ -28,6 +28,7 @@ import type { Presets } from "../../contracts/types.ts";
 import type { Runs } from "../../contracts/types.ts";
 import type { Tables } from "../../contracts/types.ts";
 import type { Vault } from "../../contracts/types.ts";
+import type { WindowId } from "../../contracts/types.ts";
 import type { Writer } from "../../contracts/types.ts";
 import type { ThemeStore } from "../workspace/presets.ts";
 import type { Mirror } from "../domain/mirror.ts";
@@ -37,6 +38,7 @@ import type { Agents } from "../workspace/agents.ts";
 import type { Chats } from "../workspace/chats.ts";
 import type { Settings } from "../workspace/settings.ts";
 import type { PageIndex } from "../domain/pageindex.ts";
+import type { PageOnScreen } from "../domain/pagenote.ts";
 import { PAGE_DOC, pageDir } from "../domain/pages.ts";
 import { AUTOMATIONS_DIR, MANIFEST } from "../domain/runs.ts";
 
@@ -142,6 +144,13 @@ export interface Deps {
   /** THE CHAT'S KEPT CHOICES — `.biom/settings.json`. Optional, and absent
    *  answers `settings.*` `unsupported`: every caller from before them. */
   settings?: Settings;
+  /** THE PAGE ON SCREEN IN A WINDOW, which a message that window sends
+   *  carries to its agent: read off the window's context the moment it is
+   *  asked — so a report that lands after the message cannot change it — and
+   *  then named from the page's head. Null where no page is on screen.
+   *  Optional, and absent no message carries one: every caller from before
+   *  it. */
+  onScreen?: (window: WindowId | undefined) => Promise<PageOnScreen | null>;
   /** THE INDEX OF PAGE HEADS — what a window asks about pages it has not
    *  loaded: by id or identity (`page.locate`), by name (`page.search`), and
    *  what a `[[wikilink]]` names. Built against a vault like `pages`, and told
@@ -1069,8 +1078,8 @@ async function answer(req: ApiRequest, deps: Deps): Promise<ApiResponse> {
       case "chat.delete":
       case "chat.sendQueued":
       case "chat.unqueue":
+      case "chat.sendNow":
       case "settings.read":
-      case "settings.set":
         return await chatAnswer(id, req, deps);
 
       /* ── what each window has open, and the history ─────────────────── */
@@ -1126,12 +1135,11 @@ const CHAT_SENTENCES: Partial<Record<HostErrorCode, string>> = {
 async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiResponse> {
   if (!isChatRequest(req)) return err(id, "bad_request", CHAT_SENTENCES.bad_request as string);
   // THE KEPT CHOICES need neither the agents nor the chats: what the next
-  // chat starts on is read and the view set with no agent anywhere.
-  if (req.kind === "settings.read" || req.kind === "settings.set") {
+  // chat starts on is read with no agent anywhere.
+  if (req.kind === "settings.read") {
     const settings = deps.settings;
     if (settings === undefined) return refused(id, "the chat's kept choices");
-    if (req.kind === "settings.read") return ok(id, settings.read());
-    return ok(id, await settings.set(req.view === undefined ? {} : { view: req.view }));
+    return ok(id, settings.read());
   }
   const agents = deps.agents;
   const chats = deps.chats;
@@ -1157,6 +1165,11 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
         if (req.text !== undefined) init.text = req.text;
         if (req.page !== undefined) init.page = req.page;
         if (req.config !== undefined) init.config = { ...req.config };
+        // A first message goes with the page on screen where it was typed.
+        if (req.text !== undefined) {
+          const onScreen = await pageOnScreen(deps, req);
+          if (onScreen !== null) init.onScreen = onScreen;
+        }
         return ok(id, await chats.create(init));
       }
       case "chat.list":
@@ -1168,11 +1181,17 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
         return ok(id, await chats.read(req.chat, req.since));
       case "chat.send":
         // Out now to an idle chat, or into its queue: the answer says which.
-        return ok(id, await chats.send(req.chat, req.text));
+        // Either way with the page on screen in the window that sent it.
+        return ok(id, await chats.send(req.chat, req.text, await pageOnScreen(deps, req)));
       case "chat.sendQueued":
         return ok(id, await chats.sendQueued(req.chat));
       case "chat.unqueue":
         return ok(id, await chats.unqueue(req.chat, req.queued));
+      case "chat.sendNow":
+        // Stops the turn running and sends that queued message the moment it
+        // has ended; its words, and the page it was sent from, are the ones
+        // it was queued with.
+        return ok(id, await chats.sendNow(req.chat, req.queued));
       case "chat.cancel":
         return ok(id, await chats.cancel(req.chat));
       case "chat.config":
@@ -1205,6 +1224,19 @@ async function chatAnswer(id: string, req: ApiRequest, deps: Deps): Promise<ApiR
     return err(id, code, said !== "" ? said : CHAT_SENTENCES[code] ?? "that could not be done");
   }
   return err(id, "unknown_kind", "not a request this host answers");
+}
+
+/** THE PAGE ON SCREEN IN THE WINDOW A MESSAGE CAME FROM — the envelope's,
+ *  which only this machine's own window can name here — or null. Never a
+ *  refusal: a message that cannot say what was on screen goes without it
+ *  rather than not at all. */
+async function pageOnScreen(deps: Deps, req: ApiRequest): Promise<PageOnScreen | null> {
+  if (deps.onScreen === undefined) return null;
+  try {
+    return await deps.onScreen((req as Envelope).window);
+  } catch {
+    return null;
+  }
 }
 
 /** Answer a window's report, every window's context, or the history. The

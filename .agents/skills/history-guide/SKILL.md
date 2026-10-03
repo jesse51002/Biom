@@ -21,7 +21,8 @@ description: >-
   "switcher", "view switcher", "context", "window.report", "history.read",
   "window id", "Place", "uid", "Address", "parseAddress", "HELD", "claim",
   "adopt", "settle", "idle", "touch", "open gate", "OPEN_AFTER_TOUCH",
-  "NOT_TOUCH", "Go back to", "Go to page", "follow", "cause()", "Back".
+  "NOT_TOUCH", "Go back to", "Go to page", "follow", "cause()", "Back",
+  "contextOf", "inLine".
 ---
 
 # The history and the switcher — what each window has, what changed, and when a change moves the screen
@@ -199,7 +200,13 @@ with when THIS WINDOW got it, by its own clock**: the switcher times everything
 by that and never by the server's `at`, which is what lets an end-to-end test
 move one window's time. **Reports go one at a time, in the order they were
 made**, each answer taken before the next goes, and the ones in flight are
-readable (`unanswered`).
+readable (`unanswered`). **A message to an agent goes in the same line**
+(`inLine`, which the chat store sends `chat.send` and a first `chat.new`
+through): it leaves once every report made before it is answered, and a report
+made after it waits for its answer — because the server adds the page on
+screen to a message from the context this window last reported (`contextOf`,
+which answers a window's context the moment its report arrives, stream or no
+stream), and two separate requests promise no order on the way.
 
 ## 7. Who moved the screen, and Back
 
@@ -362,7 +369,7 @@ beside the page. A move by the switcher clears it.
 ```
 contracts/address.js           VIEW_NAMES, PAGE_SCREENS, HELD, address, normalAddress, parse/formatAddress,
                                sameAddress, isHeld, placeOf, addressOfPlace, samePlace
-server/domain/history.ts       makeHistory (report, attach, forget, edit, placeOf, read, windows, on),
+server/domain/history.ts       makeHistory (report, attach, forget, edit, placeOf, read, windows, contextOf, on),
                                LIMIT, COALESCE_MS, SAME_WRITE_MS, PATIENCE_MS, addressOfPath, placeOfPath
 server/api/routes.ts           writeOf, recorded, historyAnswer, and `own` on route()
 server/main.ts                 makeHistory per folder, uidOf through makeIdentities, events() with attach, the `own` check
@@ -372,7 +379,7 @@ client/transport/http.js       the window written onto every call
 client/transport/events.js     onNamed, onOpen, the stream's query
 client/transport/chat.js       isHistoryEntry, isPlace: the history event, checked whole
 client/store/ui.js             open, follow, go, cause, the Mover and Cause typedefs
-client/store/history.js        makeHistoryStore: take, catchUp, report, unanswered
+client/store/history.js        makeHistoryStore: take, catchUp, report, unanswered, inLine
 client/store/switcher.js       decide, TIMING, UNLISTED_CAP_MS, NOT_TOUCH, screenName, boxOf, makeSwitcher (onPages)
 client/store/workspace.js      refOf, idOfUid, want: the window's directory, and a miss asked for by name
 client/bridge/bridge.js        OPEN_AFTER_TOUCH, OPEN_GRACE, touched, the `open` case

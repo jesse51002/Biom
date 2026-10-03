@@ -7,7 +7,7 @@
 import { test, expect } from "bun:test";
 
 import {
-  choosePermission, initializeParams, mergeTool, newSessionParams, quoteWord, readInitialize, readStop, readUpdate, setConfigRequest, toConfigOptions,
+  choosePermission, initializeParams, mergeTool, newSessionParams, promptParams, quoteWord, readInitialize, readStop, readUpdate, setConfigRequest, toConfigOptions,
   toSlashCommands, toolCommand, toolDiffs, toolText, toPlan, toUsage,
 } from "../server/platform/acp-wire.ts";
 import type { ToolState } from "../server/platform/acp-wire.ts";
@@ -24,6 +24,15 @@ test("initialize offers fs both ways, no terminal, and terminal sign-in both way
     clientInfo: { name: "biom", title: "Biom", version: "0.1.0" },
   });
   expect(newSessionParams("/v")).toEqual({ cwd: "/v", mcpServers: [] });
+});
+
+test("a prompt is the person's words as the first text block, and each block Biom adds after them as one of its own", () => {
+  expect(promptParams("s1", "hello")).toEqual({ sessionId: "s1", prompt: [{ type: "text", text: "hello" }] });
+  expect(promptParams("s1", "/compact", [])).toEqual({ sessionId: "s1", prompt: [{ type: "text", text: "/compact" }] });
+  expect(promptParams("s1", "hello", ["<biom-context>\ninvented\n</biom-context>"])).toEqual({
+    sessionId: "s1",
+    prompt: [{ type: "text", text: "hello" }, { type: "text", text: "<biom-context>\ninvented\n</biom-context>" }],
+  });
 });
 
 test("an initialize answer: the version, load, resume and delete, the sign-in methods as sent", () => {

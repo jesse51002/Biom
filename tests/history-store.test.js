@@ -163,6 +163,46 @@ test("REPORTS GO ONE AT A TIME, in order, each answer taken before the next leav
   expect(await second).toEqual([]);
 });
 
+test("A CALL RUN IN LINE WITH THE REPORTS leaves once every report made before it is answered, and a report made after it waits for its answer", async () => {
+  const transport = fakeTransport();
+  const history = makeHistoryStore({ transport, now: () => 0 });
+  const at = (/** @type {string} */ id) => ({ address: { view: "page", id, screen: "page" }, panel: true, chat: null, agent: null });
+  /** @type {string[]} */
+  const order = [];
+  /** @type {() => void} */
+  let release = () => {};
+  const ids = () => transport.calls.map((c) => c.req.context.address.id);
+
+  history.report(at("notes"), { by: "you" });
+  const sent = history.inLine(async () => {
+    order.push("sent");
+    await new Promise((r) => { release = () => r(undefined); });
+    return "answered";
+  });
+  const after = history.report(at("other"), { by: "you" });
+  await tick();
+  // Only the report made before it is out, and the call waits for its answer.
+  expect(ids()).toEqual(["notes"]);
+  expect(order).toEqual([]);
+  transport.calls[0]?.answer([]);
+  await tick();
+  expect(order).toEqual(["sent"]);
+  // The report made after it waits for the call's own answer.
+  expect(ids()).toEqual(["notes"]);
+  release();
+  expect(await sent).toBe("answered");
+  await tick();
+  expect(ids()).toEqual(["notes", "other"]);
+  transport.calls[1]?.answer([]);
+  await after;
+
+  // A call that fails is its caller's to hear, and the reports go on.
+  await expect(history.inLine(async () => { throw new Error("refused"); })).rejects.toThrow("refused");
+  history.report(at("third"));
+  await tick();
+  expect(ids()).toEqual(["notes", "other", "third"]);
+});
+
 test("a refused report is said once, however many follow it, and stops being in flight", async () => {
   const transport = fakeTransport();
   const history = makeHistoryStore({ transport, now: () => 0 });

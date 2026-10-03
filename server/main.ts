@@ -78,6 +78,7 @@ import { connectAcp } from "./platform/acp.ts";
 import type { AcpConnection } from "./platform/acp.ts";
 import { makeHistory } from "./domain/history.ts";
 import type { History } from "./domain/history.ts";
+import type { PageOnScreen } from "./domain/pagenote.ts";
 import { JEV_ENDPOINT, JEV_KEY_VAR, SYSTEM_CLOCK, makeJev, makeJevStatus } from "./domain/jev.ts";
 import type { JevStatus } from "./domain/jev.ts";
 import { makeAgents } from "./workspace/agents.ts";
@@ -1497,6 +1498,21 @@ export async function makeHost(at: HostPaths): Promise<Host> {
       upload: makeBucket(shareEnv()),
     });
 
+    // THE PAGE ON SCREEN IN THE WINDOW A MESSAGE CAME FROM, for the note Biom
+    // adds to it. The address is read off the window's context AT ONCE,
+    // before anything waits: the window sends a message only once every
+    // report it made before it is answered, and makes none after it until
+    // the message is (`client/store/history.js`, `inLine`), so what is read
+    // here is what was on screen when it was sent. Only a page is on screen
+    // for this — the Agent screen, Design, the Map and the workspace's own
+    // Instructions are not — and it is named from its head, never its body.
+    const onScreen = async (window: WindowId | undefined): Promise<PageOnScreen | null> => {
+      const at = window === undefined ? null : history.contextOf(window)?.address ?? null;
+      if (at === null || at.view !== "page" || at.id === "") return null;
+      const head = await index.head(at.id).catch(() => null);
+      return head === null ? null : { page: at.id, name: head.name, folder: head.dir, screen: at.screen };
+    };
+
     // THE CHATS AS THE ROUTE SEES THEM: the same module, with a chat's close
     // also letting go of Jev's schedule for it — its timers, and any ask in
     // flight — because the route knows nothing of Jev and should not.
@@ -1514,7 +1530,7 @@ export async function makeHost(at: HostPaths): Promise<Host> {
     };
     return {
       path, db, runsDb, pagesDb, ownWrites, ownPages, openedAt, index, runs, seen, history, agents, chats, jev: jevStatus, identities,
-      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings, index },
+      deps: { pages, design, docs, tables, presets, theme, mirror, runs, share, history, agents, chats: routed, settings, onScreen, index },
       settled: Promise.resolve(), closed: false, files,
     };
   }

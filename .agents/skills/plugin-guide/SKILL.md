@@ -518,14 +518,16 @@ the pixels it covers from the box's bottom edge up to the top of the composer,
 so a look keeps its last line above that; **`center`**, on the start screen,
 where `height` is the composer's own height and it sits on the middle of the
 stage, so a look leaves that band free and draws above and below it. A patch
-carries `input` again whenever either moves. **`LookState.view` is the view the
-person picked** — `plain`, `thinking` or `tools` — and a patch carries it when
-it moves; a look that draws fewer views draws the nearest it has, and the
-default one draws a word it does not know as Plain. **The view is picked in the look, and a look
-a workspace writes draws its own view control or none**: the default one
-draws a ⋯ at the chat's top right whose menu says `look.view`, and the host
-keeps the pick and posts it back as `view`, so a look that offers no control
-still draws the view the workspace keeps.
+carries `input` again whenever either moves. **How the chat is drawn is the
+look's own**: `LookState` names no view — the sixteenth contracts edit took
+out the three the host used to hand over, and `look.view`, which picked one —
+so a look a workspace writes draws a chat whichever way it likes, and the
+default one draws it one way, the thinking folded and each run of tool calls
+one line (`chat-guide`). **What a look may ask is the eight kinds `chat-guide`
+lists**, each by ids or a closed word: a look that draws the queue offers
+each message's × as `look.unqueue` and its Send now as `look.sendNow`, both
+naming the chat and the message's `queued` id, or leaves either out; the
+host keeps the queue, and the look draws what the stream says of it.
 
 **Nothing is copied into `plugins/` unasked.** The set used to be seeded into
 every vault by `presets.ts`, on the argument that a copy in the person's hands

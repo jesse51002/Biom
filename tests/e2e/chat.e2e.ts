@@ -35,10 +35,14 @@
 //    6. A red turn: red, with the reason, until the next turn starts.
 //    7. Tool lines: an edit tool call opens to its diff, the pages changed
 //       name the page, and a write off the full Agent screen brings the page
-//       up with the chat beside it — drawn in Tool calls, picked from the ⋯
-//       in the panel's head.
+//       up with the chat beside it — its run of tool calls one line, drawn
+//       as the chat is always drawn, with no ⋯ in the panel's head.
 //    8. The / menu: the agent's commands and the workspace's skills, once each.
-//    9. Edit: a new chat beside the page, maximised and minimised back.
+//    9. Edit: a new chat beside the page with the input empty and the caret
+//       in it. Its first message carries the page to the agent, after the
+//       words and as Biom's own block, and the bubble shows the words alone;
+//       the same page again carries nothing, another page does. Maximised
+//       and minimised back.
 //    9b. A page opened from the full Agent screen keeps the chat beside it.
 //   10–16. The switcher: follow (with the pages changed saying Edited for a
 //       new file in a page that was there, 10b), offer, idle, a send handing
@@ -54,13 +58,15 @@
 //   20. A page's own code cannot move the screen; a wikilink click can.
 //   20b. `#/page/@agent`, `@map` and `@design` are no page.
 //   20c. A page on another localhost port gets nothing with the cookie.
-//   20d. The choices kept: a mode, and a view picked from the chat's ⋯ in a
-//       menu headed View that says what each adds, hold across a reload, a
+//   20d. The choices kept: a mode picked in a chat holds across a reload, a
 //       new chat and a server restart.
 //   20e. A chat deleted from its row's three dots, asked in Biom's own
 //       dialog: Cancel deletes nothing, Delete takes it for good.
 //   20f. The queue: a message sent mid-turn waits under it and goes out when
-//       the turn ends; after Stop it is held until Send queued.
+//       the turn ends; two queued behind a turn and then Stop both go out, in
+//       order, with nothing held and no Send queued.
+//   20g. Send now: two queued behind a turn, Send now pressed on the second,
+//       and the turn stops, the second goes out first, then the first.
 //   21. No stack trace, nothing outside the sandbox, no agent left running.
 //
 // EVERY PRODUCT BUG THIS WALK FOUND is fixed and asserted as a plain step:
@@ -76,14 +82,13 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chromium } from "playwright";
-import type { Browser, Frame, Locator, Page } from "playwright";
+import type { Browser, Frame, Page } from "playwright";
 
 import { HERE, SHOTS, BOUNDS, sandbox, withoutAgents, outside, freePort, until, step, stackTraces, shotsDir } from "./harness.ts";
 import type { Sandbox } from "./harness.ts";
 import { installFakeAgent } from "../fake-acp-agent.ts";
 import type { Scenario } from "../fake-acp-agent.ts";
-import type { AgentInfo, ChatRead, ChatSettings, ChatSummary, ChatView, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
-import { CHAT_VIEWS, VIEW_WORDS } from "../../contracts/wire.js";
+import type { AgentInfo, ChatRead, ChatSettings, ChatSummary, HistoryEntry, HistoryRead, WindowContext } from "../../contracts/types.ts";
 
 const unix = process.platform !== "win32";
 const AGENT = "claude-acp";
@@ -262,6 +267,13 @@ async function call<T = unknown>(kind: string, body: Record<string, unknown> = {
 }
 
 const summaryOf = async (id: string): Promise<ChatSummary | undefined> => (await call<ChatSummary[]>("chat.list")).find((c) => c.id === id);
+/** The last prompt the scripted agent was handed, block by block, as its log
+ *  heard it — empty before the first. */
+const lastPrompt = (): string[] => {
+  const heard = existsSync(fakeLog) ? readFileSync(fakeLog, "utf8").split("\n").filter((l) => l.includes('"method":"session/prompt"')) : [];
+  const last = heard.at(-1);
+  return last === undefined ? [] : (JSON.parse(last) as { params: { prompt: { text: string }[] } }).params.prompt.map((b) => b.text);
+};
 const readChat = (id: string): Promise<ChatRead> => call<ChatRead>("chat.read", { chat: id });
 const promptsOf = async (id: string): Promise<string[]> =>
   (await readChat(id)).updates.filter((u) => u.kind === "prompt").map((u) => (u as { text: string }).text);
@@ -311,41 +323,6 @@ const crumbLamp = async (): Promise<string> => {
   const led = page.locator("button.crumb[aria-current=page] span.led");
   return (await led.count()) === 0 ? "" : ((await led.first().getAttribute("class")) ?? "").replace(/\s+/g, " ").trim();
 };
-
-/** THE CHAT'S ⋯, OPENED: its menu, headed View, once it shows. */
-async function viewMenu(): Promise<Locator> {
-  const f = await lookFrame();
-  await f.locator("button.chatmore").click();
-  const menu = f.locator(".viewmenu");
-  await until("the ⋯ opened its menu", 5000, () => menu.isVisible());
-  // Come to rest, so what is measured and pictured is where it stays.
-  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
-  return menu;
-}
-/** A VIEW PICKED as the person picks it: the ⋯, then the view by its name. */
-async function pickView(view: ChatView): Promise<void> {
-  const item = (await viewMenu()).locator(`button.mi[data-view=${view}]`);
-  expect(((await item.locator(".nm").textContent()) ?? "").trim()).toBe(VIEW_WORDS[view].name);
-  await item.click();
-}
-
-/** THE ⋯ AND ITS MENU FIT, as a browser lays them out: every control in the
- *  bar the ⋯ sits in is inside the look and clear of the next, and the menu,
- *  open, is wholly inside the look. */
-async function viewMenuFits(what: string): Promise<void> {
-  const seen = await (await lookFrame()).evaluate(() => {
-    const root = document.querySelector("#g-agent .g-look-host")!.shadowRoot!;
-    const more = root.querySelector("button.chatmore") as HTMLElement;
-    const box = (e: Element) => { const r = e.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom) }; };
-    const shown = [...more.parentElement!.children].filter((e) => getComputedStyle(e).display !== "none");
-    const menu = root.querySelector(".viewmenu");
-    return { w: innerWidth, h: innerHeight, bar: shown.map(box), more: box(more), menu: menu ? box(menu) : null };
-  });
-  const inside = (b: { l: number; r: number; t: number; b: number }) => b.l >= 0 && b.t >= 0 && b.r <= seen.w && b.b <= seen.h;
-  expect([what, seen.more.r - seen.more.l > 0, seen.bar.every(inside)]).toEqual([what, true, true]);
-  for (let i = 1; i < seen.bar.length; i++) expect([what, i, seen.bar[i - 1]!.r <= seen.bar[i]!.l]).toEqual([what, i, true]);
-  expect([what, seen.menu !== null && inside(seen.menu)]).toEqual([what, true]);
-}
 
 /** The page on screen drew, and says these words. */
 const pageSays = async (words: string): Promise<boolean> => {
@@ -846,28 +823,11 @@ walk("7", "tool lines: an edit tool call opens to its diff, the pages changed na
     const w = await myWindow();
     return w?.panel === true && w.chat === turnChat;
   });
-  // A NEW WORKSPACE SHOWS THE WORDS ALONE, so the tools are asked for: from
-  // the ⋯ in the panel's head, beside the panel's own controls.
-  expect(await inLook((f) => f.locator(".g-look").getAttribute("data-view"), null)).toBe("plain");
+  // THE CHAT IS DRAWN ONE WAY: the panel's head is its own controls, and
+  // nothing in it picks how the chat is shown.
   const head = await inLook((f) => f.locator(".panelhead button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") || b.className)), [] as string[]);
-  expect(head).toEqual(["tswitch", "New thread", "Chat options", "Open full size", "Close the chat"]);
-  await viewMenu();
-  await viewMenuFits("the panel");
-  await shot("chat-07-view-menu-panel.png");
-  await page.keyboard.press("Escape");
-  // And at the panel's narrowest, pulled there from its grip's keys.
-  const grip = page.locator(".agentgrip");
-  await grip.focus();
-  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");
-  expect(await grip.getAttribute("aria-valuenow")).toBe("320");
-  await viewMenu();
-  await viewMenuFits("the panel at its narrowest");
-  await shot("chat-07-view-menu-panel-narrowest.png");
-  await (await lookFrame()).locator(".viewmenu button.mi[data-view=tools]").click();
-  await grip.focus();
-  await page.keyboard.press("Home");
-  expect(await grip.getAttribute("aria-valuenow")).toBe("460");
-  await until("the look draws Tool calls", 8000, async () => (await inLook((f) => f.locator(".g-look").getAttribute("data-view"), null)) === "tools");
+  expect(head).toEqual(["tswitch", "New thread", "Open full size", "Close the chat"]);
+  expect(await inLook((f) => f.locator(".g-look[data-view], .chatmore").count(), -1)).toBe(0);
   // THE TOOL LINE, closed, then open to its diff.
   const f = await lookFrame();
   const act = lastTurn(f).locator(".acts button.act").first();
@@ -934,26 +894,68 @@ walk("8", "/ opens one list of the agent's commands and the workspace's skills, 
 
 /* ── 9 · Edit ────────────────────────────────────────────────────────────── */
 
-walk("9", "Edit on a page opens a new chat beside it with `Edit <path>: ` typed in; the panel maximises to the Agent screen and minimises back beside the page", async () => {
+walk("9", "Edit on a page opens a new chat beside it with the input empty and the caret in it; the page goes to the agent with the first message and never into the bubble, not again for the same page, and again for another; the panel maximises to the Agent screen and minimises back beside the page", async () => {
   if ((await hash()) !== routeOf(A)) await openByTree("Alpha", A);
   await page.locator("span.tools button.tool.edit").click();
   expect(await page.locator("div.bed").getAttribute("data-agent")).toBe("panel");
   const input = page.locator("#agentta");
-  await until("the location is typed in", 5000, async () => (await input.inputValue()) === `Edit ${A}: `);
-  expect(await input.evaluate((el) => (el as HTMLTextAreaElement).selectionStart)).toBe(`Edit ${A}: `.length);
+  await until("the input is empty, with the caret in it", 5000, async () =>
+    (await input.inputValue()) === "" && (await input.evaluate((el) => document.activeElement === el)));
   await until("the panel is on a new thread", 10000, async () => {
     const w = await myWindow();
     return w?.panel === true && w.chat === null;
   });
-  await input.pressSequentially("give it an invented subtitle");
+  const typed = "give it an invented subtitle";
+  await input.pressSequentially(typed);
   await input.press("Enter");
   await until("the chat began beside the page", 10000, async () => ((await myWindow())?.chat ?? null) !== null);
   X = (await myWindow())?.chat as string;
   expect(X).not.toBe(turnChat);
   expect(await hash()).toBe(routeOf(A));
   expect((await summaryOf(X))?.page).toEqual({ view: "page", uid: "inventedalpha001", screen: "page" });
-  expect(await promptsOf(X)).toEqual([`Edit ${A}: give it an invented subtitle`]);
+  expect(await promptsOf(X)).toEqual([typed]);
+
+  // THE AGENT WAS HANDED THE PAGE: the words, then Biom's note naming Alpha.
+  await until("the agent was handed the first message", 15000, () => lastPrompt()[0] === typed);
+  const [, note] = lastPrompt();
+  expect(lastPrompt().length).toBe(2);
+  expect(note?.startsWith("<biom-context>")).toBe(true);
+  expect(note?.endsWith("</biom-context>")).toBe(true);
+  expect(note).toContain("“Alpha”");
+  expect(note).toContain(dirOf(A));
+  expect(note).toContain("the page itself");
   await idle(X);
+  // THE PERSON NEVER SEES IT: the bubble's words are the words typed, and
+  // nothing the look drew says the note. The bubble's own text, and not its
+  // Jev face beside it, which may be an emoji.
+  const bubble = () => inLook(async (f) => lastTurn(f).locator(".u").evaluate((el) => el.firstChild?.nodeValue ?? ""), "");
+  await until("the look drew the message", 10000, async () => (await bubble()) !== "");
+  expect(await bubble()).toBe(typed);
+  const drawn = await inLook(async (f) => f.locator(".col").first().innerText(), null as string | null);
+  expect(drawn).toContain(typed);
+  expect(drawn).not.toContain("A note from Biom");
+  expect(drawn).not.toContain("biom-context");
+
+  // The same page again: the words alone.
+  await send("and an invented second line");
+  await until("the agent was handed the second message", 15000, () => lastPrompt()[0] === "and an invented second line");
+  expect(lastPrompt()).toEqual(["and an invented second line"]);
+  await idle(X);
+
+  // Another page, the chat beside it: the note again, naming that page.
+  await openByTree("Beta", B);
+  await until("the context says X is beside Beta", 10000, async () => {
+    const w = await myWindow();
+    return w?.panel === true && w.chat === X && w.address.id === B;
+  });
+  await send("and one about this page");
+  await until("the agent was handed the third message", 15000, () => lastPrompt()[0] === "and one about this page");
+  expect(lastPrompt().length).toBe(2);
+  expect(lastPrompt()[1]).toContain("“Beta”");
+  expect(lastPrompt()[1]).toContain(dirOf(B));
+  await idle(X);
+  expect(await promptsOf(X)).toEqual([typed, "and an invented second line", "and one about this page"]);
+  await openByTree("Alpha", A);
   // Maximised to the Agent screen, with the chat; minimised back beside A.
   await (await lookFrame()).getByRole("button", { name: "Open full size" }).click();
   await until("the Agent screen, with the chat", 10000, async () => (await hash()) === `#/agent/${X}`);
@@ -1418,8 +1420,6 @@ walk("20c", "a page on another localhost port gets nothing from this server with
 
 /* ── 20d · the choices kept ──────────────────────────────────────────────── */
 
-/** The view the look draws, as its root says it. */
-const lookView = (): Promise<string> => inLook(async (f) => (await f.locator(".g-look").getAttribute("data-view")) ?? "", "");
 const modeChip = async (): Promise<string> => ((await page.locator(".agentdock .chip[data-category=mode]").innerText().catch(() => "")) ?? "").trim();
 
 /** THE START SCREEN, and nothing else: a window just loaded may still put
@@ -1452,50 +1452,28 @@ async function newChat(words: string): Promise<string> {
   return made;
 }
 
-walk("20d", "the choices are kept: a mode and a view picked in a chat hold across a server restart and a new chat, and across a reload", async () => {
-  // In a chat, as the person picks them.
+walk("20d", "the choices are kept: a mode picked in a chat holds across a server restart and a new chat, and across a reload", async () => {
+  // In a chat, as the person picks it.
   await page.goto(at(`#/agent/${X}`), { waitUntil: "domcontentloaded" });
   await until("chat X drew", BOUNDS.draw, () => lookSays("give it an invented subtitle"));
   await until("its mode chip shows", 15000, async () => (await modeChip()) === "Ask (invented)");
   await page.locator(".agentdock .chip[data-category=mode]").click();
   await page.locator(".agentmenu button.mi[data-value=plan]").click();
-  // THE VIEW IS THE CHAT'S, NOT THE AGENT'S: nothing in the input box names
-  // one, and the ⋯ at the chat's top right opens a menu headed View that says
-  // what each adds — the one shown checked.
-  expect(await page.locator(".agentdock [data-view], .agentdock .viewchip").count()).toBe(0);
-  const menu = await viewMenu();
-  const heading = menu.locator(".mlabel");
-  expect(await heading.isVisible()).toBe(true);
-  expect(((await heading.textContent()) ?? "").trim()).toBe("View");
-  for (const v of CHAT_VIEWS) {
-    const item = menu.locator(`button.mi[data-view=${v}]`);
-    expect([v, await item.locator(".nm").isVisible(), ((await item.locator(".nm").textContent()) ?? "").trim()]).toEqual([v, true, VIEW_WORDS[v].name]);
-    expect([v, await item.locator(".sub").isVisible(), ((await item.locator(".sub").textContent()) ?? "").trim()]).toEqual([v, true, VIEW_WORDS[v].line]);
-    expect([v, await item.getAttribute("aria-checked")]).toEqual([v, String(v === "tools")]);
-  }
-  await viewMenuFits("the full screen");
-  await shot("chat-20d-view-menu.png");
-  await menu.locator("button.mi[data-view=thinking]").click();
-  await until("the menu shut", 5000, async () => !(await menu.isVisible()));
-  await until("the look draws Thinking", 8000, async () => (await lookView()) === "thinking");
-  await until("the server kept both", 8000, async () => {
+  await until("the server kept it", 8000, async () => {
     const kept = await call<ChatSettings>("settings.read");
-    return kept.view === "thinking" && kept.agents[AGENT]?.mode === "plan" && kept.agent === AGENT;
+    return kept.agents[AGENT]?.mode === "plan" && kept.agent === AGENT;
   });
-  await shot("chat-20d-thinking.png");
+  // What is kept names no view: a chat is drawn one way.
+  expect(Object.keys(await call<ChatSettings>("settings.read")).sort()).toEqual(["agent", "agents"]);
 
   /** What a person sees after `what`: the start screen's mode chip on the
-   *  kept mode, and a new chat started on it and drawn in the kept view. */
+   *  kept mode, and a new chat started on it. */
   const holds = async (what: string): Promise<void> => {
     await startScreen();
     await until(`${what}: the start screen's mode chip is the kept one`, 30000, async () => (await modeChip()) === "Plan (invented)");
     const chat = await newChat(`An invented new chat after ${what}`);
     const config = (await readChat(chat)).updates.filter((u) => u.kind === "config").pop() as { options: { id: string; value: unknown }[] } | undefined;
     expect([what, config?.options.find((o) => o.id === "mode")?.value]).toEqual([what, "plan"]);
-    await until(`${what}: the new chat is drawn in Thinking`, 8000, async () => (await lookView()) === "thinking");
-    const checked = (await viewMenu()).locator("button.mi[aria-checked=true]");
-    expect([what, await checked.getAttribute("data-view")]).toEqual([what, "thinking"]);
-    await page.keyboard.press("Escape");
   };
   // THE SERVER STARTS AGAIN, and reads what it kept. First, because step 19
   // leaves the agent waiting for a sign-in — a refusal that holds until a
@@ -1509,10 +1487,6 @@ walk("20d", "the choices are kept: a mode and a view picked in a chat hold acros
   // THE WINDOW RELOADS, and what was kept is still what it shows.
   await page.reload({ waitUntil: "domcontentloaded" });
   await holds("a reload");
-  // Left as the walk found it for the steps after, as the person would.
-  await pickView("tools");
-  await until("the look is back on Tool calls", 8000, async () => (await lookView()) === "tools");
-  expect((await call<ChatSettings>("settings.read")).view).toBe("tools");
 });
 
 /* ── 20e · a chat deleted ────────────────────────────────────────────────── */
@@ -1560,40 +1534,96 @@ walk("20e", "a chat deleted from its row's three dots, asked in Biom's own dialo
 
 /* ── 20f · the queue ─────────────────────────────────────────────────────── */
 
-walk("20f", "a message sent while a turn runs waits in the queue under it and goes out when the turn ends; one queued and then Stop is held until Send queued sends it", async () => {
+/** The queued messages the look draws under the running turn, as it words them. */
+const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
+/** The latest turn of a chat is over, and it was this one. */
+const turnEnded = async (id: string, turn: number): Promise<boolean> => {
+  const s = await summaryOf(id);
+  return s?.turn === turn && s.phase === "idle";
+};
+
+/** The chat the queue steps walk, made by 20f. */
+let Q = "";
+
+walk("20f", "a message sent while a turn runs waits in the queue under it and goes out when the turn ends; two queued and then Stop both go out, in order, with nothing held and no Send queued", async () => {
   await page.goto(at("#/agent"), { waitUntil: "domcontentloaded" });
   await until("the agent is Active", 30000, async () => (await agentState())?.state === "active");
   await until("the start screen is ready to send", BOUNDS.draw, async () => page.locator("#agentta").isVisible());
   await send("Queue walk a\n!sleep 3000");
   await until("the message made a chat", 10000, async () => /^#\/agent\/[A-Za-z0-9_-]{8,}$/.test(await hash()));
-  const Q = (await hash()).split("/")[2] as string;
+  Q = (await hash()).split("/")[2] as string;
   await running(Q);
   // B, sent while A runs: Queued, under the running turn.
   await typeAndEnter("Queue walk b\n!sleep 3000");
-  const bubbles = (): Promise<string[]> => inLook(async (f) => f.locator(".queue .qitem").allInnerTexts(), [] as string[]);
   await until("b shows Queued", 8000, async () => { const b = await bubbles(); return b.length === 1 && /Queued/i.test(b[0] ?? "") && (b[0] ?? "").includes("Queue walk b"); });
   expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000"]);
   await shot("chat-20f-queued.png");
   // A ends: B goes out on its own, and its bubble goes with it.
   await until("b went out when a ended", 20000, async () => (await promptsOf(Q)).length === 2 && (await bubbles()).length === 0);
   await running(Q);
-  // C, queued behind B; then Stop, with nothing typed.
+  // C and D, queued behind B; then Stop, with nothing typed.
   await typeAndEnter("Queue walk c");
   await until("c shows Queued", 8000, async () => (await bubbles()).length === 1);
+  await typeAndEnter("Queue walk d");
+  await until("d shows Queued after c", 8000, async () => { const b = await bubbles(); return b.length === 2 && (b[0] ?? "").includes("Queue walk c") && (b[1] ?? "").includes("Queue walk d"); });
   await until("the button is Stop", 5000, async () => (await page.locator(".agentdock .send").getAttribute("aria-label")) === "Stop");
   await page.locator(".agentdock .send").click();
-  await until("b ended cancelled", 15000, async () => (await summaryOf(Q))?.stop === "cancelled");
-  // C is held, and says so; Send queued shows under the input.
-  await until("c is held", 8000, async () => (await summaryOf(Q))?.queueHeld === true && /held/i.test((await bubbles())[0] ?? ""));
-  await Bun.sleep(500);
-  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000", "Queue walk b\n!sleep 3000"]);
-  await until("Send queued shows", 5000, async () => page.locator(".agentdock .sendqueued").isVisible());
-  await shot("chat-20f-held.png");
-  await page.locator(".agentdock .sendqueued").click();
-  await until("c went out", 15000, async () => (await promptsOf(Q)).at(-1) === "Queue walk c" && (await bubbles()).length === 0);
-  await idle(Q);
-  expect((await summaryOf(Q))?.queued).toBe(0);
+  // STOP ENDS THE TURN AND NOT THE QUEUE: B ends cancelled, and C then D go
+  // out, one a turn, in the order they were queued — nothing held, no Send
+  // queued at any point.
+  const heldEver: boolean[] = [];
+  await until("c and d went out after b, and d's turn ended", 30000, async () => {
+    const s = await summaryOf(Q);
+    heldEver.push(s?.queueHeld === true || (await page.locator(".agentdock .sendqueued").isVisible()));
+    return turnEnded(Q, 4);
+  });
+  expect(heldEver.every((h) => !h)).toBe(true);
+  expect(await promptsOf(Q)).toEqual(["Queue walk a\n!sleep 3000", "Queue walk b\n!sleep 3000", "Queue walk c", "Queue walk d"]);
+  const ends = (await readChat(Q)).updates.filter((u) => u.kind === "turn" && (u as { phase: string }).phase === "idle").map((u) => (u as { stop: string }).stop);
+  expect(ends).toEqual(["end_turn", "cancelled", "end_turn", "end_turn"]);
+  expect([(await summaryOf(Q))?.queued, (await summaryOf(Q))?.queueHeld]).toEqual([0, false]);
+  await until("no bubble is left", 5000, async () => (await bubbles()).length === 0);
   expect(await page.locator(".agentdock .sendqueued").isVisible()).toBe(false);
+  await shot("chat-20f-stopped.png");
+});
+
+walk("20g", "Send now on the second of two queued messages stops the turn, sends that one first and then the other, with nothing held", async () => {
+  expect(Q).not.toBe("");
+  if ((await hash()) !== `#/agent/${Q}`) {
+    await page.goto(at(`#/agent/${Q}`), { waitUntil: "domcontentloaded" });
+    await until("the queue walk's chat drew", BOUNDS.draw, () => lookSays("Queue walk d"));
+  }
+  await send("Queue walk e\n!sleep 4000");
+  await running(Q);
+  await typeAndEnter("Queue walk f");
+  await until("f shows Queued", 8000, async () => (await bubbles()).length === 1);
+  await typeAndEnter("Queue walk g");
+  await until("g shows Queued after f", 8000, async () => { const b = await bubbles(); return b.length === 2 && (b[0] ?? "").includes("Queue walk f") && (b[1] ?? "").includes("Queue walk g"); });
+  // Each bubble carries its own Send now, a button beside its ×.
+  const f = await lookFrame();
+  const second = f.locator(".queue .qitem").nth(1);
+  expect(await second.locator("button.qnow").getAttribute("aria-label")).toBe("Send now");
+  expect(((await second.locator("button.qnow").textContent()) ?? "").trim()).toBe("Send now");
+  expect(await f.locator(".queue button.qnow").count()).toBe(2);
+  await shot("chat-20g-send-now.png");
+  // SEND NOW ON THE SECOND: the turn stops as Stop stops it, g goes out the
+  // moment it has ended, and f after it — nothing held on the way.
+  await second.locator("button.qnow").click();
+  const heldEver: boolean[] = [];
+  await until("g then f went out, and f's turn ended", 30000, async () => {
+    const s = await summaryOf(Q);
+    heldEver.push(s?.queueHeld === true || (await page.locator(".agentdock .sendqueued").isVisible()));
+    return turnEnded(Q, 7);
+  });
+  expect(heldEver.every((h) => !h)).toBe(true);
+  expect((await promptsOf(Q)).slice(4)).toEqual(["Queue walk e\n!sleep 4000", "Queue walk g", "Queue walk f"]);
+  const ends = (await readChat(Q)).updates.filter((u) => u.kind === "turn" && (u as { phase: string }).phase === "idle").map((u) => (u as { stop: string }).stop);
+  expect(ends.slice(4)).toEqual(["cancelled", "end_turn", "end_turn"]);
+  // Each went out once, g first.
+  const out = (await readChat(Q)).updates.filter((u) => u.kind === "unqueued").map((u) => (u as { sent: boolean }).sent);
+  expect(out.slice(-2)).toEqual([true, true]);
+  await until("no bubble is left", 5000, async () => (await bubbles()).length === 0);
+  await shot("chat-20g-sent.png");
 });
 
 walk("21", "nothing threw on stderr, nothing was written outside the sandbox, and no agent process is left once the server stops", async () => {

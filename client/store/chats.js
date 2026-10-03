@@ -21,10 +21,16 @@
 // one before it, because only the last of each is ever read. Only the open
 // chat's stream is held at all — a chat in the background is its summary.
 //
+// A MESSAGE GOES IN LINE WITH THIS WINDOW'S REPORTS (`inLine`, the history
+// store's): the server adds the page on screen to it from what this window
+// last reported, so it leaves only once every report made before it has
+// landed, and none made after it overtakes it.
+//
 // WHEN THIS WINDOW SENT is the switcher's `lastSent`, and a message that
 // waits in the chat's queue is not sent yet: it is sent when it goes out,
 // which the stream says with an `unqueued` update for its id. So a queued
-// message never hands the screen over early, and one going out does.
+// message never hands the screen over early, and one going out does — one
+// this window sent with Send now as much as one it queued.
 //
 // A CHAT DELETED — here, or in another window, which the stream says with a
 // push saying `deleted`, or while this window's stream was shut, which the
@@ -33,18 +39,17 @@
 //
 // THE CHAT'S KEPT CHOICES are the workspace's (`settings.read`), read on
 // every open of the stream as the rest is, and again after this window makes
-// a chat, sets a picker or switches agent — each of which the server keeps.
-// The view is the one choice kept from here (`settings.set`), drawn at once
-// and put back if the server refuses it.
+// a chat, sets a picker or switches agent — each of which the server keeps,
+// so none is set from here.
 //
 // IT DOES NO OTHER I/O. Which chat a window has open is the ui store's
 // (`UiState.chat`); the composition root remembers it for the session.
 
-/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSent, ChatSettings, ChatSummary, ChatUpdate, ChatView, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, PickerCategory, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
+/** @import { AgentInfo, AgentKey, AgentReason, ApiRequest, ChatId, ChatPush, ChatRead, ChatSent, ChatSettings, ChatSummary, ChatUpdate, ConfigChoice, ConfigOption, ConfigValue, Page, PageId, PickerCategory, RegistryAgent, SignIn, SlashCommand, Transport, UiState } from "../../contracts/types.ts" */
 /** @import { Ui } from "./ui.js" */
 
 import { emitter } from "../../contracts/emitter.js";
-import { isChatView, isOpaqueId } from "../../contracts/guards.js";
+import { isOpaqueId } from "../../contracts/guards.js";
 import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
 
 /**
@@ -64,8 +69,8 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  *   moves every time the stream is read from the start, so a reader that was
  *   handed the stream whole knows when it must be handed it whole again.
  * @property {ChatSettings | null} settings The workspace's kept choices — the
- *   view, the agent last picked, each agent's last pickers — as last read, or
- *   null before they have been.
+ *   agent last picked, each agent's last pickers — as last read, or null
+ *   before they have been.
  */
 
 /**
@@ -89,6 +94,9 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {(chat: ChatId) => Promise<ChatSummary>} sendQueued Send a held queue.
  * @property {(chat: ChatId, queued: string) => Promise<ChatSummary>} unqueue Take
  *   one message out of the queue.
+ * @property {(chat: ChatId, queued: string) => Promise<ChatSummary>} sendNow
+ *   Send one queued message now: the turn running stopped, and that message
+ *   out the moment it has ended. This window's once it goes out.
  * @property {(chat: ChatId) => Promise<ChatSummary>} cancel
  * @property {(chat: ChatId, option: string, value: ConfigValue) => Promise<ChatSummary>} config
  * @property {(chat: ChatId, agent: AgentKey) => Promise<ChatSummary>} switchAgent
@@ -104,8 +112,6 @@ import { AGENT_PAGE, PROTOCOL, nextId } from "../../contracts/wire.js";
  * @property {() => Promise<RegistryAgent[]>} registry
  * @property {() => Promise<ChatSettings | null>} readSettings Read the kept
  *   choices again; null where the server would not say.
- * @property {(view: ChatView) => Promise<void>} setView Keep the view: drawn at
- *   once, and put back if the server refuses it.
  * @property {() => Promise<Page>} lookPage The Agent screen's own document:
  *   `@agent`, read as the bare plugin page the server answers it with — read
  *   here rather than through the workspace store, whose `page` is the page on
@@ -213,12 +219,16 @@ const isSummary = (s) => isObj(s) && typeof s.id === "string" && s.id !== "" && 
 const isAgent = (a) => isObj(a) && typeof a.key === "string" && a.key !== "" && typeof a.name === "string";
 
 /**
- * @param {{ transport: Transport, now?: () => number }} deps
+ * @param {{ transport: Transport, now?: () => number, inLine?: <T>(call: () => Promise<T>) => Promise<T> }} deps
+ *   `inLine` is where a message waits its turn among this window's reports —
+ *   the history store's — so the server reads the page it was sent from. Absent,
+ *   a message goes at once: a window that reports nothing.
  * @returns {ChatStore}
  */
 export function makeChatStore(deps) {
   const { transport } = deps;
   const now = deps.now ?? Date.now;
+  const inLine = deps.inLine ?? ((call) => call());
   const changed = emitter();
   /** @type {{ on: (fn: (v: { chat: ChatId, updates: ChatUpdate[] }) => void) => () => void, emit: (v: { chat: ChatId, updates: ChatUpdate[] }) => void }} */
   const grew = /** @type {any} */ (emitter());
@@ -248,8 +258,9 @@ export function makeChatStore(deps) {
   let gen = 0;
   /** @type {Map<ChatId, number>} */
   const sent = new Map();
-  /** The queued messages this window sent, by id, to the chat each waits in:
-   *  sent, for `lastSent`, when the stream says it went out.
+  /** The queued messages this window sent, by id, to the chat each waits in —
+   *  queued here, or sent now from here — sent, for `lastSent`, when the
+   *  stream says it went out.
    *  @type {Map<string, ChatId>} */
   const mine = new Map();
 
@@ -270,9 +281,6 @@ export function makeChatStore(deps) {
    *  from an answer or a push that was on its way when it went.
    *  @type {Set<ChatId>} */
   const deleted = new Set();
-  /** Bumped by every view picked here, so a read that lands after a pick
-   *  never puts the old view back. */
-  let viewGen = 0;
 
   /** @type {ChatState} */
   let state = snapshot();
@@ -458,10 +466,8 @@ export function makeChatStore(deps) {
     emit();
   }
 
-  /** THE KEPT CHOICES, read. A view picked here while the read was out wins
-   *  over the view it brings. @returns {Promise<ChatSettings | null>} */
+  /** THE KEPT CHOICES, read. @returns {Promise<ChatSettings | null>} */
   async function readSettings() {
-    const my = viewGen;
     /** @type {unknown} */
     let got;
     try {
@@ -471,7 +477,7 @@ export function makeChatStore(deps) {
       return settings;
     }
     if (!isSettings(got)) return settings;
-    settings = my === viewGen || settings === null ? got : { ...got, view: settings.view };
+    settings = got;
     emit();
     return settings;
   }
@@ -551,8 +557,9 @@ export function makeChatStore(deps) {
       if (typeof init.page === "string" && init.page !== "") body.page = init.page;
       if (init.config && Object.keys(init.config).length) body.config = init.config;
       const at = now();
+      // A first message goes with the page on screen: in line with the reports.
       /** @type {ChatSummary} */
-      const s = await ask(body);
+      const s = await (body.text === undefined ? ask(body) : inLine(() => ask(body)));
       if (body.text !== undefined && isSummary(s)) sent.set(s.id, at);
       rekept();
       return summarised(s);
@@ -567,7 +574,7 @@ export function makeChatStore(deps) {
       const at = now();
       if (!busy) sent.set(chat, at);
       /** @type {ChatSent} */
-      const r = await ask({ kind: "chat.send", chat, text });
+      const r = await inLine(() => ask({ kind: "chat.send", chat, text }));
       const queued = isObj(r) && isObj(r.queued) && typeof r.queued.id === "string" ? r.queued : null;
       if (queued !== null) {
         // It waits: it is sent when the stream says it went out.
@@ -584,6 +591,19 @@ export function makeChatStore(deps) {
 
     async unqueue(chat, queued) {
       return summarised(await ask({ kind: "chat.unqueue", chat, queued }));
+    },
+
+    async sendNow(chat, queued) {
+      // SENT WHEN IT GOES OUT, as any queued message is, and by this window
+      // whichever window queued it: Send now pressed here is a send from here.
+      const had = mine.get(queued);
+      mine.set(queued, chat);
+      try {
+        return summarised(await ask({ kind: "chat.sendNow", chat, queued }));
+      } catch (e) {
+        if (had === undefined) mine.delete(queued);
+        throw e;
+      }
     },
 
     async cancel(chat) {
@@ -653,23 +673,6 @@ export function makeChatStore(deps) {
 
     readSettings,
 
-    async setView(view) {
-      const was = settings;
-      const gen = ++viewGen;
-      settings = { ...(settings ?? { agent: null, agents: {} }), view };
-      emit();
-      /** @type {unknown} */
-      let got;
-      try {
-        got = await ask({ kind: "settings.set", view });
-      } catch (e) {
-        // Put back only if nothing was picked since.
-        if (gen === viewGen) { settings = was; emit(); }
-        throw e;
-      }
-      if (gen === viewGen && isSettings(got)) { settings = got; emit(); }
-    },
-
     async lookPage() {
       return ask({ kind: "page.read", page: AGENT_PAGE });
     },
@@ -678,7 +681,7 @@ export function makeChatStore(deps) {
 
 /** @param {unknown} v @returns {v is ChatSettings} */
 function isSettings(v) {
-  return isObj(v) && isChatView(v.view) && (v.agent === null || typeof v.agent === "string") && isObj(v.agents);
+  return isObj(v) && (v.agent === null || typeof v.agent === "string") && isObj(v.agents);
 }
 
 /* ── pure, and therefore testable ──────────────────────────────────────── */

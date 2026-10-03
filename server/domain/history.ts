@@ -154,6 +154,12 @@ export interface History {
   /** Every window with a stream open that has said what it has open, the most
    *  recently heard first. */
   windows(): WindowContext[];
+  /** WHAT ONE WINDOW LAST SAID IT HAS OPEN, kept the moment its report
+   *  arrived — before the report's lookups land — and whether or not a
+   *  stream of its is open, because the one asking is that window, plainly
+   *  there: the page a message it sent goes with. Null for a window never
+   *  heard from, or forgotten. */
+  contextOf(window: WindowId): WindowContext | null;
   /** Hear every batch appended — each entry exactly once, in `seq` order.
    *  Answers the unsubscribe. */
   on(fn: (entries: HistoryEntry[]) => void): () => void;
@@ -423,6 +429,10 @@ export function makeHistory(deps: HistoryDeps): History {
 
     windows() {
       return [...contexts.values()].filter((c) => attached.has(c.window)).sort((a, b) => b.at - a.at);
+    },
+
+    contextOf(window) {
+      return contexts.get(window) ?? null;
     },
 
     on(fn) {

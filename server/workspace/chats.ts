@@ -29,14 +29,19 @@
 // queue, so it is Biom's: `send` while a turn is held, starting or running
 // puts the message in the chat's queue — said as a `queued` update, and kept
 // in the chat's log so it survives a reload and a restart — and answers its
-// place. When a turn ends `end_turn`, the next queued message goes out by
-// itself, one a turn, said as `unqueued` and then the next turn's `prompt`.
-// After Stop, a red end, or a restart, the queue is HELD: nothing goes out
-// until the person asks (`sendQueued`), and a message sent to an idle chat
-// meanwhile goes out on its own and leaves the queue held. One queued message
-// is taken out by its id (`unqueue`). Stop is `session/cancel`, and an agent
-// that has not answered it within a grace is ended, because the next message
-// cannot wait on it. The stop reason turns the light: amber while working, green for ten
+// place. When a turn ends `end_turn` — or is stopped, `cancelled` — the next
+// queued message goes out by itself, one a turn, said as `unqueued` and then
+// the next turn's `prompt`: Stop ends the turn and not the queue. After a red
+// end, a closed agent or a restart, the queue is HELD: nothing goes out until
+// the person asks (`sendQueued`), and a message sent to an idle chat meanwhile
+// goes out on its own and leaves the queue held. One queued message is taken
+// out by its id (`unqueue`), and one is sent NOW by its id (`sendNow`): the
+// turn running is stopped as Stop stops it, and that message goes out the
+// moment the turn has ended, ahead of the rest, which go on after it one a
+// turn — held or not. Stop is `session/cancel`, and an agent that has not
+// answered it within a grace is ended, because the next message cannot wait
+// on it — so what is queued goes to a fresh process, as any message after an
+// agent has gone does. The stop reason turns the light: amber while working, green for ten
 // minutes after `end_turn`, none after `cancelled`, red for `refusal`,
 // `max_tokens`, `max_turn_requests` and a crash — and red STAYS until the
 // next turn starts, as the Chat spec's mockup has it. The light is computed
@@ -44,6 +49,21 @@
 // green lapses.
 //
 // PERMISSION IS ANSWERED, NEVER SHOWN: `allow_always`, else `allow_once`.
+//
+// THE PAGE ON SCREEN GOES WITH A MESSAGE, AND THE PERSON NEVER SEES IT (*Chat*,
+// `acp`). A message is handed the page that was on screen in the window that
+// sent it — resolved by the composition root, and kept with the message
+// while it is held or queued, so it is the page the person was looking at
+// when they wrote it — and `session/prompt` carries it after their words as a
+// block of its own, the note `pagenote.ts` writes. It goes when the page is
+// not the one the chat's SESSION was last told: so with the first such
+// message, again only for another page, and again to a session that never
+// heard it — a new one after a switch, or after a restart on an agent that
+// cannot reopen its own. What was told is kept in the log, so it survives a
+// restart, and is kept only once the agent has answered the turn that
+// carried it. Never on a `/` command, never with no page on screen. The
+// prompt update, the chat's name, Jev's signals and the queue hold the words
+// as typed, so nothing of Biom's own ever holds the note.
 //
 // THE FILES. `fs/read_text_file` and `fs/write_text_file` are confined to the
 // vault — resolved, both spellings of a root reached through a symlink tried —
@@ -160,6 +180,8 @@ import { offeredChoices, offers, pickerCategoryOf } from "../domain/choices.ts";
 import type { Edit, EditEvent, VaultRoots } from "../domain/edits.ts";
 import { TOOL_EDIT_KINDS, editsOf, toolLineOf, toolPaths } from "../domain/edits.ts";
 import type { TurnSignal } from "../domain/jev.ts";
+import type { PageOnScreen } from "../domain/pagenote.ts";
+import { noteFor, readOnScreen, withoutNotes } from "../domain/pagenote.ts";
 
 /** One workspace skill, as `.agents/skills/<name>/SKILL.md`'s frontmatter
  *  says it: the / menu's half that is not the agent's. */
@@ -292,16 +314,28 @@ export interface ChatsDeps {
 }
 
 export interface Chats {
-  create(init: { agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue> }): Promise<ChatSummary>;
+  /** A new chat, and its first message where `text` is given. `onScreen` is
+   *  the page on screen in the window that sent it, told to the agent with
+   *  it. */
+  create(init: { agent?: AgentKey; text?: string; page?: PageId; config?: Record<string, ConfigValue>; onScreen?: PageOnScreen | null }): Promise<ChatSummary>;
   /** Every chat, the most recently changed first. */
   list(): ChatSummary[];
   read(chat: ChatId, since?: number): Promise<ChatRead>;
-  /** The person's message: out now to an idle chat, else into its queue. */
-  send(chat: ChatId, text: string): Promise<ChatSent>;
+  /** The person's message: out now to an idle chat, else into its queue —
+   *  with the page on screen in the window that sent it, which goes with it
+   *  whenever it goes out. */
+  send(chat: ChatId, text: string, onScreen?: PageOnScreen | null): Promise<ChatSent>;
   /** Send a held queue: its next message now if no turn runs, one a turn after. */
   sendQueued(chat: ChatId): Promise<ChatSummary>;
   /** Take one message out of the queue, by its id. */
   unqueue(chat: ChatId, id: string): Promise<ChatSummary>;
+  /** SEND ONE QUEUED MESSAGE NOW, by its id: the turn running stopped as
+   *  `cancel` stops it, and this message out the moment it has ended, ahead
+   *  of the rest; with no turn running, out at once. The rest go on after it.
+   *  A message no longer waiting is `not_found`, and stops nothing. */
+  sendNow(chat: ChatId, id: string): Promise<ChatSummary>;
+  /** STOP: `session/cancel`, and the turn ends `cancelled`. What waits goes
+   *  on as it does after `end_turn`. */
   cancel(chat: ChatId): Promise<ChatSummary>;
   config(chat: ChatId, option: string, value: ConfigValue): Promise<ChatSummary>;
   switchAgent(chat: ChatId, agent: AgentKey): Promise<ChatSummary>;
@@ -470,11 +504,15 @@ interface Chat {
   session: { agent: AgentKey; id: string } | null;
   /** The session now open is new and knows nothing of the chat so far. */
   handoff: boolean;
-  /** The message waiting to go out, from `send` until `session/prompt`.
+  /** The message waiting to go out, from `send` until `session/prompt`, with
+   *  the page that was on screen when it was sent.
    *  `signin`: its agent refused for want of a sign-in, and it goes out only
    *  once that agent has been seen Inactive (`off`) and then Active again —
    *  never on the list it was refused against. */
-  held: { text: string; tries: number; signin: boolean; off: boolean } | null;
+  held: { text: string; onScreen: PageOnScreen | null; tries: number; signin: boolean; off: boolean } | null;
+  /** THE PAGE THE CHAT'S SESSION WAS LAST TOLD, and which session that was:
+   *  a message on this page to this session carries no note. */
+  told: { onScreen: PageOnScreen; session: string } | null;
   /** Bumped by Stop, a switch and close, so a start in flight can tell it was
    *  overtaken. */
   gen: number;
@@ -514,12 +552,24 @@ interface Chat {
   ending: Promise<unknown> | null;
   /** Deleted: nothing of it is published or written again. */
   removed: boolean;
-  /** THE QUEUE: the person's messages sent while a turn ran, in order. */
-  waiting: { id: string; text: string }[];
-  /** The queue waits for the person — after Stop, a red end or a restart —
-   *  rather than for the turn. */
+  /** THE QUEUE: the person's messages sent while a turn ran, in order, each
+   *  with the page that was on screen when it was sent. */
+  waiting: Waiting[];
+  /** The queue waits for the person — after a red end, a closed agent or a
+   *  restart — rather than for the turn. */
   waitingHeld: boolean;
+  /** THE QUEUED MESSAGE SEND NOW PICKED, by its id: the next to go out,
+   *  wherever it waits. In memory only, so a restart forgets it and the
+   *  queue is held as it was queued — the order every window draws it in. */
+  next: string | null;
   log: LogWriter;
+}
+
+/** One message in a chat's queue. */
+interface Waiting {
+  id: string;
+  text: string;
+  onScreen: PageOnScreen | null;
 }
 
 /* ── the kept log ─────────────────────────────────────────────────────── */
@@ -531,7 +581,8 @@ type LogRecord =
   | { t: "session"; agent: AgentKey; id: string }
   | { t: "config"; values: Record<string, ConfigValue> }
   | { t: "choices"; values: Record<string, ConfigValue> }
-  | { t: "queue"; items: { id: string; text: string }[]; held: boolean }
+  | { t: "queue"; items: Waiting[]; held: boolean }
+  | { t: "told"; onScreen: PageOnScreen; session: string }
   | { t: "u"; u: ChatUpdate };
 
 interface LogWriter {
@@ -679,11 +730,11 @@ export function makeChats(deps: ChatsDeps): Chats {
   const fresh = (id: ChatId, created: number, page: Place | null, torn: boolean): Chat => ({
     id, name: "", face: null, agent: null, harness: null, page, created, updated: created,
     phase: "idle", turn: 0, stop: null, reason: null, endedAt: null,
-    live: null, session: null, handoff: false, held: null, gen: 0, cancelling: false,
+    live: null, session: null, handoff: false, held: null, told: null, gen: 0, cancelling: false,
     pendingConfig: new Map(), choices: new Map(), options: null, agentCommands: null, sentConfig: null, sentCommands: null,
     updates: null, loading: null, unloaded: [], seq: 0, toolIndex: new Map(), superseded: 0,
     batch: [], open: null, dirty: false, flushTimer: null, greenTimer: null,
-    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false,
+    tools: new Map(), turnState: null, queue: Promise.resolve(), configQueue: Promise.resolve(), ending: null, removed: false, waiting: [], waitingHeld: false, next: null,
     log: makeLog(join(logDir, `${id}.jsonl`), torn, say),
   });
 
@@ -854,8 +905,13 @@ export function makeChats(deps: ChatsDeps): Chats {
         c.choices = new Map(Object.entries(isObj(r.values) ? r.values : {}).filter((e): e is [string, ConfigValue] => typeof e[1] === "string" || typeof e[1] === "boolean"));
       }
       else if (r.t === "queue") {
-        c.waiting = Array.isArray(r.items) ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text })) : [];
+        c.waiting = Array.isArray(r.items)
+          ? r.items.filter((q) => isObj(q) && typeof q.id === "string" && typeof q.text === "string").map((q) => ({ id: q.id, text: q.text, onScreen: readOnScreen(q.onScreen) }))
+          : [];
         c.waitingHeld = r.held === true;
+      } else if (r.t === "told") {
+        const onScreen = readOnScreen(r.onScreen);
+        c.told = onScreen !== null && typeof r.session === "string" ? { onScreen, session: r.session } : null;
       }
       else if (r.t === "u" && isObj(r.u)) {
         const u = r.u;
@@ -970,6 +1026,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.pendingConfig.size > 0) out.push({ t: "config", values: Object.fromEntries(c.pendingConfig) });
     if (c.choices.size > 0) out.push({ t: "choices", values: Object.fromEntries(c.choices) });
     if (c.waiting.length > 0) out.push({ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld });
+    if (c.told !== null) out.push({ t: "told", onScreen: c.told.onScreen, session: c.told.session });
     for (const u of c.updates ?? []) out.push({ t: "u", u });
     return out;
   };
@@ -1301,32 +1358,76 @@ export function makeChats(deps: ChatsDeps): Chats {
       touch(c);
       signal({ kind: "end", chat: c.id, turn });
       maybeCompact(c);
-      // THE QUEUE: after a finished turn its next message goes out by
-      // itself; after Stop, a red end or a crash it waits for the person.
+      // THE QUEUE: after a finished turn, or one stopped, its next message
+      // goes out by itself; after a red end or a crash it waits for the
+      // person, who should see what went wrong before anything else goes.
       if (c.waiting.length > 0) {
-        if (stop === "end_turn" && !c.waitingHeld && !stopping) sendNext(c);
-        else if (!c.waitingHeld) {
-          c.waitingHeld = true;
-          keepQueue(c);
-          touch(c, false);
-        }
+        if (!RED.has(stop) && !c.waitingHeld && !stopping) sendNext(c);
+        else holdQueue(c);
       }
     });
+
+  /** The page a session has now been told, kept in the chat's log so a
+   *  restart that reopens that session does not tell it again. */
+  const keepTold = (c: Chat, onScreen: PageOnScreen, session: string): void => {
+    c.told = { onScreen, session };
+    c.log.append([{ t: "told", onScreen, session }]);
+  };
 
   /** The queue as it stands, kept in the chat's log. */
   const keepQueue = (c: Chat): void => {
     c.log.append([{ t: "queue", items: c.waiting.map((q) => ({ ...q })), held: c.waitingHeld }]);
   };
 
+  /** STOP THE TURN — Stop's, and Send now's. A message not yet handed to the
+   *  agent is withdrawn, and a start under way for it ended with it; a turn
+   *  the agent is running is sent `session/cancel`, once however often this
+   *  is asked, and an agent that has not answered within the grace is ended,
+   *  because the next message cannot wait on it. */
+  const stopTurn = async (c: Chat): Promise<void> => {
+    const turn = c.turn;
+    if (c.phase !== "idle" && c.held) {
+      const live = c.live;
+      c.held = null;
+      c.gen++;
+      if (c.phase === "starting" && live) void endLive(c, live);
+      await finishTurn(c, turn, "cancelled", null);
+    } else if (c.phase === "running" && !c.cancelling) {
+      c.cancelling = true;
+      const live = c.live;
+      if (!live || live.gone || !live.conn || live.sessionId === null) await finishTurn(c, turn, "cancelled", null);
+      else {
+        live.conn.notify("session/cancel", { sessionId: live.sessionId });
+        live.cancelTimer = setTimeout(() => {
+          live.cancelTimer = null;
+          if (c.turn !== turn || c.phase !== "running") return;
+          void endLive(c, live);
+          void finishTurn(c, turn, "cancelled", null);
+        }, cancelGrace);
+      }
+    }
+  };
+
+  /** What waits, held for the person rather than for the turn. */
+  const holdQueue = (c: Chat): void => {
+    if (c.waiting.length === 0 || c.waitingHeld) return;
+    c.waitingHeld = true;
+    keepQueue(c);
+    touch(c, false);
+  };
+
   /** THE NEXT QUEUED MESSAGE GOES OUT: out of the queue, said, and sent as
-   *  the next turn's prompt, exactly as if the person had sent it now. */
+   *  the next turn's prompt, exactly as if the person had sent it now — the
+   *  one Send now picked where it still waits, else the oldest. */
   const sendNext = (c: Chat): void => {
-    const next = c.waiting.shift();
+    const picked = c.next === null ? -1 : c.waiting.findIndex((q) => q.id === c.next);
+    c.next = null;
+    const [next] = c.waiting.splice(Math.max(0, picked), 1);
     if (!next) return;
     if (c.waiting.length === 0) c.waitingHeld = false;
     keepQueue(c);
     emit(c, { kind: "unqueued", id: next.id, sent: true });
-    beginTurn(c, next.text);
+    beginTurn(c, next.text, next.onScreen);
   };
 
   const reasonOf = (stop: TurnEnd, harness: string): string | null => {
@@ -1342,7 +1443,9 @@ export function makeChats(deps: ChatsDeps): Chats {
     }
   };
 
-  const beginTurn = (c: Chat, text: string): void => {
+  /** A TURN BEGINS for the person's words, and the page on screen when they
+   *  sent them, which is held with them until they go out. */
+  const beginTurn = (c: Chat, text: string, onScreen: PageOnScreen | null): void => {
     c.turn += 1;
     c.stop = null;
     c.reason = null;
@@ -1354,7 +1457,7 @@ export function makeChats(deps: ChatsDeps): Chats {
     emit(c, { kind: "prompt", text });
     if (c.name === "") rename(c, nameFrom(text, NAME_MAX));
     signal({ kind: "start", chat: c.id, turn: c.turn, text });
-    c.held = { text, tries: 0, signin: false, off: false };
+    c.held = { text, onScreen, tries: 0, signin: false, off: false };
     if (c.agent === null && adoptIfAny(c)) {
       emitConfig(c);
       void emitCommands(c);
@@ -1395,7 +1498,11 @@ export function makeChats(deps: ChatsDeps): Chats {
   };
 
   /** Everything the chat said before this turn, for a session that did not
-   *  hear it. */
+   *  hear it: the person's words as they typed them — which never held a
+   *  note — and each reply WITHOUT ONE, because a reply that quoted the page
+   *  an earlier session was told would hand the new one a stale page, in a
+   *  tag only Biom may write. What is on screen now goes after the message,
+   *  as this turn's note. */
   const handoffText = (c: Chat): string => {
     const turns: string[] = [];
     let current = -1;
@@ -1403,7 +1510,8 @@ export function makeChats(deps: ChatsDeps): Chats {
     let who = c.harness ?? "the agent";
     let reply = "";
     const endReply = () => {
-      if (reply.trim() !== "") block.push(`${who}: ${reply.trim()}`);
+      const said = withoutNotes(reply).trim();
+      if (said !== "") block.push(`${who}: ${said}`);
       reply = "";
     };
     const endTurn = () => {
@@ -1462,6 +1570,10 @@ export function makeChats(deps: ChatsDeps): Chats {
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
     const text = await outgoing(c, held.text);
     if (c.held !== held || c.gen !== gen || live.gone || !live.conn || live.sessionId === null) return;
+    const session = live.sessionId;
+    // THE PAGE ON SCREEN WHEN IT WAS SENT, after the words, unless this
+    // session was told that very page already.
+    const note = noteFor(held.text, held.onScreen, c.told !== null && c.told.session === session ? c.told.onScreen : null);
     const handoff = c.handoff;
     c.held = null;
     c.handoff = false;
@@ -1469,7 +1581,11 @@ export function makeChats(deps: ChatsDeps): Chats {
     const turn = c.turn;
     let result: unknown;
     try {
-      result = await live.conn.request("session/prompt", promptParams(live.sessionId, text));
+      result = await live.conn.request("session/prompt", promptParams(session, text, note === null ? [] : [note]));
+      // ANSWERED, so the session heard the note: kept, and not said again to
+      // it for that page. A prompt refused, failed or cut off by the agent
+      // going is not known to have been heard, and the next message says it.
+      if (note !== null && held.onScreen !== null) keepTold(c, held.onScreen, session);
     } catch (e) {
       if (c.turn !== turn || c.phase === "idle") return;
       if (isAuthRequired(e)) {
@@ -1840,8 +1956,15 @@ export function makeChats(deps: ChatsDeps): Chats {
         if (usage) emit(c, { kind: "usage", ...usage });
         return;
       }
+      case "user_message_chunk":
+        // THE PERSON'S OWN WORDS, SAID BACK — by an agent replaying a
+        // session, with whatever note it was handed. Never read: Biom keeps
+        // the words itself, as the turn's `prompt`, from before any note was
+        // added, so the bubble, the name, Jev and the history hold them
+        // alone. Anything that comes to read these must read them through
+        // `withoutNotes`.
+        return;
       default:
-        // `user_message_chunk` is the person's own words back.
         // `session_info_update` is the agent's own title for the session,
         // which does not rename the chat: a chat is named once, from its
         // first message, and its name's face is picked for that name (*Chat*,
@@ -2126,7 +2249,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       owe(c);
       emitConfig(c);
       await emitCommands(c);
-      if (typeof init.text === "string" && init.text.trim() !== "") beginTurn(c, init.text);
+      if (typeof init.text === "string" && init.text.trim() !== "") beginTurn(c, init.text, init.onScreen ?? null);
       touch(c);
       return summary(c);
     },
@@ -2143,7 +2266,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       return { chat: summary(c), updates };
     },
 
-    async send(id, text) {
+    async send(id, text, onScreen = null) {
       const c = await must(id);
       if (typeof text !== "string" || text.trim() === "") throw bad("bad_request", "a message has words in it");
       if (stopping) throw bad("unsupported", "Biom is stopping");
@@ -2151,14 +2274,14 @@ export function makeChats(deps: ChatsDeps): Chats {
         // A TURN IS GOING: the message waits in the chat's queue, and the
         // answer says its place.
         if (c.waiting.length >= QUEUE_MAX) throw bad("limit", `${QUEUE_MAX} messages already wait in this chat's queue: send or remove some first`);
-        const q = { id: randomUUID(), text };
+        const q: Waiting = { id: randomUUID(), text, onScreen };
         c.waiting.push(q);
         keepQueue(c);
         emit(c, { kind: "queued", id: q.id, text });
         touch(c);
         return { chat: summary(c), queued: { id: q.id, place: c.waiting.length } };
       }
-      beginTurn(c, text);
+      beginTurn(c, text, onScreen);
       return { chat: summary(c), queued: null };
     },
 
@@ -2169,7 +2292,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       c.waitingHeld = false;
       keepQueue(c);
       touch(c);
-      // No turn going: the next goes now. One going: when it ends `end_turn`.
+      // No turn going: the next goes now. One going: when it ends, unless red.
       if (c.phase === "idle") sendNext(c);
       return summary(c);
     },
@@ -2179,6 +2302,7 @@ export function makeChats(deps: ChatsDeps): Chats {
       const at = c.waiting.findIndex((q) => q.id === qid);
       if (at < 0) throw bad("not_found", "no such message waits in this chat's queue");
       c.waiting.splice(at, 1);
+      if (c.next === qid) c.next = null;
       if (c.waiting.length === 0) c.waitingHeld = false;
       keepQueue(c);
       emit(c, { kind: "unqueued", id: qid, sent: false });
@@ -2186,32 +2310,30 @@ export function makeChats(deps: ChatsDeps): Chats {
       return summary(c);
     },
 
+    async sendNow(id, qid) {
+      const c = await must(id);
+      if (stopping) throw bad("unsupported", "Biom is stopping");
+      // Gone from the queue — sent already, or taken out — it is nobody's to
+      // send, and the turn running now is not the one it was pressed against.
+      if (!c.waiting.some((q) => q.id === qid)) throw bad("not_found", "no such message waits in this chat's queue");
+      // It goes next, and the queue goes on after it, held or not: the person
+      // asked for it by hand.
+      c.next = qid;
+      if (c.waitingHeld) {
+        c.waitingHeld = false;
+        keepQueue(c);
+      }
+      touch(c);
+      // No turn going: it goes now. One going — or ending on its own — it
+      // goes the moment that turn has ended, however it ends but red.
+      if (c.phase === "idle") sendNext(c);
+      else await stopTurn(c);
+      return summary(c);
+    },
+
     async cancel(id) {
       const c = await must(id);
-      const turn = c.turn;
-      if (c.phase !== "idle" && c.held) {
-        // Not yet handed to the agent: withdrawn, and a start under way for it
-        // is ended with it.
-        const live = c.live;
-        c.held = null;
-        c.gen++;
-        if (c.phase === "starting" && live) void endLive(c, live);
-        await finishTurn(c, turn, "cancelled", null);
-      } else if (c.phase === "running" && !c.cancelling) {
-        c.cancelling = true;
-        const live = c.live;
-        if (!live || live.gone || !live.conn || live.sessionId === null) await finishTurn(c, turn, "cancelled", null);
-        else {
-          live.conn.notify("session/cancel", { sessionId: live.sessionId });
-          live.cancelTimer = setTimeout(() => {
-            live.cancelTimer = null;
-            if (c.turn !== turn || c.phase !== "running") return;
-            // It did not answer Stop, and the next message cannot wait on it.
-            void endLive(c, live);
-            void finishTurn(c, turn, "cancelled", null);
-          }, cancelGrace);
-        }
-      }
+      await stopTurn(c);
       return summary(c);
     },
 
@@ -2278,6 +2400,10 @@ export function makeChats(deps: ChatsDeps): Chats {
         if (c.phase === "running" && live?.conn && live.sessionId !== null) live.conn.notify("session/cancel", { sessionId: live.sessionId });
         c.held = null;
         c.gen++;
+        // A turn ended by closing its agent is stopped, and still sends
+        // nothing on: the person closed the agent, so what waits waits for
+        // them.
+        holdQueue(c);
         await finishTurn(c, c.turn, "cancelled", null);
       }
       // The process ends in the background; a new start waits for it.

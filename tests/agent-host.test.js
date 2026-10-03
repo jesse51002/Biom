@@ -23,6 +23,7 @@ import { LOOK_KEY, PATCH_MAX, makeAgentView } from "../client/views/agent.js";
 
 const CHAT = "c1nvented-chat-0001";
 const OTHER = "c1nvented-chat-0002";
+const QUEUED = "q1nvented-queued-0001";
 
 /** @param {Record<string, unknown>} [over] */
 const summary = (over = {}) => ({
@@ -155,6 +156,40 @@ test("a push may carry the summary alone, and an answer older than what the stre
   // The same summary again moves nothing and says nothing.
   store.takeChat({ chat: summary({ updated: 20, phase: "running", light: "working" }), updates: [] });
   expect(heard).toBe(1);
+});
+
+test("A MESSAGE GOES IN LINE WITH THIS WINDOW'S REPORTS: a send and a first message each wait their turn behind them, so the server reads the page they were sent from", async () => {
+  const { transport, calls } = transportOf({
+    "chat.send": () => ({ chat: summary({ updated: 15 }), queued: null }),
+    "chat.new": () => summary({ id: OTHER, updated: 16 }),
+    "settings.read": () => ({ agent: null, agents: {} }),
+  });
+  /** @type {string[]} */
+  const order = [];
+  /** @type {() => void} */
+  let release = () => {};
+  const reported = new Promise((r) => { release = () => r(undefined); });
+  const store = makeChatStore({
+    transport,
+    inLine: async (call) => {
+      order.push("waits");
+      await reported;
+      order.push("goes");
+      return call();
+    },
+  });
+  store.takeChat({ chat: summary(), updates: [] });
+  const messages = () => calls.filter((c) => c.kind === "chat.send" || c.kind === "chat.new").map((c) => c.kind);
+  const sent = store.send(CHAT, "Invented");
+  const made = store.create({ agent: "claude-acp", text: "Invented first message" });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(messages()).toEqual([]);
+  // When THIS window sent is taken as the person sent it, not when it left.
+  expect(store.lastSent(CHAT)).not.toBe(null);
+  release();
+  await Promise.all([sent, made]);
+  expect(messages()).toEqual(["chat.send", "chat.new"]);
+  expect(order).toEqual(["waits", "waits", "goes", "goes"]);
 });
 
 test("the list is newest first, and a chat's updates reach the store only while it is the one open", () => {
@@ -320,6 +355,30 @@ test("a message sent to an idle chat is sent at once, and one queued after all p
   expect(store.lastSent(CHAT)).toBe(100);
 });
 
+test("A MESSAGE SENT NOW IS SENT WHEN IT GOES OUT, and it is this window's send whichever window queued it; a refusal leaves nothing behind", async () => {
+  let t = 100;
+  let refuse = false;
+  const { transport, calls } = transportOf({
+    "chat.sendNow": () => { if (refuse) throw Object.assign(new Error("no such message waits in this chat's queue"), { code: "not_found" }); return summary({ phase: "running", updated: 30 }); },
+  });
+  const store = makeChatStore({ transport, now: () => t });
+  store.takeChat({ chat: summary({ phase: "running", updated: 15, queued: 2 }), updates: [] });
+  // Queued in another window; Send now pressed in this one.
+  await store.sendNow(CHAT, "q1nvented-elsewhere-1");
+  expect(calls.map((c) => [c.kind, c.chat, c.queued])).toEqual([["chat.sendNow", CHAT, "q1nvented-elsewhere-1"]]);
+  // Pressing it sent nothing yet: the turn it stops has not ended.
+  expect(store.lastSent(CHAT)).toBe(null);
+  t = 600;
+  store.takeChat({ chat: summary({ updated: 60, phase: "running" }), updates: [up(9, "unqueued", { id: "q1nvented-elsewhere-1", sent: true }), up(10, "prompt", { text: "sent now" }, 2)] });
+  expect(store.lastSent(CHAT)).toBe(600);
+  // Refused — gone already — it is not this window's to wait for.
+  refuse = true;
+  await expect(store.sendNow(CHAT, "q1nvented-elsewhere-2")).rejects.toMatchObject({ code: "not_found" });
+  t = 900;
+  store.takeChat({ chat: summary({ updated: 90 }), updates: [up(11, "unqueued", { id: "q1nvented-elsewhere-2", sent: true })] });
+  expect(store.lastSent(CHAT)).toBe(600);
+});
+
 test("a chat the server does not have is refused, and the store is left with nothing loading", async () => {
   const { transport } = transportOf({});
   const store = makeChatStore({ transport });
@@ -407,7 +466,7 @@ test("the start screen's pickers show an agent's kept values its list still offe
   expect([...keptValues(/** @type {any} */ (opts), { model: "b", thought_level: true, mode: "code" })]).toEqual([["m", "b"], ["think", true]]);
   expect([...keptValues(/** @type {any} */ (opts), { model: "gone", thought_level: "yes" })]).toEqual([]);
   expect([...keptValues(/** @type {any} */ (opts), undefined)]).toEqual([]);
-  const kept = { view: /** @type {const} */ ("tools"), agent: null, agents: { "claude-acp": { model: "b" } } };
+  const kept = { agent: null, agents: { "claude-acp": { model: "b" } } };
   expect(keptFor(kept, "claude-acp")).toEqual({ model: "b" });
   expect(keptFor(kept, "constructor")).toBeUndefined();
   expect(keptFor(null, "claude-acp")).toBeUndefined();
@@ -453,7 +512,7 @@ test("A CHAT DELETED IS DROPPED AND NEVER TAKEN BACK: by a push saying so, by th
 test("THE KEPT CHOICES ARE READ on every open of the stream, and again after this window makes a chat, sets a picker or switches agent", async () => {
   let reads = 0;
   const { transport } = transportOf({
-    "settings.read": () => { reads++; return { view: "plain", agent: "claude-acp", agents: { "claude-acp": { model: "b" } } }; },
+    "settings.read": () => { reads++; return { agent: "claude-acp", agents: { "claude-acp": { model: "b" } } }; },
     "chat.list": () => [], "agents.list": () => [],
     "chat.new": () => summary(), "chat.config": () => summary(), "chat.switchAgent": () => summary(),
   });
@@ -461,35 +520,12 @@ test("THE KEPT CHOICES ARE READ on every open of the stream, and again after thi
   expect(store.get().settings).toBe(null);
   await store.resync();
   expect(reads).toBe(1);
-  expect(store.get().settings).toEqual({ view: "plain", agent: "claude-acp", agents: { "claude-acp": { model: "b" } } });
+  expect(store.get().settings).toEqual({ agent: "claude-acp", agents: { "claude-acp": { model: "b" } } });
   await store.create({ agent: "claude-acp", text: "x" });
   await store.config(CHAT, "model", "b");
   await store.switchAgent(CHAT, "codex-acp");
   await new Promise((r) => setTimeout(r, 0));
   expect(reads).toBe(4);
-});
-
-test("a view picked is drawn at once, kept by the server, and put back if the server refuses it; a read landing after the pick never undoes it", async () => {
-  let refuse = false;
-  /** @type {(v: any) => void} */
-  let release = () => {};
-  const { transport, calls } = transportOf({
-    "settings.read": () => new Promise((r) => { release = r; }),
-    "settings.set": (req) => { if (refuse) throw Object.assign(new Error("not kept"), { code: "internal" }); return { view: req.view, agent: null, agents: {} }; },
-  });
-  const store = makeChatStore({ transport });
-  const reading = store.readSettings();
-  const setting = store.setView("thinking");
-  expect(store.get().settings?.view).toBe("thinking");
-  await setting;
-  // The read was asked before the pick and answers after it: the pick stands.
-  release({ view: "plain", agent: "gemini", agents: {} });
-  await reading;
-  expect(store.get().settings).toEqual({ view: "thinking", agent: "gemini", agents: {} });
-  expect(calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
-  refuse = true;
-  await expect(store.setView("plain")).rejects.toThrow("not kept");
-  expect(store.get().settings?.view).toBe("thinking");
 });
 
 test("an agent is Active or Inactive and nothing else, and only a sign-in or a Gateway gives it a button", () => {
@@ -562,7 +598,7 @@ test("THE LOOK'S KINDS ARE ANSWERED FOR THE @agent BOX ALONE: another page's box
   /** @type {any[]} */
   const asked = [];
   bridge.answerLook((req, ctx) => { asked.push([req.kind, ctx]); return null; });
-  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }], ["look.delete", { chat: CHAT }], ["look.view", { view: "thinking" }]])) {
+  for (const [kind, body] of /** @type {[string, any][]} */ ([["look.open", { chat: CHAT }], ["look.new", {}], ["look.list", { open: true }], ["look.panel", { to: "screen" }], ["look.delete", { chat: CHAT }], ["look.unqueue", { chat: CHAT, queued: QUEUED }], ["look.sendNow", { chat: CHAT, queued: QUEUED }]])) {
     expect(await bridge.resolve(look(kind, body), pageCtx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   }
   expect(asked).toEqual([]);
@@ -591,15 +627,18 @@ test("the look is answered only just after a touch from its box, the list includ
   expect(await bridge.resolve(look("look.panel", { to: "beside" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   expect(asked).toEqual(["look.list", "look.new", "look.open"]);
   // Asking for a chat to be deleted is gated the same way: with no touch
-  // from the box, the host is not even asked to put the question. So is a
-  // view picked, which a look on a loop could otherwise flip for good.
+  // from the box, the host is not even asked to put the question. So is Send
+  // now, which stops the running turn: a look on a loop could otherwise stop
+  // every turn the person starts while anything waits in the queue.
   expect(await bridge.resolve(look("look.delete", { chat: CHAT }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
-  expect(await bridge.resolve(look("look.view", { view: "tools" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
+  expect(await bridge.resolve(look("look.sendNow", { chat: CHAT, queued: QUEUED }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.IDENTITY } });
   expect(asked).toEqual(["look.list", "look.new", "look.open"]);
   t = 5100;
   bridge.touched?.(ctx);
-  expect(await bridge.resolve(look("look.view", { view: "tools" }), ctx)).toMatchObject({ ok: true, value: null });
-  expect(asked).toEqual(["look.list", "look.new", "look.open", "look.view"]);
+  expect(await bridge.resolve(look("look.sendNow", { chat: CHAT, queued: QUEUED }), ctx)).toMatchObject({ ok: true, value: null });
+  expect(asked).toEqual(["look.list", "look.new", "look.open", "look.sendNow"]);
+  // And it names the message by ids alone: words riding on it are refused.
+  expect(await bridge.resolve(look("look.sendNow", { chat: CHAT, queued: QUEUED, text: "Invented instruction" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.UNKNOWN_KIND } });
   // A field the guard does not name never gets as far as the answer.
   expect(await bridge.resolve(look("look.new", { text: "Invented instruction" }), ctx)).toMatchObject({ ok: false, error: { code: ERRORS.UNKNOWN_KIND } });
   expect(d.calls).toEqual([]);
@@ -696,7 +735,7 @@ async function stand(/** @type {{ route?: any, panel?: boolean, chat?: string | 
     sync() {},
     measure: () => ({ at: /** @type {const} */ (ui.get().chat === null ? "center" : "bottom"), height: 90 }),
     onMove: () => () => {},
-    prefill: (/** @type {string} */ text, /** @type {any} */ page) => said.push(["prefill", text, page]),
+    forPage: (/** @type {any} */ page) => said.push(["forPage", page]),
     focus: () => said.push(["focus"]),
     fresh: () => said.push(["fresh"]),
     say: (/** @type {string} */ words) => said.push(["say", words]),
@@ -772,6 +811,8 @@ test("hello is answered with the whole state through that box's own post, and no
   expect(st.kind).toBe("look.state");
   expect(st.state).toMatchObject({ mode: "screen", chat: null, list: false, updates: [], input: { at: "center", height: 90 }, beside: { id: "home/Specs", name: "Specs" } });
   expect(st.state.chats.map((/** @type {any} */ c) => c.id)).toEqual([CHAT, OTHER]);
+  // The whole of it: how the chat is drawn is the look's, so no view rides along.
+  expect(Object.keys(st.state).sort()).toEqual(["beside", "chat", "chats", "input", "list", "mode", "names", "updates"]);
 });
 
 test("another chat is handed over whole once its stream is read; the stream after it goes as patches, coalesced to one a frame", async () => {
@@ -799,80 +840,6 @@ test("another chat is handed over whole once its stream is read; the stream afte
   s.tick();
   expect(s.posted[0].updates).toBeUndefined();
   expect(s.posted[0].chats.map((/** @type {any} */ c) => c.id)).toEqual([OTHER, CHAT]);
-});
-
-test("THE LOOK IS TOLD THE VIEW: whole with the state, and as a patch when the person picks another", async () => {
-  const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT });
-  await new Promise((r) => setTimeout(r, 0));
-  s.hello();
-  const state = s.posted.filter((p) => p.kind === "look.state").at(-1);
-  expect(state.state.view).toBe("plain");
-  s.posted.length = 0;
-  void s.chats.setView("thinking").catch(() => {});
-  s.tick();
-  const patch = s.posted.find((p) => p.kind === "look.patch");
-  expect(patch).toMatchObject({ kind: "look.patch", chat: CHAT, view: "thinking" });
-  // Said once: the next patch does not say it again.
-  s.posted.length = 0;
-  s.chats.takeChat({ chat: summary({ updated: 60 }), updates: [up(9, "reply", { text: "more" })] });
-  s.tick();
-  expect(s.posted.every((p) => p.view === undefined)).toBe(true);
-  // A state handed whole again carries the view picked.
-  s.hello();
-  expect(s.posted.filter((p) => p.kind === "look.state").at(-1).state.view).toBe("thinking");
-});
-
-test("THE VIEW PICKED FROM THE LOOK'S ⋯ IS KEPT HERE AND POSTED BACK: the host saves it for the workspace and the look hears it as a patch", async () => {
-  /** @type {any} */
-  let kept = { view: "plain", agent: null, agents: {} };
-  const s = await stand({
-    route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT,
-    answers: {
-      "settings.read": () => kept,
-      "settings.set": (req) => { kept = { ...kept, view: req.view }; return kept; },
-    },
-  });
-  await new Promise((r) => setTimeout(r, 0));
-  s.hello();
-  s.posted.length = 0;
-  const ctx = s.mounts[0].ctx;
-  // Only the box this view mounted may ask.
-  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
-  expect(s.calls.filter((c) => c.kind === "settings.set")).toEqual([]);
-  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), ctx)).toBe(null);
-  expect(s.chats.get().settings?.view).toBe("thinking");
-  s.tick();
-  expect(s.posted.filter((p) => p.kind === "look.patch").map((p) => p.view)).toEqual(["thinking"]);
-  await new Promise((r) => setTimeout(r, 0));
-  expect(s.calls.filter((c) => c.kind === "settings.set").map((c) => c.view)).toEqual(["thinking"]);
-  expect(kept.view).toBe("thinking");
-  // The view already kept, asked for again, saves nothing and says nothing.
-  s.posted.length = 0;
-  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "thinking" })), ctx)).toBe(null);
-  s.tick();
-  await new Promise((r) => setTimeout(r, 0));
-  expect(s.calls.filter((c) => c.kind === "settings.set").length).toBe(1);
-  expect(s.posted.filter((p) => p.view !== undefined)).toEqual([]);
-});
-
-test("a view the server will not keep is put back in the look, and the line under the input says so", async () => {
-  const s = await stand({
-    route: { view: "agent", id: CHAT, screen: "page" }, chat: CHAT,
-    answers: {
-      "settings.read": () => ({ view: "plain", agent: null, agents: {} }),
-      "settings.set": () => { throw Object.assign(new Error("the kept choices could not be written"), { code: "internal" }); },
-    },
-  });
-  await s.chats.readSettings();
-  s.hello();
-  s.posted.length = 0;
-  expect(s.view.answer(/** @type {any} */ (look("look.view", { view: "tools" })), s.mounts[0].ctx)).toBe(null);
-  s.tick();
-  await new Promise((r) => setTimeout(r, 0));
-  s.tick();
-  expect(s.chats.get().settings?.view).toBe("plain");
-  expect(s.posted.filter((p) => p.kind === "look.patch" && p.view !== undefined).map((p) => p.view)).toEqual(["tools", "plain"]);
-  expect(s.said).toContainEqual(["say", "The view did not change: the kept choices could not be written"]);
 });
 
 test("A LOOK ASKING TO DELETE A CHAT GETS BIOM'S OWN QUESTION, and only the person's Delete there deletes it: Cancel, and no answer at all, delete nothing", async () => {
@@ -948,6 +915,23 @@ test("a queued message's × takes it out through the chat store, for the look's 
   expect(s.view.answer(/** @type {any} */ (look("look.unqueue", { chat: "c1nvented-no-such-chat", queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
 });
 
+test("A QUEUED MESSAGE'S SEND NOW goes through the chat store for the look's own box alone; one gone already says nothing, and any other refusal is said under the input", async () => {
+  let refusal = { code: "not_found", message: "no such message waits in this chat's queue" };
+  const s = await stand({ answers: { "chat.sendNow": () => { throw Object.assign(new Error(refusal.message), { code: refusal.code }); } } });
+  const ask = (/** @type {string} */ queued, /** @type {any} */ ctx) => s.view.answer(/** @type {any} */ (look("look.sendNow", { chat: CHAT, queued })), ctx);
+  expect(ask("q1nvented-queued-01", { page: AGENT_PAGE })).toMatchObject({ code: ERRORS.IDENTITY });
+  expect(s.calls.filter((c) => c.kind === "chat.sendNow")).toEqual([]);
+  expect(ask("q1nvented-queued-01", s.mounts[0].ctx)).toBe(null);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.calls.filter((c) => c.kind === "chat.sendNow").map((c) => [c.chat, c.queued])).toEqual([[CHAT, "q1nvented-queued-01"]]);
+  expect(s.said.filter((x) => x[0] === "say")).toEqual([]);
+  refusal = { code: "unsupported", message: "Biom is stopping" };
+  expect(ask("q1nvented-queued-02", s.mounts[0].ctx)).toBe(null);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(s.said.filter((x) => x[0] === "say")).toEqual([["say", "Not sent now: Biom is stopping"]]);
+  expect(s.view.answer(/** @type {any} */ (look("look.sendNow", { chat: "c1nvented-no-such-chat", queued: "q1nvented-queued-01" })), s.mounts[0].ctx)).toMatchObject({ code: ERRORS.NOT_FOUND });
+});
+
 test("a flood too big for a patch is handed over whole instead", async () => {
   const s = await stand({ route: { view: "agent", id: CHAT, screen: "page" } });
   await new Promise((r) => setTimeout(r, 0));
@@ -1018,12 +1002,12 @@ test("a new thread leaves the list as it was; the panel goes to the screen, besi
   expect(s.ui.get().route.id).toBe("home");
 });
 
-test("Edit opens a new chat beside the page with its location typed in; the rail's Agent goes to the full screen with the chat last open", async () => {
+test("Edit opens a new chat beside the page, the input made ready for that page with nothing typed; the rail's Agent goes to the full screen with the chat last open", async () => {
   const s = await stand({ route: { view: "page", id: "home/Specs", screen: "page" }, chat: CHAT });
   s.view.edit("home/Specs");
   expect(s.ui.get()).toMatchObject({ panel: true, chat: null });
   expect(s.ui.get().route.id).toBe("home/Specs");
-  expect(s.said).toContainEqual(["prefill", "Edit home/Specs: ", "home/Specs"]);
+  expect(s.said).toContainEqual(["forPage", "home/Specs"]);
   s.ui.set({ chat: OTHER });
   s.view.open();
   expect(s.ui.get().route).toEqual({ view: "agent", id: OTHER, screen: "page" });
