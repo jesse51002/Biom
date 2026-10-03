@@ -2531,7 +2531,7 @@ test("the built application chooses a folder with the dialog, and draws no serve
   // THE ONE REAL LINE, and the only sentence on the screen. It is the project's
   // own headline, the sentence its site leads with, so the program says what
   // the page it was downloaded from said.
-  expect(flat(find(el, (x) => has(x, "vline")))).toBe("A living workspace for humans and agents");
+  expect(flat(find(el, (x) => has(x, "vline")))).toBe("Agentic automations where your team works");
   expect(find(el, (x) => has(x, "vdirs"))).toBe(null);
   // Not hidden — not requested. A screen that hides a control and still makes
   // its request is a screen the production server refuses.

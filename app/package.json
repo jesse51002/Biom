@@ -3,6 +3,6 @@
   "productName": "Biom",
   "version": "0.1.0",
   "private": true,
-  "description": "Biom — A living workspace for humans and agents",
+  "description": "Biom — Agentic automations where your team works",
   "main": "main.js"
 }

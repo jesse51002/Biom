@@ -151,7 +151,7 @@ function shellLogo() {
  *  written here rather than imported because the site is a separate thing that
  *  this framework does not depend on; when the headline changes it changes in
  *  both, and nowhere else on this screen is there a sentence to keep in step. */
-const HEADLINE = "A living workspace for humans and agents";
+const HEADLINE = "Agentic automations where your team works";
 
 /** THE FOLDER, DRAWN. One span and its two pseudo-elements in `currentColor` —
  *  the tab across the top left and the body under it — because the chrome is
