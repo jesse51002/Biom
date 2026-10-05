@@ -1,8 +1,9 @@
 // Renders the demo GIFs and their still frames from stage.html.
 //
-//   node landing-demo/render.mjs                 every layout, both variants
-//   node landing-demo/render.mjs desktop scheduled
-//   node landing-demo/render.mjs --frame 1,4.6 [layout] [variant]   stills at those seconds
+//   node landing-demo/render.mjs                        every scenario, both layouts
+//   node landing-demo/render.mjs roadmap [desktop]      one scenario
+//   node landing-demo/render.mjs --frame 1,4.6 [scenario] [layout]   stills at those seconds
+//   node landing-demo/render.mjs --preview              only the preview pages
 //
 // Needs `make install` (for Playwright), the Chromium `make browser` fetches —
 // or PLAYWRIGHT_CHROMIUM pointed at one — and ffmpeg on the PATH. Writes into
@@ -16,7 +17,8 @@ import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
-import { FPS, DURATION, VARIANTS } from "./timeline.js";
+import { FPS, DURATION } from "./clock.js";
+import { SCENARIOS } from "./scenarios/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -29,7 +31,7 @@ export const LAYOUTS = {
   desktop: { scale: 1.5 },
   mobile: { scale: 2 },
 };
-const VARIANT_NAMES = Object.keys(VARIANTS);
+const NAMES = Object.keys(SCENARIOS);
 /** The still: the finished page, mid-hold. */
 const STILL_AT = 6.4;
 
@@ -54,10 +56,10 @@ function browserPath() {
   return existsSync(pinned) ? pinned : undefined;
 }
 
-async function open(browser, base, layout, variant) {
+async function open(browser, base, scenario, layout) {
   const { scale } = LAYOUTS[layout];
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: scale });
-  await page.goto(`${base}/landing-demo/stage.html?layout=${layout}&variant=${variant}`);
+  await page.goto(`${base}/landing-demo/stage.html?scenario=${scenario}&layout=${layout}`);
   await page.waitForFunction(() => window.stageReady === true, null, { timeout: 15000 });
   const clip = await page.evaluate(() => window.stageSize());
   return { page, clip };
@@ -72,12 +74,12 @@ async function shoot(page, clip, t, path) {
  *  dropped by `mpdecimate` with a zero tolerance, and the GIF keeps the 1/15s
  *  timestamps of what is left, so the hold is one frame with a long delay —
  *  which is what keeps the GIF small — and every other delay is 1/15s. */
-async function renderGif(browser, base, layout, variant) {
-  const name = `demo-${layout}-${variant}`;
+async function renderGif(browser, base, scenario, layout) {
+  const name = `demo-${scenario}-${layout}`;
   const dir = join(OUT, ".frames", name);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
-  const { page, clip } = await open(browser, base, layout, variant);
+  const { page, clip } = await open(browser, base, scenario, layout);
   const total = Math.round(DURATION * FPS);
   let distinct = 0, last = null;
   for (let f = 0; f < total; f++) {
@@ -97,26 +99,26 @@ async function renderGif(browser, base, layout, variant) {
       "-fps_mode", "vfr", "-loop", "0", gif]);
 
   const still = join(OUT, `${name}-still.png`);
-  const p2 = await open(browser, base, layout, variant);
+  const p2 = await open(browser, base, scenario, layout);
   await shoot(p2.page, p2.clip, STILL_AT, still);
   await p2.page.close();
   const { size } = await import("node:fs").then((fs) => fs.statSync(gif));
   return { name, gif, still, kept: distinct, total, width: Math.round(clip.width * LAYOUTS[layout].scale), height: Math.round(clip.height * LAYOUTS[layout].scale), size };
 }
 
-/** out/preview-<variant>.html: section.html exactly as it would be pasted,
- *  pointed at this variant's files, between a stand-in hero and a stand-in
+/** out/preview-<scenario>.html: section.html exactly as it would be pasted,
+ *  pointed at this scenario's files, between a stand-in hero and a stand-in
  *  next section — so the section's size, its reserved box and normal
  *  scrolling past it can be checked on a laptop and a phone. The hero is NOT
  *  biom.dev's: that page's source is not in this repository. */
-async function writePreview(variant) {
+async function writePreview(scenario) {
   const section = (await readFile(join(HERE, "section.html"), "utf8"))
-    .replace(/demo-(desktop|mobile)(-still)?\.(gif|png)/g, (_, l, st, ext) => `demo-${l}-${variant}${st || ""}.${ext}`)
-    .replace(/alt="[^"]*"/, `alt="${VARIANTS[variant].alt.replace(/"/g, "&quot;")}"`);
-  const other = Object.keys(VARIANTS).find((v) => v !== variant);
+    .replace(/demo-(desktop|mobile)(-still)?\.(gif|png)/g, (_, l, st, ext) => `demo-${scenario}-${l}${st || ""}.${ext}`)
+    .replace(/alt="[^"]*"/, `alt="${SCENARIOS[scenario].alt.replace(/"/g, "&quot;")}"`);
+  const others = NAMES.filter((n) => n !== scenario).map((n) => `<a href="preview-${n}.html">${n}</a>`).join(" · ");
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Demo section preview</title>
+<title>Demo section preview · ${scenario}</title>
 <style>
   html,body{margin:0; background:#0E0F11; color:#EDE6D6; font-family:Georgia,"Times New Roman",serif}
   .standin{min-height:72svh; display:grid; place-content:center; text-align:center; padding:48px 16px; box-sizing:border-box}
@@ -130,10 +132,10 @@ async function writePreview(variant) {
 <header class="standin"><div class="note">STAND-IN HERO · not biom.dev's</div><h1>A living workspace<br>for humans and agents</h1><p>The demo section follows directly.</p></header>
 ${section}
 <section class="next"><div class="note">STAND-IN · the rest of the page</div><p>Scrolling continues normally past the demo.</p></section>
-<div class="bar">variant: <b>${variant}</b> · <a href="preview-${other}.html">${other}</a></div>
+<div class="bar"><b>${scenario}</b> · ${others}</div>
 </body></html>
 `;
-  await writeFile(join(OUT, `preview-${variant}.html`), html);
+  await writeFile(join(OUT, `preview-${scenario}.html`), html);
 }
 
 const args = process.argv.slice(2);
@@ -143,15 +145,15 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: browserPath() });
 try {
   if (args[0] === "--preview") {
-    for (const variant of Object.keys(VARIANTS)) await writePreview(variant);
+    for (const n of NAMES) await writePreview(n);
   } else if (args[0] === "--frame") {
     const times = args[1].split(",").map(Number);
-    const layouts = args[2] ? [args[2]] : Object.keys(LAYOUTS);
-    const variants = args[3] ? [args[3]] : VARIANT_NAMES;
-    for (const layout of layouts) for (const variant of variants) {
-      const { page, clip } = await open(browser, base, layout, variant);
+    const scenarios = args[2] ? [args[2]] : NAMES;
+    const layouts = args[3] ? [args[3]] : Object.keys(LAYOUTS);
+    for (const scenario of scenarios) for (const layout of layouts) {
+      const { page, clip } = await open(browser, base, scenario, layout);
       for (const t of times) {
-        const path = join(OUT, ".frames", `at-${t}-${layout}-${variant}.png`);
+        const path = join(OUT, ".frames", `at-${t}-${scenario}-${layout}.png`);
         await mkdir(dirname(path), { recursive: true });
         await shoot(page, clip, t, path);
         console.log(path);
@@ -159,13 +161,13 @@ try {
       await page.close();
     }
   } else {
-    const layouts = args[0] ? [args[0]] : Object.keys(LAYOUTS);
-    const variants = args[1] ? [args[1]] : VARIANT_NAMES;
-    for (const layout of layouts) for (const variant of variants) {
-      const r = await renderGif(browser, base, layout, variant);
+    const scenarios = args[0] ? [args[0]] : NAMES;
+    const layouts = args[1] ? [args[1]] : Object.keys(LAYOUTS);
+    for (const scenario of scenarios) for (const layout of layouts) {
+      const r = await renderGif(browser, base, scenario, layout);
       console.log(`${r.name}.gif  ${r.width}×${r.height}  ${(r.size / 1024).toFixed(0)} KB  ${r.kept} distinct of ${r.total} frames`);
     }
-    for (const variant of variants) await writePreview(variant);
+    for (const scenario of scenarios) await writePreview(scenario);
   }
 } finally {
   await browser.close();

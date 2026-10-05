@@ -1,10 +1,13 @@
 <!doctype html>
 <!-- The landing page demo's stage: Biom's window, drawn on Biom's own tokens and
-     faces (client/css/tokens.css), stepped by `renderAt(t)`. Open it served from
-     the repository root — `bun run landing-demo/serve.mjs` — with
-     ?layout=desktop|mobile&variant=scheduled|accurate&t=<seconds>, or let
-     render.mjs drive it. Nothing on it moves on its own: no transition, no
-     animation, no timer. -->
+     faces (client/css/tokens.css), stepped by `renderAt(t)`. What the window
+     shows is a SCENARIO — scenarios/<name>.js holds its words, data, beats and
+     the canvas it draws — and this file is everything they share: the title
+     bar, the rail, the chat panel, the input box, the strip, the narrow
+     composition and the loop seam. Open it served from the repository root
+     with ?scenario=<name>&layout=desktop|mobile&t=<seconds>, or let render.mjs
+     drive it. Nothing on it moves on its own: no transition, no animation, no
+     timer. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -77,36 +80,19 @@
   .find{padding:.4rem .55rem; border:1px solid var(--stock-edge); border-radius:4px; color:var(--ink-3); margin-bottom:.6rem}
   .tree{display:flex; flex-direction:column; gap:1px}
   .row{display:flex; align-items:center; gap:.45rem; height:28px; padding:0 .45rem 0 calc(.45rem + var(--d,0) * 1.1rem); border-radius:4px; font:13px var(--gauge-face); color:var(--room-ink-2); overflow:hidden; white-space:nowrap}
-  .row .glyph{width:13px; height:13px; color:var(--ink-3)}
+  .row .glyph{flex:none; width:13px; height:13px; color:var(--ink-3)}
   .row.here{background:var(--field); color:var(--ink)}
   .row.here .glyph{color:var(--ink-2)}
   .newpage{display:flex; align-items:center; gap:.5rem; padding:.45rem .45rem; color:var(--ink-2)}
   .rackfoot{margin-top:auto; padding-top:.5rem; border-top:1px solid var(--stock-edge); display:flex; flex-direction:column; gap:2px}
   .rackfoot .row{color:var(--ink-2)}
+  .row.plain{color:var(--ink-3)}
+  .row .rled{margin-left:auto; width:6px; height:6px; border-radius:50%; flex:none}
+  .row.reading{background:var(--field); color:var(--ink)}
+  .row.reading .rled{background:var(--led); box-shadow:0 0 8px var(--glow)}
+  .row.read .rled{background:color-mix(in srgb, var(--led-green) 70%, transparent)}
 
   .canvas{position:relative; min-width:0; overflow:hidden; background:var(--paper)}
-  .sheet{position:absolute; inset:0; padding:46px 52px 40px}
-  .h1{margin:0; font:700 42px/1.08 var(--sheet-face); letter-spacing:-.01em; color:var(--ink)}
-  .lede{margin:12px 0 0; font:18px/1.45 var(--sheet-face); color:var(--ink-2)}
-  .empty{margin-top:34px; padding:18px 20px; border:1px dashed var(--stock-edge); font:13px var(--gauge-face); color:var(--ink-3); max-width:420px}
-  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px}
-  .chipx{display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 11px; border:1px solid var(--stock-edge); background:var(--stock); font:12px var(--gauge-face); letter-spacing:.02em; color:var(--ink)}
-  .chipx .glyph{width:13px; height:13px}
-  .chipx.ok .glyph{color:var(--led-green)}
-  .chipx.auto .glyph{color:var(--led)}
-  .chipx .dim{color:var(--ink-3)}
-  .board{margin-top:26px; border:1px solid var(--stock-edge); background:var(--stock)}
-  .bhead,.brow{display:grid; grid-template-columns:minmax(0,9fr) minmax(0,9fr) minmax(0,13fr)}
-  .bhead > div{padding:9px 14px; font:10.5px var(--gauge-face); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid var(--stock-edge)}
-  .bhead > div + div, .brow > div + div{border-left:1px solid var(--stock-edge)}
-  .brow > div{padding:11px 14px 12px; font:15px/1.4 var(--sheet-face); color:var(--ink)}
-  .brow + .brow{border-top:1px solid var(--stock-edge)}
-  .co b{display:block; font-weight:700}
-  .co span, .sig span{display:block; font:11.5px/1.6 var(--gauge-face); color:var(--ink-3); letter-spacing:.02em}
-  .sig{color:var(--ink)}
-  .ppl div + div{margin-top:3px}
-  .ppl em{font-style:normal; color:var(--ink-2)}
-  .more{padding:10px 14px; border-top:1px solid var(--stock-edge); font:12px var(--gauge-face); color:var(--ink-3); letter-spacing:.02em}
   .label{position:absolute; right:14px; bottom:10px; font:10.5px var(--gauge-face); letter-spacing:.06em; color:color-mix(in srgb, var(--ink-3) 80%, transparent)}
 
   /* ── the chat ── */
@@ -162,22 +148,7 @@
   .mob .uw{max-width:92%}
   .mob .dock{left:12px; right:12px; bottom:28px}
   .mob .ta{font-size:16px; padding:12px 14px 4px}
-  .mob .sheet{padding:24px 16px 0; background:var(--paper)}
-  .mob .h1{font-size:32px}
-  .mob .lede{font-size:16px; margin-top:8px}
-  .mob .chips{margin-top:14px; gap:6px}
-  .mob .chipx{height:26px; padding:0 9px; font-size:11.5px}
-  .cards{display:flex; flex-direction:column; gap:10px; margin-top:18px}
-  .card{border:1px solid var(--stock-edge); background:var(--stock); padding:13px 14px 12px}
-  .card .ctop{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
-  .card .cn{font:700 18px var(--sheet-face)}
-  .card .cs{font:11px var(--gauge-face); color:var(--ink-3); letter-spacing:.02em; white-space:nowrap}
-  .card .csig{margin-top:4px; font:15px var(--sheet-face); color:var(--ink-2)}
-  .card .cppl{margin-top:10px; padding-top:9px; border-top:1px solid var(--stock-edge); font:15px/1.5 var(--sheet-face)}
-  .card .cppl em{font-style:normal; color:var(--ink-2)}
-  .mob .more{border:0; padding:12px 2px 0}
   .mob .label{right:12px; bottom:7px; font-size:10px}
-  .mob .mfoot{position:absolute; left:0; right:0; bottom:0; height:22px}
 </style>
 </head>
 <body>
@@ -185,11 +156,11 @@
 <!-- ───────────────────────────── desktop ───────────────────────────── -->
 <div class="win desk" id="desk" hidden>
   <div class="titlebar">
-    <div class="titleid"><img class="titlemark" src="../app/icon.png" alt=""><span>Sales</span></div>
+    <div class="titleid"><img class="titlemark" src="../app/icon.png" alt=""><span data-k="workspace"></span></div>
     <div class="titleacts"><span class="wctl min"><i class="wglyph"></i></span><span class="wctl max"><i class="wglyph"></i></span><span class="wctl full"><i class="wglyph"></i></span><span class="wctl close"><i class="wglyph"></i></span></div>
   </div>
   <div class="rail">
-    <div class="crumbs"><span class="crumb">Sales</span><span class="crumbsep">/</span><span class="crumb" data-k="crumbParent"></span><span data-k="crumbChildWrap"><span class="crumbsep">/</span><span class="crumb here" data-k="crumbChild"></span></span></div>
+    <div class="crumbs" data-k="crumbs"></div>
     <div class="tools"><span class="tool">Reload</span><span class="tool">Share</span><span class="tool">Instructions</span><span class="tool">Automations</span><span class="tool edit"><i class="glyph pencil"></i>Edit</span></div>
   </div>
   <div class="bed">
@@ -197,55 +168,15 @@
       <div class="agentlink"><i class="glyph chat"></i>Agent<span class="busy" data-k="busy"><i class="led lit"></i>1</span></div>
       <div class="railhead"><div class="homerow"><i class="glyph home"></i>Home</div></div>
       <div class="find">Find a page</div>
-      <div class="tree">
-        <div class="row" data-k="rowLeads"><i class="glyph page"></i><span data-k="leadsName"></span></div>
-        <div class="row" data-k="rowChild" style="--d:1"><i class="glyph page"></i><span data-k="childName"></span></div>
-        <div class="row"><i class="glyph page"></i>Pipeline</div>
-        <div class="row"><i class="glyph page"></i>Meeting notes</div>
-        <div class="row"><i class="glyph page"></i>Reading list</div>
-      </div>
+      <div class="tree" data-k="tree"></div>
       <div class="newpage">+ New page</div>
       <div class="rackfoot"><div class="row">⟋ Design</div><div class="row">▤ Instructions</div><div class="row">◎ Automations</div><div class="row">▦ Map</div></div>
     </nav>
-    <main class="canvas">
-      <section class="sheet" data-k="parentSheet">
-        <h1 class="h1" data-k="parentTitle"></h1>
-        <p class="lede" data-k="parentLede"></p>
-        <div class="empty" data-k="parentEmpty"></div>
-      </section>
-      <section class="sheet" data-k="resultSheet">
-        <h1 class="h1" data-k="title"></h1>
-        <p class="lede" data-k="facts"></p>
-        <div class="chips" data-k="chips">
-          <span class="chipx ok"><i class="glyph check"></i><span data-k="added"></span></span>
-          <span class="chipx auto"><i class="glyph loop"></i><span data-k="cadence"></span><span class="dim">·</span><span class="dim" data-k="automation"></span></span>
-        </div>
-        <div class="board" data-k="board">
-          <div class="bhead" data-k="bhead"></div>
-          <div data-k="brows"></div>
-          <div class="more" data-k="more"></div>
-        </div>
-      </section>
-      <div class="label" data-k="label"></div>
-    </main>
+    <main class="canvas"><div data-k="canvas"></div><div class="label" data-k="label"></div></main>
     <aside class="panel">
       <div class="panelhead"><span data-k="thread"></span><i class="glyph caret"></i></div>
-      <div class="log">
-        <div class="uw" data-k="uw"><div class="u" data-k="u"></div></div>
-        <div class="turn" data-k="turn">
-          <div class="who"><i class="led" data-k="whoLed"></i><span data-k="agentName"></span></div>
-          <div data-k="steps"></div>
-          <div class="changed" data-k="changed"></div>
-          <div class="reply" data-k="reply"></div>
-        </div>
-      </div>
-      <div class="dock">
-        <div class="composer" data-k="composer">
-          <div class="ta" data-k="ta"></div>
-          <div class="cbar"><span class="chip agent"><i class="led" data-k="chipLed"></i><span data-k="chipAgent"></span><i class="glyph caret"></i></span><span class="chip">Sonnet<i class="glyph caret"></i></span><span class="send" data-k="send"></span></div>
-        </div>
-        <div class="below" data-k="below"><span class="leds3" data-k="belowDots"><i></i><i></i><i></i></span><span>Working</span></div>
-      </div>
+      <div class="log" data-k="log"></div>
+      <div class="dock" data-k="dock"></div>
     </aside>
   </div>
   <div class="strip"><span>Chats <b>1</b></span><span>Agents active <b data-k="active"></b></span></div>
@@ -254,170 +185,141 @@
 <!-- ───────────────────────────── narrow ───────────────────────────── -->
 <div class="win mob" id="mob" hidden>
   <div class="titlebar">
-    <div class="titleid"><img class="titlemark" src="../app/icon.png" alt=""><span>Sales</span></div>
+    <div class="titleid"><img class="titlemark" src="../app/icon.png" alt=""><span data-k="workspace"></span></div>
     <div class="titleacts"><span class="wctl close"><i class="wglyph"></i></span></div>
   </div>
   <div class="rail">
-    <div class="crumbs"><span class="crumb" data-k="crumbParent"></span><span data-k="crumbChildWrap"><span class="crumbsep">/</span><span class="crumb here" data-k="crumbChild"></span></span></div>
+    <div class="crumbs" data-k="crumbs"></div>
     <div class="tools"><span class="tool edit"><i class="glyph pencil"></i>Edit</span></div>
   </div>
   <div class="mbody">
-    <div class="layer" data-k="chatLayer">
-      <div class="log">
-        <div class="uw" data-k="uw"><div class="u" data-k="u"></div></div>
-        <div class="turn" data-k="turn">
-          <div class="who"><i class="led" data-k="whoLed"></i><span data-k="agentName"></span></div>
-          <div data-k="steps"></div>
-        </div>
-      </div>
-      <div class="dock">
-        <div class="composer" data-k="composer">
-          <div class="ta" data-k="ta"></div>
-          <div class="cbar"><span class="chip agent"><i class="led" data-k="chipLed"></i><span data-k="chipAgent"></span><i class="glyph caret"></i></span><span class="send" data-k="send"></span></div>
-        </div>
-        <div class="below" data-k="below"><span class="leds3" data-k="belowDots"><i></i><i></i><i></i></span><span>Working</span></div>
-      </div>
-    </div>
-    <section class="layer sheet" data-k="resultSheet">
-      <h1 class="h1" data-k="title"></h1>
-      <p class="lede" data-k="facts"></p>
-      <div class="chips" data-k="chips">
-        <span class="chipx ok"><i class="glyph check"></i><span data-k="added"></span></span>
-        <span class="chipx auto"><i class="glyph loop"></i><span data-k="cadence"></span><span class="dim">·</span><span class="dim" data-k="automation"></span></span>
-      </div>
-      <div class="cards" data-k="cards"></div>
-      <div class="more" data-k="more"></div>
-    </section>
+    <div class="layer" data-k="chatLayer"><div class="log" data-k="log"></div><div class="dock" data-k="dock"></div></div>
+    <div class="layer" data-k="canvas"></div>
     <div class="label" data-k="label"></div>
   </div>
 </div>
 
 <script type="module">
-  import { DURATION, T, VARIANTS, AGENT, STEPS, CHANGED, PAGE, LABEL, seg, typed } from "./timeline.js";
+  import { DURATION, LOOP_FROM, LABEL, seg, typed, dots, esc, show } from "./clock.js";
+  import { SCENARIOS } from "./scenarios/index.js";
 
   const q = new URLSearchParams(location.search);
   const layout = q.get("layout") === "mobile" ? "mobile" : "desktop";
-  const V = VARIANTS[q.get("variant")] || VARIANTS.scheduled;
+  const S = SCENARIOS[q.get("scenario")] || SCENARIOS.roadmap;
+  const T = S.T, R = T.result;
+  const AGENT = "Claude Code";
   const win = document.getElementById(layout === "mobile" ? "mob" : "desk");
   win.hidden = false;
 
-  /** every [data-k] in this window, by key */
-  const k = {};
-  for (const el of win.querySelectorAll("[data-k]")) k[el.dataset.k] = el;
-  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const set = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
-  const show = (el, o, dy = 0) => {
-    if (!el) return;
-    el.style.opacity = String(o);
-    el.style.transform = dy ? `translateY(${dy}px)` : "";
-    el.style.visibility = o <= 0.001 ? "hidden" : "visible";
+  const css = document.createElement("style");
+  css.textContent = S.css;
+  document.head.appendChild(css);
+
+  const byKey = () => {
+    const k = { all: {} };
+    for (const el of win.querySelectorAll("[data-k]")) {
+      const n = el.dataset.k;
+      (k.all[n] ||= []).push(el);
+      if (!(n in k)) k[n] = el;
+    }
+    return k;
   };
+  let k = byKey();
 
-  /* ── what never changes ── */
-  set(k.crumbParent, PAGE.parent); set(k.crumbChild, PAGE.title);
-  set(k.leadsName, PAGE.parent); set(k.childName, PAGE.title);
-  set(k.parentTitle, PAGE.parent); set(k.parentLede, PAGE.parentLede); set(k.parentEmpty, PAGE.parentEmpty);
-  set(k.title, PAGE.title); set(k.facts, PAGE.facts); set(k.added, PAGE.added);
-  set(k.cadence, V.cadence); set(k.automation, V.automation);
-  set(k.more, PAGE.more); set(k.label, LABEL);
-  set(k.agentName, AGENT); set(k.chipAgent, AGENT);
-  set(k.u, V.promptHead + V.promptTail);
-  set(k.reply, V.reply);
-  if (k.bhead) k.bhead.innerHTML = PAGE.head.map((h) => `<div>${esc(h)}</div>`).join("");
-  if (k.brows) k.brows.innerHTML = PAGE.rows.map((r) => `<div class="brow">
-      <div class="co"><b>${esc(r.company)}</b><span>${esc(r.stage)}</span></div>
-      <div class="sig">${esc(r.signal)}</div>
-      <div class="ppl">${r.people.map(([n, role]) => `<div>${esc(n)} <em>· ${esc(role)}</em></div>`).join("")}</div>
-    </div>`).join("");
-  if (k.cards) k.cards.innerHTML = PAGE.rows.slice(0, 2).map((r) => `<div class="card">
-      <div class="ctop"><span class="cn">${esc(r.company)}</span><span class="cs">${esc(r.stage)}</span></div>
-      <div class="csig">${esc(r.signal)}</div>
-      <div class="cppl">${r.people.map(([n, role]) => `<div>${esc(n)} <em>· ${esc(role)}</em></div>`).join("")}</div>
-    </div>`).join("");
-  if (layout === "mobile") set(k.more, "+ 18 more companies");
-  if (k.changed) k.changed.innerHTML = CHANGED.map((c) => `<div class="chg"><i class="glyph page"></i><span class="cw">${esc(c.verb)} <b>${esc(c.what)}</b></span></div>`).join("");
-  k.steps.innerHTML = STEPS.map(() => `<div class="step"><span class="mark"></span><span class="txt"></span></div>`).join("");
-  const stepEls = [...k.steps.children];
-  const chgEls = k.changed ? [...k.changed.children] : [];
-  const cardEls = k.cards ? [...k.cards.children] : [];
+  /* ── built once, from the scenario ── */
+  k.workspace.textContent = S.workspace;
+  k.label.textContent = LABEL;
+  k.canvas.innerHTML = S.canvas[layout];
+  const crumbs = layout === "mobile" ? S.crumbs.slice(1) : S.crumbs;
+  k.crumbs.innerHTML = crumbs.map((c, i) =>
+    `<span data-k="crumb-${i}">${i ? `<span class="crumbsep">/</span>` : ""}<span class="crumb${i === crumbs.length - 1 ? " here" : ""}">${esc(c.text)}</span></span>`).join("");
+  if (k.tree) k.tree.innerHTML = S.rail.map((r, i) =>
+    `<div class="row${r.plain ? " plain" : ""}" data-k="row-${i}" style="--d:${r.depth || 0}">${r.plain ? "" : `<i class="glyph page"></i>`}<span>${esc(r.name)}</span>${r.read != null ? `<i class="rled"></i>` : ""}</div>`).join("");
+  k.log.innerHTML = `
+    <div class="uw" data-k="uw"><div class="u">${esc(S.prompt.head + S.prompt.tail)}</div></div>
+    <div class="turn" data-k="turn">
+      <div class="who"><i class="led" data-k="whoLed"></i><span>${AGENT}</span></div>
+      ${S.steps.map((_, i) => `<div class="step" data-k="step-${i}"><span class="mark"></span><span class="txt"></span></div>`).join("")}
+      ${layout === "desktop" ? `<div class="changed" data-k="changed">${S.changed.map((c, i) =>
+        `<div class="chg" data-k="chg-${i}"><i class="glyph page"></i><span class="cw">${esc(c.verb)} <b>${esc(c.what)}</b></span></div>`).join("")}</div>
+      <div class="reply" data-k="reply">${esc(S.reply)}</div>` : ""}
+    </div>`;
+  k.dock.innerHTML = `
+    <div class="composer" data-k="composer">
+      <div class="ta" data-k="ta"></div>
+      <div class="cbar"><span class="chip agent"><i class="led" data-k="chipLed"></i>${AGENT}<i class="glyph caret"></i></span>${layout === "desktop" ? `<span class="chip">Sonnet<i class="glyph caret"></i></span>` : ""}<span class="send" data-k="send"></span></div>
+    </div>
+    <div class="below" data-k="below"><span class="leds3" data-k="belowDots"></span><span>Working</span></div>`;
+  k = byKey();
+
   const SEND_UP = `<i class="glyph up"></i>`, SEND_STOP = `<i class="sq"></i>`;
-
-  /** three dots, lit in turn — the input's "working" lamp, as a function of t */
-  const dots = (t) => `<i class="${on(t, 0)}"></i><i class="${on(t, 1)}"></i><i class="${on(t, 2)}"></i>`;
-  const on = (t, i) => { const p = (((t - i * 0.3) % 0.9) + 0.9) % 0.9; return p < 0.3 ? "on" : ""; };
 
   /** Draws the frame at `t` seconds. Pure: the same t draws the same frame. */
   function draw(t) {
-    const working = t >= T.send && t < T.result + 0.45;
-    const sentO = seg(t, T.send + 0.05, T.sent);
+    const working = t >= T.send && t < R + 0.45;
 
     // the input: the head is there from the first frame, the tail types in
-    const tail = typed(t, V.promptTail);
     const inInput = t < T.send + 0.08;
     k.ta.innerHTML = inInput
-      ? esc(V.promptHead + tail) + `<span class="caret"></span>`
+      ? esc(S.prompt.head + typed(t, S.prompt.tail, T.typeFrom, T.typeTo)) + `<span class="caret"></span>`
       : `<span class="ph">Ask anything</span>`;
     k.composer.classList.toggle("focus", inInput);
     const sendState = inInput ? "ready" : working ? "stop" : "";
     k.send.className = "send " + sendState;
     k.send.innerHTML = sendState === "stop" ? SEND_STOP : SEND_UP;
-    const press = t >= T.send && t < T.send + 0.1 ? 0.9 : 1;
-    k.send.style.transform = press === 1 ? "" : `scale(${press})`;
+    k.send.style.transform = t >= T.send && t < T.send + 0.1 ? "scale(.9)" : "";
     k.chipLed.className = "led " + (working ? "lit" : "green");
     show(k.below, working ? 1 : 0);
     if (working) k.belowDots.innerHTML = dots(t);
 
-    // the prompt as a message
+    // the prompt as a message, then the turn
+    const sentO = seg(t, T.send + 0.05, T.sent);
     show(k.uw, sentO, (1 - sentO) * 22);
-
-    // the turn
-    const turnO = seg(t, T.research, T.research + 0.25);
-    show(k.turn, turnO);
+    show(k.turn, seg(t, T.sent, T.sent + 0.25));
     k.whoLed.className = "led " + (working ? "lit" : "green");
-    STEPS.forEach((s, i) => {
-      const el = stepEls[i];
+    S.steps.forEach((s, i) => {
+      const el = k[`step-${i}`];
       const o = seg(t, s.at, s.at + 0.25);
       show(el, o, (1 - o) * 6);
       const live = s.live && t < s.done;
       el.classList.toggle("live", !!live);
       el.firstChild.innerHTML = live ? `<span class="leds3">${dots(t)}</span>` : `<i class="glyph check"></i>`;
-      set(el.lastChild, live ? s.live : s.finished);
+      el.lastChild.textContent = live ? s.live : s.finished;
     });
-    if (chgEls.length) CHANGED.forEach((c, i) => { const o = seg(t, c.at, c.at + 0.25); chgEls[i].style.display = o > 0 ? "" : "none"; show(chgEls[i], o); });
-    if (k.changed) show(k.changed, seg(t, CHANGED[0].at, CHANGED[0].at + 0.25));
-    show(k.reply, seg(t, T.result + 0.45, T.result + 0.75));
-
-    // where it went: the rail, the crumbs and the page
-    const arrived = seg(t, T.result, T.result + 0.3);
-    if (k.rowChild) {
-      k.rowChild.style.height = (28 * arrived).toFixed(2) + "px";
-      k.rowChild.style.opacity = String(arrived);
-      k.rowChild.classList.toggle("here", t >= T.result);
-      k.rowLeads.classList.toggle("here", t < T.result);
+    if (k.changed) {
+      show(k.changed, seg(t, S.changed[0].at, S.changed[0].at + 0.25));
+      S.changed.forEach((c, i) => { const o = seg(t, c.at, c.at + 0.25); k[`chg-${i}`].style.display = o > 0 ? "" : "none"; show(k[`chg-${i}`], o); });
+      show(k.reply, seg(t, R + 0.45, R + 0.75));
     }
-    show(k.crumbChildWrap, t >= T.result ? 1 : 0);
+
+    // the rail: rows the agent reads light as it reads them, rows it makes arrive
+    S.rail.forEach((r, i) => {
+      const el = k[`row-${i}`];
+      if (!el) return;
+      if (r.appear != null) {
+        const a = seg(t, r.appear, r.appear + 0.3);
+        el.style.height = (28 * a).toFixed(2) + "px";
+        el.style.opacity = String(a);
+      }
+      el.classList.toggle("here", !!r.here && t >= r.here[0] && t < r.here[1]);
+      if (r.read != null) {
+        el.classList.toggle("reading", t >= r.read && t < r.read + 0.3);
+        el.classList.toggle("read", t >= r.read + 0.3);
+      }
+    });
+    crumbs.forEach((c, i) => show(k[`crumb-${i}`], c.at == null || t >= c.at ? 1 : 0));
     if (k.busy) show(k.busy, working ? 1 : 0);
-    set(k.active, working ? "1" : "0");
-    set(k.thread, t >= T.sent ? PAGE.title : "New thread");
+    if (k.active) k.active.textContent = working ? "1" : "0";
+    if (k.thread) k.thread.textContent = t >= T.sent ? S.thread : "New thread";
 
-    const outO = 1 - seg(t, T.result, T.result + 0.25);
-    const inO = seg(t, T.result + 0.15, T.result + 0.55);
-    if (k.parentSheet) show(k.parentSheet, outO);
-    if (k.chatLayer) show(k.chatLayer, outO);
-    show(k.resultSheet, inO, (1 - inO) * 8);
-    show(k.chips, seg(t, T.result + 0.6, T.result + 0.85));
-    if (k.board) { // the board draws down, row by row, rather than standing empty
-      const o = seg(t, T.result + 0.3, T.result + 0.9);
-      show(k.board, o > 0 ? 1 : 0);
-      k.board.style.clipPath = o >= 1 ? "" : `inset(0 0 ${((1 - o) * 100).toFixed(2)}% 0)`;
-    }
-    cardEls.forEach((r, i) => { const o = seg(t, T.result + 0.35 + i * 0.15, T.result + 0.65 + i * 0.15); show(r, o, (1 - o) * 6); });
-    show(k.more, seg(t, T.result + 0.75, T.result + 0.95));
+    // the narrow composition trades the chat for the result
+    if (k.chatLayer) show(k.chatLayer, 1 - seg(t, R, R + 0.25));
+    S.draw(t, k, layout);
   }
 
-  /** The loop seam: 7.8s → 8s cross-fades the whole window back to t=0,
-   *  so the last frame leads into the first. A second copy of the window,
-   *  drawn at t=0, is laid over the first and faded in. */
+  /** The loop seam: the last 0.2s cross-fades the whole window back to t=0,
+   *  so the last frame leads into the first. A copy of the window, drawn at
+   *  t=0, is laid over it and faded in. */
   draw(0);
   const ghost = /** @type {HTMLElement} */ (win.cloneNode(true));
   ghost.removeAttribute("id");
@@ -426,7 +328,7 @@
   window.renderAt = (t) => {
     t = ((t % DURATION) + DURATION) % DURATION;
     draw(t);
-    const fade = seg(t, T.loopFrom, DURATION);
+    const fade = seg(t, LOOP_FROM, DURATION);
     if (fade > 0) {
       if (!ghost.isConnected) document.body.appendChild(ghost);
       const r = win.getBoundingClientRect();
@@ -436,6 +338,7 @@
   };
 
   window.stageSize = () => { const r = win.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; };
+  window.scenario = { alt: S.alt, title: S.title };
   await document.fonts.ready;
   window.renderAt(Number(q.get("t") || 0));
   window.stageReady = true;
