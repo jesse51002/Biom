@@ -18,7 +18,11 @@
 
 import { seg, show, esc } from "../clock.js";
 
-const T = { typeFrom: 0.15, typeTo: 1.05, send: 1.2, sent: 1.5, result: 4.1 };
+/** The result is staged so the eye can follow it: the new card first, then
+ *  each card that gained customers, then who did it, then the closing line.
+ *  Nine seconds rather than eight, so the finished board holds for three. */
+const T = { typeFrom: 0.15, typeTo: 1.05, send: 1.2, sent: 1.5, result: 4.1, done: 4.55, reply: 5.35 };
+const CSV_AT = 4.95, BILLING_AT = 5.15, SUB_AT = 5.3;
 const R = T.result;
 
 /** The board, before and after. A card's `before` is what the opening frame
@@ -26,18 +30,18 @@ const R = T.result;
 const LANES = [
   { label: "Now", tone: "now", cards: [
     { id: "billing", title: "Usage-based billing",
-      before: { customers: 2, arr: "$24k", asked: "Halcyon, Brightwell" },
-      after: { customers: 4, arr: "$41k", asked: "Halcyon, Brightwell +2" }, delta: "+2" },
+      before: { customers: 2, arr: "$24k", asked: "Halcyon +1" },
+      after: { customers: 4, arr: "$41k", asked: "Halcyon +3" }, delta: "+2" },
     { id: "slack", title: "Slack alerts",
       before: { customers: 1, arr: "$6k", asked: "Kestrel Pay" } },
   ] },
   { label: "Next", tone: "next", cards: [
     { id: "sso", title: "SSO for teams", added: true,
       after: { customers: 4, arr: "$38k", asked: "Northwind, Ledgerline +2" },
-      quote: "We can't roll out past 20 seats without SSO.", who: "Northwind call · Oct 6" },
+      quote: "We can't roll out past 20 seats without SSO.", who: "Northwind call · Oct 5" },
     { id: "csv", title: "CSV export",
-      before: { customers: 3, arr: "$15k", asked: "Oakmere, Halcyon" },
-      after: { customers: 5, arr: "$27k", asked: "Oakmere, Halcyon +3" }, delta: "+2" },
+      before: { customers: 3, arr: "$15k", asked: "Oakmere +2" },
+      after: { customers: 5, arr: "$27k", asked: "Oakmere +4" }, delta: "+2" },
   ] },
   { label: "Later", tone: "later", cards: [
     { id: "audit", title: "Audit log",
@@ -46,46 +50,45 @@ const LANES = [
 ];
 
 const CSS = `
-  .rm{position:absolute; inset:0; padding:22px 20px 40px}
+  .desk .bed{grid-template-columns:196px minmax(0,1fr) 372px}
+  .rm{position:absolute; inset:0; padding:20px 18px 34px}
   .rmhead{display:flex; align-items:center; justify-content:space-between}
-  .rmt{margin:0; font:700 26px/1.2 var(--sheet-face); color:var(--ink)}
+  .rmt{margin:0; font:700 28px/1.2 var(--sheet-face); color:var(--ink)}
   .rmtools{display:flex; gap:6px}
   .rmtools span{padding:5px 10px; border:1px solid var(--stock-edge); font:10.5px var(--ui-face); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2)}
-  .rmsub{display:flex; align-items:center; gap:8px; height:22px; margin:6px 0 10px; font:12px var(--gauge-face); letter-spacing:.02em; color:var(--ink-3)}
-  .rmsub b{font-weight:400; color:var(--ink-2)}
+  .rmsub{display:flex; align-items:center; gap:8px; height:24px; margin:6px 0 10px; font:13px var(--gauge-face); letter-spacing:.02em; color:var(--ink-3)}
+  .rmsub b{font-weight:400; color:var(--ink)}
   .lanes{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; align-items:start}
-  .lane{border:1px solid var(--stock-edge); background:var(--stock); padding:0 8px 8px; min-height:470px}
-  .lh{display:flex; justify-content:space-between; align-items:center; height:36px; padding:0 3px; margin-bottom:8px; border-bottom:2px solid var(--nonrepro-t); font:600 11px var(--ui-face); letter-spacing:.08em; text-transform:uppercase; color:var(--ink)}
+  .lane{border:1px solid var(--stock-edge); background:var(--stock); padding:0 8px 8px; min-height:556px}
+  .lh{display:flex; justify-content:space-between; align-items:center; height:38px; padding:0 3px; margin-bottom:8px; border-bottom:2px solid var(--nonrepro-t); font:600 12px var(--ui-face); letter-spacing:.08em; text-transform:uppercase; color:var(--ink)}
   .lh.now{border-bottom-color:var(--led)} .lh.next{border-bottom-color:var(--magenta)}
-  .lh .n{font:400 11px var(--gauge-face); color:var(--ink-3)}
+  .lh .n{font:400 12px var(--gauge-face); color:var(--ink-3)}
   .slot{overflow:hidden}
-  .kc{position:relative; border:1px solid var(--stock-edge); background:var(--paper); padding:10px 11px 10px; margin-bottom:8px; overflow:hidden}
-  .kc.added{border-color:var(--led); box-shadow:0 0 0 1px var(--led), 0 0 18px -6px var(--glow)}
-  .kt{display:flex; align-items:baseline; justify-content:space-between; gap:6px; font:16px/1.3 var(--sheet-face); color:var(--ink); margin-bottom:6px}
-  .tag{flex:none; font:600 9.5px var(--gauge-face); letter-spacing:.12em; padding:2px 5px; background:var(--led); color:var(--on-spot)}
-  .kf{display:grid; grid-template-columns:66px minmax(0,1fr); column-gap:6px; align-items:baseline; font:13.5px/1.45 var(--sheet-face); color:var(--ink)}
-  .kf > span:first-child{font:9.5px var(--ui-face); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
-  .kf .v{display:inline-flex; align-items:baseline; gap:6px}
-  .delta{font:600 10.5px var(--gauge-face); color:var(--led)}
-  .kq{margin-top:8px; padding-top:7px; border-top:1px solid var(--stock-edge); font:italic 13.5px/1.4 var(--sheet-face); color:var(--ink-2)}
-  .kq small{display:block; margin-top:3px; font:normal 10.5px var(--gauge-face); letter-spacing:.02em; color:var(--ink-3)}
+  .kc{position:relative; border:1px solid var(--stock-edge); background:var(--paper); padding:12px 12px 12px 13px; margin-bottom:8px; overflow:hidden}
+  .kc.added{border-color:var(--led); box-shadow:0 0 0 1px var(--led), 0 0 22px -6px var(--glow)}
+  .kc.moved::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--led)}
+  .kt{display:flex; align-items:baseline; justify-content:space-between; gap:6px; font:18px/1.25 var(--sheet-face); color:var(--ink); margin-bottom:8px}
+  .tag{flex:none; font:600 10.5px var(--gauge-face); letter-spacing:.12em; padding:2px 6px; background:var(--led); color:var(--on-spot)}
+  .kf{display:grid; grid-template-columns:76px minmax(0,1fr); column-gap:6px; align-items:baseline; font:15px/1.45 var(--sheet-face); color:var(--ink)}
+  .kf + .kf{margin-top:2px}
+  .kf > span:first-child{font:10.5px var(--ui-face); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+  .kf .v{display:inline-flex; align-items:baseline; gap:7px; flex-wrap:wrap}
+  .delta{font:600 11.5px/1 var(--gauge-face); padding:3px 6px; background:var(--led); color:var(--on-spot); align-self:center}
+  .kq{margin-top:10px; padding-top:9px; border-top:1px solid var(--stock-edge); font:italic 15px/1.4 var(--sheet-face); color:var(--ink)}
+  .kq small{display:block; margin-top:4px; font:normal 11.5px var(--gauge-face); letter-spacing:.02em; color:var(--ink-3)}
   .kq small u{text-decoration-color:color-mix(in srgb, var(--ink-3) 60%, transparent); text-underline-offset:2px}
 
-  .mob .rm{padding:20px 14px 0; background:var(--paper)}
-  .mob .rmt{font-size:30px}
+  .mob .rm{padding:16px 14px 0; background:var(--paper)}
+  .mob .rmt{font-size:28px}
+  .mob .rmsub{margin:2px 0 8px}
   .mob .rmtools{display:none}
   .mob .lane{min-height:0; padding:0 8px 2px}
   .mob .lh{height:34px}
-  .mob .kt{font-size:18px}
-  .mob .kf{font-size:15px; grid-template-columns:78px minmax(0,1fr)}
-  .mob .kf > span:first-child{font-size:10px}
-  .mob .kq{font-size:15px}
-  .mob .kq small{font-size:11px}
+  .mob .kf{grid-template-columns:84px minmax(0,1fr)}
   .others{display:flex; gap:8px; margin-top:10px}
   .others span{flex:1; display:flex; justify-content:space-between; align-items:center; height:34px; padding:0 10px; border:1px solid var(--stock-edge); border-bottom-width:2px; background:var(--stock); font:600 11px var(--ui-face); letter-spacing:.08em; text-transform:uppercase}
   .others .now{border-bottom-color:var(--led)} .others .later{border-bottom-color:var(--nonrepro-t)}
   .others i{font:400 11px var(--gauge-face); font-style:normal; color:var(--ink-3)}
-  .others .delta{margin-left:auto; margin-right:8px}
 `;
 
 const field = (label, value, key) =>
@@ -99,7 +102,7 @@ function card(c, final = false) {
   const id = c.id;
   const delta = final && c.delta ? ` <span class="delta">${esc(c.delta)}</span>` : "";
   const wrap = c.added && !final;
-  return `${wrap ? `<div class="slot" data-k="slot-${id}">` : ""}<div class="kc${c.added ? " added" : ""}" data-k="card-${id}">
+  return `${wrap ? `<div class="slot" data-k="slot-${id}">` : ""}<div class="kc${c.added ? " added" : ""}${final && c.delta ? " moved" : ""}" data-k="card-${id}">
     <div class="kt"><span>${esc(c.title)}</span>${c.added ? `<span class="tag">NEW</span>` : ""}</div>
     ${field("Customers", String(s.customers), c.delta && !final ? `${id}-customers` : "").replace("</span></div>", delta + "</span></div>")}
     ${field("ARR", s.arr, c.delta ? `${id}-arr` : "")}
@@ -145,9 +148,9 @@ function draw(t, k, layout) {
   const after = t >= R;
 
   // the line under the title says who changed the board, and when
-  const subAt = R + 0.9;
+  const subAt = SUB_AT;
   if (k.sub) k.sub.innerHTML = t >= subAt
-    ? `<i class="led lit"></i><span>Updated by <b>Claude Code</b> · 3 cards · Mon 9:04</span>`
+    ? `<i class="led lit"></i><span>Updated by <b>Claude Code</b> · 3 cards · Fri 4:52 pm</span>`
     : `<span>Fernway · this quarter</span>`;
   if (t >= subAt) show(k.sub, seg(t, subAt, subAt + 0.3));
   else show(k.sub, 1);
@@ -165,20 +168,26 @@ function draw(t, k, layout) {
   // the cards that gained customers
   for (const lane of LANES) for (const c of lane.cards) {
     if (!c.delta) continue;
-    const at = R + (c.id === "csv" ? 0.55 : 0.7);
+    const at = c.id === "csv" ? CSV_AT : BILLING_AT;
     const now = t >= at ? c.after : c.before;
     const cust = k[`${c.id}-customers`], arr = k[`${c.id}-arr`], asked = k[`${c.id}-asked`];
     if (cust) cust.innerHTML = esc(String(now.customers)) + (t >= at ? ` <span class="delta">${esc(c.delta)}</span>` : "");
     if (arr) arr.textContent = now.arr;
     if (asked) asked.textContent = now.asked;
-    const flash = t >= at ? 1 - seg(t, at, at + 0.6) : 0;
+    // a ring that fades to the amber edge the card keeps, so the finished
+    // board still says which cards the turn changed
+    const flash = t >= at ? 1 - seg(t, at, at + 0.9) : 0;
     const el = k[`card-${c.id}`];
-    if (el) el.style.boxShadow = flash > 0.01 ? `0 0 0 1px color-mix(in srgb, var(--led) ${(flash * 100).toFixed(0)}%, transparent)` : "";
+    if (el) {
+      el.classList.toggle("moved", t >= at);
+      el.style.boxShadow = flash > 0.01 ? `0 0 0 1px color-mix(in srgb, var(--led) ${(flash * 100).toFixed(0)}%, transparent)` : "";
+    }
   }
 }
 
 export const roadmap = {
   title: "Roadmap",
+  duration: 9,
   workspace: "Fernway",
   T,
   prompt: {
@@ -189,30 +198,30 @@ export const roadmap = {
   crumbs: [{ text: "Fernway" }, { text: "Roadmap" }],
   rail: [
     { name: "Customer calls" },
-    { name: "Northwind · Oct 6", depth: 1, read: 1.6 },
-    { name: "Ledgerline · Oct 7", depth: 1, read: 1.75 },
-    { name: "Tallyforge · Oct 7", depth: 1, read: 1.9 },
-    { name: "Oakmere · Oct 8", depth: 1, read: 2.05 },
+    { name: "Northwind · Mon", depth: 1, read: 1.6 },
+    { name: "Ledgerline · Tue", depth: 1, read: 1.75 },
+    { name: "Tallyforge · Wed", depth: 1, read: 1.9 },
+    { name: "Oakmere · Thu", depth: 1, read: 2.05 },
     { name: "+ 8 more", depth: 1, read: 2.2, plain: true },
     { name: "Roadmap", here: [0, 99] },
-    { name: "Feedback · week 41", depth: 1, appear: R + 0.15 },
     { name: "Pipeline" },
     { name: "Hiring" },
     { name: "Investor updates" },
   ],
   steps: [
-    { at: 1.5, done: 2.3, live: "Reading 12 customer calls…", finished: "Read 12 customer calls" },
+    { at: 1.5, done: 2.3, live: "Reading 12 customer calls…", finished: "Read 12 customer calls",
+      subs: [{ at: 1.6, text: "Northwind" }, { at: 1.75, text: "Ledgerline" }, { at: 1.9, text: "Tallyforge" },
+        { at: 2.05, text: "Oakmere" }, { at: 2.2, text: "+8" }] },
     { at: 2.3, finished: "31 requests in 5 themes" },
     { at: 2.7, finished: "Top 3 by ARR: SSO, billing, CSV" },
     { at: 3.1, done: R, live: "Checking the roadmap…", finished: "2 already planned, 1 new" },
   ],
   changed: [
-    { at: R + 0.15, verb: "Updated", what: "Roadmap · 3 cards" },
-    { at: R + 0.3, verb: "Created", what: "Feedback · week 41" },
+    { at: R + 0.2, verb: "Updated", what: "Roadmap · 3 cards" },
   ],
-  reply: "SSO came up on 4 calls, with $38k ARR waiting on it. It's in Next, with the calls linked.",
+  reply: "SSO is the biggest gap: 4 customers, $38k ARR. It's in Next, with the calls linked.",
   css: CSS,
   canvas: { desktop: desktop(), mobile: mobile() },
   draw,
-  alt: "Biom, with a Roadmap board and an agent chat beside it. The request — read this week's customer calls and turn the top requests into roadmap items, with who asked — is sent; the agent reads twelve customer call pages in the workspace, finds 31 requests in 5 themes, ranks the top three by revenue, and updates the board in place: a new card, SSO for teams, lands in Next with four customers, $38k ARR, who asked and a quote from a call, and two existing cards gain customers. Illustrative demo, time compressed.",
+  alt: "Biom, with a Roadmap board and an agent chat beside it. The request — read this week's customer calls and turn the top requests into roadmap items, with who asked — is sent; the agent reads twelve customer call pages in the workspace — Northwind, Ledgerline, Tallyforge, Oakmere and eight more, finds 31 requests in 5 themes, ranks the top three by revenue, and updates the board in place: a new card, SSO for teams, lands in Next with four customers, $38k ARR, who asked and a quote from a call, and two existing cards gain customers. Illustrative demo, time compressed.",
 };

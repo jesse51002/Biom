@@ -118,6 +118,8 @@
   .chg .glyph{width:13px; height:13px; color:var(--ink-3)}
   .chg .cw{display:flex; align-items:baseline; gap:7px}
   .chg b{font-weight:400; font-family:var(--gauge-face); font-size:12.5px; color:var(--ink)}
+  .subs{display:flex; flex-wrap:wrap; gap:5px; margin:-1px 0 3px 24px}
+  .subs span{padding:2px 7px; border:1px solid var(--stock-edge); background:var(--stock-hi); font:11.5px var(--gauge-face); letter-spacing:.02em; color:var(--ink-2)}
   .reply{margin-top:12px; font:15px/1.5 var(--sheet-face); color:var(--ink)}
 
   .dock{position:absolute; left:20px; right:20px; bottom:26px}
@@ -207,6 +209,12 @@
   const layout = q.get("layout") === "mobile" ? "mobile" : "desktop";
   const S = SCENARIOS[q.get("scenario")] || SCENARIOS.roadmap;
   const T = S.T, R = T.result;
+  /** A scenario may run longer than the default, and the loop seam follows it. */
+  const LENGTH = S.duration || DURATION;
+  const SEAM = S.duration ? S.duration - (DURATION - LOOP_FROM) : LOOP_FROM;
+  /** When the agent's turn ends and when its closing words arrive. */
+  const DONE = T.done ?? R + 0.45;
+  const REPLY = T.reply ?? R + 0.45;
   const AGENT = "Claude Code";
   const win = document.getElementById(layout === "mobile" ? "mob" : "desk");
   win.hidden = false;
@@ -239,7 +247,7 @@
     <div class="uw" data-k="uw"><div class="u">${esc(S.prompt.head + S.prompt.tail)}</div></div>
     <div class="turn" data-k="turn">
       <div class="who"><i class="led" data-k="whoLed"></i><span>${AGENT}</span></div>
-      ${S.steps.map((_, i) => `<div class="step" data-k="step-${i}"><span class="mark"></span><span class="txt"></span></div>`).join("")}
+      ${S.steps.map((s, i) => `<div class="step" data-k="step-${i}"><span class="mark"></span><span class="txt"></span></div>${s.subs ? `<div class="subs">${s.subs.map((u, j) => `<span data-k="sub-${i}-${j}">${esc(u.text)}</span>`).join("")}</div>` : ""}`).join("")}
       ${layout === "desktop" ? `<div class="changed" data-k="changed">${S.changed.map((c, i) =>
         `<div class="chg" data-k="chg-${i}"><i class="glyph page"></i><span class="cw">${esc(c.verb)} <b>${esc(c.what)}</b></span></div>`).join("")}</div>
       <div class="reply" data-k="reply">${esc(S.reply)}</div>` : ""}
@@ -256,7 +264,7 @@
 
   /** Draws the frame at `t` seconds. Pure: the same t draws the same frame. */
   function draw(t) {
-    const working = t >= T.send && t < R + 0.45;
+    const working = t >= T.send && t < DONE;
 
     // the input: the head is there from the first frame, the tail types in
     const inInput = t < T.send + 0.08;
@@ -285,11 +293,13 @@
       el.classList.toggle("live", !!live);
       el.firstChild.innerHTML = live ? `<span class="leds3">${dots(t)}</span>` : `<i class="glyph check"></i>`;
       el.lastChild.textContent = live ? s.live : s.finished;
+      // what a step is working through, each name staying once it has come
+      (s.subs || []).forEach((u, j) => { const o = seg(t, u.at, u.at + 0.2); show(k[`sub-${i}-${j}`], o); });
     });
     if (k.changed) {
       show(k.changed, seg(t, S.changed[0].at, S.changed[0].at + 0.25));
       S.changed.forEach((c, i) => { const o = seg(t, c.at, c.at + 0.25); k[`chg-${i}`].style.display = o > 0 ? "" : "none"; show(k[`chg-${i}`], o); });
-      show(k.reply, seg(t, R + 0.45, R + 0.75));
+      show(k.reply, seg(t, REPLY, REPLY + 0.3));
     }
 
     // the rail: rows the agent reads light as it reads them, rows it makes arrive
@@ -317,18 +327,22 @@
     S.draw(t, k, layout);
   }
 
-  /** The loop seam: the last 0.2s cross-fades the whole window back to t=0,
-   *  so the last frame leads into the first. A copy of the window, drawn at
-   *  t=0, is laid over it and faded in. */
+  /** The loop seam. Over the last ~0.45s what the turn changed — the canvas,
+   *  the thread, the input — dips out to the bare window, and then a copy of the
+   *  window drawn at t=0 fades in over it, so the last frame leads into the
+   *  first without two states of the page ever showing at once. */
   draw(0);
   const ghost = /** @type {HTMLElement} */ (win.cloneNode(true));
   ghost.removeAttribute("id");
   ghost.style.cssText = "position:absolute; pointer-events:none";
+  const dipped = [k.canvas, k.log, k.ta].filter(Boolean);
 
   window.renderAt = (t) => {
-    t = ((t % DURATION) + DURATION) % DURATION;
+    t = ((t % LENGTH) + LENGTH) % LENGTH;
     draw(t);
-    const fade = seg(t, LOOP_FROM, DURATION);
+    const out = seg(t, SEAM - 0.25, SEAM);
+    for (const el of dipped) el.style.opacity = out > 0 ? String(1 - out) : "";
+    const fade = seg(t, SEAM, LENGTH);
     if (fade > 0) {
       if (!ghost.isConnected) document.body.appendChild(ghost);
       const r = win.getBoundingClientRect();
@@ -338,7 +352,7 @@
   };
 
   window.stageSize = () => { const r = win.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; };
-  window.scenario = { alt: S.alt, title: S.title };
+  window.scenario = { alt: S.alt, title: S.title, length: LENGTH };
   await document.fonts.ready;
   window.renderAt(Number(q.get("t") || 0));
   window.stageReady = true;

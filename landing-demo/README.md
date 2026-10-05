@@ -1,6 +1,6 @@
 # Landing page demo
 
-Eight-second GIFs for the section directly after the hero on biom.dev. Each
+Short looping GIFs (8–9 s) for the section directly after the hero on biom.dev. Each
 one plays a single request in Biom's window: the prompt is sent from the chat
 panel, the agent's working steps stay on screen, and the result lands in the
 workspace. The GIFs play and loop on their own and have no controls.
@@ -14,7 +14,7 @@ so the window wears the product's real type and palette.
 
 | Name | What it shows |
 |---|---|
-| `roadmap` | **The recommended one.** On Fernway's Roadmap board, the founder asks the agent to read this week's customer calls. The call pages in the sidebar light up as they are read. The agent finds 31 requests in 5 themes and ranks the top three by ARR. It then updates the board in place: *SSO for teams* lands in Next with four customers, $38k ARR, who asked, a quote and the calls linked, and two existing cards gain customers. |
+| `roadmap` | **The recommended one, 9 s.** On Fernway's Roadmap board, the founder asks the agent to read this week's customer calls. The call pages light up in the sidebar as they are read, and their names gather under the step in the chat. The agent finds 31 requests in 5 themes and ranks the top three by ARR. It then updates the board in place, one change at a time: *SSO for teams* lands in Next with four customers, $38k ARR, who asked, a quote and the calls linked; then two existing cards gain customers, each marked with a +2 and an amber edge that stays. |
 | `leads-scheduled` | The first demo: a Fintech leads page appears under Leads, saved as an automation for "Every Monday". |
 | `leads-accurate` | The same demo, but it claims only what the build does. Biom has no scheduler, so this version shows "Run again from Automations". |
 
@@ -58,6 +58,8 @@ To add a scenario, write `scenarios/<name>.js` exporting the same shape as
   (`paletteuse diff_mode=rectangle`).
 - `mpdecimate` with zero tolerance drops frames identical to the one before.
   The GIF keeps 1/15 s timestamps, so the final hold is a single frame with a
-  long delay, and the total length is exactly 8.00 s.
-- The loop seam is a 0.2 s cross-fade into a copy of the window drawn at
-  `t = 0`.
+  long delay, and the total length is exactly the scenario's (8.00 s by
+  default, or its `duration`).
+- The loop seam dips what the turn changed (the canvas, the thread, the
+  input) out to the bare window over 0.25 s, then fades in a copy of the
+  window drawn at `t = 0`. Two states of the page never show at once.

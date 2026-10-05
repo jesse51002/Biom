@@ -80,7 +80,7 @@ async function renderGif(browser, base, scenario, layout) {
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   const { page, clip } = await open(browser, base, scenario, layout);
-  const total = Math.round(DURATION * FPS);
+  const total = Math.round((SCENARIOS[scenario].duration || DURATION) * FPS);
   let distinct = 0, last = null;
   for (let f = 0; f < total; f++) {
     const buf = await shoot(page, clip, f / FPS, join(dir, `${String(f).padStart(3, "0")}.png`));
