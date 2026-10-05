@@ -1,0 +1,7 @@
+name: Inbound
+plugin: html
+input:
+  title: |
+    # Inbound
+  lede: |
+    Every demo request, researched, scored and answered before anyone reads it.

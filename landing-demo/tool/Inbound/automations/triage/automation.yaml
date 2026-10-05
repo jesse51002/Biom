@@ -1,0 +1,4 @@
+name: Triage
+description: Research, enrich, score and draft a reply for every new demo request.
+agent: bun
+command: [bun, code/triage.ts]

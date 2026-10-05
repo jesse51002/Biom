@@ -1,0 +1,90 @@
+{
+ "_": "Invented. Every company, person, figure and message here represents nothing real. In a real workspace the research step is where the agent looks each company up; the demo reads it from here so the run is the same every time.",
+ "Northwind Labs": {
+  "people": 240,
+  "funding": "Series B · $40M",
+  "stack": "Okta, Snowflake",
+  "fit": 92,
+  "why": "240 seats, needs SSO before rollout",
+  "reply": "Hi Dana, SSO and audit logs are both live, so 240 seats is a clean rollout. I've held Thursday 10:00 for a 30-minute walkthrough with your IT lead. Does that work?"
+ },
+ "Ledgerline": {
+  "people": 180,
+  "funding": "Series A · $18M",
+  "stack": "Postgres, dbt",
+  "fit": 88,
+  "why": "Finance team, replacing 3 tools",
+  "reply": "Hi Sam, you can retire all three tools in the first month; I've attached how Northwind's finance team did it. Free for a call Wednesday?"
+ },
+ "Halcyon Health": {
+  "people": 60,
+  "funding": "Seed · $6M",
+  "stack": "HubSpot",
+  "fit": 54,
+  "why": "Small team, early"
+ },
+ "Brightwell": {
+  "people": 35,
+  "funding": "Bootstrapped",
+  "stack": "Notion, Zapier",
+  "fit": 41,
+  "why": "Under seat minimum"
+ },
+ "Cobalt Rail": {
+  "people": 520,
+  "funding": "Series C · $90M",
+  "stack": "Azure AD, Jira",
+  "fit": 85,
+  "why": "Ops org, budget this quarter",
+  "reply": "Hi Priya, Azure AD sign-in and Jira sync work out of the box. I can bring our solutions lead to a 45-minute session this week. Tuesday or Thursday?"
+ },
+ "Tallyforge": {
+  "people": 90,
+  "funding": "Series A · $21M",
+  "stack": "Slack, Linear",
+  "fit": 71,
+  "why": "Good fit, no timeline"
+ },
+ "Kestrel Pay": {
+  "people": 140,
+  "funding": "Series A · $12M",
+  "stack": "Okta, Retool",
+  "fit": 66,
+  "why": "Evaluating 2 others"
+ },
+ "Fernhill Studio": {
+  "people": 12,
+  "funding": "Bootstrapped",
+  "stack": "Google Workspace",
+  "fit": 22,
+  "why": "Agency, 12 people"
+ },
+ "Oakmere Logistics": {
+  "people": 310,
+  "funding": "Private",
+  "stack": "SAP, Teams",
+  "fit": 63,
+  "why": "Long procurement"
+ },
+ "Marlowe & Co": {
+  "people": 45,
+  "funding": "Seed · $4M",
+  "stack": "Airtable",
+  "fit": 48,
+  "why": "Student project?"
+ },
+ "Tidewater Foods": {
+  "people": 800,
+  "funding": "Private",
+  "stack": "Oracle",
+  "fit": 37,
+  "why": "Wrong buyer"
+ },
+ "Juniper Ops": {
+  "people": 75,
+  "funding": "Series A · $9M",
+  "stack": "Okta, Linear",
+  "fit": 74,
+  "why": "Champion is ex-customer"
+ }
+}

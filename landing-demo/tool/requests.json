@@ -1,0 +1,14 @@
+[
+  { "Company": "Northwind Labs", "Contact": "Dana Reyes · Head of IT", "Ask": "SSO for a 240-seat rollout" },
+  { "Company": "Halcyon Health", "Contact": "Owen Pratt · Ops", "Ask": "Pricing for a small team" },
+  { "Company": "Ledgerline", "Contact": "Sam Okafor · Finance Lead", "Ask": "Replace our three finance tools" },
+  { "Company": "Fernhill Studio", "Contact": "Ines Moreau · Founder", "Ask": "Is there a free plan?" },
+  { "Company": "Kestrel Pay", "Contact": "Marcus Lee · VP Eng", "Ask": "Comparing you with two others" },
+  { "Company": "Cobalt Rail", "Contact": "Priya Shah · COO", "Ask": "Ops tooling, budget this quarter" },
+  { "Company": "Brightwell", "Contact": "Tom Varga · PM", "Ask": "Zapier keeps breaking" },
+  { "Company": "Tallyforge", "Contact": "Aisha Bello · CTO", "Ask": "Exploring for next year" },
+  { "Company": "Oakmere Logistics", "Contact": "Grace Lin · IT Procurement", "Ask": "Security questionnaire first" },
+  { "Company": "Juniper Ops", "Contact": "Leo Brandt · Eng Manager", "Ask": "Used you at my last job" },
+  { "Company": "Marlowe & Co", "Contact": "Ada Marlowe · Student", "Ask": "For a class project" },
+  { "Company": "Tidewater Foods", "Contact": "Hal Becker · Facilities", "Ask": "Do you do inventory?" }
+]

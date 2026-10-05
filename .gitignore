@@ -33,3 +33,4 @@ node_modules
 
 # landing-demo/render.mjs scratch frames
 landing-demo/out/.frames/
+landing-demo/out/.rec/

@@ -10,7 +10,53 @@ Nothing here is part of the framework: no layer, no import into it, and the
 stage reads Biom's own `client/css/tokens.css`, fonts and `app/icon.png` only
 so the window wears the product's real type and palette.
 
-## Scenarios
+## The real tool: recommended
+
+`record.mjs` films a **real tool running in the real app**. Nothing in it is
+drawn by hand.
+
+- **The tool** is `tool/Inbound/`. It is a page with its own interface,
+  `index.html`, with no doc plugin and no board, and a `triage` automation
+  whose code takes every new demo request through four steps: research,
+  enrich, score, and a drafted reply for the hot ones.
+- **How it runs:** the page's Run button starts the automation (`biom.start`).
+  The automation writes each step to the `inbound` table through Biom's API.
+  The page reads the table and draws the run as it happens, then sorts the
+  queue by fit.
+- **How it's filmed:** the recorder makes a scratch workspace called
+  Fernway, installs the tool, fills the table with `tool/requests.json`,
+  starts Biom (production build) and opens the page in Chromium. It presses
+  Run and films the screen with the browser's screencast while the
+  automation works.
+- **How it's framed:** desktop opens on the whole workspace for half a
+  second, then pushes into the tool. Mobile is the same tool's narrow layout,
+  filmed in a narrow window: the queue runs full-screen, then gives way to
+  the three hot leads and the drafted reply.
+
+```
+node landing-demo/record.mjs            # desktop and mobile, ~1 min
+node landing-demo/record.mjs mobile     # one
+```
+
+It writes `out/demo-tool-desktop.gif` (1280×800) and `out/demo-tool-mobile.gif`
+(780×1238), each with its `-still.png`, and `out/preview-tool.html`. It
+needs bun, ffmpeg, Playwright and Chromium.
+
+**The research is canned.** In a real workspace the research step is where
+the agent looks each company up. The demo reads invented answers from
+`tool/Inbound/automations/triage/code/fixtures.json`, so the film is the same
+every time. Every company, person and figure is invented.
+
+**Why it is cut the way it is:**
+- Every frame of a camera move is a whole new picture to a GIF. The push-in
+  is quick (0.5 s), and the loop is a plain cut back to the start rather
+  than a cross-fade. Those two choices took the desktop GIF from 4.4 MB to
+  about 1.6 MB.
+- The tool's lights are steady rather than pulsing, for the same reason.
+- The hold at the end is identical frames, which the encoder drops. The
+  last frame's delay is then set to cover the hold (`holdLastFrame`).
+
+## Scenarios drawn on the stage
 
 | Name | What it shows |
 |---|---|
