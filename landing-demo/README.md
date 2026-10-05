@@ -78,7 +78,8 @@ names, quotes and figures are invented, and each GIF says so in its corner.
 | `scenarios/*.js` | One scenario per file: its words, data, beats, canvas and the canvas's own motion |
 | `stage.html` | What every scenario shares: the title bar, the rail, the chat, the input box, the strip, the narrow composition and the loop seam. `renderAt(t)` is a pure function of `t`, with no transitions or timers |
 | `render.mjs` | Steps the stage at 15 fps, then writes the GIFs, stills and previews into `out/` |
-| `section.html` | The drop-in section for the landing page |
+| `section.html` | The drop-in section for the drawn scenarios, after the hero |
+| `section-tool.html` | The drop-in section for the real tool (`demo-tool-*`), meant to sit under the pain-point section |
 | `out/` | `demo-<scenario>-<layout>.gif`, `-still.png` and `preview-<scenario>.html` |
 
 ```

@@ -1,0 +1,51 @@
+<!-- THE INBOUND TOOL DEMO, to sit directly under the pain-point section on biom.dev.
+
+     The pain point says what is wrong; this shows the fix running: a custom tool
+     built in Biom, with a four-step automation behind its Run button. A GIF, so it
+     plays and loops on its own and carries no controls. The browser picks one of
+     four files: the narrow composition under 700px, the wide one above it, and
+     the finished frame instead of either when the visitor asked for reduced
+     motion. Every <source> names its own width and height, so the box is reserved
+     before a byte arrives and nothing below it moves.
+
+     Copy the four demo-tool-* files from landing-demo/out/ beside the page, or
+     change the paths. The CSS is self-contained; the class is .bd-tool so it
+     cannot collide with anything else on the page, and the two colours are the
+     custom properties at the top. Give it the site's own section spacing rather
+     than the full viewport if the pain point above it is short. -->
+<style>
+  .bd-tool{
+    --bd-ground:#0E0F11; --bd-edge:rgba(237,230,214,.14);
+    --bd-pad:clamp(16px, 3vw, 40px);
+    --bd-ratio:1.6;                       /* 1280 / 800 */
+    box-sizing:border-box; min-height:100vh; min-height:100svh;
+    display:grid; place-items:center;
+    padding:var(--bd-pad) 16px;
+    background:var(--bd-ground);
+  }
+  .bd-tool figure{margin:0; width:100%}
+  .bd-tool picture{display:contents}
+  .bd-tool img{
+    display:block; height:auto; margin:0 auto;
+    width:min(100%, calc((100vh - 2 * var(--bd-pad) - 2px) * var(--bd-ratio)));
+    width:min(100%, calc((100svh - 2 * var(--bd-pad) - 2px) * var(--bd-ratio)));
+    border:1px solid var(--bd-edge); border-radius:12px;
+    box-shadow:0 1px 0 rgba(0,0,0,.6), 0 40px 90px -30px rgba(0,0,0,.9);
+    background:var(--bd-ground);
+  }
+  @media (max-width:700px){
+    .bd-tool{--bd-ratio:0.630}             /* 780 / 1238 */
+    .bd-tool img{border-radius:10px}
+  }
+</style>
+<section class="bd-tool" aria-label="A tool built in Biom, running">
+  <figure>
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 700px)" srcset="demo-tool-mobile-still.png" width="780" height="1238">
+      <source media="(prefers-reduced-motion: reduce)" srcset="demo-tool-desktop-still.png" width="1280" height="800">
+      <source media="(max-width: 700px)" srcset="demo-tool-mobile.gif" width="780" height="1238">
+      <img src="demo-tool-desktop.gif" width="1280" height="800" loading="lazy" decoding="async"
+           alt="Inbound, a custom tool built in Biom. Run is pressed and an automation takes twelve demo requests through four steps, research, enrich, score and draft, three at a time; each row fills in as its step finishes. The queue sorts itself by fit, three leads are marked hot, and the top one, Northwind Labs at 92, opens with its facts and a drafted reply ready to send. Every company and figure is invented.">
+    </picture>
+  </figure>
+</section>
