@@ -1,0 +1,49 @@
+<!-- THE DEMO SECTION, to sit directly after the hero on biom.dev.
+
+     A GIF, so it plays and loops on its own and carries no controls. The browser
+     picks one of four files: the narrow composition under 700px, the wide one
+     above it, and the finished frame instead of either when the visitor asked
+     for reduced motion. Every <source> names its own width and height, so the
+     box is reserved before a byte arrives and nothing below it moves.
+     `loading="lazy"` fetches it as it nears the viewport, which, straight after
+     the hero, is on arrival or the first scroll.
+
+     Copy the four files from landing-demo/out/ beside the page, or change the
+     paths. The CSS is self-contained and names the brand's charcoal and cream
+     only through the two custom properties at the top. -->
+<style>
+  .bd-demo{
+    --bd-ground:#0E0F11; --bd-edge:rgba(237,230,214,.14);
+    --bd-pad:clamp(16px, 3vw, 40px);
+    --bd-ratio:1.6;                       /* 1920 / 1200 */
+    box-sizing:border-box; min-height:100vh; min-height:100svh;
+    display:grid; place-items:center;
+    padding:var(--bd-pad) 16px;
+    background:var(--bd-ground);
+  }
+  .bd-demo figure{margin:0; width:100%}
+  .bd-demo picture{display:contents}
+  .bd-demo img{
+    display:block; height:auto; margin:0 auto;
+    width:min(100%, calc((100vh - 2 * var(--bd-pad) - 2px) * var(--bd-ratio)));
+    width:min(100%, calc((100svh - 2 * var(--bd-pad) - 2px) * var(--bd-ratio)));
+    border:1px solid var(--bd-edge); border-radius:12px;
+    box-shadow:0 1px 0 rgba(0,0,0,.6), 0 40px 90px -30px rgba(0,0,0,.9);
+    background:var(--bd-ground);
+  }
+  @media (max-width:700px){
+    .bd-demo{--bd-ratio:0.629}             /* 780 / 1240 */
+    .bd-demo img{border-radius:10px}
+  }
+</style>
+<section class="bd-demo" aria-label="Biom at work">
+  <figure>
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 700px)" srcset="demo-mobile-still.png" width="780" height="1240">
+      <source media="(prefers-reduced-motion: reduce)" srcset="demo-desktop-still.png" width="1920" height="1200">
+      <source media="(max-width: 700px)" srcset="demo-mobile.gif" width="780" height="1240">
+      <img src="demo-desktop.gif" width="1920" height="1200" loading="lazy" decoding="async"
+           alt="Biom, with an agent chat beside a page. The request — every Monday, find 20 Series A fintechs hiring engineers and add their CTOs and engineering leads to my leads — is sent; the agent researches 146 companies, narrows them to 38 Series A and 24 hiring engineers, finds the decision makers, and a page called Fintech leads appears under Leads with the companies, their hiring signals and contacts, saved as an automation. Illustrative demo, time compressed.">
+    </picture>
+  </figure>
+</section>

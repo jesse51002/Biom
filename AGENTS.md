@@ -292,6 +292,9 @@ vendor/                  third-party code, served not bundled. Never patched; th
                          set converted from upstream's says so in vendor/README.md
 skill/check.ts           the checker. Rewritten into a vault as .agents/skills/check.ts on every open
 skill/_lib/              its imports: shims here, verbatim copies in a vault
+landing-demo/            the landing page's demo GIF: a deterministic stage on the
+                         product's tokens and the script that exports it. Not on the
+                         stack, imports nothing of the framework's
 tests/                   `make test`. One `*.test.*` per module, no browser
 tests/e2e/               `make e2e`. The program assembled: the server in a headless
                          Chromium and over HTTP with a scripted agent, the Agent screen's
