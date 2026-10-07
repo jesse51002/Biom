@@ -2,7 +2,7 @@
 
 Create agentic tools, workflows and automations where your team works: point an agent at a folder, and what you ask for appears as real pages, drawn.
 
-**[biom.dev](https://biom.dev)** · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
+**[biom.dev](https://biom.dev)** · [Get started](https://www.biom.dev/waitlist.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
 
 ## Get started
 
@@ -70,4 +70,4 @@ The prices are on [biom.dev/pricing](https://biom.dev/pricing.html). To hear the
 
 ---
 
-[biom.dev](https://biom.dev) · [Get started](https://biom.dev/get-started.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
+[biom.dev](https://biom.dev) · [Get started](https://www.biom.dev/waitlist.html) · [Pricing](https://biom.dev/pricing.html) · [Discord](https://discord.gg/Tx2hr6DzAR)
