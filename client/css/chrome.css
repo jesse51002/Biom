@@ -529,9 +529,10 @@
 .vault:not(.vstart) .vbrand{margin:0 0 2rem}
 .vault .vmark{width:104px; height:104px; display:block}
 .vault .vword{font-size:1.75rem; font-weight:600; letter-spacing:-.02em; color:var(--ink)}
-/* THE LINE BREAKS INTO TWO EVEN HALVES OR NOT AT ALL. It is one line at the
-   window's own size; a narrowed window breaks it, and left to itself the break
-   put the headline's last word alone on a line under all the others. */
+/* THE LINE BREAKS INTO TWO EVEN HALVES. Since the brand line became "Create
+   agentic tools, workflows and automations where your team works" (2026-10-07) it
+   is two lines even at the window's own size, which is meant; left to itself the
+   break put the headline's last word alone on a line under all the others. */
 .vault .vline{
   margin:1.75rem 0 2.25rem; font-size:1.5rem; font-weight:500; letter-spacing:-.015em;
   line-height:1.2; color:var(--ink); text-align:center; text-wrap:balance;

@@ -1128,9 +1128,10 @@ export function makeShell(deps) {
     if (vault !== null && vault.history === false) items.push(["Versions", "are not being kept"]);
     const drawn = items.map(([k, v]) => h("span", k, " ", h("b", v)));
     // THE ONE ITEM THAT IS A LINK, and the last: a newer version exists, and the
-    // steps to get it are the same three the person already ran once.
+    // steps to get it are the same three the person already ran once, kept in the
+    // README's Get started (biom.dev's get-started page was taken down on 2026-10-02).
     if (newerVersion !== "") {
-      drawn.push(h("span", "Update ", h("a", { href: "https://biom.dev/get-started.html", target: "_blank", rel: "noopener" }, h("b", `${newerVersion} is out`))));
+      drawn.push(h("span", "Update ", h("a", { href: "https://github.com/jesse51002/Biom#get-started", target: "_blank", rel: "noopener" }, h("b", `${newerVersion} is out`))));
     }
     return h("span.status", ...drawn);
   }
