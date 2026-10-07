@@ -46,7 +46,7 @@ Once per launch the built application fetches `https://biom.dev/version.json` an
 
 ## What it is
 
-- **Works with any agent.** Claude Code, OpenClaw, Codex, Hermes, anything that can write a file.
+- **Works with any agent.** Claude Code, Codex, OpenCode, Cursor, Gemini CLI, OpenClaw, anything that can write a file.
 - **Create with agents.** A visual doc, a dashboard, an architecture diagram: ask, and it is drawn.
 - **Agents always working.** Ingest team convos, pull reviews across social media, track sales emails. Your daily digest is ready when you wake up.
 - **Tools and automations in one prompt.** A reviews watcher, a price watch, a quote builder.
