@@ -405,7 +405,7 @@ walk("a first launch of the built application mounts nothing and opens the picke
   // The picker's own heading went with the groups: what a stranger meets is the
   // mark, the company's one line, and two buttons.
   expect(await wire.evaluate<string>("document.querySelector('div.ports.vault h1.vline').innerText"))
-    .toBe("A living workspace for humans and agents");
+    .toBe("Create agentic tools, workflows and automations where your team works");
   expect(await wire.evaluate<string>(
     "[...document.querySelectorAll('div.ports.vault button.vact')].map((b) => b.innerText).join('|')",
   )).toBe("Create a vault|Open");

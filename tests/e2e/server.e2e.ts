@@ -179,7 +179,7 @@ walk("a first launch mounts nothing and opens the picker", async () => {
   // nothing to explain and nothing to rank — so this is the words that prove it
   // is the start page rather than a page in a folder an earlier run left behind.
   expect(await page.locator("div.ports.vault h1.vline").first().innerText())
-    .toBe("A living workspace for humans and agents");
+    .toBe("Create agentic tools, workflows and automations where your team works");
   expect(said.out).toContain("none yet");
 
   // NOT ONE FRAME ON STDERR. `vault.info` with nothing mounted is the request
